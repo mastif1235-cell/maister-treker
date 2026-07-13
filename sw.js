@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v1';
+const CACHE_NAME = 'maister-treker-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -32,17 +32,14 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const network = fetch(e.request)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(e.request)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });

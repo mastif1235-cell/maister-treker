@@ -931,7 +931,14 @@ async function syncShiftPostGet(action, payload){
 }
 
 function ticketToSyncPayload(t){
-  return {id:t.id, date:t.date, time:t.time, content:t.content, sum:t.sum, tags:t.tags||[]};
+  // Захист від «зіпсованих» заявок, що могли залишитись у локальному
+  // сховищі з давніх тестів: якщо id/date/time не є нормальним рядком
+  // (наприклад, лишився об'єкт Date або порожнє значення), підставляємо
+  // безпечні значення замість того, щоб відправити сміття в таблицю.
+  const safeId = (typeof t.id === 'number' || typeof t.id === 'string') ? String(t.id) : String(Date.now());
+  const safeDate = (typeof t.date === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(t.date)) ? t.date : formatDate(new Date());
+  const safeTime = (typeof t.time === 'string' && /^\d{2}:\d{2}$/.test(t.time)) ? t.time : formatTime(new Date());
+  return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[]};
 }
 function shiftToSyncPayload(s){
   return {id:s.id, date:s.date, hours:s.hours, coworker:s.coworker};
@@ -1564,15 +1571,17 @@ function parseMapsLink(text){
    - якщо HTTPS і GPS доступні — визначає координати автоматично
    - якщо GPS заблокований або файл відкрито локально — одразу показує модалку «вставити посилання» */
 function handleGeoBtn(){
-  // якщо вже є геолокація — пропонуємо оновити або видалити
+  // GPS на телефоні часто дає неточну точку, тож більше не використовуємо
+  // автоматичне визначення — одразу відкриваємо Google Maps, де можна
+  // вручну поставити мітку та скопіювати посилання.
   if(calcState.geoLink){
     if(confirm('Геолокація вже додана. Оновити?')){
       calcState.geoLink='';
-      tryGps();
+      openGeoPasteModal();
     }
     return;
   }
-  tryGps();
+  openGeoPasteModal();
 }
 
 function tryGps(){
