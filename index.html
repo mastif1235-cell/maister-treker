@@ -371,6 +371,21 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
         <div id="fullFormBlocks">
         <div class="card">
+          <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">MAC ONU</strong></div>
+          <div class="photo-zone" style="margin-bottom:8px;">
+            <button type="button" class="btn" id="macScanBtn">📷 Сканувати MAC</button>
+          </div>
+          <div class="field"><input type="text" id="f_mac" placeholder="Наприклад: 38D82FB524DA" autocapitalize="characters"></div>
+          <div id="macScanModal" class="hidden" style="position:fixed; inset:0; z-index:200; background:#000; display:flex; flex-direction:column;">
+            <video id="macScanVideo" autoplay playsinline muted style="flex:1; width:100%; object-fit:cover; background:#000;"></video>
+            <div style="padding:14px; background:var(--bg,#14181C); display:flex; gap:10px;">
+              <div style="flex:1; font-size:12.5px; color:var(--text-dim);" id="macScanHint">Наведіть камеру на штрих-код з MAC на наліпці пристрою</div>
+              <button type="button" class="btn" id="macScanCloseBtn">Закрити</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">Фото</strong></div>
           <div class="photo-zone">
             <input type="file" id="f_photoInput" accept="image/*" capture="environment" class="hidden">
@@ -805,6 +820,13 @@ async function migrateLegacyPhotosToIdb(){
 }
 
 function pad2(n){ return String(n).padStart(2,'0'); }
+function normalizeMac(raw){
+  if(!raw) return '';
+  // Прибираємо все, окрім літер і цифр (тире, двокрапки, крапки, пробіли —
+  // штрих-коди на різних наліпках дають різні розділювачі), і приводимо
+  // до верхнього регістру для однаковості.
+  return String(raw).replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+}
 
 /* Маска телефону у форматі (050)555-55-55, поки користувач вводить цифри */
 function formatPhoneInput(e){
@@ -1077,7 +1099,7 @@ function blankTicketObject(){
     equipment: getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false})),
     utpMeters:0, utpPrice:0, opticMeters:0, opticPrice:0,
     additionalWork: [],
-    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', synced:false
+    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', synced:false
   };
 }
 
@@ -1333,6 +1355,7 @@ function hasUnsavedChanges(){
   if(s.city || s.address || s.clientName || s.phone) return true;
   if(s.note || s.masterNote) return true;
   if(s.photo) return true;
+  if(s.macAddress) return true;
   if(s.geoLink) return true;
   if(s.callFee>0 || s.tariff>0) return true;
   if(s.utpMeters>0 || s.opticMeters>0) return true;
@@ -1374,6 +1397,7 @@ function fillFormFromState(){
   document.getElementById('f_address').value = calcState.address || '';
   document.getElementById('f_client').value = calcState.clientName || '';
   document.getElementById('f_phone').value = calcState.phone || '';
+  document.getElementById('f_mac').value = calcState.macAddress || '';
   document.getElementById('f_date').value = calcState.date || '';
   document.getElementById('f_time').value = calcState.time || '';
   document.getElementById('f_callFee').value = calcState.callFee || 0;
@@ -1472,6 +1496,7 @@ function buildTicketContent(s, total){
   if(s.address) lines.push(`📍 Адреса: ${s.address}`);
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
   if(s.phone) lines.push(`📞 Тел: ${s.phone}`);
+  if(s.macAddress) lines.push(`🔧 MAC ONU: ${s.macAddress}`);
   lines.push('------------------');
   if(s.callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${fmtMoney(s.callFee)}`);
   if(s.tariff>0) lines.push(`💎 Тариф: ${fmtMoney(s.tariff)}`);
@@ -1512,6 +1537,7 @@ function syncFormToState(){
   calcState.address = document.getElementById('f_address').value.trim();
   calcState.clientName = document.getElementById('f_client').value.trim();
   calcState.phone = document.getElementById('f_phone').value.trim();
+  calcState.macAddress = normalizeMac(document.getElementById('f_mac').value);
   calcState.date = document.getElementById('f_date').value.trim() || formatDate(new Date());
   calcState.time = document.getElementById('f_time').value.trim() || formatTime(new Date());
   calcState.callFee = Number(document.getElementById('f_callFee').value)||0;
@@ -2524,12 +2550,74 @@ function bindCalculatorScreen(){
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); });
-  document.getElementById('photoBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
+  /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
+   Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому
+   працює і офлайн. Якщо браузер API не підтримує — просто ховаємо кнопку
+   сканування, залишаючи ручне поле введення як основний спосіб. */
+let macScanStream = null;
+let macScanRAF = null;
+
+async function startMacScan(){
+  const modal = document.getElementById('macScanModal');
+  const video = document.getElementById('macScanVideo');
+  const hint = document.getElementById('macScanHint');
+  if(!('BarcodeDetector' in window)){
+    showToast('Камера-сканер не підтримується цим браузером — введіть MAC вручну');
+    return;
+  }
+  try{
+    macScanStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  }catch(e){
+    showToast('Не вдалося відкрити камеру');
+    return;
+  }
+  video.srcObject = macScanStream;
+  modal.classList.remove('hidden');
+  let detector;
+  try{
+    detector = new BarcodeDetector({formats:['code_128','code_39','code_93','ean_13','qr_code','codabar']});
+  }catch(e){
+    detector = new BarcodeDetector();
+  }
+  const scanFrame = async ()=>{
+    if(!macScanStream) return; // сканер вже закрито
+    try{
+      const codes = await detector.detect(video);
+      if(codes && codes.length){
+        const raw = codes[0].rawValue || '';
+        const mac = normalizeMac(raw);
+        if(mac.length >= 6){
+          document.getElementById('f_mac').value = mac;
+          showToast(`MAC розпізнано: ${mac}`);
+          stopMacScan();
+          return;
+        } else {
+          hint.textContent = 'Знайдено штрих-код, але це не схоже на MAC — спробуйте інший на наліпці';
+        }
+      }
+    }catch(e){ /* кадр не розпізнався — просто пробуємо наступний */ }
+    macScanRAF = requestAnimationFrame(scanFrame);
+  };
+  macScanRAF = requestAnimationFrame(scanFrame);
+}
+
+function stopMacScan(){
+  if(macScanRAF) cancelAnimationFrame(macScanRAF);
+  macScanRAF = null;
+  if(macScanStream){ macScanStream.getTracks().forEach(t=>t.stop()); macScanStream = null; }
+  document.getElementById('macScanModal').classList.add('hidden');
+}
+
+document.getElementById('photoBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
   document.getElementById('f_photoInput').addEventListener('change', e=>{
     if(e.target.files && e.target.files[0]) handlePhotoFile(e.target.files[0]);
     e.target.value = '';
   });
   document.getElementById('photoRemoveBtn').addEventListener('click', ()=>{ calcState.photo=null; renderPhotoPreview(); });
+  document.getElementById('macScanBtn').addEventListener('click', startMacScan);
+  document.getElementById('macScanCloseBtn').addEventListener('click', stopMacScan);
+  document.getElementById('f_mac').addEventListener('blur', e=>{ e.target.value = normalizeMac(e.target.value); });
+  if(!('BarcodeDetector' in window)) document.getElementById('macScanBtn').classList.add('hidden');
   document.getElementById('geoBtn').addEventListener('click', handleGeoBtn);
   document.getElementById('geoClearBtn').addEventListener('click', ()=>{ setGeoLink(''); showToast('Геолокацію видалено'); });
 
