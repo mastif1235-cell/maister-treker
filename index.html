@@ -621,6 +621,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         <button class="btn btn-block" id="importOldTicketsBtn" style="margin-bottom:10px;">🗂️ Імпортувати старі заявки (212 шт.)</button>
         <button class="btn btn-block" id="repairTicketsBtn" style="margin-bottom:10px;">🩹 Полагодити зіпсовані записи</button>
         <button class="btn btn-block" id="dedupTicketsBtn" style="margin-bottom:10px;">🧹 Видалити дублікати заявок</button>
+        <button class="btn btn-block" id="restoreBackupBtn" style="margin-bottom:10px;">♻️ Відновити з автобекапу</button>
         <button class="btn btn-danger btn-block" id="clearAllBtn">🗑️ Очистити всю базу</button>
       </div>
 
@@ -982,7 +983,29 @@ async function loadFromCloud(){
   showToast(ok ? `Завантажено: ${tickets.length} заявок, ${shifts.length} змін` : 'Частину даних завантажити не вдалося');
 }
 
+function backupLocalData(){
+  try{
+    localStorage.setItem('autoBackup', JSON.stringify({ts: Date.now(), tickets, shifts}));
+  }catch(e){ /* сховище повне чи недоступне — бекап просто пропускаємо, не заважаємо основній дії */ }
+}
+
+function restoreFromBackup(){
+  const raw = localStorage.getItem('autoBackup');
+  if(!raw){ showToast('Бекапу ще немає'); return; }
+  let backup;
+  try{ backup = JSON.parse(raw); } catch(e){ showToast('Бекап пошкоджено'); return; }
+  const d = new Date(backup.ts);
+  if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nЗаявок у бекапі: ${(backup.tickets||[]).length}, змін: ${(backup.shifts||[]).length}.\nПоточні локальні дані буде замінено.`)) return;
+  tickets = backup.tickets || [];
+  shifts = backup.shifts || [];
+  saveTickets();
+  saveShifts();
+  renderTicketsScreen();
+  showToast('Дані відновлено з бекапу');
+}
+
 async function sendAllToCloud(){
+  backupLocalData();
   const ticketsUrl = getScriptUrl();
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
@@ -1719,6 +1742,21 @@ async function saveTicketFromForm(e){
 
   const syncConfigured = !!getScriptUrl();
 
+  // Захист від дублів: якщо за останні 3 години вже є заявка з такою ж
+  // адресою (і вона не та, що зараз редагується) — попереджаємо.
+  if(!editingTicketId && calcState.address){
+    const threeHoursMs = 3*60*60*1000;
+    const nowMs = Date.now();
+    const similar = tickets.find(t=>
+      t.address && t.address.trim().toLowerCase() === calcState.address.trim().toLowerCase() &&
+      t.city === calcState.city &&
+      (nowMs - Number(t.id||0)) < threeHoursMs
+    );
+    if(similar && !confirm(`Схожа заявка вже є (${similar.date} ${similar.time}, ${similar.city||''} ${similar.address}).\nЗберегти ще одну?`)){
+      return;
+    }
+  }
+
   if(editingTicketId){
     calcState.id = editingTicketId;
     const idx = tickets.findIndex(t=>t.id===editingTicketId);
@@ -2000,6 +2038,7 @@ const OLD_TICKETS_IMPORT = [{"id": 1782139021388, "date": "22.06.2026", "time": 
 
 async function dedupTickets(){
   if(!confirm('Знайти заявки з однаковою датою, часом і текстом та залишити тільки одну копію кожної?')) return;
+  backupLocalData();
   const seen = new Map();
   const toRemove = new Set();
   tickets.forEach(t=>{
@@ -2036,6 +2075,7 @@ async function dedupTickets(){
 
 async function repairCorruptedTickets(){
   if(!confirm('Знайти та полагодити заявки з битими id/датою (залишились від старих тестів синхронізації)? Текст заявок не зміниться.')) return;
+  backupLocalData();
   // Розпізнаємо зіпсовані записи: id виглядає як рядок з toString() дати
   // JS (напр. "Fri Jul 10 2026 00:00:00 GMT+0300 (...)"). Такий рядок
   // МОЖНА розпарсити назад через new Date(...) — і саме так ми
@@ -2674,9 +2714,11 @@ function bindSettingsScreen(){
   document.getElementById('importOldTicketsBtn').addEventListener('click', importOldTickets);
   document.getElementById('repairTicketsBtn').addEventListener('click', repairCorruptedTickets);
   document.getElementById('dedupTicketsBtn').addEventListener('click', dedupTickets);
+  document.getElementById('restoreBackupBtn').addEventListener('click', restoreFromBackup);
   document.getElementById('clearAllBtn').addEventListener('click', ()=>{
     if(!confirm('Очистити ВСЮ базу даних (заявки і зміни)? Цю дію не можна скасувати.')) return;
     if(!confirm('Ви впевнені? Дані будуть видалені остаточно.')) return;
+    backupLocalData();
     tickets = []; shifts = [];
     saveTickets(); saveShifts();
     clearAllPhotos();
