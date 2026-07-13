@@ -377,10 +377,11 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
           <div class="field"><input type="text" id="f_mac" placeholder="Наприклад: 38D82FB524DA" autocapitalize="characters"></div>
           <div id="macScanModal" class="hidden" style="position:fixed; inset:0; z-index:200; background:#000; display:flex; flex-direction:column;">
-            <video id="macScanVideo" autoplay playsinline muted style="flex:1; width:100%; object-fit:cover; background:#000;"></video>
-            <div style="padding:14px; background:var(--bg,#14181C); display:flex; gap:10px;">
-              <div style="flex:1; font-size:12.5px; color:var(--text-dim);" id="macScanHint">Наведіть камеру на штрих-код з MAC на наліпці пристрою</div>
-              <button type="button" class="btn" id="macScanCloseBtn">Закрити</button>
+            <video id="macScanVideo" autoplay playsinline muted style="flex:1; width:100%; object-fit:cover; background:#000; min-height:0;"></video>
+            <div style="padding:14px; background:var(--bg,#14181C); max-height:45vh; overflow-y:auto;">
+              <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;" id="macScanHint">Наведіть камеру на штрих-код — знайдені значення з'являться нижче. Наліпка часто має кілька кодів (D-SN, GPON SN, MAC) — оберіть саме те, що підписане "MAC".</div>
+              <div id="macScanResults" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
+              <button type="button" class="btn btn-block" id="macScanCloseBtn">Закрити без вибору</button>
             </div>
           </div>
         </div>
@@ -2556,11 +2557,14 @@ function bindCalculatorScreen(){
    сканування, залишаючи ручне поле введення як основний спосіб. */
 let macScanStream = null;
 let macScanRAF = null;
+let macScanSeen = new Map(); // rawValue -> кнопка, щоб не дублювати список щокадру
 
 async function startMacScan(){
   const modal = document.getElementById('macScanModal');
   const video = document.getElementById('macScanVideo');
-  const hint = document.getElementById('macScanHint');
+  const results = document.getElementById('macScanResults');
+  results.innerHTML = '';
+  macScanSeen = new Map();
   if(!('BarcodeDetector' in window)){
     showToast('Камера-сканер не підтримується цим браузером — введіть MAC вручну');
     return;
@@ -2575,26 +2579,31 @@ async function startMacScan(){
   modal.classList.remove('hidden');
   let detector;
   try{
-    detector = new BarcodeDetector({formats:['code_128','code_39','code_93','ean_13','qr_code','codabar']});
+    detector = new BarcodeDetector({formats:['code_128','code_39','code_93','codabar','itf','ean_13','ean_8','upc_a','upc_e','qr_code','data_matrix','pdf417']});
   }catch(e){
     detector = new BarcodeDetector();
   }
+  const addResultButton = (raw)=>{
+    if(macScanSeen.has(raw)) return;
+    const mac = normalizeMac(raw);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-block';
+    btn.style.textAlign = 'left';
+    btn.innerHTML = `<div style="font-weight:700;">${mac}</div><div style="font-size:11.5px; color:var(--text-dim);">як відскановано: ${raw}</div>`;
+    btn.addEventListener('click', ()=>{
+      document.getElementById('f_mac').value = mac;
+      showToast(`Обрано: ${mac}`);
+      stopMacScan();
+    });
+    macScanSeen.set(raw, btn);
+    results.appendChild(btn);
+  };
   const scanFrame = async ()=>{
     if(!macScanStream) return; // сканер вже закрито
     try{
       const codes = await detector.detect(video);
-      if(codes && codes.length){
-        const raw = codes[0].rawValue || '';
-        const mac = normalizeMac(raw);
-        if(mac.length >= 6){
-          document.getElementById('f_mac').value = mac;
-          showToast(`MAC розпізнано: ${mac}`);
-          stopMacScan();
-          return;
-        } else {
-          hint.textContent = 'Знайдено штрих-код, але це не схоже на MAC — спробуйте інший на наліпці';
-        }
-      }
+      (codes||[]).forEach(c=>{ if(c.rawValue) addResultButton(c.rawValue); });
     }catch(e){ /* кадр не розпізнався — просто пробуємо наступний */ }
     macScanRAF = requestAnimationFrame(scanFrame);
   };
