@@ -977,7 +977,14 @@ function ticketToSyncPayload(t){
   const safeId = (typeof t.id === 'number' || typeof t.id === 'string') ? String(t.id) : String(Date.now());
   const safeDate = (typeof t.date === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(t.date)) ? t.date : formatDate(new Date());
   const safeTime = (typeof t.time === 'string' && /^\d{2}:\d{2}$/.test(t.time)) ? t.time : formatTime(new Date());
-  return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[]};
+  // Геолокація та приватна примітка майстра НЕ входять у t.content (щоб не
+  // потрапляти диспетчеру при копіюванні/шерингу), але для повного бекапу в
+  // таблиці зберігаємо їх окремо — у службовому стовпці, який більше ніде в
+  // застосунку не використовується і не завантажується назад автоматично.
+  const backupExtra = [];
+  if(t.geoLink) backupExtra.push(`Геолокація: ${t.geoLink}`);
+  if(t.masterNote) backupExtra.push(`Приватна примітка майстра: ${t.masterNote}`);
+  return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n')};
 }
 function shiftToSyncPayload(s){
   return {id:s.id, date:s.date, hours:s.hours, coworker:s.coworker};
