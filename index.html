@@ -326,7 +326,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
     <!-- ===================== ЕКРАН: КАЛЬКУЛЯТОР ===================== -->
     <section id="screen-calculator" class="screen">
-      <form id="calcForm" autocomplete="off">
+      <div id="calcForm" autocomplete="off">
 
         <div class="card">
           <div class="field">
@@ -442,6 +442,11 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
         </div>
 
+        <details class="card">
+          <summary style="cursor:pointer; font-size:13.5px; font-weight:600; list-style:none;">🔧 Роботи з переліку <span id="presetWorksSummary" style="color:var(--text-dim); font-weight:400;"></span></summary>
+          <div id="presetWorksList" style="margin-top:10px;"></div>
+        </details>
+
         <div class="screen-section-title">Додаткові роботи</div>
         <div class="card">
           <div id="additionalWorkList"></div>
@@ -485,9 +490,9 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
         <button type="button" class="btn btn-block" id="sendTicketBtn" style="margin-bottom:8px;">📤 Надіслати заявку</button>
         </div>
-        <button type="submit" class="btn btn-accent btn-block" id="saveTicketBtn">Зберегти заявку</button>
+        <button type="button" class="btn btn-accent btn-block" id="saveTicketBtn">Зберегти заявку</button>
         <button type="button" class="btn btn-block hidden" id="cancelEditBtn" style="margin-top:8px;">Скасувати редагування</button>
-      </form>
+      </div>
     </section>
 
     <!-- ===================== ЕКРАН: ЗМІНИ ===================== -->
@@ -583,6 +588,17 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <input type="text" id="newMatName" placeholder="Назва" style="flex:2;">
           <input type="number" id="newMatPrice" placeholder="Ціна" min="0" style="flex:1;">
           <button class="btn btn-icon" id="addMatBtn">+</button>
+        </div>
+      </div>
+
+      <div class="screen-section-title">Роботи з переліку (калькулятор)</div>
+      <div class="card">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Назва та ціна за замовчуванням для розгортаючогося списку робіт. Кількість і ціну можна змінити прямо в заявці.</div>
+        <div id="workMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+        <div class="row" style="gap:8px;">
+          <input type="text" id="newWorkName" placeholder="Назва" style="flex:2;">
+          <input type="number" id="newWorkPrice" placeholder="Ціна" min="0" style="flex:1;">
+          <button class="btn btn-icon" id="addWorkTypeBtn">+</button>
         </div>
       </div>
 
@@ -702,8 +718,19 @@ const DEFAULT_MATERIALS = [
   {id:'ups',       label:'ДБЖ',        price:900},
   {id:'androidtv', label:'Android TV', price:1500},
 ];
+const DEFAULT_WORK_TYPES = [
+  {id:'router_setup',  label:'Налаштування роутера',        price:50},
+  {id:'smarttv_setup', label:'Налаштування Smart TV',       price:50},
+  {id:'megogo',         label:'Підключення MEGOGO',          price:50},
+  {id:'optic_splice',   label:'Пайка оптичного кабелю',      price:100},
+  {id:'rj45_redo',      label:'Переобжати конектор RJ-45',   price:50},
+  {id:'urgent_call',    label:'Терміновий виклик',           price:400},
+  {id:'camera_install', label:'Встановлення камери нагляду', price:1000},
+  {id:'power_supply',   label:'Блок живлення оптичного термінала', price:250},
+];
 // EQUIPMENT_CONFIG тепер береться з settings.materials (редагується в Налаштуваннях)
 function getEquipmentConfig(){ return (settings && settings.materials) ? settings.materials : DEFAULT_MATERIALS; }
+function getWorkTypesConfig(){ return (settings && settings.workTypes) ? settings.workTypes : DEFAULT_WORK_TYPES; }
 
 function loadJSON(key, fallback){
   try{ const v = JSON.parse(localStorage.getItem(key)); return (v===null||v===undefined) ? fallback : v; }
@@ -711,7 +738,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), utpPriceDefault:7, opticPriceDefault:9};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), utpPriceDefault:7, opticPriceDefault:9};
   return s ? Object.assign(base, s) : base;
 }
 
@@ -1135,6 +1162,7 @@ function blankTicketObject(){
     callFee:0, tariff:0,
     equipment: getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false})),
     utpMeters:0, utpPrice:0, opticMeters:0, opticPrice:0,
+    presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [],
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', synced:false
   };
@@ -1346,7 +1374,10 @@ function renderTagFilterChips(){
   const wrap = document.getElementById('tagFilterChips');
   wrap.innerHTML = allTags.map(tag=>{
     const active = activeFilterTags.has(tag);
-    return `<button type="button" class="chip ${active?'active':''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)} ${counts[tag]?`· ${counts[tag]}`:''}</button>`;
+    return `<span class="chip ${active?'active':''}" style="display:inline-flex; align-items:center; gap:6px; padding-right:6px;">
+      <button type="button" data-tag="${escapeHtml(tag)}" style="background:none; border:none; color:inherit; font:inherit; padding:0;">${escapeHtml(tag)} ${counts[tag]?`· ${counts[tag]}`:''}</button>
+      <button type="button" data-deltag="${escapeHtml(tag)}" title="Видалити цей тег зі всіх заявок" style="background:none; border:none; color:var(--text-dim); font-size:14px; padding:0 2px; line-height:1;">✕</button>
+    </span>`;
   }).join('') || '<span style="color:var(--text-faint); font-size:13px;">Тегів ще немає</span>';
 }
 
@@ -1431,6 +1462,7 @@ function hasUnsavedChanges(){
   if(s.callFee>0 || s.tariff>0) return true;
   if(s.utpMeters>0 || s.opticMeters>0) return true;
   if((s.equipment||[]).some(e=>e.checked)) return true;
+  if((s.presetWorks||[]).some(w=>w.checked)) return true;
   if((s.additionalWork||[]).length>0) return true;
   if((s.tags||[]).length>0) return true;
   return false;
@@ -1488,6 +1520,9 @@ function loadTicketIntoForm(t){
   if(!calcState.equipment || !calcState.equipment.length){
     calcState.equipment = getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false}));
   }
+  if(!calcState.presetWorks || !calcState.presetWorks.length){
+    calcState.presetWorks = getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false}));
+  }
   calcState.additionalWork = calcState.additionalWork || [];
   calcState.tags = calcState.tags || [];
   editingTicketId = t.id;
@@ -1529,6 +1564,7 @@ function fillFormFromState(){
   document.getElementById('f_masterNote').value = calcState.masterNote || '';
   updateCallFeeLabel();
   renderEquipmentList();
+  renderPresetWorksList();
   renderAdditionalWorkList();
   renderCalcTagChips();
   renderPhotoPreview();
@@ -1543,6 +1579,24 @@ function renderEquipmentList(){
       <label><input type="checkbox" data-eqidx="${i}" class="eq-check" ${eq.checked?'checked':''}> ${escapeHtml(eq.label)}</label>
       <input type="number" min="0" data-eqidx="${i}" class="eq-price" value="${eq.price}">
     </div>`).join('');
+}
+
+function renderPresetWorksList(){
+  const wrap = document.getElementById('presetWorksList');
+  if(!calcState.presetWorks || calcState.presetWorks.length===0){
+    wrap.innerHTML = `<div style="color:var(--text-faint); font-size:13px;">Список робіт порожній — додайте у Налаштуваннях</div>`;
+  } else {
+    wrap.innerHTML = calcState.presetWorks.map((w,i)=>`
+      <div class="eq-row" data-pwidx="${i}" style="align-items:center; gap:8px;">
+        <label style="flex:1;"><input type="checkbox" data-pwidx="${i}" class="pw-check" ${w.checked?'checked':''}> ${escapeHtml(w.label)}</label>
+        <input type="number" min="1" data-pwidx="${i}" class="pw-qty" value="${w.qty||1}" style="width:52px;" title="Кількість">
+        <span style="color:var(--text-dim); font-size:12px;">×</span>
+        <input type="number" min="0" data-pwidx="${i}" class="pw-price" value="${w.price}" style="width:70px;" title="Ціна">
+      </div>`).join('');
+  }
+  const checkedCount = (calcState.presetWorks||[]).filter(w=>w.checked).length;
+  const sum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
+  document.getElementById('presetWorksSummary').textContent = checkedCount ? `— обрано: ${checkedCount}, разом: ${fmtMoney(sum)}` : '';
 }
 
 function renderAdditionalWorkList(){
@@ -1593,7 +1647,8 @@ function computeTotal(){
   const utpSum   = (Number(document.getElementById('f_utpMeters').value)||0) * (Number(document.getElementById('f_utpPrice').value)||0);
   const opticSum = (Number(document.getElementById('f_opticMeters').value)||0) * (Number(document.getElementById('f_opticPrice').value)||0);
   const workSum  = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
-  const total = callFee + tariff + equipSum + utpSum + opticSum + workSum;
+  const presetWorkSum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
+  const total = callFee + tariff + equipSum + utpSum + opticSum + workSum + presetWorkSum;
   document.getElementById('calcTotal').textContent = fmtMoney(total);
   return total;
 }
@@ -1623,6 +1678,9 @@ function buildTicketContent(s, total){
   });
   if(s.utpMeters>0) lines.push(`🔌 UTP: ${s.utpMeters}м х ${s.utpPrice}грн = ${Math.round(s.utpMeters*s.utpPrice)}грн`);
   if(s.opticMeters>0) lines.push(`💡 Оптика: ${s.opticMeters}м х ${s.opticPrice}грн = ${Math.round(s.opticMeters*s.opticPrice)}грн`);
+  (s.presetWorks||[]).filter(w=>w.checked).forEach(w=>{
+    lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`);
+  });
   s.additionalWork.forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${fmtMoney(w.sum)}`); });
   lines.push('------------------');
   if(s.payment) lines.push(`💳 Оплата: ${s.payment}`);
@@ -2062,6 +2120,7 @@ function renderSettingsScreen(){
   renderCityMgmtList();
   renderCwMgmtList();
   renderMatMgmtList();
+  renderWorkMgmtList();
 }
 
 function renderTagMgmtList(){
@@ -2097,6 +2156,18 @@ function renderMatMgmtList(){
       <input type="text" class="mat-label-inp" data-idx="${i}" value="${escapeHtml(m.label)}" style="flex:2;">
       <input type="number" class="mat-price-inp" data-idx="${i}" value="${m.price}" min="0" style="flex:1;">
       <button type="button" class="btn btn-icon btn-sm remove-mat-btn" data-idx="${i}">✕</button>
+    </div>`).join('');
+}
+function renderWorkMgmtList(){
+  const wrap = document.getElementById('workMgmtList');
+  if(!settings.workTypes || settings.workTypes.length===0){
+    wrap.innerHTML = '<span style="color:var(--text-faint); font-size:13px;">Робіт немає</span>'; return;
+  }
+  wrap.innerHTML = settings.workTypes.map((w,i)=>`
+    <div class="row" style="gap:8px; align-items:center;">
+      <input type="text" class="work-label-inp" data-idx="${i}" value="${escapeHtml(w.label)}" style="flex:2;">
+      <input type="number" class="work-price-inp" data-idx="${i}" value="${w.price}" min="0" style="flex:1;">
+      <button type="button" class="btn btn-icon btn-sm remove-work-btn" data-idx="${i}">✕</button>
     </div>`).join('');
 }
 
@@ -2595,6 +2666,27 @@ function bindTicketsScreen(){
     activeFilterTags.clear(); renderTagFilterChips(); renderTicketsScreen();
   });
   document.getElementById('tagFilterChips').addEventListener('click', e=>{
+    const delBtn = e.target.closest('[data-deltag]');
+    if(delBtn){
+      const tag = delBtn.dataset.deltag;
+      const count = tickets.filter(t=>(t.tags||[]).includes(tag)).length;
+      if(!confirm(`Видалити тег "${tag}"? Він зникне з ${count} заявок і зі списку тегів.`)) return;
+      backupLocalData();
+      tickets.forEach(t=>{ if(t.tags) t.tags = t.tags.filter(x=>x!==tag); });
+      settings.tags = (settings.tags||[]).filter(x=>x!==tag);
+      activeFilterTags.delete(tag);
+      saveTickets(); saveSettings();
+      renderTagFilterChips(); renderTicketsScreen();
+      showToast('Тег видалено. Синхронізація з хмарою...');
+      if(getScriptUrl()){
+        syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)}).then(ok=>{
+          tickets.forEach(t=>{ t.synced = ok; });
+          saveTickets(); renderTicketsScreen();
+          showToast(ok ? 'Синхронізовано' : 'Синхронізація не вдалась — перевірте інтернет');
+        });
+      }
+      return;
+    }
     const btn = e.target.closest('[data-tag]'); if(!btn) return;
     const tag = btn.dataset.tag;
     if(activeFilterTags.has(tag)) activeFilterTags.delete(tag); else activeFilterTags.add(tag);
@@ -2766,6 +2858,17 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; computeTotal(); }
   });
 
+  document.getElementById('presetWorksList').addEventListener('change', e=>{
+    const chk = e.target.closest('.pw-check');
+    if(chk){ calcState.presetWorks[Number(chk.dataset.pwidx)].checked = chk.checked; computeTotal(); renderPresetWorksList(); }
+  });
+  document.getElementById('presetWorksList').addEventListener('input', e=>{
+    const qty = e.target.closest('.pw-qty');
+    const price = e.target.closest('.pw-price');
+    if(qty){ calcState.presetWorks[Number(qty.dataset.pwidx)].qty = Number(qty.value)||1; computeTotal(); }
+    if(price){ calcState.presetWorks[Number(price.dataset.pwidx)].price = Number(price.value)||0; computeTotal(); }
+  });
+
   document.getElementById('addWorkBtn').addEventListener('click', ()=>{
     calcState.additionalWork.push({desc:'', sum:0});
     renderAdditionalWorkList(); computeTotal();
@@ -2794,7 +2897,7 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
   document.getElementById('sendTicketBtn').addEventListener('click', shareCurrentTicket);
   document.getElementById('copyTextBtn').addEventListener('click', copyTicketText);
   document.getElementById('sharePhotoBtn').addEventListener('click', sharePhoto);
-  document.getElementById('calcForm').addEventListener('submit', saveTicketFromForm);
+  document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
   document.getElementById('cancelEditBtn').addEventListener('click', ()=>{ clearDraft(); resetCalcForm(currentTicketDate); switchTab('tickets'); });
 }
 
@@ -2983,6 +3086,35 @@ function bindSettingsScreen(){
   });
   document.getElementById('newMatName').addEventListener('keydown', e=>{
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addMatBtn').click(); }
+  });
+
+  // Роботи з переліку: редагування назви/ціни та видалення
+  document.getElementById('workMgmtList').addEventListener('input', e=>{
+    const li = e.target.closest('.work-label-inp');
+    const pi = e.target.closest('.work-price-inp');
+    if(li){ settings.workTypes[Number(li.dataset.idx)].label = li.value; saveSettings(); }
+    if(pi){ settings.workTypes[Number(pi.dataset.idx)].price = Number(pi.value)||0; saveSettings(); }
+  });
+  document.getElementById('workMgmtList').addEventListener('click', e=>{
+    const rm = e.target.closest('.remove-work-btn'); if(!rm) return;
+    settings.workTypes.splice(Number(rm.dataset.idx), 1);
+    saveSettings(); renderWorkMgmtList();
+    showToast('Роботу видалено зі списку');
+  });
+  document.getElementById('addWorkTypeBtn').addEventListener('click', ()=>{
+    const nameEl = document.getElementById('newWorkName');
+    const priceEl = document.getElementById('newWorkPrice');
+    const label = nameEl.value.trim();
+    if(!label){ showToast('Введіть назву роботи'); return; }
+    const price = Number(priceEl.value)||0;
+    const id = 'work_'+Date.now();
+    settings.workTypes.push({id, label, price});
+    saveSettings(); renderWorkMgmtList();
+    nameEl.value = ''; priceEl.value = '';
+    showToast(`Робота «${label}» додана`);
+  });
+  document.getElementById('newWorkName').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addWorkTypeBtn').click(); }
   });
 }
 
