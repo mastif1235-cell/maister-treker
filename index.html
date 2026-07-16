@@ -1340,9 +1340,9 @@ function renderTicketCard(t){
 
 function deleteTicket(id){
   if(!confirm('Видалити цю заявку?')) return;
-  const t = tickets.find(x=>x.id===id);
+  const t = tickets.find(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
   if(t && t.photo) deletePhotoKey(t.photo);
-  tickets = tickets.filter(t=>t.id!==id);
+  tickets = tickets.filter(t=>String(t.id)!==String(id));
   saveTickets();
   syncPost('deleteTicket', {id});
   renderTicketsScreen();
@@ -1350,14 +1350,14 @@ function deleteTicket(id){
 }
 
 function editTicket(id){
-  const t = tickets.find(x=>x.id===id);
+  const t = tickets.find(x=>String(x.id)===String(id)); // NEW
   if(!t) return;
   loadTicketIntoForm(t);
   switchTab('calculator');
 }
 
 async function retrySyncTicket(id){
-  const t = tickets.find(x=>x.id===id);
+  const t = tickets.find(x=>String(x.id)===String(id)); // NEW
   if(!t) return;
   if(!getScriptUrl()){ showToast('Синхронізація не налаштована'); return; }
   showToast('Повторна спроба надсилання...');
@@ -1369,7 +1369,7 @@ async function retrySyncTicket(id){
 }
 
 async function copyTicketCardText(id){
-  const t = tickets.find(x=>x.id===id); if(!t) return;
+  const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return; // NEW
   try{ await navigator.clipboard.writeText(t.content); showToast('Текст заявки скопійовано'); }
   catch(e){
     const ta = document.createElement('textarea');
@@ -1383,7 +1383,7 @@ async function copyTicketCardText(id){
 /* Поділитися заявкою (текст + фото, якщо є) — відкриває системне меню «Поділитися»,
    де серед застосунків буде Viber, якщо він встановлений на телефоні. */
 async function shareTicket(id){
-  const t = tickets.find(x=>x.id===id); if(!t) return;
+  const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return; // NEW
   const text = t.content || '';
   try{
     const photoData = t.photo ? await resolvePhotoAsync(t.photo) : null;
@@ -2150,7 +2150,7 @@ function addShift(){
 
 function deleteShift(id){
   if(!confirm('Видалити цю зміну?')) return;
-  shifts = shifts.filter(s=>s.id!==id);
+  shifts = shifts.filter(s=>String(s.id)!==String(id)); // NEW: id зміни — рядок (UUID), Number() ламав порівняння
   saveShifts();
   syncShiftPostGet('delete', {id});
   renderShiftsScreen();
@@ -2798,11 +2798,11 @@ function bindTicketsScreen(){
     const copyBtn  = e.target.closest('.copy-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
-    if(editBtn)  editTicket(Number(editBtn.dataset.id));
-    if(delBtn)   deleteTicket(Number(delBtn.dataset.id));
-    if(shareBtn) shareTicket(Number(shareBtn.dataset.id));
-    if(copyBtn)  copyTicketCardText(Number(copyBtn.dataset.id));
-    if(retryBtn) retrySyncTicket(Number(retryBtn.dataset.id));
+    if(editBtn)  editTicket(editBtn.dataset.id);
+    if(delBtn)   deleteTicket(delBtn.dataset.id);
+    if(shareBtn) shareTicket(shareBtn.dataset.id);
+    if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
+    if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;
       const contentEl = document.getElementById('tcc-'+id);
@@ -3032,7 +3032,7 @@ function bindShiftsScreen(){
   document.getElementById('addShiftBtn').addEventListener('click', addShift);
   document.getElementById('shiftHistoryCard').addEventListener('click', e=>{
     const btn = e.target.closest('.delete-shift-btn'); if(!btn) return;
-    deleteShift(Number(btn.dataset.id));
+    deleteShift(btn.dataset.id);
   });
 }
 
