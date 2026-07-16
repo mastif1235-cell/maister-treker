@@ -56,6 +56,8 @@ button,input,select,textarea{font-family:inherit;color:inherit;}
 .sync-dot.syncing{background:var(--accent); animation:pulse 1s infinite ease-in-out;}
 .sync-dot.ok{background:var(--success);}
 .sync-dot.err{background:var(--danger);}
+.mini-spinner{display:inline-block; width:11px; height:11px; border:2px solid var(--text-faint); border-top-color:var(--accent); border-radius:50%; animation:mini-spin .7s linear infinite; vertical-align:middle; margin-right:5px;}
+@keyframes mini-spin{to{transform:rotate(360deg);}}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 
 main.screens{flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; position:relative;}
@@ -341,6 +343,13 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
             <label>Текст нотатки</label>
             <textarea id="f_otherNote" placeholder="Введіть текст нотатки" style="min-height:90px;"></textarea>
           </div>
+          <div class="field hidden" id="importedRawWrap">
+            <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">☁️ Ця заявка відновлена з таблиці — детальні поля (адреса, обладнання тощо) в ній не збереглись. Редагуйте текст і суму напряму нижче.</div>
+            <label>Текст заявки</label>
+            <textarea id="f_rawContent" style="min-height:160px;"></textarea>
+            <label style="margin-top:8px;">Сума, грн</label>
+            <input type="number" id="f_rawSum" min="0" value="0">
+          </div>
           <div id="fullFormFields">
           <div class="field">
             <label>Місто</label>
@@ -387,7 +396,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
 
         <div id="fullFormBlocks">
-        <div class="card">
+        <div class="card" id="calcMacCard">
           <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">MAC ONU</strong></div>
           <div class="photo-zone" style="margin-bottom:8px;">
             <button type="button" class="btn" id="macScanBtn">📷 Сканувати MAC</button>
@@ -415,6 +424,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
         </div>
 
+        <div id="calcPricingBlocks">
         <div class="screen-section-title">Вартість послуг</div>
         <div class="card">
           <div class="field-row">
@@ -451,6 +461,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         <div class="card">
           <div id="additionalWorkList"></div>
           <button type="button" class="btn btn-sm" id="addWorkBtn">+ Додати роботу</button>
+        </div>
         </div>
 
         <div class="screen-section-title">Теги</div>
@@ -1046,11 +1057,16 @@ async function loadFromCloud(){
       const data = await res.json();
       tickets = (data.tickets||[]).map(t=>{
         const blank = blankTicketObject();
+        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра
         return Object.assign(blank, {
           id: t.id, date: t.date, time: t.time, content: t.content,
           sum: Number(t.sum)||0,
           tags: Array.isArray(t.tags) ? t.tags : String(t.tags||'').split(',').map(s=>s.trim()).filter(Boolean),
-          photo: null
+          photo: null,
+          geoLink: extra.geoLink,       // NEW
+          masterNote: extra.masterNote, // NEW
+          synced: true,       // NEW: дані щойно прийшли з хмари — вже синхронізовані, повторно надсилати не треба
+          cloudImported: true // NEW: увімкне режим сирого редагування тексту при відкритті заявки
         });
       });
       saveTickets();
@@ -1164,8 +1180,24 @@ function blankTicketObject(){
     utpMeters:0, utpPrice:0, opticMeters:0, opticPrice:0,
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [],
-    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', synced:false
+    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', synced:false,
+    cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
+}
+
+/* NEW: розбирає службовий стовпець "нотатки_майстра" (backupNote), який
+   повертає таблиця для кожної заявки, і дістає з нього геолокацію та
+   приватну примітку майстра — щоб відновити їх при завантаженні з хмари. */
+function parseBackupNote(note){
+  const result = {geoLink:'', masterNote:''};
+  if(!note) return result;
+  String(note).split('\n').forEach(line=>{
+    const geoMatch = line.match(/^Геолокація:\s*(.+)$/);
+    const noteMatch = line.match(/^Приватна примітка майстра:\s*(.+)$/);
+    if(geoMatch) result.geoLink = geoMatch[1].trim();
+    else if(noteMatch) result.masterNote = noteMatch[1].trim();
+  });
+  return result;
 }
 
 function ticketsForDate(dateStr){
@@ -1192,16 +1224,28 @@ function renderSyncQueueBanner(){
     : `📴 Немає інтернету — ${pending.length} заявок надішлю, коли з'явиться зв'язок`;
 }
 
+let syncQueueBusy = false; // NEW: захист від повторного запуску, поки черга вже синхронізується
 async function retrySyncQueue(){
+  if(syncQueueBusy) return; // NEW
   const pending = tickets.filter(t=>!t.synced);
   if(pending.length === 0) return;
   if(!getScriptUrl()) return;
-  showToast(`Синхронізую ${pending.length}...`);
+  syncQueueBusy = true;
+  const bannerText = document.getElementById('syncQueueBannerText');
+  const retryBtn = document.getElementById('syncQueueRetryBtn');
+  retryBtn.disabled = true; // NEW
+  const total = pending.length;
+  let done = 0;
   for(const t of pending){
+    // NEW: живий прогрес замість одного статичного тосту — видно, що процес не завис
+    bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
     const ok = await syncPost('addTicket', ticketToSyncPayload(t));
     t.synced = ok;
+    done++;
+    saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
   }
-  saveTickets();
+  retryBtn.disabled = false;
+  syncQueueBusy = false;
   renderTicketsScreen();
   const stillPending = tickets.filter(t=>!t.synced).length;
   showToast(stillPending ? `Залишилось не синхронізовано: ${stillPending}` : 'Усе синхронізовано ✅');
@@ -1562,6 +1606,8 @@ function fillFormFromState(){
   document.getElementById('f_payment').value = calcState.payment || '';
   document.getElementById('f_note').value = calcState.note || '';
   document.getElementById('f_masterNote').value = calcState.masterNote || '';
+  document.getElementById('f_rawContent').value = calcState.content || ''; // NEW
+  document.getElementById('f_rawSum').value = calcState.sum || 0; // NEW
   updateCallFeeLabel();
   renderEquipmentList();
   renderPresetWorksList();
@@ -1641,6 +1687,11 @@ function renderPhotoPreview(){
 }
 
 function computeTotal(){
+  if(calcState.cloudImported){ // NEW: для відновленої з хмари заявки сума вводиться вручну
+    const total = Number(document.getElementById('f_rawSum').value)||0;
+    document.getElementById('calcTotal').textContent = fmtMoney(total);
+    return total;
+  }
   const callFee = Number(document.getElementById('f_callFee').value)||0;
   const tariff  = Number(document.getElementById('f_tariff').value)||0;
   const equipSum = calcState.equipment.reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
@@ -1653,6 +1704,19 @@ function computeTotal(){
   return total;
 }
 
+/* NEW: текст поточної заявки для копіювання/надсилання. Для заявок,
+   відновлених з хмари, беремо текст напряму з textarea (щоб не перезаписати
+   оригінальний опис порожніми даними калькулятора) — для решти рахуємо як
+   раніше, через калькулятор. */
+function getCurrentTicketText(){
+  if(calcState.cloudImported){
+    return document.getElementById('f_rawContent').value.trim();
+  }
+  const isOther = calcState.type === 'Інше';
+  const total = isOther ? 0 : computeTotal();
+  return buildTicketContent(calcState, total);
+}
+
 function callFeeLabelFor(type){
   return type === 'Ремонт' ? 'Виклик' : (type || 'Виклик');
 }
@@ -1660,11 +1724,13 @@ function callFeeLabelFor(type){
 function buildTicketContent(s, total){
   if(s.type === 'Інше'){
     const lines = [`📋 НОТАТКА`];
+    if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
     if(s.otherNote) lines.push(s.otherNote);
     return lines.join('\n');
   }
   const lines = [];
   lines.push(`📋 ЗАЯВКА: ${(s.type||'').toUpperCase()}`);
+  if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
   if(s.city) lines.push(`🏙️ Місто: ${s.city}`);
   if(s.address) lines.push(`📍 Адреса: ${s.address}`);
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
@@ -1697,9 +1763,14 @@ function isOtherType(){
 }
 function toggleTypeOtherField(){
   const other = isOtherType();
+  const raw = !!calcState.cloudImported; // NEW: заявка відновлена з хмари — свій режим редагування
   document.getElementById('otherNoteWrap').classList.toggle('hidden', !other);
+  document.getElementById('importedRawWrap').classList.toggle('hidden', !raw); // NEW
   document.getElementById('fullFormFields').classList.toggle('hidden', other);
   document.getElementById('fullFormBlocks').classList.toggle('hidden', other);
+  // NEW: обладнання/вартість/MAC для сирої заявки не мають сенсу — сума редагується вручну
+  document.getElementById('calcMacCard').classList.toggle('hidden', other || raw);
+  document.getElementById('calcPricingBlocks').classList.toggle('hidden', other || raw);
   document.getElementById('f_payment').required = !other;
 }
 function updateCallFeeLabel(){
@@ -1873,8 +1944,7 @@ function openGeoPasteModal(headerMsg){
 /* ---- Копіювати текст / Поділитись фото ---- */
 async function copyTicketText(){
   syncFormToState();
-  const total = computeTotal();
-  const text = buildTicketContent(calcState, total);
+  const text = getCurrentTicketText(); // NEW: враховує raw-режим
   try{
     await navigator.clipboard.writeText(text);
     showToast('Текст заявки скопійовано');
@@ -1910,12 +1980,22 @@ async function saveTicketFromForm(e){
   syncFormToState();
   if(!calcState.type){ showToast('Оберіть тип роботи'); return; }
   const isOther = calcState.type === 'Інше';
-  if(isOther && !calcState.otherNote){ showToast('Введіть текст нотатки'); return; }
-  if(!isOther && !calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
+  const isRaw = !!calcState.cloudImported; // NEW
 
-  const total = isOther ? 0 : computeTotal();
-  calcState.sum = total;
-  calcState.content = buildTicketContent(calcState, total);
+  if(isRaw){
+    // NEW: заявка відновлена з хмари — структурних полів калькулятора в ній
+    // немає, тож перезбирати текст не можна (втратимо оригінальний опис).
+    // Берем текст і суму напряму з полів редагування.
+    if(!calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
+    calcState.content = document.getElementById('f_rawContent').value.trim();
+    calcState.sum = Number(document.getElementById('f_rawSum').value)||0;
+  } else {
+    if(isOther && !calcState.otherNote){ showToast('Введіть текст нотатки'); return; }
+    if(!isOther && !calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
+    const total = isOther ? 0 : computeTotal();
+    calcState.sum = total;
+    calcState.content = buildTicketContent(calcState, total);
+  }
 
   // Якщо фото нове (сирий base64, а не вже збережений ключ idb:...) — переносимо в IndexedDB,
   // а попереднє фото заявки (якщо було інше) видаляємо, щоб не накопичувати «сирітські» записи.
@@ -2284,9 +2364,7 @@ async function shareCurrentTicket(){
   // Працює навіть якщо заявку ще не збережено — рахуємо суму й текст
   // прямо з поточної форми, як для копіювання, а не з уже збереженого списку.
   syncFormToState();
-  const isOther = calcState.type === 'Інше';
-  const total = isOther ? 0 : computeTotal();
-  const text = buildTicketContent(calcState, total);
+  const text = getCurrentTicketText(); // NEW: враховує raw-режим
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
   try{
     const photoData = calcState.photo ? await resolvePhotoAsync(calcState.photo) : null;
