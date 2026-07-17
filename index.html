@@ -689,6 +689,9 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
       <div class="screen-section-title">Дані</div>
       <div class="card">
+        <button class="btn btn-block" id="exportJsonBtn" style="margin-bottom:10px;">💾 Експорт у JSON (повний бекап)</button>
+        <button class="btn btn-block" id="importJsonBtn" style="margin-bottom:10px;">📤 Імпорт із JSON</button>
+        <input type="file" id="jsonImportInput" accept=".json,application/json" class="hidden">
         <button class="btn btn-block" id="exportBtn" style="margin-bottom:10px;">📦 Експорт для NotebookLM</button>
         <button class="btn btn-block" id="importBtn" style="margin-bottom:10px;">📥 Масовий імпорт заявок</button>
         <button class="btn btn-block" id="repairTicketsBtn" style="margin-bottom:10px;">🩹 Полагодити зіпсовані записи</button>
@@ -971,19 +974,40 @@ function setSyncState(state){
 async function postToUrl(url, action, payload){
   if(!url) return false; // синхронізація не налаштована для цього типу даних — працюємо лише локально
   setSyncState('syncing');
+  const body = JSON.stringify(Object.assign({action}, payload));
   try{
-    await fetch(url, {
+    // NEW: спочатку пробуємо звичайний запит (без no-cors), щоб реально
+    // прочитати відповідь сервера — тоді видно СПРАВЖНІЙ результат
+    // (наприклад, якщо Apps Script впав з помилкою), а не просто "мережа не впала".
+    const res = await fetch(url, {
       method:'POST',
-      mode:'no-cors', // Apps Script + no-cors: запит «глухий», відповідь прочитати не можна
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify(Object.assign({action}, payload))
+      body
     });
-    setSyncState('ok');
-    return true;
+    const data = await res.json();
+    const ok = !!(data && data.status === 'ok');
+    setSyncState(ok ? 'ok' : 'err');
+    if(!ok) console.error('Сервер повернув помилку синхронізації:', data && data.message);
+    return ok;
   }catch(err){
-    console.error('Помилка синхронізації:', err);
-    setSyncState('err');
-    return false;
+    // NEW: якщо звичайний запит заблоковано (наприклад, Apps Script не
+    // віддає CORS-заголовки для POST через свій редірект) — підстраховуємось
+    // старим "глухим" способом no-cors, щоб синхронізація не зламалась там,
+    // де раніше працювала.
+    try{
+      await fetch(url, {
+        method:'POST',
+        mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body
+      });
+      setSyncState('ok');
+      return true;
+    }catch(err2){
+      console.error('Помилка синхронізації:', err2);
+      setSyncState('err');
+      return false;
+    }
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
@@ -2257,6 +2281,57 @@ function applyTheme(){
   if(meta) meta.setAttribute('content', settings.theme==='dark' ? '#14181C' : '#EEF1F3');
 }
 
+/* ---- Повний бекап у JSON (для перенесення на інший телефон або власне
+   збереження на випадок втрати кешу/даних) ---- */
+function exportJsonBackup(){
+  const payload = {
+    app: 'master-tracker',
+    exportedAt: new Date().toISOString(),
+    tickets,
+    shifts
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `master-tracker-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Файл бекапу завантажено');
+}
+
+async function handleJsonImportFile(file){
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const hasTickets = Array.isArray(data.tickets);
+    const hasShifts = Array.isArray(data.shifts);
+    if(!hasTickets && !hasShifts){ showToast('Файл не схожий на бекап цього застосунку'); return; }
+
+    const parts = [];
+    if(hasTickets) parts.push(`заявки (${data.tickets.length})`);
+    if(hasShifts) parts.push(`зміни (${data.shifts.length})`);
+    if(!confirm(`Імпортувати ${parts.join(' і ')}? Це ЗАМІНИТЬ поточні локальні дані відповідного типу на цьому телефоні.`)) return;
+
+    if(hasTickets){
+      // NEW: доповнюємо кожну заявку значеннями за замовчуванням — якщо бекап
+      // зроблено старішою версією застосунку і в ньому бракує якихось полів
+      tickets = data.tickets.map(t=>Object.assign(blankTicketObject(), t));
+      saveTickets();
+    }
+    if(hasShifts){
+      shifts = data.shifts;
+      saveShifts();
+    }
+    renderTicketsScreen();
+    renderShiftsScreen();
+    showToast('Дані з бекапу імпортовано');
+  }catch(err){
+    console.error('Помилка імпорту JSON:', err);
+    showToast('Не вдалося прочитати файл — перевірте, що це коректний JSON-бекап');
+  }
+}
+
 /* ---- Експорт для NotebookLM ---- */
 function openExportModal(){
   openModal('Експорт для NotebookLM', `
@@ -3120,6 +3195,13 @@ function bindSettingsScreen(){
   });
   document.getElementById('sendShiftsAllBtn').addEventListener('click', sendShiftsToCloud);
   document.getElementById('showScriptBtn').addEventListener('click', showAppsScriptModal);
+  document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
+  document.getElementById('importJsonBtn').addEventListener('click', ()=> document.getElementById('jsonImportInput').click());
+  document.getElementById('jsonImportInput').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    handleJsonImportFile(file);
+    e.target.value = ''; // щоб можна було обрати той самий файл повторно
+  });
   document.getElementById('exportBtn').addEventListener('click', openExportModal);
   document.getElementById('importBtn').addEventListener('click', openImportModal);
   document.getElementById('repairTicketsBtn').addEventListener('click', repairCorruptedTickets);
