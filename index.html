@@ -3882,7 +3882,7 @@ function blankTicketObject(){
     cables: getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter})), // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [],
-    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', synced:false,
+    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -4509,19 +4509,38 @@ function computeTotal(){
    відновлених з хмари, беремо текст напряму з textarea (щоб не перезаписати
    оригінальний опис порожніми даними калькулятора) — для решти рахуємо як
    раніше, через калькулятор. */
-/* Номер договору формується лише для підключень і лише один раз — щойно
-   призначений, він більше не перераховується (навіть якщо потім редагувати
-   заявку), інакше номери "поплили" б при кожному збереженні.
-   Формат: ДДММРРРРN<літери майстрів>, де N — порядковий номер
-   підключення за цей день. Літери йдуть у порядку списку майстрів
-   у Налаштуваннях (хто вище в списку — той раніше в номері), а не
-   в порядку, в якому натискали кнопки. */
+/* Номер договору формується лише для підключень. Якщо після першого
+   збереження дату або склад майстрів більше НЕ чіпали — номер лишається
+   тим самим (щоб не "плив" сам по собі при кожному редагуванні). Але якщо
+   виявили помилку і поправили дату чи майстра — номер перераховується під
+   нові дані, саме цього просив користувач.
+   Формат: ДДММРРРРN<літери майстрів>, де N — порядковий номер підключення
+   за цей день, літери — в порядку списку майстрів у Налаштуваннях. */
 function assignContractNumberIfNeeded(){
   if(calcState.type !== 'Підключення'){
     calcState.contractNumber = '';
+    calcState.contractNumberDate = '';
+    calcState.contractNumberMastersKey = '';
     return;
   }
-  if(calcState.contractNumber) return;
+  const currentMastersKey = (calcState.connectMasters||[]).map(m=>m.name).join('|');
+
+  if(calcState.contractNumber){
+    // Для заявок зі старих версій застосунку (де ще не зберігали "знімок"
+    // дати/майстрів на момент призначення номера) знімка немає — довіряємо
+    // наявному номеру й просто донаповнюємо знімок, без перерахунку.
+    const hasSnapshot = !!calcState.contractNumberDate;
+    const dateChanged = hasSnapshot && calcState.contractNumberDate !== calcState.date;
+    const mastersChanged = hasSnapshot && calcState.contractNumberMastersKey !== currentMastersKey;
+    if(!hasSnapshot || (!dateChanged && !mastersChanged)){
+      calcState.contractNumberDate = calcState.date;
+      calcState.contractNumberMastersKey = currentMastersKey;
+      return;
+    }
+    // дата чи майстри дійсно змінились відносно того, з чим формували номер
+    // раніше — перераховуємо нижче.
+  }
+
   const dateDigits = String(calcState.date||'').replace(/\./g,'');
   if(!dateDigits) return;
   const seq = tickets.filter(t=>
@@ -4535,6 +4554,8 @@ function assignContractNumberIfNeeded(){
     .map(m=>m.letter)
     .join('');
   calcState.contractNumber = `${dateDigits}-${seq}${letters}`;
+  calcState.contractNumberDate = calcState.date;
+  calcState.contractNumberMastersKey = currentMastersKey;
 }
 
 function getCurrentTicketText(){
