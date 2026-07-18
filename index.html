@@ -422,7 +422,13 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
           </div>
           <div class="field-row">
-            <div class="field"><label>Дата</label><input type="text" id="f_date" placeholder="ДД.ММ.РРРР"></div>
+            <div class="field">
+              <label>Дата</label>
+              <div style="position:relative;">
+                <input type="text" id="f_date" placeholder="ДД.ММ.РРРР" readonly style="cursor:pointer;">
+                <input type="date" id="f_dateNative" style="position:absolute; inset:0; width:100%; opacity:0; border:0; padding:0;">
+              </div>
+            </div>
             <div class="field"><label>Час</label><input type="text" id="f_time" placeholder="ГГ:ХХ"></div>
           </div>
         </div>
@@ -3091,6 +3097,11 @@ var qrcode = function() {
     return qrcode;
 }));
 
+/* Без цього рядка кирилиця в QR (адреса, логін/пароль, текст договору) кодується
+   побайтово і псується — сканери або не читають код, або читають "кашу".
+   Вмикаємо вбудований у бібліотеку UTF-8 кодувальник замість дефолтного. */
+qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+
 </script>
 <script>
 /* =====================================================================
@@ -3318,6 +3329,20 @@ function shiftDate(str, days){
   d.setDate(d.getDate()+days);
   return formatDate(d);
 }
+/* Конвертація для нативного календаря (<input type="date"> працює лише з ISO РРРР-ММ-ДД,
+   а весь застосунок і Google-таблиця зберігають дату як ДД.ММ.РРРР — тому синхронізуємо обидва поля разом). */
+function ddmmyyyyToIso(s){
+  const m = String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+function isoToDdmmyyyy(iso){
+  const m = String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+}
+function setDateFieldValue(ddmmyyyy){
+  document.getElementById('f_date').value = ddmmyyyy || '';
+  document.getElementById('f_dateNative').value = ddmmyyyyToIso(ddmmyyyy);
+}
 function isSameMonth(dateStr, refDate){
   const d = parseDate(dateStr);
   return d.getMonth()===refDate.getMonth() && d.getFullYear()===refDate.getFullYear();
@@ -3349,6 +3374,79 @@ function openModal(title, bodyHtml, opts={}){
   document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
 }
+/* ---------- Історія абонента (пошук збігів по телефону/адресі/MAC) ---------- */
+function normalizePhoneKey(raw){
+  if(!raw) return '';
+  const digits = String(raw).replace(/\D/g,'');
+  if(!digits) return '';
+  // Порівнюємо останні 9 цифр — так номери з +380, з 0 на початку чи
+  // без коду країни однаково зводяться до одного ключа.
+  return digits.slice(-9);
+}
+function normalizeAddressKey(t){
+  const raw = [t.city, t.address, t.street, t.house, t.apartment].filter(Boolean).join(' ');
+  if(!raw) return '';
+  // \b у JS не працює з кирилицею (вона не входить у \w), тому прибираємо
+  // службові слова токен за токеном, а не через word-boundary regex.
+  const stop = new Set(['м','місто','вул','вулиця','буд','будинок','кв','квартира','б','просп','проспект']);
+  return raw.toLowerCase()
+    .replace(/[.,№]/g,' ')
+    .split(/\s+/)
+    .filter(tok => tok && !stop.has(tok))
+    .join('');
+}
+function findAbonentMatches(t){
+  const phoneKey = normalizePhoneKey(t.phone);
+  const addrKey = normalizeAddressKey(t);
+  const macKey = normalizeMac(t.macAddress);
+  if(!phoneKey && !addrKey && !macKey) return [];
+  const matches = [];
+  tickets.forEach(other=>{
+    if(String(other.id) === String(t.id)) return;
+    const reasons = [];
+    if(phoneKey && normalizePhoneKey(other.phone) === phoneKey) reasons.push('телефон');
+    if(addrKey && normalizeAddressKey(other) === addrKey) reasons.push('адреса');
+    if(macKey && normalizeMac(other.macAddress) === macKey) reasons.push('MAC ONU');
+    if(reasons.length) matches.push({ticket:other, reasons});
+  });
+  matches.sort((a,b)=> `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`));
+  return matches;
+}
+function showAbonentHistory(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  const matches = findAbonentMatches(t);
+  if(!matches.length){
+    showToast('Збігів не знайдено — це перша заявка для цього абонента');
+    return;
+  }
+  const itemsHtml = matches.map(m=>{
+    const o = m.ticket;
+    const address = [o.city, o.address].filter(Boolean).join(', ') || '—';
+    const badges = m.reasons.map(r=>`<span class="chip" style="pointer-events:none;">${escapeHtml(r)}</span>`).join(' ');
+    return `
+      <div class="card" style="margin-bottom:10px; padding:12px 14px;">
+        <div class="row between" style="margin-bottom:4px;">
+          <strong>${escapeHtml(o.date||'')} ${escapeHtml(o.time||'')}</strong>
+          <span style="font-size:12.5px; color:var(--text-dim);">${escapeHtml(o.type||'')}</span>
+        </div>
+        <div style="font-size:13.5px; margin-bottom:2px;">📍 ${escapeHtml(address)}</div>
+        ${o.macAddress ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">MAC: ${escapeHtml(o.macAddress)}</div>` : ''}
+        ${o.sum ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:6px;">Сума: ${escapeHtml(String(o.sum))} грн</div>` : ''}
+        <div class="row wrap" style="gap:4px; margin-bottom:6px;">${badges}</div>
+        <button type="button" class="btn btn-sm btn-block open-history-ticket-btn" data-id="${o.id}">Відкрити заявку</button>
+      </div>`;
+  }).join('');
+  openModal(`Історія абонента (${matches.length})`, `<div>${itemsHtml}</div>`, {onOpen: (rootEl)=>{
+    rootEl.querySelectorAll('.open-history-ticket-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        closeModal();
+        editTicket(btn.dataset.id);
+      });
+    });
+  }});
+}
+
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 
 /* ---------- Візитка (QR на контакти диспетчера) ---------- */
@@ -3875,9 +3973,10 @@ function renderTicketCard(t){
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       ${geoBtn}
-      <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤</button>
-      <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄</button>
-      <button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜</button>
+      <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
+      <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
+      <button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>
+      <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
   </div>`;
@@ -4174,7 +4273,7 @@ function fillFormFromState(){
   document.getElementById('f_mac').value = calcState.macAddress || '';
   document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
   updateCredParsedHint();
-  document.getElementById('f_date').value = calcState.date || '';
+  setDateFieldValue(calcState.date || '');
   document.getElementById('f_time').value = calcState.time || '';
   document.getElementById('f_callFee').value = calcState.callFee || 0;
   document.getElementById('f_tariff').value = calcState.tariff || 0;
@@ -5387,7 +5486,7 @@ function bindTabBar(){
       if(tab==='calculator' && editingTicketId===null && !calcState.address && !calcState.clientName){
         // якщо форма порожня — підставляємо поточну дату реєстру
         calcState.date = currentTicketDate;
-        document.getElementById('f_date').value = calcState.date;
+        setDateFieldValue(calcState.date);
       }
       switchTab(tab);
     });
@@ -5491,6 +5590,7 @@ function bindTicketsScreen(){
     const shareBtn = e.target.closest('.share-ticket-btn');
     const copyBtn  = e.target.closest('.copy-ticket-btn');
     const dgBtn    = e.target.closest('.contract-ticket-btn');
+    const histBtn  = e.target.closest('.history-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
     if(editBtn)  editTicket(editBtn.dataset.id);
@@ -5498,6 +5598,7 @@ function bindTicketsScreen(){
     if(shareBtn) shareTicket(shareBtn.dataset.id);
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
+    if(histBtn)  showAbonentHistory(histBtn.dataset.id);
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;
@@ -5624,6 +5725,10 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
   });
   if(!('BarcodeDetector' in window)) document.getElementById('macScanBtn').classList.add('hidden');
   document.getElementById('f_credRaw').addEventListener('input', updateCredParsedHint);
+  document.getElementById('f_dateNative').addEventListener('change', e=>{
+    const ddmmyyyy = isoToDdmmyyyy(e.target.value);
+    if(ddmmyyyy) document.getElementById('f_date').value = ddmmyyyy;
+  });
   document.getElementById('geoBtn').addEventListener('click', handleGeoBtn);
   document.getElementById('geoClearBtn').addEventListener('click', ()=>{ setGeoLink(''); showToast('Геолокацію видалено'); });
 
