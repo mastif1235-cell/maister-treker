@@ -3909,6 +3909,17 @@ function parseBackupNote(note){
 function ticketsForDate(dateStr){
   return tickets.filter(t=>t.date===dateStr).sort((a,b)=> (a.time||'').localeCompare(b.time||''));
 }
+/* Ключ для сортування заявок за датою+часом (а не за порядком створення) —
+   потрібен у пошуку й фільтрі за тегами, де на екрані одразу заявки з
+   різних дат: заявка, створена заднім чи майбутнім числом, має ставати на
+   своє місце серед дат, а не вилазити нагору лише тому, що її щойно
+   створили. */
+function ticketSortKey(t){
+  const d = parseDate(t.date);
+  const m = String(t.time||'').match(/^(\d{1,2}):(\d{2})/);
+  const minutes = m ? (Number(m[1])*60 + Number(m[2])) : 0;
+  return d.getTime() + minutes*60000;
+}
 
 function renderTicketsScreen(){
   document.getElementById('currentDateDisplay').textContent = currentTicketDate;
@@ -3984,11 +3995,11 @@ function renderMainTicketList(){
       (t.city||'').toLowerCase().includes(q) ||
       (t.address||'').toLowerCase().includes(q) ||
       (t.clientName||'').toLowerCase().includes(q)
-    ).sort((a,b)=> b.id - a.id);
+    ).sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
     document.getElementById('modeSummaryText').textContent = `Знайдено: ${list.length} заявок`;
   } else if(activeFilterTags.size>0){
     list = tickets.filter(t => (t.tags||[]).some(tag=>activeFilterTags.has(tag)))
-      .sort((a,b)=> b.id - a.id);
+      .sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
     document.getElementById('modeSummaryText').textContent = `За тегами (${[...activeFilterTags].join(', ')}): ${list.length}`;
   } else {
     list = ticketsForDate(currentTicketDate);
