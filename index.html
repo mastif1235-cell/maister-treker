@@ -5658,12 +5658,23 @@ function sortExistingTicketsNow() {
 
 // переводить "ГГ:ХХ" у мілісекунди для порівняння в межах однієї доби
 function timeToMs(t) {
+  if (t instanceof Date) {
+    return (t.getHours() * 60 + t.getMinutes()) * 60000;
+  }
   var m = String(t || '').match(/^(\\d{1,2}):(\\d{2})/);
   if (!m) return 0;
   return (Number(m[1]) * 60 + Number(m[2])) * 60000;
 }
 
 function parseDdMmYyyy(s) {
+  // Деякі клітинки Google Таблиця могла зберегти як справжню дату (тип
+  // Date), а не текст — навіть якщо колонці задано текстовий формат: формат
+  // не перетворює заднім числом уже наявне значення. Якщо це не врахувати,
+  // такий рядок не парситься, отримує "нульовий" ключ сортування і
+  // провалюється в самий низ (чи випадково опиняється не на своєму місці).
+  if (s instanceof Date) {
+    return isNaN(s.getTime()) ? null : new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  }
   var parts = String(s || '').split('.');
   if (parts.length !== 3) return null;
   var d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
