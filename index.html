@@ -58,6 +58,13 @@ button,input,select,textarea{font-family:inherit;color:inherit;}
 .sync-dot.err{background:var(--danger);}
 .mini-spinner{display:inline-block; width:11px; height:11px; border:2px solid var(--text-faint); border-top-color:var(--accent); border-radius:50%; animation:mini-spin .7s linear infinite; vertical-align:middle; margin-right:5px;}
 @keyframes mini-spin{to{transform:rotate(360deg);}}
+/* NEW: акордеон-секції калькулятора (Обладнання/Кабелі/Роботи/Додаткові роботи/Теги) —
+   згорнуті категорії замість суцільної "простирадла" полів */
+.acc-card > summary{cursor:pointer; font-size:13.5px; font-weight:600; list-style:none; display:flex; align-items:center; gap:6px;}
+.acc-card > summary::-webkit-details-marker{display:none;}
+.acc-summary{color:var(--text-dim); font-weight:400; font-size:12.5px; margin-left:auto;}
+.acc-chevron{display:inline-block; transition:transform .15s ease; color:var(--text-dim); font-size:11px;}
+.acc-card[open] > summary .acc-chevron{transform:rotate(180deg);}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 
 main.screens{flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; position:relative;}
@@ -253,6 +260,25 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 .modal-close{background:none; border:none; font-size:22px; color:var(--text-dim); padding:4px 8px;}
 .report-text{white-space:pre-wrap; font-family:var(--mono); font-size:12.5px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; max-height:40vh; overflow-y:auto;}
 
+/* ===== Договір / Візитка QR ===== */
+.qr-wrap{display:flex; flex-direction:column; align-items:center; gap:12px; padding:8px 0 4px;}
+.qr-wrap img{width:220px; height:220px; border-radius:12px; background:#fff; padding:10px;}
+.qr-hint{font-size:12.5px; color:var(--text-dim); text-align:center;}
+
+.dogovor-card{background:var(--surface); border-radius:14px; padding:4px 2px;}
+.dg-title{font-size:19px; font-weight:800; color:var(--accent); text-align:center; margin-bottom:2px;}
+.dg-date{text-align:center; font-size:13px; color:var(--text-dim);}
+.dg-site{text-align:center; font-size:15px; font-weight:700; color:var(--accent); margin-top:2px;}
+.dg-sep{border:none; border-top:1px solid var(--border); margin:14px 0;}
+.dg-label{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-dim); margin-bottom:2px;}
+.dg-value{font-size:16px; font-weight:700; margin-bottom:12px;}
+.dg-cabinet{background:var(--surface-2); border-radius:12px; padding:12px 14px; margin-bottom:12px;}
+.dg-cabinet .dg-label{margin-top:8px;}
+.dg-cabinet .dg-label:first-child{margin-top:0;}
+.dg-account{border:2px solid var(--accent); border-radius:12px; text-align:center; padding:12px; font-size:22px; font-weight:800; color:var(--accent); margin-bottom:14px;}
+.dg-contacts{font-size:14px; line-height:1.6;}
+.dg-schedule{background:var(--surface-2); border-radius:12px; padding:10px 14px; margin-top:10px; font-size:13.5px; line-height:1.6;}
+
 .toast{
   position:fixed; left:50%; bottom:calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom,0px));
   transform:translateX(-50%); background:var(--surface-3); color:var(--text); padding:10px 16px;
@@ -318,9 +344,15 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
       <div id="ticketList" class="ticket-list"></div>
 
-      <div class="row wrap" style="margin:14px 0 70px;">
+      <div class="row wrap" style="margin:14px 0 10px;">
         <button type="button" class="btn" id="copyDayBtn" style="flex:1 1 45%;">📄 Копіювати за день</button>
         <button type="button" class="btn" id="shareDayBtn" style="flex:1 1 45%;">📤 Надіслати за день</button>
+      </div>
+
+      <div class="card" style="margin-bottom:70px;">
+        <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">💳 Візитка LNET</strong></div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">QR-код на контакти диспетчера — покажіть абоненту, щоб він відсканував і зберіг номери.</div>
+        <button type="button" class="btn btn-block" id="showVizitkaBtn">📇 Показати QR-візитку</button>
       </div>
 
       <button type="button" class="fab" id="addTicketFab">＋ Заявка</button>
@@ -412,6 +444,15 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
         </div>
 
+        <div class="card" id="calcCredCard">
+          <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">🔑 Особистий кабінет (для договору)</strong></div>
+          <div class="field">
+            <label>Логін і пароль <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(вставте як прислав диспетчер — окремими рядками, перший рядок логін, другий пароль)</span></label>
+            <textarea id="f_credRaw" placeholder="90368&#10;88334290" style="min-height:56px;" autocomplete="off"></textarea>
+            <div id="credParsedHint" class="qr-hint" style="text-align:left; margin-top:4px;"></div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">Фото</strong></div>
           <div class="photo-zone">
@@ -425,7 +466,6 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
 
         <div id="calcPricingBlocks">
-        <div class="screen-section-title">Вартість послуг</div>
         <div class="card">
           <div class="field-row">
             <div class="field"><label id="callFeeLabel">Виклик, грн</label><input type="number" id="f_callFee" min="0" value="0"></div>
@@ -433,40 +473,33 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
         </div>
 
-        <div class="screen-section-title">Обладнання</div>
-        <div class="card" id="equipmentList"></div>
+        <details class="card acc-card">
+          <summary>📦 Обладнання <span id="equipmentSummary" class="acc-summary"></span><span class="acc-chevron">▾</span></summary>
+          <div id="equipmentList" style="margin-top:10px;"></div>
+        </details>
 
-        <div class="screen-section-title">Кабелі</div>
-        <div class="card">
-          <div class="cab-row">
-            <span class="cab-label">UTP</span>
-            <input type="number" id="f_utpMeters" placeholder="метри" min="0" value="0">
-            <span class="cab-x">м ×</span>
-            <input type="number" id="f_utpPrice" placeholder="грн/м" min="0" value="0">
-          </div>
-          <div class="cab-row">
-            <span class="cab-label">Оптика</span>
-            <input type="number" id="f_opticMeters" placeholder="метри" min="0" value="0">
-            <span class="cab-x">м ×</span>
-            <input type="number" id="f_opticPrice" placeholder="грн/м" min="0" value="0">
-          </div>
-        </div>
+        <details class="card acc-card">
+          <summary>🔌 Кабелі <span id="cablesSummary" class="acc-summary"></span><span class="acc-chevron">▾</span></summary>
+          <div id="cablesList" style="margin-top:10px;"></div>
+        </details>
 
-        <details class="card">
-          <summary style="cursor:pointer; font-size:13.5px; font-weight:600; list-style:none;">🔧 Роботи з переліку <span id="presetWorksSummary" style="color:var(--text-dim); font-weight:400;"></span></summary>
+        <details class="card acc-card">
+          <summary>🔧 Роботи з переліку <span id="presetWorksSummary" class="acc-summary"></span><span class="acc-chevron">▾</span></summary>
           <div id="presetWorksList" style="margin-top:10px;"></div>
         </details>
 
-        <div class="screen-section-title">Додаткові роботи</div>
-        <div class="card">
-          <div id="additionalWorkList"></div>
-          <button type="button" class="btn btn-sm" id="addWorkBtn">+ Додати роботу</button>
-        </div>
+        <details class="card acc-card">
+          <summary>➕ Додаткові роботи <span id="additionalWorkSummary" class="acc-summary"></span><span class="acc-chevron">▾</span></summary>
+          <div style="margin-top:10px;">
+            <div id="additionalWorkList"></div>
+            <button type="button" class="btn btn-sm" id="addWorkBtn">+ Додати роботу</button>
+          </div>
+        </details>
         </div>
 
-        <div class="screen-section-title">Теги</div>
-        <div class="card">
-          <div class="row wrap" id="calcTagChips"></div>
+        <div class="card" id="calcTagsWrap">
+          <div class="row between" style="margin-bottom:2px;"><strong style="font-size:13.5px;">🏷️ Теги</strong><span id="tagsSummary" class="acc-summary"></span></div>
+          <div class="row wrap" id="calcTagChips" style="margin-top:10px;"></div>
         </div>
 
         <div class="card">
@@ -562,37 +595,44 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
     <!-- ===================== ЕКРАН: НАЛАШТУВАННЯ ===================== -->
     <section id="screen-settings" class="screen">
 
-      <div class="screen-section-title">Теги</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Теги <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div class="tag-mgmt-list" id="tagMgmtList"></div>
         <div class="row">
           <input type="text" id="newTagInput" placeholder="Новий тег">
           <button class="btn btn-icon" id="addTagBtn">+</button>
         </div>
         <button class="btn btn-sm btn-ghost" id="resetTagsBtn" style="margin-top:10px;">Скинути до стандартних</button>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Міста</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Міста <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Список для підказок при введенні міста в калькуляторі. Вводити вручну все одно можна — підказки лише допомагають.</div>
         <div class="tag-mgmt-list" id="cityMgmtList"></div>
         <div class="row">
           <input type="text" id="newCityInput" placeholder="Нове місто">
           <button class="btn btn-icon" id="addCityBtn">+</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Напарники</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Напарники <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div class="cw-mgmt-list" id="cwMgmtList"></div>
         <div class="row">
           <input type="text" id="newCwInput" placeholder="Ім'я напарника">
           <button class="btn btn-icon" id="addCwBtn">+</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Матеріали (обладнання в калькуляторі)</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Матеріали (обладнання в калькуляторі) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Назва та ціна за замовчуванням. Ціну можна змінити в калькуляторі.</div>
         <div id="matMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
         <div class="row" style="gap:8px;">
@@ -600,10 +640,12 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <input type="number" id="newMatPrice" placeholder="Ціна" min="0" style="flex:1;">
           <button class="btn btn-icon" id="addMatBtn">+</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Роботи з переліку (калькулятор)</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Роботи з переліку (калькулятор) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Назва та ціна за замовчуванням для розгортаючогося списку робіт. Кількість і ціну можна змінити прямо в заявці.</div>
         <div id="workMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
         <div class="row" style="gap:8px;">
@@ -611,23 +653,40 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <input type="number" id="newWorkPrice" placeholder="Ціна" min="0" style="flex:1;">
           <button class="btn btn-icon" id="addWorkTypeBtn">+</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Кабелі за замовчуванням</div>
-      <div class="card">
-        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Ця ціна сама підставиться в заявку, коли вводите метри — якщо кабель по іншій ціні, просто зміните число в самій заявці.</div>
+      <details class="card acc-card">
+        <summary>Типи кабелів (калькулятор) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Назва і ціна за метр за замовчуванням. Додайте свій тип кабелю (наприклад, вуличний), якщо потрібно — з'явиться в заявці поряд з UTP і Оптикою. Ціну можна змінити прямо в заявці.</div>
+        <div id="cableMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+        <div class="row" style="gap:8px;">
+          <input type="text" id="newCableName" placeholder="Назва (напр. Вуличний)" style="flex:2;">
+          <input type="number" id="newCablePrice" placeholder="Грн/м" min="0" style="flex:1;">
+          <button class="btn btn-icon" id="addCableBtn">+</button>
+        </div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
+        <summary>Ціни за замовчуванням <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Підставляється автоматично при виборі типу заявки — якщо цього разу інша ціна, просто зміните число в самій заявці.</div>
         <div class="settings-row">
-          <div><div class="sr-title">UTP, грн/м</div></div>
-          <input type="number" id="utpPriceDefaultInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
+          <div><div class="sr-title">Підключення, грн</div></div>
+          <input type="number" id="defaultConnectFeeInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
         <div class="settings-row">
-          <div><div class="sr-title">Оптика, грн/м</div></div>
-          <input type="number" id="opticPriceDefaultInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
+          <div><div class="sr-title">Виклик (ремонт), грн</div></div>
+          <input type="number" id="defaultRepairCallFeeInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Параметри</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Параметри <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div class="settings-row">
           <div><div class="sr-title">Ставка, грн/год</div></div>
           <input type="number" id="hourlyRateInput" style="width:100px; min-height:38px; padding:6px 10px;">
@@ -639,10 +698,23 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
           <label class="switch"><input type="checkbox" id="themeSwitch"><span class="track"><span class="thumb"></span></span></label>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Синхронізація — Заявки</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Візитка та договір <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Посилання на візитку LNET (сторінка з контактами диспетчера) — вставте сюди URL вашого вже опублікованого сайту-візитки. За цим посиланням формуватиметься QR-код у вкладці «Заявки».</div>
+        <div class="field">
+          <label>URL візитки</label>
+          <input type="text" id="vizitkaUrlInput" placeholder="https://your-vizitka.netlify.app">
+        </div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
+        <summary>Синхронізація — Заявки <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div class="field">
           <label>URL Apps Script для заявок</label>
           <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
@@ -665,10 +737,12 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
           <button type="button" class="btn btn-sm" id="showScriptBtn">📋 Показати код Apps Script</button>
         </details>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Синхронізація — Зміни (окремий файл)</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Синхронізація — Зміни (окремий файл) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">
           Необов'язково. Якщо залишити порожнім — зміни будуть синхронізуватися в ту саму таблицю, що й заявки.
           <br><br>
@@ -685,10 +759,12 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <button class="btn" id="sendShiftsAllBtn">⬆️ Відправити всі зміни</button>
           <button class="btn btn-accent btn-block" id="restoreShiftsCloudBtn" style="margin-top:8px;">🔄 Відновити зміни з таблиці</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="screen-section-title">Дані</div>
-      <div class="card">
+      <details class="card acc-card">
+        <summary>Дані <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
         <button class="btn btn-block" id="exportJsonBtn" style="margin-bottom:10px;">💾 Експорт у JSON (повний бекап)</button>
         <button class="btn btn-block" id="importJsonBtn" style="margin-bottom:10px;">📤 Імпорт із JSON</button>
         <input type="file" id="jsonImportInput" accept=".json,application/json" class="hidden">
@@ -698,7 +774,8 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         <button class="btn btn-block" id="dedupTicketsBtn" style="margin-bottom:10px;">🧹 Видалити дублікати заявок</button>
         <button class="btn btn-block" id="restoreBackupBtn" style="margin-bottom:10px;">♻️ Відновити з автобекапу</button>
         <button class="btn btn-danger btn-block" id="clearAllBtn">🗑️ Очистити всю базу</button>
-      </div>
+        </div>
+      </details>
 
     </section>
 
@@ -714,6 +791,2307 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
+<script>
+/* QR Code generator (kazuhikoarase/qrcode-generator, MIT license) — embedded for offline use */
+//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+
+</script>
 <script>
 /* =====================================================================
    МАЙСТЕР-ТРЕКЕР — основний скрипт
@@ -746,14 +3124,31 @@ const DEFAULT_WORK_TYPES = [
 function getEquipmentConfig(){ return (settings && settings.materials) ? settings.materials : DEFAULT_MATERIALS; }
 function getWorkTypesConfig(){ return (settings && settings.workTypes) ? settings.workTypes : DEFAULT_WORK_TYPES; }
 
+const DEFAULT_CABLE_TYPES = [
+  {id:'utp',   label:'UTP',    pricePerMeter:7},
+  {id:'optic', label:'Оптика', pricePerMeter:9},
+];
+// CABLE_TYPES_CONFIG тепер береться з settings.cableTypes (редагується в Налаштуваннях) —
+// можна додати свій тип кабелю (наприклад, вуличний), а не лише UTP/Оптику
+function getCableTypesConfig(){ return (settings && settings.cableTypes && settings.cableTypes.length) ? settings.cableTypes : DEFAULT_CABLE_TYPES; }
+
 function loadJSON(key, fallback){
   try{ const v = JSON.parse(localStorage.getItem(key)); return (v===null||v===undefined) ? fallback : v; }
   catch(e){ return fallback; }
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), utpPriceDefault:7, opticPriceDefault:9};
-  return s ? Object.assign(base, s) : base;
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, vizitkaUrl:'https://on-b6a966.netlify.app'};
+  const merged = s ? Object.assign(base, s) : base;
+  // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
+  // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
+  if(s && !s.cableTypes && (s.utpPriceDefault!==undefined || s.opticPriceDefault!==undefined)){
+    merged.cableTypes = [
+      {id:'utp',   label:'UTP',    pricePerMeter: Number(s.utpPriceDefault)||7},
+      {id:'optic', label:'Оптика', pricePerMeter: Number(s.opticPriceDefault)||9},
+    ];
+  }
+  return merged;
 }
 
 let settings = loadSettings();
@@ -770,6 +3165,7 @@ let activeFilterTags = new Set();
 
 let calcState = blankCalcState();
 let editingTicketId = null;
+let feeIsAutoDefault = true; // NEW: поки true — ціну виклику/підключення можна автоматично підставити при зміні типу заявки; false — майстер вже ввів своє значення вручну, чіпати не можна
 
 let coworkerSelection = new Set(['Сам']);
 
@@ -955,6 +3351,132 @@ function openModal(title, bodyHtml, opts={}){
 }
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 
+/* ---------- Візитка (QR на контакти диспетчера) ---------- */
+function showVizitka(){
+  const url = (settings.vizitkaUrl || '').trim();
+  if(!url){ showToast('Спершу вкажіть URL візитки в Налаштуваннях'); return; }
+  let dataUrl = '';
+  try{
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    dataUrl = qr.createDataURL(6, 8);
+  }catch(e){ showToast('Не вдалося згенерувати QR-код'); return; }
+  openModal('Візитка LNET', `
+    <div class="qr-wrap">
+      <img src="${dataUrl}" alt="QR візитка">
+      <div class="qr-hint">Дайте абоненту відсканувати камерою — відкриється сторінка з контактами диспетчера: натискання на телефон відкриє дзвінок, на Viber — Viber, на пошту — лист.</div>
+      <button type="button" class="btn btn-block" id="openVizitkaLinkBtn">🔗 Відкрити посилання</button>
+    </div>
+  `, {onOpen: ()=>{
+    document.getElementById('openVizitkaLinkBtn').onclick = ()=> window.open(url, '_blank');
+  }});
+}
+
+/* ---------- Договір (картка абонента) ---------- */
+const LNET_CONTACTS = {
+  phone: '+380 (67) 568-20-22',
+  viber: '+380 (73) 568-20-22 (Viber)',
+  site: 'lnet.com.ua',
+  schedule: 'Пн — Пт: 09:00 — 18:00\nСб: 09:00 — 16:00\nНд: Вихідний'
+};
+const UA_MONTHS = ['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];
+function formatUaDate(d){ return `${d.getDate()} ${UA_MONTHS[d.getMonth()]} ${d.getFullYear()} р.`; }
+
+function showDogovor(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  if(!t.login && !t.password){
+    if(!confirm('У цій заявці ще не вказано логін і пароль (додайте їх у калькуляторі при редагуванні заявки). Сформувати договір без них?')) return;
+  }
+  const address = [t.city, t.address].filter(Boolean).join(', ') || '—';
+  const login = t.login || '—';
+  const password = t.password || '—';
+  const text = buildDogovorText(address, login, password);
+  // QR-код з тими самими даними вшитий прямо в картку — якщо майстер надішле
+  // картку скріншотом чи роздрукує, абонент однаково зможе відсканувати код.
+  let qrDataUrl = '';
+  try{
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    qrDataUrl = qr.createDataURL(4, 8);
+  }catch(e){ /* текст задовгий для QR — картку показуємо і без коду */ }
+  const body = `
+    <div class="dogovor-card">
+      <div class="dg-title">LNET — інтернет-провайдер</div>
+      <div class="dg-date">${escapeHtml(formatUaDate(new Date()))}</div>
+      <div class="dg-site">${escapeHtml(LNET_CONTACTS.site)}</div>
+      <hr class="dg-sep">
+      <div class="dg-label">Адреса підключення:</div>
+      <div class="dg-value">${escapeHtml(address)}</div>
+      <div class="dg-cabinet">
+        <div class="dg-label">Логін:</div>
+        <div class="dg-value" style="margin-bottom:0;">${escapeHtml(login)}</div>
+        <div class="dg-label">Пароль:</div>
+        <div class="dg-value" style="margin-bottom:0;">${escapeHtml(password)}</div>
+      </div>
+      <div class="dg-label" style="text-align:center;">Особистий рахунок:</div>
+      <div class="dg-account">${escapeHtml(login)}</div>
+      <div class="dg-label">Сайт:</div>
+      <div class="dg-value">${escapeHtml(LNET_CONTACTS.site)}</div>
+      <hr class="dg-sep">
+      <div class="dg-contacts">
+        <strong>Контакти:</strong><br>
+        ${escapeHtml(LNET_CONTACTS.phone)}<br>
+        ${escapeHtml(LNET_CONTACTS.viber)}
+      </div>
+      <div class="dg-schedule">
+        <strong>Графік роботи:</strong><br>
+        ${escapeHtml(LNET_CONTACTS.schedule).replace(/\n/g,'<br>')}
+      </div>
+      ${qrDataUrl ? `
+      <div class="qr-wrap" style="margin-top:14px;">
+        <img src="${qrDataUrl}" alt="QR договору" style="width:160px; height:160px;">
+        <div class="qr-hint">QR-код з цими даними — залишається на картці, навіть якщо її зберегти як фото чи роздрукувати</div>
+      </div>` : ''}
+    </div>
+    <div class="row wrap" style="margin-top:14px;">
+      <button type="button" class="btn" style="flex:1;" id="copyDogovorBtn">📄 Копіювати текст</button>
+      <button type="button" class="btn" style="flex:1;" id="shareDogovorBtn">📤 Поділитися</button>
+    </div>
+  `;
+  openModal('Договір', body, {onOpen: ()=>{
+    document.getElementById('copyDogovorBtn').onclick = async ()=>{
+      try{ await navigator.clipboard.writeText(text); showToast('Скопійовано'); }
+      catch(e){ showToast('Не вдалося скопіювати'); }
+    };
+    document.getElementById('shareDogovorBtn').onclick = async ()=>{
+      if(navigator.share){ try{ await navigator.share({title:'Договір LNET', text}); }catch(e){} }
+      else showToast('Поділитися не підтримується цим браузером');
+    };
+  }});
+}
+
+function buildDogovorText(address, login, password){
+  return [
+    'LNET — інтернет-провайдер',
+    formatUaDate(new Date()),
+    LNET_CONTACTS.site,
+    '',
+    `Адреса підключення: ${address}`,
+    '',
+    'Особистий кабінет:',
+    `Логін: ${login}`,
+    `Пароль: ${password}`,
+    '',
+    `Особистий рахунок: ${login}`,
+    `Сайт: ${LNET_CONTACTS.site}`,
+    '',
+    'Контакти:',
+    LNET_CONTACTS.phone,
+    LNET_CONTACTS.viber,
+    '',
+    'Графік роботи:',
+    LNET_CONTACTS.schedule
+  ].join('\n');
+}
+
 /* ---------- 2. Синхронізація з Google Sheets ----------
    Заявки завжди йдуть на settings.scriptUrl.
    Зміни йдуть на settings.shiftsScriptUrl, якщо він заданий (окрема таблиця/Excel-файл),
@@ -975,39 +3497,25 @@ async function postToUrl(url, action, payload){
   if(!url) return false; // синхронізація не налаштована для цього типу даних — працюємо лише локально
   setSyncState('syncing');
   const body = JSON.stringify(Object.assign({action}, payload));
+  // ВІДКАТ: пробували спочатку звичайний (без no-cors) запит, щоб читати
+  // справжню відповідь сервера — але на практиці Apps Script блокує CORS для
+  // POST (через свій редірект), тож перша спроба щоразу падала і йшла друга
+  // (no-cors) — тобто кожне збереження виконувалось на сервері ДВІЧІ
+  // (включно з повторним пересортуванням всього листа), звідси й затримка.
+  // Повертаємось до одного надійного no-cors запиту.
   try{
-    // NEW: спочатку пробуємо звичайний запит (без no-cors), щоб реально
-    // прочитати відповідь сервера — тоді видно СПРАВЖНІЙ результат
-    // (наприклад, якщо Apps Script впав з помилкою), а не просто "мережа не впала".
-    const res = await fetch(url, {
+    await fetch(url, {
       method:'POST',
+      mode:'no-cors', // Apps Script + no-cors: запит «глухий», відповідь прочитати не можна
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body
     });
-    const data = await res.json();
-    const ok = !!(data && data.status === 'ok');
-    setSyncState(ok ? 'ok' : 'err');
-    if(!ok) console.error('Сервер повернув помилку синхронізації:', data && data.message);
-    return ok;
+    setSyncState('ok');
+    return true;
   }catch(err){
-    // NEW: якщо звичайний запит заблоковано (наприклад, Apps Script не
-    // віддає CORS-заголовки для POST через свій редірект) — підстраховуємось
-    // старим "глухим" способом no-cors, щоб синхронізація не зламалась там,
-    // де раніше працювала.
-    try{
-      await fetch(url, {
-        method:'POST',
-        mode:'no-cors',
-        headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body
-      });
-      setSyncState('ok');
-      return true;
-    }catch(err2){
-      console.error('Помилка синхронізації:', err2);
-      setSyncState('err');
-      return false;
-    }
+    console.error('Помилка синхронізації:', err);
+    setSyncState('err');
+    return false;
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
@@ -1062,6 +3570,8 @@ function ticketToSyncPayload(t){
   const backupExtra = [];
   if(t.geoLink) backupExtra.push(`Геолокація: ${t.geoLink}`);
   if(t.masterNote) backupExtra.push(`Приватна примітка майстра: ${t.masterNote}`);
+  if(t.login) backupExtra.push(`Логін: ${t.login}`);
+  if(t.password) backupExtra.push(`Пароль: ${t.password}`);
   return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n')};
 }
 function shiftToSyncPayload(s){
@@ -1089,6 +3599,8 @@ async function loadFromCloud(){
           photo: null,
           geoLink: extra.geoLink,       // NEW
           masterNote: extra.masterNote, // NEW
+          login: extra.login,           // NEW
+          password: extra.password,     // NEW
           synced: true,       // NEW: дані щойно прийшли з хмари — вже синхронізовані, повторно надсилати не треба
           cloudImported: true // NEW: увімкне режим сирого редагування тексту при відкритті заявки
         });
@@ -1187,11 +3699,15 @@ async function sendShiftsToCloud(){
 /* ---------- 3. Навігація між вкладками ---------- */
 const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулятор', shifts:'Зміни', settings:'Налаштування'};
 function switchTab(tab){
+  // NEW: якщо вкладка вже й так активна — не скидаємо скрол. Це прибирає
+  // ефект "улетів на початок форми", який траплявся, якщо щось під час
+  // заповнення заявки повторно викликало перемикання на ту саму вкладку.
+  const alreadyActive = document.getElementById('screen-'+tab).classList.contains('active');
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+tab).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('screenTitle').textContent = SCREEN_TITLES[tab];
-  document.querySelector('main.screens').scrollTop = 0;
+  if(!alreadyActive) document.querySelector('main.screens').scrollTop = 0;
 }
 
 /* ---------- 4. Екран «Заявки» ---------- */
@@ -1201,10 +3717,10 @@ function blankTicketObject(){
     type:'Підключення', city:'', address:'', clientName:'', phone:'',
     callFee:0, tariff:0,
     equipment: getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false})),
-    utpMeters:0, utpPrice:0, opticMeters:0, opticPrice:0,
+    cables: getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter})), // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [],
-    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', synced:false,
+    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', synced:false,
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -1213,13 +3729,17 @@ function blankTicketObject(){
    повертає таблиця для кожної заявки, і дістає з нього геолокацію та
    приватну примітку майстра — щоб відновити їх при завантаженні з хмари. */
 function parseBackupNote(note){
-  const result = {geoLink:'', masterNote:''};
+  const result = {geoLink:'', masterNote:'', login:'', password:''};
   if(!note) return result;
   String(note).split('\n').forEach(line=>{
     const geoMatch = line.match(/^Геолокація:\s*(.+)$/);
     const noteMatch = line.match(/^Приватна примітка майстра:\s*(.+)$/);
+    const loginMatch = line.match(/^Логін:\s*(.+)$/);
+    const passMatch = line.match(/^Пароль:\s*(.+)$/);
     if(geoMatch) result.geoLink = geoMatch[1].trim();
     else if(noteMatch) result.masterNote = noteMatch[1].trim();
+    else if(loginMatch) result.login = loginMatch[1].trim();
+    else if(passMatch) result.password = passMatch[1].trim();
   });
   return result;
 }
@@ -1357,6 +3877,7 @@ function renderTicketCard(t){
       ${geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄</button>
+      <button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
   </div>`;
@@ -1508,11 +4029,9 @@ function blankCalcState(){
   const now = new Date();
   t.date = formatDate(now);
   t.time = formatTime(now);
-  // Підставляємо ціни кабелів за замовчуванням з налаштувань — щоб при
-  // введенні лише метрів сума вже рахувалась правильно; якщо кабель
-  // цього разу іншої ціни, майстер просто змінює число в самій заявці.
-  t.utpPrice = Number(settings.utpPriceDefault) || 0;
-  t.opticPrice = Number(settings.opticPriceDefault) || 0;
+  // NEW: підставляємо ціну виклику за замовчуванням залежно від типу заявки
+  // (тип за замовчуванням — "Підключення"); змінюється в Налаштуваннях.
+  t.callFee = Number(settings.defaultConnectFee) || 0;
   return t;
 }
 
@@ -1526,9 +4045,10 @@ function hasUnsavedChanges(){
   if(s.note || s.masterNote) return true;
   if(s.photo) return true;
   if(s.macAddress) return true;
+  if(s.login || s.password) return true;
   if(s.geoLink) return true;
-  if(s.callFee>0 || s.tariff>0) return true;
-  if(s.utpMeters>0 || s.opticMeters>0) return true;
+  if((s.callFee>0 && !feeIsAutoDefault) || s.tariff>0) return true; // NEW: авто-підставлена ціна за замовчуванням — не «зміна»
+  if((s.cables||[]).some(c=> Number(c.meters)>0)) return true; // NEW: динамічний список кабелів
   if((s.equipment||[]).some(e=>e.checked)) return true;
   if((s.presetWorks||[]).some(w=>w.checked)) return true;
   if((s.additionalWork||[]).length>0) return true;
@@ -1577,6 +4097,7 @@ function resetCalcForm(presetDate){
   calcState = blankCalcState();
   if(presetDate) calcState.date = presetDate;
   editingTicketId = null;
+  feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
   document.getElementById('saveTicketBtn').textContent = 'Зберегти заявку';
   document.getElementById('cancelEditBtn').classList.add('hidden');
   fillFormFromState();
@@ -1591,12 +4112,44 @@ function loadTicketIntoForm(t){
   if(!calcState.presetWorks || !calcState.presetWorks.length){
     calcState.presetWorks = getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false}));
   }
+  if(!calcState.cables || !calcState.cables.length){
+    // NEW: сумісність зі старими заявками — переносимо старі окремі поля
+    // UTP/Оптика (якщо були) у новий динамічний список кабелів
+    calcState.cables = getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter}));
+    const utp = calcState.cables.find(c=>c.id==='utp');
+    if(utp && calcState.utpMeters) { utp.meters = Number(calcState.utpMeters)||0; utp.pricePerMeter = Number(calcState.utpPrice)||utp.pricePerMeter; }
+    const optic = calcState.cables.find(c=>c.id==='optic');
+    if(optic && calcState.opticMeters) { optic.meters = Number(calcState.opticMeters)||0; optic.pricePerMeter = Number(calcState.opticPrice)||optic.pricePerMeter; }
+  }
   calcState.additionalWork = calcState.additionalWork || [];
   calcState.tags = calcState.tags || [];
   editingTicketId = t.id;
+  feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
   document.getElementById('cancelEditBtn').classList.remove('hidden');
   fillFormFromState();
+}
+
+/* Розбирає текст, вставлений з Viber/Telegram від диспетчера, на логін і пароль.
+   Формат зазвичай — два рядки: перший логін, другий пароль. Якщо рядок один —
+   пробуємо розбити по пробілу/табу; якщо нічого не вдалось — все йде в логін. */
+function parseCredentials(raw){
+  const lines = String(raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if(lines.length >= 2) return {login: lines[0], password: lines[1]};
+  if(lines.length === 1){
+    const parts = lines[0].split(/\s+/).filter(Boolean);
+    if(parts.length >= 2) return {login: parts[0], password: parts[1]};
+    return {login: parts[0]||'', password: ''};
+  }
+  return {login:'', password:''};
+}
+function updateCredParsedHint(){
+  const hintEl = document.getElementById('credParsedHint');
+  if(!hintEl) return;
+  const cred = parseCredentials(document.getElementById('f_credRaw').value);
+  hintEl.textContent = (cred.login || cred.password)
+    ? `✅ Логін: ${cred.login || '—'} · Пароль: ${cred.password || '—'}`
+    : '';
 }
 
 function fillFormFromState(){
@@ -1619,14 +4172,12 @@ function fillFormFromState(){
   document.getElementById('f_client').value = calcState.clientName || '';
   document.getElementById('f_phone').value = calcState.phone || '';
   document.getElementById('f_mac').value = calcState.macAddress || '';
+  document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
+  updateCredParsedHint();
   document.getElementById('f_date').value = calcState.date || '';
   document.getElementById('f_time').value = calcState.time || '';
   document.getElementById('f_callFee').value = calcState.callFee || 0;
   document.getElementById('f_tariff').value = calcState.tariff || 0;
-  document.getElementById('f_utpMeters').value = calcState.utpMeters || 0;
-  document.getElementById('f_utpPrice').value = calcState.utpPrice || 0;
-  document.getElementById('f_opticMeters').value = calcState.opticMeters || 0;
-  document.getElementById('f_opticPrice').value = calcState.opticPrice || 0;
   document.getElementById('f_payment').value = calcState.payment || '';
   document.getElementById('f_note').value = calcState.note || '';
   document.getElementById('f_masterNote').value = calcState.masterNote || '';
@@ -1634,6 +4185,7 @@ function fillFormFromState(){
   document.getElementById('f_rawSum').value = calcState.sum || 0; // NEW
   updateCallFeeLabel();
   renderEquipmentList();
+  renderCablesList(); // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
   renderPresetWorksList();
   renderAdditionalWorkList();
   renderCalcTagChips();
@@ -1649,6 +4201,40 @@ function renderEquipmentList(){
       <label><input type="checkbox" data-eqidx="${i}" class="eq-check" ${eq.checked?'checked':''}> ${escapeHtml(eq.label)}</label>
       <input type="number" min="0" data-eqidx="${i}" class="eq-price" value="${eq.price}">
     </div>`).join('');
+  updateEquipmentSummary();
+}
+
+// NEW: оновлює лише текст підсумку обладнання, не перебудовуючи інпути —
+// щоб не збивати фокус/курсор під час введення ціни
+function updateEquipmentSummary(){
+  const checkedCount = calcState.equipment.filter(e=>e.checked).length;
+  const sum = calcState.equipment.reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
+  document.getElementById('equipmentSummary').textContent = checkedCount ? `— обрано: ${checkedCount}, ${fmtMoney(sum)}` : '';
+}
+
+// NEW: динамічний список кабелів (типи редагуються в Налаштуваннях) —
+// замінює колишні жорстко закодовані поля UTP/Оптика
+function renderCablesList(){
+  const wrap = document.getElementById('cablesList');
+  if(!calcState.cables || calcState.cables.length===0){
+    wrap.innerHTML = `<div style="color:var(--text-faint); font-size:13px;">Типи кабелів не налаштовані — додайте у Налаштуваннях</div>`;
+  } else {
+    wrap.innerHTML = calcState.cables.map((c,i)=>`
+      <div class="cab-row" data-cabidx="${i}">
+        <span class="cab-label">${escapeHtml(c.label)}</span>
+        <input type="number" data-cabidx="${i}" class="cab-meters" placeholder="метри" min="0" value="${c.meters||0}">
+        <span class="cab-x">м ×</span>
+        <input type="number" data-cabidx="${i}" class="cab-price" placeholder="грн/м" min="0" value="${c.pricePerMeter||0}">
+      </div>`).join('');
+  }
+  updateCablesSummary();
+}
+
+// NEW: оновлює лише текст підсумку кабелів, не перебудовуючи інпути —
+// щоб не збивати фокус/курсор під час введення метрів чи ціни
+function updateCablesSummary(){
+  const sum = (calcState.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0);
+  document.getElementById('cablesSummary').textContent = sum ? `— ${fmtMoney(sum)}` : '';
 }
 
 function renderPresetWorksList(){
@@ -1673,6 +4259,7 @@ function renderAdditionalWorkList(){
   const wrap = document.getElementById('additionalWorkList');
   if(calcState.additionalWork.length===0){
     wrap.innerHTML = `<div style="color:var(--text-faint); font-size:13px; margin-bottom:8px;">Додаткових робіт немає</div>`;
+    document.getElementById('additionalWorkSummary').textContent = '';
     return;
   }
   wrap.innerHTML = calcState.additionalWork.map((w,i)=>`
@@ -1681,18 +4268,21 @@ function renderAdditionalWorkList(){
       <input type="number" class="aw-sum" placeholder="Сума" min="0" value="${w.sum}">
       <button type="button" class="btn btn-icon btn-sm aw-remove">✕</button>
     </div>`).join('');
+  const sum = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
+  document.getElementById('additionalWorkSummary').textContent = `— ${calcState.additionalWork.length}, ${fmtMoney(sum)}`;
 }
 
 function renderCalcTagChips(){
   const wrap = document.getElementById('calcTagChips');
   if(settings.tags.length===0){
     wrap.innerHTML = `<span style="color:var(--text-faint); font-size:13px;">Додайте теги в Налаштуваннях</span>`;
-    return;
+  } else {
+    wrap.innerHTML = settings.tags.map(tag=>{
+      const active = calcState.tags.includes(tag);
+      return `<button type="button" class="chip ${active?'active':''}" data-calctag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`;
+    }).join('');
   }
-  wrap.innerHTML = settings.tags.map(tag=>{
-    const active = calcState.tags.includes(tag);
-    return `<button type="button" class="chip ${active?'active':''}" data-calctag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`;
-  }).join('');
+  document.getElementById('tagsSummary').textContent = calcState.tags.length ? `— обрано: ${calcState.tags.length}` : '';
 }
 
 function renderPhotoPreview(){
@@ -1719,11 +4309,10 @@ function computeTotal(){
   const callFee = Number(document.getElementById('f_callFee').value)||0;
   const tariff  = Number(document.getElementById('f_tariff').value)||0;
   const equipSum = calcState.equipment.reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
-  const utpSum   = (Number(document.getElementById('f_utpMeters').value)||0) * (Number(document.getElementById('f_utpPrice').value)||0);
-  const opticSum = (Number(document.getElementById('f_opticMeters').value)||0) * (Number(document.getElementById('f_opticPrice').value)||0);
+  const cablesSum = (calcState.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0); // NEW
   const workSum  = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
   const presetWorkSum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
-  const total = callFee + tariff + equipSum + utpSum + opticSum + workSum + presetWorkSum;
+  const total = callFee + tariff + equipSum + cablesSum + workSum + presetWorkSum;
   document.getElementById('calcTotal').textContent = fmtMoney(total);
   return total;
 }
@@ -1766,8 +4355,10 @@ function buildTicketContent(s, total){
   s.equipment.filter(e=>e.checked).forEach(e=>{
     lines.push(`🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`);
   });
-  if(s.utpMeters>0) lines.push(`🔌 UTP: ${s.utpMeters}м х ${s.utpPrice}грн = ${Math.round(s.utpMeters*s.utpPrice)}грн`);
-  if(s.opticMeters>0) lines.push(`💡 Оптика: ${s.opticMeters}м х ${s.opticPrice}грн = ${Math.round(s.opticMeters*s.opticPrice)}грн`);
+  (s.cables||[]).forEach(c=>{
+    const meters = Number(c.meters)||0;
+    if(meters>0) lines.push(`🔌 ${c.label}: ${meters}м х ${c.pricePerMeter}грн = ${Math.round(meters*(Number(c.pricePerMeter)||0))}грн`);
+  });
   (s.presetWorks||[]).filter(w=>w.checked).forEach(w=>{
     lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`);
   });
@@ -1801,6 +4392,19 @@ function updateCallFeeLabel(){
   document.getElementById('callFeeLabel').textContent = callFeeLabelFor(getEffectiveType()) + ', грн';
 }
 
+// NEW: підставляє ціну виклику/підключення за замовчуванням при зміні типу
+// заявки — але тільки якщо майстер ще не ввів своє значення вручну.
+function applyDefaultCallFee(){
+  if(!feeIsAutoDefault || calcState.cloudImported) return;
+  const type = getEffectiveType();
+  let def = null;
+  if(type === 'Підключення') def = Number(settings.defaultConnectFee) || 0;
+  else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
+  if(def === null) return;
+  document.getElementById('f_callFee').value = def;
+  computeTotal();
+}
+
 function syncFormToState(){
   calcState.type = getEffectiveType();
   calcState.otherNote = document.getElementById('f_otherNote').value.trim();
@@ -1815,14 +4419,13 @@ function syncFormToState(){
   calcState.clientName = document.getElementById('f_client').value.trim();
   calcState.phone = document.getElementById('f_phone').value.trim();
   calcState.macAddress = normalizeMac(document.getElementById('f_mac').value);
+  const cred = parseCredentials(document.getElementById('f_credRaw').value);
+  calcState.login = cred.login;
+  calcState.password = cred.password;
   calcState.date = document.getElementById('f_date').value.trim() || formatDate(new Date());
   calcState.time = document.getElementById('f_time').value.trim() || formatTime(new Date());
   calcState.callFee = Number(document.getElementById('f_callFee').value)||0;
   calcState.tariff = Number(document.getElementById('f_tariff').value)||0;
-  calcState.utpMeters = Number(document.getElementById('f_utpMeters').value)||0;
-  calcState.utpPrice = Number(document.getElementById('f_utpPrice').value)||0;
-  calcState.opticMeters = Number(document.getElementById('f_opticMeters').value)||0;
-  calcState.opticPrice = Number(document.getElementById('f_opticPrice').value)||0;
   calcState.payment = document.getElementById('f_payment').value;
   calcState.note = document.getElementById('f_note').value.trim();
   calcState.masterNote = document.getElementById('f_masterNote').value.trim();
@@ -2215,16 +4818,18 @@ async function shareMonthShifts(){
 /* ---------- 7. Екран «Налаштування» ---------- */
 function renderSettingsScreen(){
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
-  document.getElementById('utpPriceDefaultInput').value = settings.utpPriceDefault;
-  document.getElementById('opticPriceDefaultInput').value = settings.opticPriceDefault;
+  document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
+  document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
+  document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
   renderTagMgmtList();
   renderCityMgmtList();
   renderCwMgmtList();
   renderMatMgmtList();
   renderWorkMgmtList();
+  renderCableMgmtList();
 }
 
 function renderTagMgmtList(){
@@ -2272,6 +4877,19 @@ function renderWorkMgmtList(){
       <input type="text" class="work-label-inp" data-idx="${i}" value="${escapeHtml(w.label)}" style="flex:2;">
       <input type="number" class="work-price-inp" data-idx="${i}" value="${w.price}" min="0" style="flex:1;">
       <button type="button" class="btn btn-icon btn-sm remove-work-btn" data-idx="${i}">✕</button>
+    </div>`).join('');
+}
+// NEW: керування списком типів кабелів (аналогічно матеріалам/роботам)
+function renderCableMgmtList(){
+  const wrap = document.getElementById('cableMgmtList');
+  if(!settings.cableTypes || settings.cableTypes.length===0){
+    wrap.innerHTML = '<span style="color:var(--text-faint); font-size:13px;">Типів кабелю немає</span>'; return;
+  }
+  wrap.innerHTML = settings.cableTypes.map((c,i)=>`
+    <div class="row" style="gap:8px; align-items:center;">
+      <input type="text" class="cable-label-inp" data-idx="${i}" value="${escapeHtml(c.label)}" style="flex:2;">
+      <input type="number" class="cable-price-inp" data-idx="${i}" value="${c.pricePerMeter}" min="0" style="flex:1;">
+      <button type="button" class="btn btn-icon btn-sm remove-cable-btn" data-idx="${i}">✕</button>
     </div>`).join('');
 }
 
@@ -2659,7 +5277,7 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
       tSheet.clearContents();
       tSheet.appendRow(TICKET_HEADERS);
       (data.tickets || []).forEach(function(t){
-        tSheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), '']);
+        tSheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '']);
       });
     } else if (action === 'syncAllShifts') {
       // тільки зміни — використовується при окремому скрипті/таблиці
@@ -2689,7 +5307,7 @@ function getOrCreateSheet(ss, name, headers) {
 
 function addTicketRow(ss, t) {
   var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
-  sheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), '']);
+  sheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '']);
 }
 
 function addShiftRow(ss, s) {
@@ -2710,7 +5328,7 @@ function syncAllData(ss, tickets, shifts) {
   tSheet.clearContents();
   tSheet.appendRow(TICKET_HEADERS);
   (tickets || []).forEach(function (t) {
-    tSheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), '']);
+    tSheet.appendRow([t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '']);
   });
   var sSheet = getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS);
   sSheet.clearContents();
@@ -2729,7 +5347,8 @@ function doGet() {
   if (tSheet && tSheet.getLastRow() > 1) {
     tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 7).getValues().forEach(function (r) {
       tickets.push({id: r[0], date: r[1], time: r[2], content: r[3], sum: r[4],
-        tags: r[5] ? String(r[5]).split(',').map(function (s) { return s.trim(); }) : [], photo: null});
+        tags: r[5] ? String(r[5]).split(',').map(function (s) { return s.trim(); }) : [], photo: null,
+        backupNote: r[6] || ''});
     });
   }
   if (sSheet && sSheet.getLastRow() > 1) {
@@ -2871,12 +5490,14 @@ function bindTicketsScreen(){
     const delBtn   = e.target.closest('.delete-ticket-btn');
     const shareBtn = e.target.closest('.share-ticket-btn');
     const copyBtn  = e.target.closest('.copy-ticket-btn');
+    const dgBtn    = e.target.closest('.contract-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
     if(editBtn)  editTicket(editBtn.dataset.id);
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
+    if(dgBtn)    showDogovor(dgBtn.dataset.id);
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;
@@ -2886,6 +5507,7 @@ function bindTicketsScreen(){
       expBtn.textContent = collapsed ? '▼ Розгорнути' : '▲ Згорнути';
     }
   });
+  document.getElementById('showVizitkaBtn').addEventListener('click', showVizitka);
   document.getElementById('addTicketFab').addEventListener('click', ()=>{
     resetCalcForm(currentTicketDate);
     switchTab('calculator');
@@ -2912,11 +5534,13 @@ function bindCalculatorScreen(){
   document.querySelectorAll('#calcForm input[type="number"]').forEach(el=>{
     el.addEventListener('focus', ()=> el.select());
   });
-  ['f_callFee','f_tariff','f_utpMeters','f_utpPrice','f_opticMeters','f_opticPrice'].forEach(id=>{
+  ['f_callFee','f_tariff'].forEach(id=>{
     document.getElementById(id).addEventListener('input', computeTotal);
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
-  document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); });
+  document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); });
+  // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
+  document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
   /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
    Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому
    працює і офлайн. Якщо браузер API не підтримує — просто ховаємо кнопку
@@ -2999,16 +5623,25 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     if(pos === before.length) e.target.selectionStart = e.target.selectionEnd = e.target.value.length;
   });
   if(!('BarcodeDetector' in window)) document.getElementById('macScanBtn').classList.add('hidden');
+  document.getElementById('f_credRaw').addEventListener('input', updateCredParsedHint);
   document.getElementById('geoBtn').addEventListener('click', handleGeoBtn);
   document.getElementById('geoClearBtn').addEventListener('click', ()=>{ setGeoLink(''); showToast('Геолокацію видалено'); });
 
   document.getElementById('equipmentList').addEventListener('change', e=>{
     const chk = e.target.closest('.eq-check');
-    if(chk){ calcState.equipment[Number(chk.dataset.eqidx)].checked = chk.checked; computeTotal(); }
+    if(chk){ calcState.equipment[Number(chk.dataset.eqidx)].checked = chk.checked; computeTotal(); renderEquipmentList(); }
   });
   document.getElementById('equipmentList').addEventListener('input', e=>{
     const price = e.target.closest('.eq-price');
-    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; computeTotal(); }
+    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; computeTotal(); updateEquipmentSummary(); }
+  });
+
+  // NEW: обробники для динамічного списку кабелів
+  document.getElementById('cablesList').addEventListener('input', e=>{
+    const metersEl = e.target.closest('.cab-meters');
+    const priceEl = e.target.closest('.cab-price');
+    if(metersEl){ calcState.cables[Number(metersEl.dataset.cabidx)].meters = Number(metersEl.value)||0; computeTotal(); updateCablesSummary(); }
+    if(priceEl){ calcState.cables[Number(priceEl.dataset.cabidx)].pricePerMeter = Number(priceEl.value)||0; computeTotal(); updateCablesSummary(); }
   });
 
   document.getElementById('presetWorksList').addEventListener('change', e=>{
@@ -3030,7 +5663,12 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     const row = e.target.closest('[data-awidx]'); if(!row) return;
     const idx = Number(row.dataset.awidx);
     if(e.target.classList.contains('aw-desc')) calcState.additionalWork[idx].desc = e.target.value;
-    if(e.target.classList.contains('aw-sum')) { calcState.additionalWork[idx].sum = Number(e.target.value)||0; computeTotal(); }
+    if(e.target.classList.contains('aw-sum')) {
+      calcState.additionalWork[idx].sum = Number(e.target.value)||0;
+      computeTotal();
+      const sum = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
+      document.getElementById('additionalWorkSummary').textContent = `— ${calcState.additionalWork.length}, ${fmtMoney(sum)}`;
+    }
   });
   document.getElementById('additionalWorkList').addEventListener('click', e=>{
     const removeBtn = e.target.closest('.aw-remove'); if(!removeBtn) return;
@@ -3165,11 +5803,11 @@ function bindSettingsScreen(){
   document.getElementById('hourlyRateInput').addEventListener('input', e=>{
     settings.hourlyRate = Number(e.target.value)||0; saveSettings(); renderShiftStats();
   });
-  document.getElementById('utpPriceDefaultInput').addEventListener('input', e=>{
-    settings.utpPriceDefault = Number(e.target.value)||0; saveSettings();
+  document.getElementById('defaultConnectFeeInput').addEventListener('input', e=>{
+    settings.defaultConnectFee = Number(e.target.value)||0; saveSettings();
   });
-  document.getElementById('opticPriceDefaultInput').addEventListener('input', e=>{
-    settings.opticPriceDefault = Number(e.target.value)||0; saveSettings();
+  document.getElementById('defaultRepairCallFeeInput').addEventListener('input', e=>{
+    settings.defaultRepairCallFee = Number(e.target.value)||0; saveSettings();
   });
   document.getElementById('themeSwitch').addEventListener('change', e=>{
     settings.theme = e.target.checked ? 'dark' : 'light';
@@ -3180,6 +5818,9 @@ function bindSettingsScreen(){
   });
   document.getElementById('shiftsScriptUrlInput').addEventListener('input', e=>{
     settings.shiftsScriptUrl = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('vizitkaUrlInput').addEventListener('input', e=>{
+    settings.vizitkaUrl = e.target.value.trim(); saveSettings();
   });
 
   document.getElementById('loadCloudBtn').addEventListener('click', loadFromCloud);
@@ -3246,6 +5887,35 @@ function bindSettingsScreen(){
   });
   document.getElementById('newMatName').addEventListener('keydown', e=>{
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addMatBtn').click(); }
+  });
+
+  // NEW: Типи кабелів — редагування назви/ціни, видалення, додавання
+  document.getElementById('cableMgmtList').addEventListener('input', e=>{
+    const li = e.target.closest('.cable-label-inp');
+    const pi = e.target.closest('.cable-price-inp');
+    if(li){ settings.cableTypes[Number(li.dataset.idx)].label = li.value; saveSettings(); }
+    if(pi){ settings.cableTypes[Number(pi.dataset.idx)].pricePerMeter = Number(pi.value)||0; saveSettings(); }
+  });
+  document.getElementById('cableMgmtList').addEventListener('click', e=>{
+    const rm = e.target.closest('.remove-cable-btn'); if(!rm) return;
+    settings.cableTypes.splice(Number(rm.dataset.idx), 1);
+    saveSettings(); renderCableMgmtList();
+    showToast('Тип кабелю видалено');
+  });
+  document.getElementById('addCableBtn').addEventListener('click', ()=>{
+    const nameEl = document.getElementById('newCableName');
+    const priceEl = document.getElementById('newCablePrice');
+    const label = nameEl.value.trim();
+    if(!label){ showToast('Введіть назву кабелю'); return; }
+    const pricePerMeter = Number(priceEl.value)||0;
+    const id = 'cable_'+Date.now();
+    settings.cableTypes.push({id, label, pricePerMeter});
+    saveSettings(); renderCableMgmtList();
+    nameEl.value = ''; priceEl.value = '';
+    showToast(`Кабель «${label}» додано`);
+  });
+  document.getElementById('newCableName').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addCableBtn').click(); }
   });
 
   // Роботи з переліку: редагування назви/ціни та видалення
