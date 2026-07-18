@@ -375,6 +375,10 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
             <label>Текст нотатки</label>
             <textarea id="f_otherNote" placeholder="Введіть текст нотатки" style="min-height:90px;"></textarea>
           </div>
+          <div class="field hidden" id="connectMasterWrap">
+            <label>Хто підключав <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(для номера договору)</span></label>
+            <div class="row wrap" id="calcMasterChips" style="margin-top:6px;"></div>
+          </div>
           <div class="field hidden" id="importedRawWrap">
             <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">☁️ Ця заявка відновлена з таблиці — детальні поля (адреса, обладнання тощо) в ній не збереглись. Редагуйте текст і суму напряму нижче.</div>
             <label>Текст заявки</label>
@@ -637,6 +641,19 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
       </details>
 
       <details class="card acc-card">
+        <summary>Майстри (номер договору) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Літера підставляється в номер договору при підключенні (наприклад, перша літера прізвища). Додайте нового майстра або приберіть того, хто більше не працює.</div>
+        <div id="masterMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+        <div class="row" style="gap:8px;">
+          <input type="text" id="newMasterName" placeholder="Ім'я" style="flex:2;">
+          <input type="text" id="newMasterLetter" placeholder="Літера" maxlength="3" style="flex:1; text-transform:uppercase;">
+          <button class="btn btn-icon" id="addMasterBtn">+</button>
+        </div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
         <summary>Матеріали (обладнання в калькуляторі) <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Назва та ціна за замовчуванням. Ціну можна змінити в калькуляторі.</div>
@@ -714,6 +731,11 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         <div class="field">
           <label>URL візитки</label>
           <input type="text" id="vizitkaUrlInput" placeholder="https://your-vizitka.netlify.app">
+        </div>
+        <div style="font-size:12px; color:var(--text-dim); margin:14px 0 10px;">Посилання на сторінку договору. Це окремий файл (dogovor-view.html) — розмістіть його на GitHub Pages чи Netlify, і вставте сюди адресу. Тоді QR у договорі відкриватиме сторінку з даними абонента замість того, щоб кодувати текст напряму — так QR розпізнається набагато надійніше в будь-якому сканері. Якщо залишити порожнім, QR все одно працюватиме по-старому (текстом).</div>
+        <div class="field">
+          <label>URL сторінки договору</label>
+          <input type="text" id="dogovorUrlInput" placeholder="https://your-dogovor.netlify.app">
         </div>
         </div>
       </details>
@@ -3115,6 +3137,12 @@ qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
+const DEFAULT_MASTERS = [
+  {name:'Женя', letter:'G'},
+  {name:'Артем', letter:'V'},
+  {name:'Петя', letter:'V'},
+  {name:'Паша', letter:'K'}
+];
 const DEFAULT_MATERIALS = [
   {id:'onu',       label:'ONU',        price:800},
   {id:'router',    label:'Роутер',     price:600},
@@ -3149,7 +3177,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, vizitkaUrl:'https://on-b6a966.netlify.app'};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3458,7 +3486,7 @@ function showVizitka(){
     const qr = qrcode(0, 'M');
     qr.addData(url);
     qr.make();
-    dataUrl = qr.createDataURL(6, 8);
+    dataUrl = qr.createDataURL(6); // margin не задаємо — тоді бере безпечний за замовчуванням (4 модулі)
   }catch(e){ showToast('Не вдалося згенерувати QR-код'); return; }
   openModal('Візитка LNET', `
     <div class="qr-wrap">
@@ -3487,23 +3515,44 @@ function showDogovor(id){
   if(!t.login && !t.password){
     if(!confirm('У цій заявці ще не вказано логін і пароль (додайте їх у калькуляторі при редагуванні заявки). Сформувати договір без них?')) return;
   }
-  const address = [t.city, t.address].filter(Boolean).join(', ') || '—';
+  const rawAddress = [t.city, t.address].filter(Boolean).join(', ');
+  const address = rawAddress || '—';
   const login = t.login || '—';
   const password = t.password || '—';
-  const text = buildDogovorText(address, login, password);
-  // QR-код з тими самими даними вшитий прямо в картку — якщо майстер надішле
-  // картку скріншотом чи роздрукує, абонент однаково зможе відсканувати код.
+  const contractNumber = t.contractNumber || '';
+  const text = buildDogovorText(address, login, password, contractNumber);
   let qrDataUrl = '';
   try{
     const qr = qrcode(0, 'M');
-    qr.addData(text);
+    const dogovorUrl = (settings.dogovorUrl || '').trim();
+    if(dogovorUrl){
+      // Кодуємо QR ПОСИЛАННЯМ на власну сторінку (dogovor-view.html), а не
+      // сирим текстом — тоді будь-який сканер (Google Lens, камера, Viber)
+      // одразу пропонує "відкрити посилання", замість незрозумілого
+      // "шукати по штрихкоду". Так само влаштована й візитка.
+      const params = new URLSearchParams();
+      if(rawAddress) params.set('a', rawAddress);
+      if(t.login) params.set('l', t.login);
+      if(t.password) params.set('p', t.password);
+      if(contractNumber) params.set('n', contractNumber);
+      if(t.date) params.set('d', t.date);
+      const sep = dogovorUrl.includes('?') ? '&' : '?';
+      qr.addData(dogovorUrl + sep + params.toString());
+    } else {
+      // URL сторінки договору ще не налаштований у Налаштуваннях — кодуємо
+      // стислим текстом напряму (без графіка й контактів, щоб QR лишався
+      // невеликим). Працює, але деякі сканери можуть показати його не так
+      // зручно, як посилання.
+      qr.addData(buildDogovorQrText(address, login, password, contractNumber));
+    }
     qr.make();
-    qrDataUrl = qr.createDataURL(4, 8);
-  }catch(e){ /* текст задовгий для QR — картку показуємо і без коду */ }
+    qrDataUrl = qr.createDataURL(8); // margin не задаємо — тоді бере безпечний за замовчуванням (4 модулі)
+  }catch(e){ /* якщо раптом все одно завелико — картку показуємо і без коду */ }
   const body = `
     <div class="dogovor-card">
       <div class="dg-title">LNET — інтернет-провайдер</div>
       <div class="dg-date">${escapeHtml(formatUaDate(new Date()))}</div>
+      ${contractNumber ? `<div class="dg-site">№ ${escapeHtml(contractNumber)}</div>` : ''}
       <div class="dg-site">${escapeHtml(LNET_CONTACTS.site)}</div>
       <hr class="dg-sep">
       <div class="dg-label">Адреса підключення:</div>
@@ -3530,8 +3579,10 @@ function showDogovor(id){
       </div>
       ${qrDataUrl ? `
       <div class="qr-wrap" style="margin-top:14px;">
-        <img src="${qrDataUrl}" alt="QR договору" style="width:160px; height:160px;">
-        <div class="qr-hint">QR-код з цими даними — залишається на картці, навіть якщо її зберегти як фото чи роздрукувати</div>
+        <img src="${qrDataUrl}" alt="QR договору" style="width:220px; height:220px;">
+        <div class="qr-hint">${(settings.dogovorUrl||'').trim()
+          ? 'QR веде на сторінку з даними абонента — сканер одразу запропонує її відкрити'
+          : 'QR-код з логіном, паролем і адресою — залишається на картці, навіть якщо її зберегти як фото чи роздрукувати. Порада: додайте URL сторінки договору в Налаштуваннях — тоді QR працюватиме як посилання і розпізнаватиметься надійніше.'}</div>
       </div>` : ''}
     </div>
     <div class="row wrap" style="margin-top:14px;">
@@ -3551,10 +3602,11 @@ function showDogovor(id){
   }});
 }
 
-function buildDogovorText(address, login, password){
+function buildDogovorText(address, login, password, contractNumber){
   return [
     'LNET — інтернет-провайдер',
     formatUaDate(new Date()),
+    contractNumber ? `№ договору: ${contractNumber}` : '',
     LNET_CONTACTS.site,
     '',
     `Адреса підключення: ${address}`,
@@ -3572,7 +3624,19 @@ function buildDogovorText(address, login, password){
     '',
     'Графік роботи:',
     LNET_CONTACTS.schedule
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+/* Стисла версія лише для QR — чим менше символів (особливо кирилиці),
+   тим менша щільність коду і тим легше його розпізнати камерою. */
+function buildDogovorQrText(address, login, password, contractNumber){
+  return [
+    'LNET',
+    contractNumber ? `№ ${contractNumber}` : '',
+    `Адреса: ${address}`,
+    `Логін: ${login}`,
+    `Пароль: ${password}`,
+    LNET_CONTACTS.site
+  ].filter(Boolean).join('\n');
 }
 
 /* ---------- 2. Синхронізація з Google Sheets ----------
@@ -3818,7 +3882,7 @@ function blankTicketObject(){
     cables: getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter})), // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [],
-    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', synced:false,
+    payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', synced:false,
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -3959,6 +4023,7 @@ function renderTicketCard(t){
       <div style="flex:1; min-width:0;">
         <div class="tc-type">${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
+        ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       </div>
       <div style="text-align:right; flex-shrink:0;">
         <div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div>
@@ -4222,6 +4287,13 @@ function loadTicketIntoForm(t){
   }
   calcState.additionalWork = calcState.additionalWork || [];
   calcState.tags = calcState.tags || [];
+  // сумісність зі старими заявками, де майстер зберігався як одне ім'я/літера,
+  // а не масив (до того, як зробили множинний вибір майстрів)
+  if(!calcState.connectMasters){
+    calcState.connectMasters = (calcState.masterName || calcState.masterLetter)
+      ? [{name: calcState.masterName || '', letter: calcState.masterLetter || ''}]
+      : [];
+  }
   editingTicketId = t.id;
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
@@ -4254,6 +4326,7 @@ function updateCredParsedHint(){
 function fillFormFromState(){
   document.getElementById('f_type').value = calcState.type || 'Підключення';
   document.getElementById('f_otherNote').value = calcState.otherNote || '';
+  renderMasterChips();
   toggleTypeOtherField();
   updateCallFeeLabel();
   document.getElementById('f_city').value = calcState.city || '';
@@ -4371,6 +4444,22 @@ function renderAdditionalWorkList(){
   document.getElementById('additionalWorkSummary').textContent = `— ${calcState.additionalWork.length}, ${fmtMoney(sum)}`;
 }
 
+function renderMasterChips(){
+  const wrap = document.getElementById('calcMasterChips');
+  if(!settings.masters || settings.masters.length===0){
+    wrap.innerHTML = `<span style="color:var(--text-faint); font-size:13px;">Додайте майстрів у Налаштуваннях</span>`;
+    return;
+  }
+  // Кілька майстрів можуть робити одне підключення разом — вибір
+  // множинний. Звіряємо по імені, а не по літері: у різних майстрів
+  // літера може збігатися (наприклад, двоє з однаковою першою літерою
+  // прізвища), і звірка по літері підсвічувала б їх обох одразу.
+  wrap.innerHTML = settings.masters.map(m=>{
+    const active = (calcState.connectMasters||[]).some(x=>x.name===m.name);
+    return `<button type="button" class="chip ${active?'active':''}" data-master-letter="${escapeHtml(m.letter)}" data-master-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</button>`;
+  }).join('');
+}
+
 function renderCalcTagChips(){
   const wrap = document.getElementById('calcTagChips');
   if(settings.tags.length===0){
@@ -4420,11 +4509,40 @@ function computeTotal(){
    відновлених з хмари, беремо текст напряму з textarea (щоб не перезаписати
    оригінальний опис порожніми даними калькулятора) — для решти рахуємо як
    раніше, через калькулятор. */
+/* Номер договору формується лише для підключень і лише один раз — щойно
+   призначений, він більше не перераховується (навіть якщо потім редагувати
+   заявку), інакше номери "поплили" б при кожному збереженні.
+   Формат: ДДММРРРРN<літери майстрів>, де N — порядковий номер
+   підключення за цей день. Літери йдуть у порядку списку майстрів
+   у Налаштуваннях (хто вище в списку — той раніше в номері), а не
+   в порядку, в якому натискали кнопки. */
+function assignContractNumberIfNeeded(){
+  if(calcState.type !== 'Підключення'){
+    calcState.contractNumber = '';
+    return;
+  }
+  if(calcState.contractNumber) return;
+  const dateDigits = String(calcState.date||'').replace(/\./g,'');
+  if(!dateDigits) return;
+  const seq = tickets.filter(t=>
+    t.type === 'Підключення' &&
+    t.date === calcState.date &&
+    String(t.id) !== String(editingTicketId||'')
+  ).length + 1;
+  const selectedNames = new Set((calcState.connectMasters||[]).map(m=>m.name));
+  const letters = (settings.masters||[])
+    .filter(m=>selectedNames.has(m.name))
+    .map(m=>m.letter)
+    .join('');
+  calcState.contractNumber = `${dateDigits}-${seq}${letters}`;
+}
+
 function getCurrentTicketText(){
   if(calcState.cloudImported){
     return document.getElementById('f_rawContent').value.trim();
   }
   const isOther = calcState.type === 'Інше';
+  assignContractNumberIfNeeded();
   const total = isOther ? 0 : computeTotal();
   return buildTicketContent(calcState, total);
 }
@@ -4443,6 +4561,7 @@ function buildTicketContent(s, total){
   const lines = [];
   lines.push(`📋 ЗАЯВКА: ${(s.type||'').toUpperCase()}`);
   if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
+  if(s.type === 'Підключення' && s.contractNumber) lines.push(`📄 № дог.: ${s.contractNumber}`); // коротка мітка — щоб рядок влазив в один рядок у Viber
   if(s.city) lines.push(`🏙️ Місто: ${s.city}`);
   if(s.address) lines.push(`📍 Адреса: ${s.address}`);
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
@@ -4477,8 +4596,10 @@ function isOtherType(){
 }
 function toggleTypeOtherField(){
   const other = isOtherType();
+  const isConnect = getEffectiveType() === 'Підключення';
   const raw = !!calcState.cloudImported; // NEW: заявка відновлена з хмари — свій режим редагування
   document.getElementById('otherNoteWrap').classList.toggle('hidden', !other);
+  document.getElementById('connectMasterWrap').classList.toggle('hidden', !isConnect || raw);
   document.getElementById('importedRawWrap').classList.toggle('hidden', !raw); // NEW
   document.getElementById('fullFormFields').classList.toggle('hidden', other);
   document.getElementById('fullFormBlocks').classList.toggle('hidden', other);
@@ -4507,6 +4628,9 @@ function applyDefaultCallFee(){
 function syncFormToState(){
   calcState.type = getEffectiveType();
   calcState.otherNote = document.getElementById('f_otherNote').value.trim();
+  if(calcState.type !== 'Підключення'){
+    calcState.connectMasters = [];
+  }
   calcState.city = document.getElementById('f_city').value.trim();
   calcState.street = document.getElementById('f_street').value.trim();
   calcState.house = document.getElementById('f_house').value.trim();
@@ -4718,6 +4842,7 @@ async function saveTicketFromForm(e){
   } else {
     if(isOther && !calcState.otherNote){ showToast('Введіть текст нотатки'); return; }
     if(!isOther && !calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
+    assignContractNumberIfNeeded();
     const total = isOther ? 0 : computeTotal();
     calcState.sum = total;
     calcState.content = buildTicketContent(calcState, total);
@@ -4923,12 +5048,14 @@ function renderSettingsScreen(){
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
+  document.getElementById('dogovorUrlInput').value = settings.dogovorUrl || '';
   renderTagMgmtList();
   renderCityMgmtList();
   renderCwMgmtList();
   renderMatMgmtList();
   renderWorkMgmtList();
   renderCableMgmtList();
+  renderMasterMgmtList();
 }
 
 function renderTagMgmtList(){
@@ -4953,6 +5080,18 @@ function renderCwMgmtList(){
   document.getElementById('cwMgmtList').innerHTML = settings.coworkers.map(cw=>
     `<span class="chip">${escapeHtml(cw)} <span class="chip-x remove-cw-btn" data-cw="${escapeHtml(cw)}">✕</span></span>`
   ).join('') || '<span style="color:var(--text-faint); font-size:13px;">Список порожній</span>';
+}
+function renderMasterMgmtList(){
+  const wrap = document.getElementById('masterMgmtList');
+  if(!settings.masters || settings.masters.length===0){
+    wrap.innerHTML = '<span style="color:var(--text-faint); font-size:13px;">Майстрів немає</span>'; return;
+  }
+  wrap.innerHTML = settings.masters.map((m,i)=>`
+    <div class="row" style="gap:8px; align-items:center;">
+      <input type="text" class="master-name-inp" data-idx="${i}" value="${escapeHtml(m.name)}" placeholder="Ім'я" style="flex:2;">
+      <input type="text" class="master-letter-inp" data-idx="${i}" value="${escapeHtml(m.letter)}" placeholder="Літера" maxlength="3" style="flex:1; text-transform:uppercase;">
+      <button type="button" class="btn btn-icon btn-sm remove-master-btn" data-idx="${i}">✕</button>
+    </div>`).join('');
 }
 function renderMatMgmtList(){
   const wrap = document.getElementById('matMgmtList');
@@ -5789,6 +5928,21 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     if(i>-1) calcState.tags.splice(i,1); else calcState.tags.push(tag);
     renderCalcTagChips();
   });
+  document.getElementById('calcMasterChips').addEventListener('click', e=>{
+    const chip = e.target.closest('[data-master-letter]'); if(!chip) return;
+    const letter = chip.dataset.masterLetter;
+    const name = chip.dataset.masterName;
+    if(!calcState.connectMasters) calcState.connectMasters = [];
+    const idx = calcState.connectMasters.findIndex(m=>m.name===name);
+    if(idx>-1){
+      // повторний тап на вже вибраного майстра знімає вибір
+      calcState.connectMasters.splice(idx,1);
+    } else {
+      // додаємо в кінець — порядок натискань визначає порядок літер у номері договору
+      calcState.connectMasters.push({name, letter});
+    }
+    renderMasterChips();
+  });
 
   document.getElementById('sendTicketBtn').addEventListener('click', shareCurrentTicket);
   document.getElementById('copyTextBtn').addEventListener('click', copyTicketText);
@@ -5927,6 +6081,9 @@ function bindSettingsScreen(){
   document.getElementById('vizitkaUrlInput').addEventListener('input', e=>{
     settings.vizitkaUrl = e.target.value.trim(); saveSettings();
   });
+  document.getElementById('dogovorUrlInput').addEventListener('input', e=>{
+    settings.dogovorUrl = e.target.value.trim(); saveSettings();
+  });
 
   document.getElementById('loadCloudBtn').addEventListener('click', loadFromCloud);
   document.getElementById('restoreCloudBtn').addEventListener('click', ()=>{
@@ -5992,6 +6149,38 @@ function bindSettingsScreen(){
   });
   document.getElementById('newMatName').addEventListener('keydown', e=>{
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addMatBtn').click(); }
+  });
+
+  // Майстри: редагування імені/літери та видалення (літера йде в номер договору)
+  document.getElementById('masterMgmtList').addEventListener('input', e=>{
+    const ni = e.target.closest('.master-name-inp');
+    const li = e.target.closest('.master-letter-inp');
+    if(ni){ settings.masters[Number(ni.dataset.idx)].name = ni.value; saveSettings(); }
+    if(li){ settings.masters[Number(li.dataset.idx)].letter = li.value.toUpperCase(); saveSettings(); }
+  });
+  document.getElementById('masterMgmtList').addEventListener('click', e=>{
+    const rm = e.target.closest('.remove-master-btn'); if(!rm) return;
+    settings.masters.splice(Number(rm.dataset.idx), 1);
+    saveSettings(); renderMasterMgmtList();
+    showToast('Майстра видалено');
+  });
+  document.getElementById('addMasterBtn').addEventListener('click', ()=>{
+    const nameEl = document.getElementById('newMasterName');
+    const letterEl = document.getElementById('newMasterLetter');
+    const name = nameEl.value.trim();
+    const letter = letterEl.value.trim().toUpperCase();
+    if(!name){ showToast('Введіть ім\'я майстра'); return; }
+    if(!letter){ showToast('Введіть літеру'); return; }
+    settings.masters.push({name, letter});
+    saveSettings(); renderMasterMgmtList();
+    nameEl.value = ''; letterEl.value = '';
+    showToast(`Майстра «${name}» додано`);
+  });
+  document.getElementById('newMasterName').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('newMasterLetter').focus(); }
+  });
+  document.getElementById('newMasterLetter').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addMasterBtn').click(); }
   });
 
   // NEW: Типи кабелів — редагування назви/ціни, видалення, додавання
