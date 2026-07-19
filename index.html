@@ -751,6 +751,11 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <label>URL Apps Script для заявок</label>
           <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
         </div>
+        <div class="field">
+          <label>Секретний ключ синхронізації <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(один спільний для заявок і змін, опційно)</span></label>
+          <input type="text" id="syncSecretInput" placeholder="напр. будь-який довгий випадковий рядок">
+        </div>
+        <div style="font-size:11px; color:var(--text-faint); margin:-4px 0 10px;">Ключ передається в кожному запиті. Щоб він реально захищав таблицю — додайте перевірку цього ж значення у своєму Apps Script (інакше поле просто ігнорується сервером).</div>
         <div class="row wrap">
           <button class="btn" id="loadCloudBtn">☁️ Завантажити з хмари</button>
           <button class="btn" id="sendAllBtn">⬆️ Відправити всі дані</button>
@@ -791,6 +796,14 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <button class="btn" id="sendShiftsAllBtn">⬆️ Відправити всі зміни</button>
           <button class="btn btn-accent btn-block" id="restoreShiftsCloudBtn" style="margin-top:8px;">🔄 Відновити зміни з таблиці</button>
         </div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
+        <summary>🗑️ Кошик (останні видалені) <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Зберігаються останні 10 видалених заявок. Старіші видаляються остаточно автоматично.</div>
+        <div id="deletedTicketsList"></div>
         </div>
       </details>
 
@@ -3181,7 +3194,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3197,6 +3210,8 @@ function loadSettings(){
 let settings = loadSettings();
 let tickets  = loadJSON('tickets', []);
 let shifts   = loadJSON('shifts', []);
+let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
+const DELETED_TICKETS_MAX = 10;
 
 let currentTicketDate = formatDate(new Date()); // 'DD.MM.YYYY'
 let currentShiftDate  = formatDate(new Date());
@@ -3669,7 +3684,7 @@ function setSyncState(state){
 async function postToUrl(url, action, payload){
   if(!url) return false; // синхронізація не налаштована для цього типу даних — працюємо лише локально
   setSyncState('syncing');
-  const body = JSON.stringify(Object.assign({action}, payload));
+  const body = JSON.stringify(Object.assign({action, secret: settings.syncSecret || ''}, payload));
   // ВІДКАТ: пробували спочатку звичайний (без no-cors) запит, щоб читати
   // справжню відповідь сервера — але на практиці Apps Script блокує CORS для
   // POST (через свій редірект), тож перша спроба щоразу падала і йшла друга
@@ -3709,6 +3724,7 @@ async function syncShiftPostGet(action, payload){
   setSyncState('syncing');
   try{
     const params = new URLSearchParams();
+    params.set('secret', settings.syncSecret || '');
     if(action==='delete'){
       params.set('action','delete');
       params.set('id', payload.id);
@@ -3760,7 +3776,7 @@ async function loadFromCloud(){
   let ok = true;
   if(ticketsUrl){
     try{
-      const res = await fetch(ticketsUrl, {method:'GET'});
+      const res = await fetch(`${ticketsUrl}${ticketsUrl.includes('?')?'&':'?'}secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
       const data = await res.json();
       tickets = (data.tickets||[]).map(t=>{
         const blank = blankTicketObject();
@@ -3783,7 +3799,7 @@ async function loadFromCloud(){
   }
   if(shiftsUrl){
     try{
-      const res = await fetch(`${shiftsUrl}?action=list`, {method:'GET'});
+      const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
       const data = await res.json();
       shifts = (data.shifts||[]).map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
       saveShifts();
@@ -3794,25 +3810,48 @@ async function loadFromCloud(){
   showToast(ok ? `Завантажено: ${tickets.length} заявок, ${shifts.length} змін` : 'Частину даних завантажити не вдалося');
 }
 
+const AUTOBACKUP_MAX_SLOTS = 3;
 function backupLocalData(){
   try{
-    localStorage.setItem('autoBackup', JSON.stringify({ts: Date.now(), tickets, shifts}));
+    let slots;
+    try{ slots = JSON.parse(localStorage.getItem('autoBackupSlots')) || []; }catch(e){ slots = []; }
+    slots.unshift({ts: Date.now(), tickets, shifts});
+    slots = slots.slice(0, AUTOBACKUP_MAX_SLOTS); // тримаємо лише 3 останніх, щоб не займати зайве місце
+    localStorage.setItem('autoBackupSlots', JSON.stringify(slots));
   }catch(e){ /* сховище повне чи недоступне — бекап просто пропускаємо, не заважаємо основній дії */ }
 }
 
 function restoreFromBackup(){
-  const raw = localStorage.getItem('autoBackup');
-  if(!raw){ showToast('Бекапу ще немає'); return; }
-  let backup;
-  try{ backup = JSON.parse(raw); } catch(e){ showToast('Бекап пошкоджено'); return; }
-  const d = new Date(backup.ts);
-  if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nЗаявок у бекапі: ${(backup.tickets||[]).length}, змін: ${(backup.shifts||[]).length}.\nПоточні локальні дані буде замінено.`)) return;
-  tickets = backup.tickets || [];
-  shifts = backup.shifts || [];
-  saveTickets();
-  saveShifts();
-  renderTicketsScreen();
-  showToast('Дані відновлено з бекапу');
+  let slots;
+  try{ slots = JSON.parse(localStorage.getItem('autoBackupSlots')) || []; }catch(e){ slots = []; }
+  if(slots.length===0){ showToast('Бекапів ще немає'); return; }
+  const rows = slots.map((s,i)=>{
+    const d = new Date(s.ts);
+    return `<div class="settings-row">
+      <div><div class="sr-title">${formatDate(d)} ${formatTime(d)}</div><div style="font-size:12px; color:var(--text-dim);">Заявок: ${(s.tickets||[]).length}, змін: ${(s.shifts||[]).length}</div></div>
+      <button type="button" class="btn btn-sm restore-slot-btn" data-slotidx="${i}">Відновити</button>
+    </div>`;
+  }).join('');
+  openModal('Відновлення з автобекапу', `
+    <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Останні ${slots.length} автозбереження (робляться перед масовими діями). Поточні локальні дані буде замінено обраним.</div>
+    ${rows}
+  `, {onOpen:()=>{
+    document.querySelectorAll('.restore-slot-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const s = slots[Number(btn.dataset.slotidx)];
+        const d = new Date(s.ts);
+        if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nПоточні локальні дані буде замінено.`)) return;
+        tickets = s.tickets || [];
+        shifts = s.shifts || [];
+        saveTickets();
+        saveShifts();
+        renderTicketsScreen();
+        renderShiftsScreen();
+        closeModal();
+        showToast('Дані відновлено з бекапу');
+      });
+    });
+  }});
 }
 
 async function sendAllToCloud(){
@@ -3839,7 +3878,7 @@ async function loadShiftsFromCloud(){
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
   setSyncState('syncing');
   try{
-    const res = await fetch(`${shiftsUrl}?action=list`, {method:'GET'});
+    const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
     const data = await res.json();
     shifts = (data.shifts||[]).map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
     saveShifts();
@@ -4087,13 +4126,93 @@ function renderTicketCard(t){
 
 function deleteTicket(id){
   if(!confirm('Видалити цю заявку?')) return;
-  const t = tickets.find(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
-  if(t && t.photo) deletePhotoKey(t.photo);
-  tickets = tickets.filter(t=>String(t.id)!==String(id));
+  const idx = tickets.findIndex(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
+  if(idx===-1) return;
+  const t = tickets[idx];
+  tickets.splice(idx,1);
   saveTickets();
   syncPost('deleteTicket', {id});
+  // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
+  moveTicketToTrash(t);
   renderTicketsScreen();
-  showToast('Заявку видалено');
+  showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
+}
+
+/* ---- Кошик видалених заявок: зберігає останні DELETED_TICKETS_MAX записів,
+   старіші за цю межу видаляються остаточно (разом із фото в IndexedDB). ---- */
+function moveTicketToTrash(t){
+  const copy = JSON.parse(JSON.stringify(t));
+  copy.deletedAt = Date.now();
+  deletedTickets.unshift(copy);
+  while(deletedTickets.length > DELETED_TICKETS_MAX){
+    const dropped = deletedTickets.pop();
+    if(dropped.photo) deletePhotoKey(dropped.photo);
+  }
+  saveDeletedTickets();
+}
+
+function saveDeletedTickets(){
+  try{ localStorage.setItem('deletedTickets', JSON.stringify(deletedTickets)); }catch(e){ /* сховище повне — не критично, це лише кошик */ }
+}
+
+function restoreDeletedTicket(deletedAt){
+  const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
+  if(idx===-1) return;
+  const t = deletedTickets[idx];
+  deletedTickets.splice(idx,1);
+  saveDeletedTickets();
+  const restored = JSON.parse(JSON.stringify(t));
+  delete restored.deletedAt;
+  // якщо заявка з таким id вже якимось чином існує (малоймовірно) — даємо новий id, щоб не затерти
+  if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
+  restored.synced = false;
+  tickets.push(restored);
+  saveTickets();
+  currentTicketDate = restored.date || currentTicketDate;
+  renderTicketsScreen();
+  renderDeletedTicketsList();
+  showToast('Заявку відновлено');
+  if(getScriptUrl()){
+    syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
+      const found = tickets.find(x=>x.id===restored.id);
+      if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
+    });
+  }
+}
+
+function purgeDeletedTicket(deletedAt){
+  const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
+  if(idx===-1) return;
+  if(!confirm('Видалити заявку з кошика остаточно? Відновити після цього буде неможливо.')) return;
+  const t = deletedTickets[idx];
+  if(t.photo) deletePhotoKey(t.photo);
+  deletedTickets.splice(idx,1);
+  saveDeletedTickets();
+  renderDeletedTicketsList();
+}
+
+function renderDeletedTicketsList(){
+  const wrap = document.getElementById('deletedTicketsList');
+  if(!wrap) return;
+  if(deletedTickets.length===0){
+    wrap.innerHTML = `<div style="color:var(--text-faint); font-size:13px;">Кошик порожній</div>`;
+    return;
+  }
+  wrap.innerHTML = deletedTickets.map(t=>{
+    const d = new Date(t.deletedAt);
+    const sub = [t.clientName, [t.city, t.address].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+    return `<div class="settings-row" style="align-items:flex-start; gap:8px;">
+      <div style="min-width:0; flex:1;">
+        <div class="sr-title">${escapeHtml(t.date||'')} ${escapeHtml(t.time||'')} — ${escapeHtml(t.type||'')}</div>
+        <div style="font-size:12px; color:var(--text-dim); overflow-wrap:anywhere;">${escapeHtml(sub)}${t.sum?(' · '+fmtMoney(t.sum)):''}</div>
+        <div style="font-size:11px; color:var(--text-faint);">Видалено: ${formatDate(d)} ${formatTime(d)}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
+        <button type="button" class="btn btn-sm restore-trash-btn" data-deleted-at="${t.deletedAt}">↩️ Відновити</button>
+        <button type="button" class="btn btn-icon btn-sm btn-ghost purge-trash-btn" data-deleted-at="${t.deletedAt}">✕</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function editTicket(id){
@@ -5122,9 +5241,11 @@ function renderSettingsScreen(){
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
   document.getElementById('defaultTariffInput').value = settings.defaultTariff;
+  renderDeletedTicketsList();
   document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
+  document.getElementById('syncSecretInput').value = settings.syncSecret || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
   document.getElementById('dogovorUrlInput').value = settings.dogovorUrl || '';
@@ -6360,6 +6481,9 @@ function bindSettingsScreen(){
   document.getElementById('scriptUrlInput').addEventListener('input', e=>{
     settings.scriptUrl = e.target.value.trim(); saveSettings();
   });
+  document.getElementById('syncSecretInput').addEventListener('input', e=>{
+    settings.syncSecret = e.target.value.trim(); saveSettings();
+  });
   document.getElementById('shiftsScriptUrlInput').addEventListener('input', e=>{
     settings.shiftsScriptUrl = e.target.value.trim(); saveSettings();
   });
@@ -6395,6 +6519,12 @@ function bindSettingsScreen(){
   document.getElementById('repairTicketsBtn').addEventListener('click', repairCorruptedTickets);
   document.getElementById('dedupTicketsBtn').addEventListener('click', dedupTickets);
   document.getElementById('restoreBackupBtn').addEventListener('click', restoreFromBackup);
+  document.getElementById('deletedTicketsList').addEventListener('click', e=>{
+    const restoreBtn = e.target.closest('.restore-trash-btn');
+    const purgeBtn = e.target.closest('.purge-trash-btn');
+    if(restoreBtn) restoreDeletedTicket(restoreBtn.dataset.deletedAt);
+    if(purgeBtn) purgeDeletedTicket(purgeBtn.dataset.deletedAt);
+  });
   document.getElementById('clearAllBtn').addEventListener('click', ()=>{
     if(!confirm('Очистити ВСЮ базу даних (заявки і зміни)? Цю дію не можна скасувати.')) return;
     if(!confirm('Ви впевнені? Дані будуть видалені остаточно.')) return;
