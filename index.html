@@ -632,6 +632,24 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
       </details>
 
       <details class="card acc-card">
+        <summary>Вулиці <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Підказки при введенні вулиці в калькуляторі — окремий список для кожного міста, щоб однакові назви в різних містах не плутались.</div>
+        <div class="field" style="margin-bottom:10px;">
+          <label>Місто</label>
+          <select id="streetMgmtCitySelect"></select>
+        </div>
+        <div class="tag-mgmt-list" id="streetMgmtList"></div>
+        <div class="row">
+          <input type="text" id="newStreetInput" placeholder="Нова вулиця">
+          <button class="btn btn-icon" id="addStreetBtn">+</button>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost btn-block" id="backfillAddrBtn" style="margin-top:12px;">🔄 Підтягнути з наявних заявок</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:6px;">Одноразово збере місто/вулицю з уже збережених заявок у ці довідники. Заявки, відновлені з таблиць (тільки текст, без розбитих полів адреси), сюди підтягнути не можна — вони й далі шукаються звичайним пошуком.</div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
         <summary>Напарники <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
         <div class="cw-mgmt-list" id="cwMgmtList"></div>
@@ -5433,6 +5451,8 @@ function renderCityMgmtList(){
     `<span class="chip">${escapeHtml(city)} <span class="chip-x remove-city-btn" data-city="${escapeHtml(city)}">✕</span></span>`
   ).join('') || '<span style="color:var(--text-faint); font-size:13px;">Міст ще немає</span>';
   renderCityDatalist();
+  renderStreetMgmtCitySelect(); // NEW: список міст для керування вулицями завжди в курсі актуальних міст
+  renderStreetMgmtList();
 }
 /* Підказки міст у полі "Місто" калькулятора (через <datalist> — рідна підтримка
    браузера: і підказки за першими буквами, і вільний ввід одночасно) */
@@ -5449,6 +5469,49 @@ function renderStreetDatalist(city){
   if(!dl) return;
   const list = (settings.streets && settings.streets[city]) || [];
   dl.innerHTML = list.map(s=>`<option value="${escapeHtml(s)}"></option>`).join('');
+}
+/* NEW: керування вулицями в Налаштуваннях — окремий список для кожного міста,
+   можна дописати вручну або видалити помилково внесене */
+let streetMgmtSelectedCity = '';
+function renderStreetMgmtCitySelect(){
+  const sel = document.getElementById('streetMgmtCitySelect');
+  if(!sel) return;
+  const cities = (settings.cities||[]).slice().sort((a,b)=>a.localeCompare(b,'uk'));
+  if(!cities.includes(streetMgmtSelectedCity)) streetMgmtSelectedCity = cities[0] || '';
+  sel.innerHTML = cities.length
+    ? cities.map(c=>`<option value="${escapeHtml(c)}" ${c===streetMgmtSelectedCity?'selected':''}>${escapeHtml(c)}</option>`).join('')
+    : `<option value="">— спершу додайте місто —</option>`;
+}
+function renderStreetMgmtList(){
+  const wrap = document.getElementById('streetMgmtList');
+  if(!wrap) return;
+  const city = streetMgmtSelectedCity;
+  const streets = (city && settings.streets && settings.streets[city]) || [];
+  wrap.innerHTML = streets.length
+    ? streets.map(s=>`<span class="chip">${escapeHtml(s)} <span class="chip-x remove-street-btn" data-street="${escapeHtml(s)}">✕</span></span>`).join('')
+    : `<span style="color:var(--text-faint); font-size:13px;">${city ? 'Вулиць ще немає' : 'Спершу додайте місто вище'}</span>`;
+}
+// NEW: одноразово підтягує місто/вулицю з уже наявних заявок (тих, що мають структуровані
+// поля — cloudImported-заявки з таблиць без розбитих полів адреси сюди не потрапляють,
+// вони й далі лишаються доступні тільки через звичайний текстовий пошук)
+function backfillAddressDictionariesFromTickets(){
+  if(!settings.cities) settings.cities = [];
+  if(!settings.streets) settings.streets = {};
+  let addedCities = 0, addedStreets = 0;
+  tickets.forEach(t=>{
+    if(t.cloudImported) return;
+    const city = (t.city||'').trim();
+    const street = (t.street||'').trim();
+    if(!city) return;
+    if(!settings.cities.includes(city)){ settings.cities.push(city); addedCities++; }
+    if(street){
+      if(!settings.streets[city]) settings.streets[city] = [];
+      if(!settings.streets[city].includes(street)){ settings.streets[city].push(street); addedStreets++; }
+    }
+  });
+  saveSettings();
+  renderCityMgmtList();
+  showToast(addedCities || addedStreets ? `Додано міст: ${addedCities}, вулиць: ${addedStreets}` : 'Нічого нового не знайдено — довідники вже актуальні');
 }
 function renderCwMgmtList(){
   document.getElementById('cwMgmtList').innerHTML = settings.coworkers.map(cw=>
@@ -6619,6 +6682,7 @@ function bindSettingsScreen(){
   document.getElementById('cityMgmtList').addEventListener('click', e=>{
     const btn = e.target.closest('.remove-city-btn'); if(!btn) return;
     settings.cities = (settings.cities||[]).filter(c=>c!==btn.dataset.city);
+    if(settings.streets) delete settings.streets[btn.dataset.city]; // NEW: прибираємо й вулиці видаленого міста
     saveSettings(); renderCityMgmtList();
   });
   document.getElementById('addCityBtn').addEventListener('click', ()=>{
@@ -6631,6 +6695,33 @@ function bindSettingsScreen(){
   document.getElementById('newCityInput').addEventListener('keydown', e=>{
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addCityBtn').click(); }
   });
+
+  // NEW: керування вулицями по містах у Налаштуваннях
+  document.getElementById('streetMgmtCitySelect').addEventListener('change', e=>{
+    streetMgmtSelectedCity = e.target.value;
+    renderStreetMgmtList();
+  });
+  document.getElementById('streetMgmtList').addEventListener('click', e=>{
+    const btn = e.target.closest('.remove-street-btn'); if(!btn) return;
+    const city = streetMgmtSelectedCity;
+    if(!city || !settings.streets || !settings.streets[city]) return;
+    settings.streets[city] = settings.streets[city].filter(s=>s!==btn.dataset.street);
+    saveSettings(); renderStreetMgmtList();
+  });
+  document.getElementById('addStreetBtn').addEventListener('click', ()=>{
+    const city = streetMgmtSelectedCity;
+    const input = document.getElementById('newStreetInput');
+    const val = input.value.trim();
+    if(!city){ showToast('Спершу додайте місто'); return; }
+    if(!settings.streets) settings.streets = {};
+    if(!settings.streets[city]) settings.streets[city] = [];
+    if(val && !settings.streets[city].includes(val)){ settings.streets[city].push(val); saveSettings(); renderStreetMgmtList(); }
+    input.value = '';
+  });
+  document.getElementById('newStreetInput').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addStreetBtn').click(); }
+  });
+  document.getElementById('backfillAddrBtn').addEventListener('click', backfillAddressDictionariesFromTickets);
 
   document.getElementById('cwMgmtList').addEventListener('click', e=>{
     const btn = e.target.closest('.remove-cw-btn'); if(!btn) return;
