@@ -4234,7 +4234,7 @@ function blankCalcState(){
   // NEW: підставляємо ціну виклику за замовчуванням залежно від типу заявки
   // (тип за замовчуванням — "Підключення"); змінюється в Налаштуваннях.
   t.callFee = Number(settings.defaultConnectFee) || 0;
-  t.tariff = Number(settings.defaultTariff) || 0;
+  t.tariff = (t.type === 'Підключення') ? (Number(settings.defaultTariff) || 0) : 0; // тариф лише для підключення
   return t;
 }
 
@@ -4688,6 +4688,15 @@ function applyDefaultCallFee(){
   else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
   if(def === null) return;
   document.getElementById('f_callFee').value = def;
+  computeTotal();
+}
+
+// NEW: тариф за замовчуванням підставляється лише для типу "Підключення" —
+// для ремонту та інших типів заявок тарифу бути не повинно.
+function applyDefaultTariff(){
+  if(!tariffIsAutoDefault || calcState.cloudImported) return;
+  const type = getEffectiveType();
+  document.getElementById('f_tariff').value = (type === 'Підключення') ? (Number(settings.defaultTariff) || 0) : 0;
   computeTotal();
 }
 
@@ -6048,7 +6057,7 @@ function bindCalculatorScreen(){
     document.getElementById(id).addEventListener('input', computeTotal);
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
-  document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); });
+  document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
   document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
