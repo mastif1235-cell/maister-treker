@@ -842,6 +842,18 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
       </details>
 
+      <details class="card acc-card">
+        <summary>📅 Щоденні бекапи <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">
+          При першому відкритті застосунку за день <strong>автоматично скачується справжній файл</strong> (master-tracker-backup-РРРР-ММ-ДД.json) у папку «Завантаження» на телефоні — саме він переживе очищення кешу/даних сайту чи перевстановлення. Такі файли в «Завантаженнях» самі не видаляються — це реальні файли, час від часу почисти старі вручну.
+          Список нижче — це окрема швидка копія за останні 10 днів усередині самого застосунку (для зручного перегляду й відновлення в один дотик), вона зникне разом з рештою, якщо почистити дані сайту.
+        </div>
+        <div style="font-size:11px; color:var(--text-faint); margin-bottom:10px;">Якщо браузер запитає дозвіл на автозавантаження файлів для цього сайту — дозволь, інакше щоденний файл не збережеться.</div>
+        <div id="dailyBackupList"></div>
+        </div>
+      </details>
+
     </section>
 
   </main>
@@ -856,6 +868,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
+<div id="cleanupReminderRoot"></div>
 <script>
 /* QR Code generator (kazuhikoarase/qrcode-generator, MIT license) — embedded for offline use */
 //---------------------------------------------------------------------
@@ -3355,6 +3368,150 @@ function clearAllPhotos(){
     tx.objectStore(PHOTO_STORE).clear();
   }catch(e){ console.error(e); }
 }
+/* ---- Щоденні автобекапи — самі знімки (важкі, tickets+shifts) лежать в
+   IndexedDB (окрема база, як і фото), а легкий список по датах — у
+   localStorage (dailyBackupIndex), щоб швидко малювати список у Налаштуваннях
+   без походу в IndexedDB. ---- */
+const BACKUP_DB_NAME = 'masterTrackerBackups';
+const BACKUP_STORE = 'daily';
+const DAILY_BACKUP_MAX = 10;
+let backupDb = null;
+function openBackupDb(){
+  return new Promise((resolve)=>{
+    if(!window.indexedDB){ resolve(null); return; }
+    const req = indexedDB.open(BACKUP_DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(BACKUP_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=>{ console.error('IndexedDB бекапів: помилка відкриття', req.error); resolve(null); };
+  });
+}
+function backupDbPut(key, value){
+  return new Promise((resolve)=>{
+    if(!backupDb){ resolve(false); return; }
+    try{
+      const tx = backupDb.transaction(BACKUP_STORE, 'readwrite');
+      tx.objectStore(BACKUP_STORE).put(value, key);
+      tx.oncomplete = ()=> resolve(true);
+      tx.onerror = ()=> resolve(false);
+    }catch(e){ resolve(false); }
+  });
+}
+function backupDbGet(key){
+  return new Promise((resolve)=>{
+    if(!backupDb){ resolve(null); return; }
+    try{
+      const tx = backupDb.transaction(BACKUP_STORE, 'readonly');
+      const req = tx.objectStore(BACKUP_STORE).get(key);
+      req.onsuccess = ()=> resolve(req.result || null);
+      req.onerror = ()=> resolve(null);
+    }catch(e){ resolve(null); }
+  });
+}
+function backupDbDelete(key){
+  return new Promise((resolve)=>{
+    if(!backupDb){ resolve(false); return; }
+    try{
+      const tx = backupDb.transaction(BACKUP_STORE, 'readwrite');
+      tx.objectStore(BACKUP_STORE).delete(key);
+      tx.oncomplete = ()=> resolve(true);
+      tx.onerror = ()=> resolve(false);
+    }catch(e){ resolve(false); }
+  });
+}
+function loadDailyBackupIndex(){
+  try{ return JSON.parse(localStorage.getItem('dailyBackupIndex')) || []; }catch(e){ return []; }
+}
+function saveDailyBackupIndex(index){
+  try{ localStorage.setItem('dailyBackupIndex', JSON.stringify(index)); }catch(e){ /* сховище повне — не критично */ }
+}
+// NEW: викликається раз при старті застосунку — якщо сьогодні ще не було
+// автобекапу, робить знімок і кладе його в IndexedDB, старший за 10-й видаляє
+async function maybeRunDailyBackup(){
+  if(!backupDb) return;
+  const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD, стабільний ключ для порівняння днів
+  const index = loadDailyBackupIndex();
+  if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
+  const ok = await backupDbPut(todayKey, {tickets, shifts, exportedAt: new Date().toISOString()});
+  if(!ok) return;
+  index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
+  const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
+  for(const old of overflow) backupDbDelete(old.date);
+  saveDailyBackupIndex(index);
+  // NEW: одразу ж скачуємо цей знімок як справжній файл у "Завантаження" —
+  // саме він переживе очищення кешу/даних сайту, на відміну від копії в IndexedDB.
+  // Браузер може першого разу запитати дозвіл на автозавантаження — його треба дозволити.
+  if(tickets.length || shifts.length) await downloadDailyBackup(todayKey, {silent:true});
+}
+function renderDailyBackupList(){
+  const wrap = document.getElementById('dailyBackupList');
+  if(!wrap) return;
+  const index = loadDailyBackupIndex();
+  wrap.innerHTML = index.length ? index.map(entry=>{
+    const d = new Date(entry.ts);
+    return `<div class="settings-row" style="align-items:center;">
+      <div><div class="sr-title">${formatDate(d)}</div><div style="font-size:12px; color:var(--text-dim);">Заявок: ${entry.ticketsCount}, змін: ${entry.shiftsCount}</div></div>
+      <div class="row" style="gap:6px;">
+        <button type="button" class="btn btn-sm daily-backup-download-btn" data-date="${entry.date}" title="Зберегти як файл">💾</button>
+        <button type="button" class="btn btn-sm btn-ghost daily-backup-restore-btn" data-date="${entry.date}" title="Відновити з цього дня">♻️</button>
+      </div>
+    </div>`;
+  }).join('') : '<span style="color:var(--text-faint); font-size:13px;">Бекапів ще немає — перший з\'явиться після сьогоднішнього відкриття застосунку</span>';
+}
+async function downloadDailyBackup(dateKey, opts={}){
+  const payload = await backupDbGet(dateKey);
+  if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
+  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts}, null, 2)], {type:'application/json;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `master-tracker-backup-${dateKey}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast(opts.silent ? `📅 Щоденний бекап (${dateKey}) збережено у Завантаження` : 'Файл бекапу завантажено');
+}
+async function restoreDailyBackup(dateKey){
+  const payload = await backupDbGet(dateKey);
+  if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
+  if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки й зміни буде замінено.`)) return;
+  tickets = payload.tickets || [];
+  shifts = payload.shifts || [];
+  saveTickets(); saveShifts();
+  renderTicketsScreen(); renderShiftsScreen();
+  showToast('Дані відновлено з щоденного бекапу');
+}
+/* ---- Щомісячне нагадування почистити старі файли бекапів у "Завантаженнях" ----
+   Застосунок не може сам видаляти файли з "Завантажень" (браузер це навмисно
+   забороняє), тож 1-го числа кожного місяця показуємо на весь екран нагадування
+   зробити це вручну. Показується один раз за місяць, поки не натиснуть кнопку. */
+function maybeShowMonthlyCleanupReminder(){
+  const now = new Date();
+  if(now.getDate() !== 1) return; // тільки 1-го числа
+  const monthKey = now.toISOString().slice(0,7); // YYYY-MM
+  if(localStorage.getItem('cleanupReminderMonth') === monthKey) return; // цього місяця вже показували
+  showCleanupReminderOverlay(monthKey);
+}
+function showCleanupReminderOverlay(monthKey){
+  const root = document.getElementById('cleanupReminderRoot');
+  if(!root) return;
+  root.innerHTML = `
+    <div id="cleanupReminderOverlay" style="position:fixed; inset:0; z-index:210; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px 24px; gap:14px;">
+      <div style="font-size:56px;">🧹</div>
+      <div style="font-size:20px; font-weight:800;">Перше число — час почистити бекапи!</div>
+      <div style="font-size:14.5px; color:var(--text-dim); max-width:380px; line-height:1.5;">
+        Кожен день сюди в «Завантаження» на телефоні складається новий файл
+        <span style="font-family:var(--mono); font-size:12.5px;">master-tracker-backup-...json</span>.
+        Відкрий Файли / Завантаження і видали зайві старі — досить лишити останні кілька.
+      </div>
+      <button type="button" class="btn btn-accent btn-block" id="cleanupReminderDoneBtn" style="max-width:320px; margin-top:10px;">✅ Гаразд, я почистив(-ла)</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="cleanupReminderLaterBtn">Нагадати пізніше сьогодні</button>
+    </div>`;
+  document.getElementById('cleanupReminderDoneBtn').addEventListener('click', ()=>{
+    localStorage.setItem('cleanupReminderMonth', monthKey); // цього місяця більше не показувати
+    root.innerHTML = '';
+  });
+  document.getElementById('cleanupReminderLaterBtn').addEventListener('click', ()=>{
+    root.innerHTML = ''; // ховаємо лише на зараз — знову зʼявиться при наступному відкритті сьогодні
+  });
+}
 /* Одноразова міграція: старі заявки, де photo — це сам base64-рядок,
    переносяться в IndexedDB, а в заявці залишається лише короткий ключ.
    Це звільняє localStorage і прибирає причину «зависань» на великих базах. */
@@ -5438,6 +5595,7 @@ function renderSettingsScreen(){
   renderWorkMgmtList();
   renderCableMgmtList();
   renderMasterMgmtList();
+  renderDailyBackupList();
 }
 
 function renderTagMgmtList(){
@@ -6792,6 +6950,13 @@ function bindSettingsScreen(){
   document.getElementById('repairTicketsBtn').addEventListener('click', repairCorruptedTickets);
   document.getElementById('dedupTicketsBtn').addEventListener('click', dedupTickets);
   document.getElementById('restoreBackupBtn').addEventListener('click', restoreFromBackup);
+  // NEW: щоденні бекапи — завантажити як файл або відновити прямо з обраного дня
+  document.getElementById('dailyBackupList').addEventListener('click', e=>{
+    const dlBtn = e.target.closest('.daily-backup-download-btn');
+    const restBtn = e.target.closest('.daily-backup-restore-btn');
+    if(dlBtn) downloadDailyBackup(dlBtn.dataset.date);
+    if(restBtn) restoreDailyBackup(restBtn.dataset.date);
+  });
   document.getElementById('deletedTicketsList').addEventListener('click', e=>{
     const restoreBtn = e.target.closest('.restore-trash-btn');
     const purgeBtn = e.target.closest('.purge-trash-btn');
@@ -6941,6 +7106,9 @@ async function init(){
   photoDb = await openPhotoDb();
   await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
 
+  backupDb = await openBackupDb();
+  await maybeRunDailyBackup(); // NEW: раз на день — автоматичний знімок заявок/змін у IndexedDB (10 останніх днів по колу)
+
   renderTicketsScreen();
   resetCalcForm(currentTicketDate);
   renderShiftsScreen();
@@ -6948,6 +7116,8 @@ async function init(){
 
   restoreDraftIfAny();
   setInterval(saveDraftToLocalStorage, 30000);
+
+  maybeShowMonthlyCleanupReminder(); // NEW: 1-го числа кожного місяця — нагадування почистити файли бекапів
 
   document.getElementById('syncQueueRetryBtn').addEventListener('click', retrySyncQueue);
   window.addEventListener('online', ()=>{
