@@ -701,6 +701,10 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <input type="number" id="defaultConnectFeeInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
         <div class="settings-row">
+          <div><div class="sr-title">Тариф підключення, грн</div></div>
+          <input type="number" id="defaultTariffInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
+        </div>
+        <div class="settings-row">
           <div><div class="sr-title">Виклик (ремонт), грн</div></div>
           <input type="number" id="defaultRepairCallFeeInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
@@ -3177,7 +3181,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3200,11 +3204,18 @@ let statsViewDate = new Date(); // місяць, що переглядаєтьс
 let calendarViewDate  = new Date(); // місяць, що показується в календарі заявок
 let shiftCalendarViewDate = new Date(); // місяць, що показується в календарі змін
 let searchQuery = '';
+// Ліміт рендеру списку заявок: без нього innerHTML на тисячах заявок
+// підвисає телефон при кожному натисканні клавіші в пошуку.
+// Скидається на 100 автоматично, щойно змінюється пошук/фільтр/день (signature).
+let ticketListRenderLimit = 100;
+let ticketListRenderSignature = '';
+const TICKET_LIST_PAGE_SIZE = 100;
 let activeFilterTags = new Set();
 
 let calcState = blankCalcState();
 let editingTicketId = null;
 let feeIsAutoDefault = true; // NEW: поки true — ціну виклику/підключення можна автоматично підставити при зміні типу заявки; false — майстер вже ввів своє значення вручну, чіпати не можна
+let tariffIsAutoDefault = true; // те саме, але для поля "Тариф" — щоб автопідставлене за замовчуванням значення не вважалось "незбереженою зміною"
 
 let coworkerSelection = new Set(['Сам']);
 
@@ -3881,7 +3892,7 @@ function blankTicketObject(){
     equipment: getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false})),
     cables: getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter})), // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
-    additionalWork: [],
+    additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
@@ -4009,7 +4020,23 @@ function renderMainTicketList(){
     listEl.innerHTML = `<div class="empty-state"><div class="es-icon">🗂️</div>Заявок не знайдено</div>`;
     return;
   }
-  listEl.innerHTML = list.map(renderTicketCard).join('');
+
+  // Якщо змінився пошук/фільтр/день — це новий список, скидаємо ліміт показу на 100.
+  const signature = q + '|' + [...activeFilterTags].sort().join(',') + '|' + currentTicketDate;
+  if(signature !== ticketListRenderSignature){
+    ticketListRenderSignature = signature;
+    ticketListRenderLimit = TICKET_LIST_PAGE_SIZE;
+  }
+
+  const visible = list.slice(0, ticketListRenderLimit);
+  let html = visible.map(renderTicketCard).join('');
+  if(list.length > visible.length){
+    const remaining = list.length - visible.length;
+    html += `<button type="button" class="btn btn-block show-more-tickets-btn" style="margin:10px 0;">
+      Показати ще ${Math.min(remaining, TICKET_LIST_PAGE_SIZE)} (залишилось ${remaining})
+    </button>`;
+  }
+  listEl.innerHTML = html;
 }
 
 function renderTicketCard(t){
@@ -4207,6 +4234,7 @@ function blankCalcState(){
   // NEW: підставляємо ціну виклику за замовчуванням залежно від типу заявки
   // (тип за замовчуванням — "Підключення"); змінюється в Налаштуваннях.
   t.callFee = Number(settings.defaultConnectFee) || 0;
+  t.tariff = Number(settings.defaultTariff) || 0;
   return t;
 }
 
@@ -4222,11 +4250,11 @@ function hasUnsavedChanges(){
   if(s.macAddress) return true;
   if(s.login || s.password) return true;
   if(s.geoLink) return true;
-  if((s.callFee>0 && !feeIsAutoDefault) || s.tariff>0) return true; // NEW: авто-підставлена ціна за замовчуванням — не «зміна»
+  if((s.callFee>0 && !feeIsAutoDefault) || (s.tariff>0 && !tariffIsAutoDefault)) return true; // NEW: авто-підставлена ціна за замовчуванням — не «зміна»
   if((s.cables||[]).some(c=> Number(c.meters)>0)) return true; // NEW: динамічний список кабелів
   if((s.equipment||[]).some(e=>e.checked)) return true;
   if((s.presetWorks||[]).some(w=>w.checked)) return true;
-  if((s.additionalWork||[]).length>0) return true;
+  if((s.additionalWork||[]).some(w=>w.desc || w.sum)) return true; // порожній рядок за замовчуванням не рахується
   if((s.tags||[]).length>0) return true;
   return false;
 }
@@ -4273,6 +4301,7 @@ function resetCalcForm(presetDate){
   if(presetDate) calcState.date = presetDate;
   editingTicketId = null;
   feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
+  tariffIsAutoDefault = true;
   document.getElementById('saveTicketBtn').textContent = 'Зберегти заявку';
   document.getElementById('cancelEditBtn').classList.add('hidden');
   fillFormFromState();
@@ -4296,7 +4325,11 @@ function loadTicketIntoForm(t){
     const optic = calcState.cables.find(c=>c.id==='optic');
     if(optic && calcState.opticMeters) { optic.meters = Number(calcState.opticMeters)||0; optic.pricePerMeter = Number(calcState.opticPrice)||optic.pricePerMeter; }
   }
-  calcState.additionalWork = calcState.additionalWork || [];
+  // якщо в збереженій заявці немає додаткових робіт — все одно показуємо
+  // одне порожнє поле для вводу, а не порожній список з кнопкою "+"
+  calcState.additionalWork = (calcState.additionalWork && calcState.additionalWork.length)
+    ? calcState.additionalWork
+    : [{desc:'', sum:0}];
   calcState.tags = calcState.tags || [];
   // сумісність зі старими заявками, де майстер зберігався як одне ім'я/літера,
   // а не масив (до того, як зробили множинний вибір майстрів)
@@ -4307,6 +4340,7 @@ function loadTicketIntoForm(t){
   }
   editingTicketId = t.id;
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
+  tariffIsAutoDefault = false;
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
   document.getElementById('cancelEditBtn').classList.remove('hidden');
   fillFormFromState();
@@ -4860,6 +4894,9 @@ async function sharePhoto(){
 async function saveTicketFromForm(e){
   e.preventDefault();
   syncFormToState();
+  // прибираємо порожні рядки додаткових робіт (незаповнений рядок за
+  // замовчуванням не повинен потрапляти у збережену заявку)
+  calcState.additionalWork = (calcState.additionalWork||[]).filter(w => w.desc || w.sum);
   if(!calcState.type){ showToast('Оберіть тип роботи'); return; }
   const isOther = calcState.type === 'Інше';
   const isRaw = !!calcState.cloudImported; // NEW
@@ -5075,6 +5112,7 @@ async function shareMonthShifts(){
 function renderSettingsScreen(){
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
+  document.getElementById('defaultTariffInput').value = settings.defaultTariff;
   document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
@@ -5958,6 +5996,12 @@ function bindTicketsScreen(){
     const histBtn  = e.target.closest('.history-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
+    const moreBtn  = e.target.closest('.show-more-tickets-btn');
+    if(moreBtn){
+      ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
+      renderMainTicketList();
+      return;
+    }
     if(editBtn)  editTicket(editBtn.dataset.id);
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
@@ -6007,6 +6051,7 @@ function bindCalculatorScreen(){
   document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
+  document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
   /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
    Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому
    працює і офлайн. Якщо браузер API не підтримує — просто ховаємо кнопку
@@ -6144,6 +6189,8 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     const removeBtn = e.target.closest('.aw-remove'); if(!removeBtn) return;
     const idx = Number(removeBtn.closest('[data-awidx]').dataset.awidx);
     calcState.additionalWork.splice(idx,1);
+    // не лишаємо список зовсім порожнім — завжди має бути хоч одне поле для вводу
+    if(calcState.additionalWork.length===0) calcState.additionalWork.push({desc:'', sum:0});
     renderAdditionalWorkList(); computeTotal();
   });
 
@@ -6290,6 +6337,9 @@ function bindSettingsScreen(){
   });
   document.getElementById('defaultConnectFeeInput').addEventListener('input', e=>{
     settings.defaultConnectFee = Number(e.target.value)||0; saveSettings();
+  });
+  document.getElementById('defaultTariffInput').addEventListener('input', e=>{
+    settings.defaultTariff = Number(e.target.value)||0; saveSettings();
   });
   document.getElementById('defaultRepairCallFeeInput').addEventListener('input', e=>{
     settings.defaultRepairCallFee = Number(e.target.value)||0; saveSettings();
