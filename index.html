@@ -381,7 +381,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
             <div class="row wrap" id="calcMasterChips" style="margin-top:6px;"></div>
           </div>
           <div class="field hidden" id="importedRawWrap">
-            <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">☁️ Ця заявка відновлена з таблиці — детальні поля (адреса, обладнання тощо) в ній не збереглись. Редагуйте текст і суму напряму нижче.</div>
+            <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">☁️ Ця заявка відновлена з таблиці — оригінальний текст і суму редагуйте тут. Поля «Місто»/«Вулиця»/«Будинок» нижче спочатку порожні, але їх можна заповнити вручну — тоді заявка з'явиться і в навігаторі адрес 🧭.</div>
             <label>Текст заявки</label>
             <textarea id="f_rawContent" style="min-height:160px;"></textarea>
             <label style="margin-top:8px;">Сума, грн</label>
@@ -645,7 +645,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <button class="btn btn-icon" id="addStreetBtn">+</button>
         </div>
         <button type="button" class="btn btn-sm btn-ghost btn-block" id="backfillAddrBtn" style="margin-top:12px;">🔄 Підтягнути з наявних заявок</button>
-        <div style="font-size:11px; color:var(--text-faint); margin-top:6px;">Одноразово збере місто/вулицю з уже збережених заявок у ці довідники. Заявки, відновлені з таблиць (тільки текст, без розбитих полів адреси), сюди підтягнути не можна — вони й далі шукаються звичайним пошуком.</div>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:6px;">Одноразово збере місто/вулицю з уже збережених заявок у ці довідники — підтягне й заявки, відновлені з таблиць, якщо для них вручну дозаповнити поля «Місто»/«Вулиця» при редагуванні.</div>
         </div>
       </details>
 
@@ -3526,8 +3526,9 @@ function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 /* ---------- Навігатор адрес: Місто → Вулиця → Будинок → Заявки ---------- */
 // NEW: чотирирівневий пошук по факту заявок (а не по довіднику settings.cities/streets,
 // щоб туди потрапляло геть усе, включно з тим, що було записано до автопрописки).
-// Заявки, відновлені з хмари (cloudImported / без структурованих полів адреси),
-// в це дерево свідомо не потрапляють — вони й далі шукаються звичайним пошуком.
+// Заявки, відновлені з хмари (cloudImported), потрапляють сюди лише якщо для них
+// вручну дозаповнили місто й вулицю (поля city/street/house видно й редагуються
+// навіть у "сирому" режимі) — критерій саме заповненість полів, а не сам прапорець.
 let addrNavState = {level:'city', city:null, street:null, house:null};
 
 function naturalSortStrings(arr){
@@ -3539,7 +3540,6 @@ function naturalSortStrings(arr){
 function buildAddressTree(){
   const tree = new Map(); // city -> Map(street -> Set(house))
   tickets.forEach(t=>{
-    if(t.cloudImported) return;
     const city = (t.city||'').trim();
     const street = (t.street||'').trim();
     if(!city || !street) return;
@@ -3593,7 +3593,6 @@ function renderAddressNav(){
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Будинків не знайдено</div>`;
   } else if(addrNavState.level==='tickets'){
     const list = tickets.filter(t=>
-      !t.cloudImported &&
       (t.city||'').trim()===addrNavState.city &&
       (t.street||'').trim()===addrNavState.street &&
       ((t.house||'').trim() || '(без номера)')===addrNavState.house
@@ -3606,7 +3605,7 @@ function renderAddressNav(){
 
   if(addrNavState.level==='city'){
     bodyHtml += `<div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-faint); text-align:center;">
-      Заявки з таблиць сюди не додаються — шукайте їх через звичайний пошук
+      Заявки з таблиць з'являться тут, тільки якщо вручну заповнити для них місто й вулицю — інакше шукайте їх через звичайний пошук
     </div>`;
   }
 
@@ -5491,15 +5490,13 @@ function renderStreetMgmtList(){
     ? streets.map(s=>`<span class="chip">${escapeHtml(s)} <span class="chip-x remove-street-btn" data-street="${escapeHtml(s)}">✕</span></span>`).join('')
     : `<span style="color:var(--text-faint); font-size:13px;">${city ? 'Вулиць ще немає' : 'Спершу додайте місто вище'}</span>`;
 }
-// NEW: одноразово підтягує місто/вулицю з уже наявних заявок (тих, що мають структуровані
-// поля — cloudImported-заявки з таблиць без розбитих полів адреси сюди не потрапляють,
-// вони й далі лишаються доступні тільки через звичайний текстовий пошук)
+// NEW: одноразово підтягує місто/вулицю з уже наявних заявок (з будь-яких, де ці поля
+// фактично заповнені — включно з заявками з таблиць, якщо для них дозаповнили адресу вручну)
 function backfillAddressDictionariesFromTickets(){
   if(!settings.cities) settings.cities = [];
   if(!settings.streets) settings.streets = {};
   let addedCities = 0, addedStreets = 0;
   tickets.forEach(t=>{
-    if(t.cloudImported) return;
     const city = (t.city||'').trim();
     const street = (t.street||'').trim();
     if(!city) return;
