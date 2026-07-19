@@ -3919,6 +3919,10 @@ function switchTab(tab){
   document.getElementById('screen-'+tab).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('screenTitle').textContent = SCREEN_TITLES[tab];
+  // "Дані" в Налаштуваннях рендеряться один раз при старті застосунку — але
+  // кошик змінюється протягом сесії (заявки видаляються з інших екранів),
+  // тож оновлюємо саме його щоразу при відкритті вкладки.
+  if(tab==='settings') renderDeletedTicketsList();
   if(!alreadyActive) document.querySelector('main.screens').scrollTop = 0;
 }
 
