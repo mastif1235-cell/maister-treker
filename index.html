@@ -308,6 +308,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
       <div class="search-row">
         <input type="search" id="searchInput" placeholder="Пошук за текстом, тегом, датою...">
         <button class="btn btn-icon" id="filterToggleBtn">🏷️</button>
+        <button class="btn btn-icon" id="addrNavToggleBtn" title="Пошук за адресою: місто → вулиця → будинок">🧭</button>
         <button class="btn btn-icon" id="calendarToggleBtn">📅</button>
         <button class="btn btn-icon" id="reportToggleBtn">📊</button>
       </div>
@@ -394,7 +395,8 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           </div>
           <div class="field">
             <label>Вулиця</label>
-            <input type="text" id="f_street" placeholder="вулиця" autocomplete="off">
+            <input type="text" id="f_street" list="streetDatalist" placeholder="вулиця" autocomplete="off">
+            <datalist id="streetDatalist"></datalist>
           </div>
           <div class="row" style="gap:10px;">
             <div class="field" style="flex:1;">
@@ -3194,7 +3196,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3502,6 +3504,136 @@ function showAbonentHistory(id){
 }
 
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+/* ---------- Навігатор адрес: Місто → Вулиця → Будинок → Заявки ---------- */
+// NEW: чотирирівневий пошук по факту заявок (а не по довіднику settings.cities/streets,
+// щоб туди потрапляло геть усе, включно з тим, що було записано до автопрописки).
+// Заявки, відновлені з хмари (cloudImported / без структурованих полів адреси),
+// в це дерево свідомо не потрапляють — вони й далі шукаються звичайним пошуком.
+let addrNavState = {level:'city', city:null, street:null, house:null};
+
+function naturalSortStrings(arr){
+  // NEW: природне сортування рядків з числами всередині — "2, 9, 12, 12а, 20",
+  // а не "12, 12а, 2, 20", як дав би звичайний .sort()
+  return arr.slice().sort((a,b)=>a.localeCompare(b, 'uk', {numeric:true, sensitivity:'base'}));
+}
+
+function buildAddressTree(){
+  const tree = new Map(); // city -> Map(street -> Set(house))
+  tickets.forEach(t=>{
+    if(t.cloudImported) return;
+    const city = (t.city||'').trim();
+    const street = (t.street||'').trim();
+    if(!city || !street) return;
+    if(!tree.has(city)) tree.set(city, new Map());
+    const streetsMap = tree.get(city);
+    if(!streetsMap.has(street)) streetsMap.set(street, new Set());
+    streetsMap.get(street).add((t.house||'').trim() || '(без номера)');
+  });
+  return tree;
+}
+
+function openAddressNavigator(){
+  addrNavState = {level:'city', city:null, street:null, house:null};
+  renderAddressNav();
+}
+
+function addrNavBreadcrumbHtml(){
+  const crumbs = [`<span class="chip addr-nav-crumb" data-crumb="city" style="cursor:pointer;">🧭 Усі міста</span>`];
+  if(addrNavState.city) crumbs.push(`<span class="chip addr-nav-crumb" data-crumb="street" style="cursor:pointer;">${escapeHtml(addrNavState.city)}</span>`);
+  if(addrNavState.street) crumbs.push(`<span class="chip addr-nav-crumb" data-crumb="house" style="cursor:pointer;">${escapeHtml(addrNavState.street)}</span>`);
+  return `<div class="row wrap" style="gap:6px; margin-bottom:12px;">${crumbs.join('')}</div>`;
+}
+
+function renderAddressNav(){
+  const tree = buildAddressTree();
+  let title = 'Навігатор адрес';
+  let bodyHtml = addrNavBreadcrumbHtml();
+
+  if(addrNavState.level==='city'){
+    const cities = naturalSortStrings([...tree.keys()]);
+    title = `Місто (${cities.length})`;
+    bodyHtml += cities.length ? cities.map(city=>`
+      <button type="button" class="btn btn-block addr-nav-city-btn" data-city="${escapeHtml(city)}" style="justify-content:space-between; margin-bottom:6px;">
+        <span>${escapeHtml(city)}</span><span style="opacity:.6; font-weight:400;">${tree.get(city).size} вул. ›</span>
+      </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;"><div class="es-icon">🗺️</div>Ще немає заявок зі структурованою адресою</div>`;
+  } else if(addrNavState.level==='street'){
+    const streetsMap = tree.get(addrNavState.city) || new Map();
+    const streets = naturalSortStrings([...streetsMap.keys()]);
+    title = addrNavState.city;
+    bodyHtml += streets.length ? streets.map(street=>`
+      <button type="button" class="btn btn-block addr-nav-street-btn" data-street="${escapeHtml(street)}" style="justify-content:space-between; margin-bottom:6px;">
+        <span>${escapeHtml(street)}</span><span style="opacity:.6; font-weight:400;">${streetsMap.get(street).size} буд. ›</span>
+      </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Вулиць не знайдено</div>`;
+  } else if(addrNavState.level==='house'){
+    const streetsMap = tree.get(addrNavState.city) || new Map();
+    const houses = naturalSortStrings([...(streetsMap.get(addrNavState.street) || new Set())]);
+    title = `${addrNavState.city}, ${addrNavState.street}`;
+    bodyHtml += houses.length ? houses.map(house=>`
+      <button type="button" class="btn btn-block addr-nav-house-btn" data-house="${escapeHtml(house)}" style="justify-content:space-between; margin-bottom:6px;">
+        <span>буд. ${escapeHtml(house)}</span><span style="opacity:.6;">›</span>
+      </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Будинків не знайдено</div>`;
+  } else if(addrNavState.level==='tickets'){
+    const list = tickets.filter(t=>
+      !t.cloudImported &&
+      (t.city||'').trim()===addrNavState.city &&
+      (t.street||'').trim()===addrNavState.street &&
+      ((t.house||'').trim() || '(без номера)')===addrNavState.house
+    ).sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+    title = `буд. ${addrNavState.house}`;
+    bodyHtml += list.length
+      ? `<div class="ticket-list">${list.map(renderTicketCard).join('')}</div>`
+      : `<div class="empty-state" style="padding:24px 10px;">Заявок не знайдено</div>`;
+  }
+
+  if(addrNavState.level==='city'){
+    bodyHtml += `<div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-faint); text-align:center;">
+      Заявки з таблиць сюди не додаються — шукайте їх через звичайний пошук
+    </div>`;
+  }
+
+  openModal(title, bodyHtml, {onOpen: attachAddressNavHandlers});
+}
+
+function attachAddressNavHandlers(rootEl){
+  rootEl.addEventListener('click', e=>{
+    const crumb = e.target.closest('.addr-nav-crumb');
+    if(crumb){
+      const to = crumb.dataset.crumb;
+      if(to==='city') addrNavState = {level:'city', city:null, street:null, house:null};
+      else if(to==='street'){ addrNavState.level='street'; addrNavState.street=null; addrNavState.house=null; }
+      else if(to==='house'){ addrNavState.level='house'; addrNavState.house=null; }
+      renderAddressNav(); return;
+    }
+    const cityBtn = e.target.closest('.addr-nav-city-btn');
+    if(cityBtn){ addrNavState = {level:'street', city:cityBtn.dataset.city, street:null, house:null}; renderAddressNav(); return; }
+    const streetBtn = e.target.closest('.addr-nav-street-btn');
+    if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; renderAddressNav(); return; }
+    const houseBtn = e.target.closest('.addr-nav-house-btn');
+    if(houseBtn){ addrNavState.level='tickets'; addrNavState.house=houseBtn.dataset.house; renderAddressNav(); return; }
+    // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
+    const editBtn = e.target.closest('.edit-ticket-btn');
+    if(editBtn){ closeModal(); editTicket(editBtn.dataset.id); return; }
+    const shareBtn = e.target.closest('.share-ticket-btn');
+    if(shareBtn){ shareTicket(shareBtn.dataset.id); return; }
+    const copyBtn = e.target.closest('.copy-ticket-btn');
+    if(copyBtn){ copyTicketCardText(copyBtn.dataset.id); return; }
+    const dgBtn = e.target.closest('.contract-ticket-btn');
+    if(dgBtn){ showDogovor(dgBtn.dataset.id); return; }
+    const histBtn = e.target.closest('.history-ticket-btn');
+    if(histBtn){ closeModal(); showAbonentHistory(histBtn.dataset.id); return; }
+    const delBtn = e.target.closest('.delete-ticket-btn');
+    if(delBtn){ deleteTicket(delBtn.dataset.id); renderAddressNav(); return; }
+    const expBtn = e.target.closest('.tc-expand-btn');
+    if(expBtn){
+      const id = expBtn.dataset.id;
+      const contentEl = document.getElementById('tcc-'+id);
+      if(!contentEl) return;
+      const collapsed = contentEl.classList.toggle('tc-collapsed');
+      expBtn.textContent = collapsed ? '▼ Розгорнути' : '▲ Згорнути';
+    }
+  });
+}
 
 /* ---------- Візитка (QR на контакти диспетчера) ---------- */
 function showVizitka(){
@@ -4500,6 +4632,7 @@ function fillFormFromState(){
   toggleTypeOtherField();
   updateCallFeeLabel();
   document.getElementById('f_city').value = calcState.city || '';
+  renderStreetDatalist(calcState.city || ''); // NEW: підказки вулиць саме для міста цієї заявки
   if(calcState.street || calcState.house || calcState.apartment){
     document.getElementById('f_street').value = calcState.street || '';
     document.getElementById('f_house').value = calcState.house || '';
@@ -5038,6 +5171,25 @@ async function saveTicketFromForm(e){
   // прибираємо порожні рядки додаткових робіт (незаповнений рядок за
   // замовчуванням не повинен потрапляти у збережену заявку)
   calcState.additionalWork = (calcState.additionalWork||[]).filter(w => w.desc || w.sum);
+  // NEW: автопрописка міста та вулиці — якщо введеного немає в довідниках,
+  // додаємо автоматично (без походу в Налаштування), за зразком автопрописки
+  // імен напарників у теги вище (calcMasterChips click-хендлер)
+  if(calcState.city){
+    if(!settings.cities) settings.cities = [];
+    if(!settings.cities.includes(calcState.city)){
+      settings.cities.push(calcState.city);
+      saveSettings();
+      renderCityDatalist();
+    }
+    if(calcState.street){
+      if(!settings.streets) settings.streets = {};
+      if(!settings.streets[calcState.city]) settings.streets[calcState.city] = [];
+      if(!settings.streets[calcState.city].includes(calcState.street)){
+        settings.streets[calcState.city].push(calcState.street);
+        saveSettings();
+      }
+    }
+  }
   if(!calcState.type){ showToast('Оберіть тип роботи'); return; }
   const isOther = calcState.type === 'Інше';
   const isRaw = !!calcState.cloudImported; // NEW
@@ -5288,6 +5440,15 @@ function renderCityDatalist(){
   const dl = document.getElementById('cityDatalist');
   if(!dl) return;
   dl.innerHTML = (settings.cities||[]).map(c=>`<option value="${escapeHtml(c)}"></option>`).join('');
+}
+// NEW: підказки вулиць у полі "Вулиця" — окремий список для кожного міста
+// (щоб «Шевченка» в Дніпрі не підмішувалась до «Шевченка» в Кам'янському),
+// оновлюється щоразу при зміні поля "Місто"
+function renderStreetDatalist(city){
+  const dl = document.getElementById('streetDatalist');
+  if(!dl) return;
+  const list = (settings.streets && settings.streets[city]) || [];
+  dl.innerHTML = list.map(s=>`<option value="${escapeHtml(s)}"></option>`).join('');
 }
 function renderCwMgmtList(){
   document.getElementById('cwMgmtList').innerHTML = settings.coworkers.map(cw=>
@@ -6079,6 +6240,7 @@ function bindTicketsScreen(){
     if(!panel.classList.contains('hidden')){ calendarViewDate = parseDate(currentTicketDate); renderCalendar(); }
   });
   document.getElementById('reportToggleBtn').addEventListener('click', openReportModal);
+  document.getElementById('addrNavToggleBtn').addEventListener('click', openAddressNavigator); // NEW
   document.getElementById('clearTagFilterBtn').addEventListener('click', ()=>{
     activeFilterTags.clear(); renderTagFilterChips(); renderTicketsScreen();
   });
@@ -6192,6 +6354,8 @@ function bindCalculatorScreen(){
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
+  // NEW: при зміні міста — одразу підвантажуємо підказки вулиць саме для цього міста
+  document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
   document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
