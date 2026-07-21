@@ -1,7 +1,10 @@
-const CACHE_NAME = 'maister-treker-v2';
+const CACHE_NAME = 'maister-treker-v3'; // NEW: версію піднято — файл розділили на частини, старий кеш (з одним index.html) треба скинути
 const CORE_ASSETS = [
   './',
   './index.html',
+  './styles.css',
+  './qrcode.js',
+  './app.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
