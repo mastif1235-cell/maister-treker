@@ -599,6 +599,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         <div class="ychart" id="yearChart"></div>
         <div class="stat-grid" id="shiftStatGrid" style="margin-top:14px;"></div>
         <button type="button" class="btn btn-block" id="shareMonthBtn" style="margin-top:12px;">📤 Поділитися звітом за місяць</button>
+        <button type="button" class="btn btn-block" id="tgShiftsReportBtn" style="margin-top:8px;">✈️ Надіслати звіт по змінах у Telegram</button>
       </div>
 
       <div class="screen-section-title">Історія за обраний місяць</div>
@@ -810,12 +811,13 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
 
         <div style="font-weight:700; font-size:13.5px; margin:16px 0 6px;">1️⃣ Диспетчеру — за кнопкою, вручну</div>
-        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Кнопка "✈️ Диспетчеру" на заявці (у списку і в калькуляторі) одразу надсилає текст+фото цієї заявки диспетчеру в особисті — без відкриття системного меню "Поділитися".</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Кнопка "✈️ Диспетчеру" на заявці (у списку і в калькуляторі) одразу надсилає ТЕКСТ цієї заявки диспетчеру в особисті (без фото — воно й так є в бекап-групі нижче) — без відкриття системного меню "Поділитися".</div>
         <div class="field">
-          <label>Chat ID диспетчера (особистий чат)</label>
-          <input type="text" id="tgDispatcherChatIdInput" placeholder="напр. 987654321">
+          <label>Chat ID диспетчера(ів)</label>
+          <input type="text" id="tgDispatcherChatIdInput" placeholder="напр. 987654321 або 987654321,123123123">
         </div>
-        <button type="button" class="btn btn-sm btn-block" id="tgTestDispatcherBtn" style="margin-top:4px;">🧪 Перевірити зв'язок з диспетчером</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:2px;">Якщо диспетчерів двоє — вкажіть обидва Chat ID через кому, надішле кожному.</div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestDispatcherBtn" style="margin-top:8px;">🧪 Перевірити зв'язок з диспетчером(ами)</button>
 
         <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">2️⃣ Резервна копія — тихо, автоматично</div>
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">При збереженні кожної заявки текст і фото додатково тихо відправляються в закриту групу. Фото й далі зберігається на телефоні як звичайно — це лише додаткова копія на випадок, якщо локальна колись загубиться. Якщо локального фото не буде — застосунок сам підтягне його назад із цієї групи.</div>
@@ -834,6 +836,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <input type="text" id="tgMyChatIdInput" placeholder="напр. 123456789">
         </div>
         <button type="button" class="btn btn-sm btn-block" id="tgTestMonthlyBtn" style="margin-top:4px;">📊 Надіслати звіт за минулий місяць зараз</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:4px;">Той самий Chat ID використовує й кнопка "✈️ Надіслати звіт по змінах у Telegram" на екрані "Зміни" — там можна надіслати звіт саме по змінах за будь-який обраний місяць, коли вам зручно, а не лише 1-го числа.</div>
 
         <details class="instructions" style="margin-top:16px;">
           <summary>📖 Детальна інструкція: як усе налаштувати</summary>
@@ -846,7 +849,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
             <strong>Крок 2 — дізнатись Chat ID (для кожного окремо):</strong><br>
             • <u>Диспетчер:</u> нехай диспетчер відкриє чат з вашим ботом і напише йому будь-що (наприклад "привіт"). Потім відкрийте в браузері (з токеном уже вставленим):<br>
             <span style="font-family:var(--mono); font-size:11.5px; word-break:break-all;">https://api.telegram.org/bot&lt;ТОКЕН&gt;/getUpdates</span><br>
-            У відповіді знайдіть <span style="font-family:var(--mono); font-size:11.5px;">"from":{"id":987654321</span> — це Chat ID диспетчера (число без мінуса).<br><br>
+            У відповіді знайдіть <span style="font-family:var(--mono); font-size:11.5px;">"from":{"id":987654321</span> — це Chat ID диспетчера (число без мінуса). Якщо диспетчерів двоє — повторіть те саме з другим диспетчером і впишіть обидва ID через кому в поле вище.<br><br>
             • <u>Група-архів:</u> створіть закриту групу, додайте бота учасником, напишіть у групі будь-яке повідомлення, тим самим способом через <span style="font-family:var(--mono); font-size:11.5px;">getUpdates</span> знайдіть <span style="font-family:var(--mono); font-size:11.5px;">"chat":{"id":-1001234567890</span> — Chat ID групи (з мінусом, для груп завжди від'ємний).<br><br>
             • <u>Ваш особистий:</u> напишіть боту від свого акаунту, так само гляньте <span style="font-family:var(--mono); font-size:11.5px;">"from":{"id":...}</span> у відповіді — це ваш Chat ID.<br><br>
 
@@ -4683,24 +4686,32 @@ async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
     return {ok:true};
   }catch(e){ return {ok:false, reason:String(e)}; }
 }
+// NEW: список chat_id диспетчерів — можна вказати кілька через кому
+// (напр. "111111,222222"), надсилаємо кожному окремо
+function getDispatcherChatIds(){
+  return (settings.tgDispatcherChatId||'').split(',').map(s=>s.trim()).filter(Boolean);
+}
 async function sendTicketToDispatcher(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
-  const chatId = (settings.tgDispatcherChatId||'').trim();
-  if(!settings.tgBotToken || !chatId){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера в Налаштуваннях'); return; }
+  const chatIds = getDispatcherChatIds();
+  if(!settings.tgBotToken || !chatIds.length){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера(ів) у Налаштуваннях'); return; }
   showToast('Надсилаю диспетчеру…');
-  const res = await sendToTelegramChat(chatId, t.content, t.photo, t.tgPhotoFileId);
-  showToast(res.ok ? '✅ Надіслано диспетчеру!' : `Не вдалося надіслати: ${res.reason}`);
+  // NEW: диспетчеру шлемо лише текст, без фото — воно й так є в бекап-групі
+  const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, t.content, null, null)));
+  const okCount = results.filter(r=>r.ok).length;
+  showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
 }
 async function sendCurrentTicketToDispatcher(){
   // працює навіть якщо заявку ще не збережено — рахуємо текст прямо з форми
   syncFormToState();
   const text = getCurrentTicketText();
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
-  const chatId = (settings.tgDispatcherChatId||'').trim();
-  if(!settings.tgBotToken || !chatId){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера в Налаштуваннях'); return; }
+  const chatIds = getDispatcherChatIds();
+  if(!settings.tgBotToken || !chatIds.length){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера(ів) у Налаштуваннях'); return; }
   showToast('Надсилаю диспетчеру…');
-  const res = await sendToTelegramChat(chatId, text, calcState.photo, calcState.tgPhotoFileId);
-  showToast(res.ok ? '✅ Надіслано диспетчеру!' : `Не вдалося надіслати: ${res.reason}`);
+  const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, text, null, null)));
+  const okCount = results.filter(r=>r.ok).length;
+  showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
 }
 
 /* ---- Резервне копіювання заявок у закриту Telegram-групу ----
@@ -5915,6 +5926,16 @@ async function shareMonthShifts(){
     try{ await navigator.clipboard.writeText(text); showToast('Звіт за місяць скопійовано в буфер обміну'); }
     catch(e2){ showToast('Не вдалося скопіювати звіт'); }
   }
+}
+// NEW: надіслати звіт по змінах у Telegram собі особисто — за будь-який місяць,
+// який зараз обрано на екрані "Зміни" (гортаєте стрілками ‹ › і тиснете, коли треба)
+async function sendShiftsReportToTelegram(){
+  const chatId = (settings.tgMyChatId||'').trim();
+  if(!settings.tgBotToken || !chatId){ showToast('Спочатку заповніть токен і ваш особистий Chat ID в Налаштуваннях'); return; }
+  const text = buildShiftMonthReport();
+  showToast('Надсилаю звіт по змінах…');
+  const res = await sendToTelegramChat(chatId, text, null, null);
+  showToast(res.ok ? '✅ Звіт надіслано!' : `Не вдалося надіслати: ${res.reason}`);
 }
 
 /* ---------- 7. Екран «Налаштування» ---------- */
@@ -7162,6 +7183,7 @@ function bindShiftsScreen(){
   });
 
   document.getElementById('shareMonthBtn').addEventListener('click', shareMonthShifts);
+  document.getElementById('tgShiftsReportBtn').addEventListener('click', sendShiftsReportToTelegram);
 
   document.querySelectorAll('.hq-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{ document.getElementById('shiftHours').value = btn.dataset.h; });
@@ -7294,7 +7316,11 @@ function bindSettingsScreen(){
     settings.tgMyChatId = e.target.value.trim(); saveSettings();
   });
   document.getElementById('tgTestBtn').addEventListener('click', ()=> sendTelegramTestMessage(settings.tgBackupChatId, 'група-архів'));
-  document.getElementById('tgTestDispatcherBtn').addEventListener('click', ()=> sendTelegramTestMessage(settings.tgDispatcherChatId, 'диспетчер'));
+  document.getElementById('tgTestDispatcherBtn').addEventListener('click', ()=>{
+    const ids = getDispatcherChatIds();
+    if(!ids.length){ showToast('Спочатку заповніть Chat ID диспетчера(ів)'); return; }
+    ids.forEach(id2 => sendTelegramTestMessage(id2, 'диспетчер'));
+  });
   document.getElementById('tgTestMonthlyBtn').addEventListener('click', sendMonthlyTelegramReportNow);
   document.getElementById('tgBulkExportBtn').addEventListener('click', bulkExportTicketsToTelegram);
   document.getElementById('shiftsScriptUrlInput').addEventListener('input', e=>{
