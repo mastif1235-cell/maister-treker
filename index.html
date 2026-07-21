@@ -811,13 +811,26 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </div>
 
         <div style="font-weight:700; font-size:13.5px; margin:16px 0 6px;">1️⃣ Диспетчеру — за кнопкою, вручну</div>
-        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Кнопка "✈️ Диспетчеру" на заявці (у списку і в калькуляторі) одразу надсилає ТЕКСТ цієї заявки диспетчеру в особисті (без фото — воно й так є в бекап-групі нижче) — без відкриття системного меню "Поділитися".</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Кнопка "✈️ Диспетчеру" на заявці (у списку і в калькуляторі) одразу надсилає ТЕКСТ цієї заявки диспетчеру в особисті (без фото — воно й так є в бекап-групі нижче) — без відкриття системного меню "Поділитися". Якщо заповнені обидва диспетчери — при натисканні кнопки застосунок запитає, кому конкретно надіслати (одному з двох чи обом одразу).</div>
         <div class="field">
-          <label>Chat ID диспетчера(ів)</label>
-          <input type="text" id="tgDispatcherChatIdInput" placeholder="напр. 987654321 або 987654321,123123123">
+          <label>Ім'я диспетчера 1 <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(для зручності, щоб не плутати)</span></label>
+          <input type="text" id="tgDisp1NameInput" placeholder="напр. Оля">
         </div>
-        <div style="font-size:11px; color:var(--text-faint); margin-top:2px;">Якщо диспетчерів двоє — вкажіть обидва Chat ID через кому, надішле кожному.</div>
-        <button type="button" class="btn btn-sm btn-block" id="tgTestDispatcherBtn" style="margin-top:8px;">🧪 Перевірити зв'язок з диспетчером(ами)</button>
+        <div class="field">
+          <label>Chat ID диспетчера 1</label>
+          <input type="text" id="tgDisp1ChatIdInput" placeholder="напр. 987654321">
+        </div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestDisp1Btn" style="margin-top:4px; margin-bottom:14px;">🧪 Перевірити диспетчера 1</button>
+        <div class="field">
+          <label>Ім'я диспетчера 2 <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(необов'язково)</span></label>
+          <input type="text" id="tgDisp2NameInput" placeholder="напр. Ірина">
+        </div>
+        <div class="field">
+          <label>Chat ID диспетчера 2</label>
+          <input type="text" id="tgDisp2ChatIdInput" placeholder="залиште порожнім, якщо диспетчер один">
+        </div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestDisp2Btn" style="margin-top:4px;">🧪 Перевірити диспетчера 2</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:6px;">Якщо впишете сюди й свій особистий Chat ID (той самий, що і в розділі "Місячний звіт" нижче) як одного з "диспетчерів" — копія теж прилітатиме і вам. Спеціальної функції "копія собі" немає — це просто ще один Chat ID у списку.</div>
 
         <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">2️⃣ Резервна копія — тихо, автоматично</div>
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">При збереженні кожної заявки текст і фото додатково тихо відправляються в закриту групу. Фото й далі зберігається на телефоні як звичайно — це лише додаткова копія на випадок, якщо локальна колись загубиться. Якщо локального фото не буде — застосунок сам підтягне його назад із цієї групи.</div>
@@ -3294,7 +3307,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgMyChatId:''};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:''};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3302,6 +3315,15 @@ function loadSettings(){
     merged.cableTypes = [
       {id:'utp',   label:'UTP',    pricePerMeter: Number(s.utpPriceDefault)||7},
       {id:'optic', label:'Оптика', pricePerMeter: Number(s.opticPriceDefault)||9},
+    ];
+  }
+  // NEW: міграція зі старого одного поля tgDispatcherChatId (через кому) —
+  // якщо нового іменованого списку tgDispatchers ще нема, розкладаємо в перші слоти
+  if(s && !s.tgDispatchers && s.tgDispatcherChatId){
+    const ids = s.tgDispatcherChatId.split(',').map(x=>x.trim()).filter(Boolean);
+    merged.tgDispatchers = [
+      {name:'Диспетчер 1', chatId: ids[0]||''},
+      {name:'Диспетчер 2', chatId: ids[1]||''},
     ];
   }
   return merged;
@@ -4022,6 +4044,7 @@ function showDogovor(id){
       <button type="button" class="btn" style="flex:1;" id="copyDogovorBtn">📄 Копіювати текст</button>
       <button type="button" class="btn" style="flex:1;" id="shareDogovorBtn">📤 Поділитися</button>
     </div>
+    <button type="button" class="btn btn-block" id="printDogovorPdfBtn" style="margin-top:8px;">🖨️ Сформувати PDF-лист</button>
   `;
   openModal('Договір', body, {onOpen: ()=>{
     document.getElementById('copyDogovorBtn').onclick = async ()=>{
@@ -4032,7 +4055,60 @@ function showDogovor(id){
       if(navigator.share){ try{ await navigator.share({title:'Договір LNET', text}); }catch(e){} }
       else showToast('Поділитися не підтримується цим браузером');
     };
+    document.getElementById('printDogovorPdfBtn').onclick = ()=>{
+      printDogovorAsPdf({address, login, password, contractNumber});
+    };
   }});
+}
+
+/* ---- PDF-лист договору — через діалог друку браузера ----
+   Без зовнішніх бібліотек: створюємо прихований iframe зі своєю HTML-версткою
+   листа, викликаємо iframe.contentWindow.print() — у діалозі друку на телефоні
+   є варіант "Зберегти як PDF", саме так і виходить готовий PDF-файл. Обов'язково
+   додаємо посилання на повний текст договору (публічну оферту) на сайті —
+   про всяк випадок, якщо потрібна юридично повна версія, а не лише картка. */
+function printDogovorAsPdf({address, login, password, contractNumber}){
+  const scheduleHtml = escapeHtml(LNET_CONTACTS.schedule).replace(/\n/g,'<br>');
+  const printHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Договір LNET</title>
+  <style>
+    body{ font-family: Arial, Helvetica, sans-serif; color:#111; padding:28px; }
+    h1{ font-size:19px; margin:0 0 4px; }
+    .date{ font-size:12px; color:#555; margin-bottom:18px; }
+    .row{ margin-bottom:12px; }
+    .label{ font-weight:700; font-size:11.5px; color:#555; text-transform:uppercase; letter-spacing:.3px; }
+    .value{ font-size:15px; margin-top:2px; }
+    hr{ border:none; border-top:1px solid #ccc; margin:16px 0; }
+    .footer{ margin-top:26px; padding-top:14px; border-top:2px solid #111; font-size:12.5px; color:#333; }
+    .footer a{ color:#0a5; word-break:break-all; }
+    .footer .big{ font-weight:700; font-size:14px; }
+  </style></head><body>
+    <h1>LNET — Договір на підключення</h1>
+    <div class="date">${escapeHtml(formatUaDate(new Date()))}${contractNumber ? ' · № ' + escapeHtml(contractNumber) : ''}</div>
+    <div class="row"><div class="label">Адреса підключення</div><div class="value">${escapeHtml(address)}</div></div>
+    <div class="row"><div class="label">Логін</div><div class="value">${escapeHtml(login)}</div></div>
+    <div class="row"><div class="label">Пароль</div><div class="value">${escapeHtml(password)}</div></div>
+    <div class="row"><div class="label">Особистий рахунок</div><div class="value">${escapeHtml(login)}</div></div>
+    <hr>
+    <div class="row"><div class="label">Контакти</div><div class="value">${escapeHtml(LNET_CONTACTS.phone)}, ${escapeHtml(LNET_CONTACTS.viber)}</div></div>
+    <div class="row"><div class="label">Графік роботи</div><div class="value">${scheduleHtml}</div></div>
+    <div class="footer">
+      <div class="big">Повний текст договору (публічна оферта)</div>
+      Офіційна юридична копія договору та всі документи — на сайті LNET, на всякий випадок, якщо знадобиться повний текст:<br>
+      <a href="https://lnet.com.ua/dokumenti/">https://lnet.com.ua/dokumenti/</a>
+    </div>
+  </body></html>`;
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed; right:0; bottom:0; width:0; height:0; border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open(); doc.write(printHtml); doc.close();
+  iframe.onload = ()=>{
+    try{
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }catch(e){ showToast('Не вдалося відкрити друк — спробуйте ще раз'); }
+    setTimeout(()=>{ iframe.remove(); }, 1500);
+  };
 }
 
 function buildDogovorText(address, login, password, contractNumber){
@@ -4344,7 +4420,7 @@ function blankTicketObject(){
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
-    tgBackedUp:false, tgPhotoFileId:null, // NEW: чи відправлено текст/фото в Telegram-групу як резервну копію
+    tgBackedUp:false, tgPhotoFileId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -4545,6 +4621,11 @@ function deleteTicket(id){
   tickets.splice(idx,1);
   saveTickets();
   syncPost('deleteTicket', {id});
+  // NEW: Telegram-бекап НЕ видаляється разом із заявкою навмисно — навіть якщо
+  // заявку видалили в застосунку (помилково чи ні), її копія назавжди лишається
+  // в групі-архіві. Це і є сенс резервної копії: вона не залежить від дій в
+  // основному застосунку. Синхронізується з групою лише редагування (див.
+  // backupTicketToTelegram), а видалення — ні.
   // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
   moveTicketToTrash(t);
   renderTicketsScreen();
@@ -4686,58 +4767,97 @@ async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
     return {ok:true};
   }catch(e){ return {ok:false, reason:String(e)}; }
 }
-// NEW: список chat_id диспетчерів — можна вказати кілька через кому
-// (напр. "111111,222222"), надсилаємо кожному окремо
-function getDispatcherChatIds(){
-  return (settings.tgDispatcherChatId||'').split(',').map(s=>s.trim()).filter(Boolean);
+// NEW: список налаштованих диспетчерів — {name, chatId}, тільки ті, де chatId заповнено
+function getConfiguredDispatchers(){
+  return (settings.tgDispatchers||[]).filter(d=>d.chatId && d.chatId.trim());
+}
+// Якщо диспетчер один — шле одразу йому. Якщо два — питає, кому саме
+// (конкретному або обом), через маленьку модалку з кнопками-іменами.
+function chooseDispatcherAndSend(sendFn){
+  const list = getConfiguredDispatchers();
+  if(!settings.tgBotToken || !list.length){ showToast('Спочатку вкажіть токен бота і Chat ID хоча б одного диспетчера в Налаштуваннях'); return; }
+  if(list.length===1){ sendFn([list[0].chatId]); return; }
+  openModal('Кому надіслати?', `
+    <div class="row wrap" style="gap:8px; flex-direction:column;">
+      ${list.map((d,i)=>`<button type="button" class="btn btn-block dispatcher-choice-btn" data-idx="${i}">✈️ ${escapeHtml(d.name || ('Диспетчер '+(i+1)))}</button>`).join('')}
+      <button type="button" class="btn btn-accent btn-block" id="dispatcherChoiceAllBtn">✈️ Обом одразу</button>
+    </div>
+  `, {onOpen: (root)=>{
+    root.querySelectorAll('.dispatcher-choice-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ closeModal(); sendFn([list[Number(btn.dataset.idx)].chatId]); });
+    });
+    document.getElementById('dispatcherChoiceAllBtn').addEventListener('click', ()=>{ closeModal(); sendFn(list.map(d=>d.chatId)); });
+  }});
 }
 async function sendTicketToDispatcher(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
-  const chatIds = getDispatcherChatIds();
-  if(!settings.tgBotToken || !chatIds.length){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера(ів) у Налаштуваннях'); return; }
-  showToast('Надсилаю диспетчеру…');
-  // NEW: диспетчеру шлемо лише текст, без фото — воно й так є в бекап-групі
-  const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, t.content, null, null)));
-  const okCount = results.filter(r=>r.ok).length;
-  showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
+  chooseDispatcherAndSend(async (chatIds)=>{
+    showToast('Надсилаю диспетчеру…');
+    // NEW: диспетчеру шлемо лише текст, без фото — воно й так є в бекап-групі
+    const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, t.content, null, null)));
+    const okCount = results.filter(r=>r.ok).length;
+    showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
+  });
 }
 async function sendCurrentTicketToDispatcher(){
   // працює навіть якщо заявку ще не збережено — рахуємо текст прямо з форми
   syncFormToState();
   const text = getCurrentTicketText();
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
-  const chatIds = getDispatcherChatIds();
-  if(!settings.tgBotToken || !chatIds.length){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера(ів) у Налаштуваннях'); return; }
-  showToast('Надсилаю диспетчеру…');
-  const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, text, null, null)));
-  const okCount = results.filter(r=>r.ok).length;
-  showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
+  chooseDispatcherAndSend(async (chatIds)=>{
+    showToast('Надсилаю диспетчеру…');
+    const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, text, null, null)));
+    const okCount = results.filter(r=>r.ok).length;
+    showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
+  });
 }
 
 /* ---- Резервне копіювання заявок у закриту Telegram-групу ----
    Не замінює локальне зберігання (фото й далі лежать в IndexedDB як завжди),
-   а лише додатково дублює текст і фото в групу — щоб через рік-два, якщо
-   локальна копія фото загубиться (новий телефон, очищені дані сайту тощо),
-   можна було підтягнути її назад (див. fetchPhotoFromTelegram вище).
+   а лише додатково дублює ПОВНІ дані заявки в групу. На кожне збереження
+   (і нової заявки, і редагування вже наявної) — спочатку видаляє попередні
+   повідомлення цієї заявки в групі (якщо вони були), потім надсилає свіжі:
+   текст, фото (якщо є) і повний JSON-знімок усіх полів заявки окремим
+   файлом — так група завжди показує АКТУАЛЬНИЙ стан, а не застарілу версію
+   після редагування, і жодне поле не губиться (навіть те, чого нема в тексті:
+   логін/пароль, вулиця/будинок/квартира, теги, geo-посилання тощо).
    Спрацьовує лише якщо в Налаштуваннях заповнені tgBotToken і tgBackupChatId,
    інакше нічого не робить. Не блокує збереження заявки — викликається без await. */
+async function deleteTicketTelegramMessages(t, token, chatId){
+  const ids = [t.tgTextMsgId, t.tgPhotoMsgId, t.tgJsonMsgId].filter(Boolean);
+  for(const msgId of ids){
+    try{
+      await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({chat_id: chatId, message_id: msgId})
+      });
+    }catch(e){ /* повідомлення могло вже бути видалене вручну — не критично */ }
+  }
+  t.tgTextMsgId = null; t.tgPhotoMsgId = null; t.tgJsonMsgId = null;
+}
 async function backupTicketToTelegram(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
   if(!token || !chatId || !t) return;
   try{
-    // текст — окремим повідомленням і лише один раз (щоб не дублювати при кожному редагуванні)
-    if(!t.tgBackedUp && t.content){
+    // спочатку прибираємо попередню версію цієї заявки в групі (якщо була) —
+    // щоб після редагування там не лишалось двох копій (старої й нової)
+    await deleteTicketTelegramMessages(t, token, chatId);
+    t.tgPhotoFileId = null;
+    t.tgBackedUp = false;
+
+    // 1) текст
+    if(t.content){
       const text = t.content.slice(0, 4000); // ліміт Telegram на текст повідомлення
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text})
       });
       const data = await res.json();
-      if(data.ok){ t.tgBackedUp = true; saveTickets(); }
+      if(data.ok){ t.tgBackedUp = true; t.tgTextMsgId = data.result.message_id; }
     }
-    // фото — окремим повідомленням, теж лише один раз на заявку
-    if(t.photo && !t.tgPhotoFileId){
+    // 2) фото
+    if(t.photo){
       const photoData = await resolvePhotoAsync(t.photo);
       if(photoData){
         const blob = await (await fetch(photoData)).blob();
@@ -4750,10 +4870,23 @@ async function backupTicketToTelegram(t){
         if(data.ok){
           const sizes = data.result.photo || [];
           t.tgPhotoFileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
-          saveTickets();
+          t.tgPhotoMsgId = data.result.message_id;
         }
       }
     }
+    // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
+    // "повний бекап" (а не лише те, що влізло в короткий текст вище)
+    try{
+      const jsonBlob = new Blob([JSON.stringify(t, null, 2)], {type:'application/json'});
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      form.append('document', jsonBlob, `ticket-${t.id}.json`);
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form});
+      const data = await res.json();
+      if(data.ok) t.tgJsonMsgId = data.result.message_id;
+    }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
+
+    saveTickets();
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
 }
 // NEW: тестове повідомлення в Налаштуваннях — перевірити, що токен і chat_id правильні.
@@ -4847,7 +4980,7 @@ async function bulkExportTicketsToTelegram(){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
   if(!token || !chatId){ showToast('Спочатку налаштуйте токен і Chat ID групи вище'); return; }
-  const todo = tickets.filter(t => (!t.tgBackedUp && t.content) || (t.photo && !t.tgPhotoFileId));
+  const todo = tickets.filter(t => !t.tgBackedUp && t.content); // NEW: тільки ще ніколи не надіслані — редаговані вже синхронізуються самі при збереженні
   if(!todo.length){ showToast('Усі заявки вже вивантажено в групу'); return; }
   const etaMin = Math.ceil(todo.length * 1.4 / 60);
   if(!confirm(`Буде надіслано ${todo.length} заявок(и) у групу. Орієнтовно ~${etaMin} хв (навмисна пауза між заявками, щоб не впертися в ліміти Telegram). Не закривайте застосунок, поки триває. Продовжити?`)) return;
@@ -5949,7 +6082,10 @@ function renderSettingsScreen(){
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
   document.getElementById('tgBotTokenInput').value = settings.tgBotToken || '';
   document.getElementById('tgBackupChatIdInput').value = settings.tgBackupChatId || '';
-  document.getElementById('tgDispatcherChatIdInput').value = settings.tgDispatcherChatId || '';
+  document.getElementById('tgDisp1NameInput').value = (settings.tgDispatchers && settings.tgDispatchers[0] && settings.tgDispatchers[0].name) || '';
+  document.getElementById('tgDisp1ChatIdInput').value = (settings.tgDispatchers && settings.tgDispatchers[0] && settings.tgDispatchers[0].chatId) || '';
+  document.getElementById('tgDisp2NameInput').value = (settings.tgDispatchers && settings.tgDispatchers[1] && settings.tgDispatchers[1].name) || '';
+  document.getElementById('tgDisp2ChatIdInput').value = (settings.tgDispatchers && settings.tgDispatchers[1] && settings.tgDispatchers[1].chatId) || '';
   document.getElementById('tgMyChatIdInput').value = settings.tgMyChatId || '';
   document.getElementById('syncSecretInput').value = settings.syncSecret || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
@@ -7309,17 +7445,36 @@ function bindSettingsScreen(){
   document.getElementById('tgBackupChatIdInput').addEventListener('input', e=>{
     settings.tgBackupChatId = e.target.value.trim(); saveSettings();
   });
-  document.getElementById('tgDispatcherChatIdInput').addEventListener('input', e=>{
-    settings.tgDispatcherChatId = e.target.value.trim(); saveSettings();
+  // NEW: два іменованих диспетчери — окремі поля імені й chat_id для кожного
+  document.getElementById('tgDisp1NameInput').addEventListener('input', e=>{
+    if(!settings.tgDispatchers) settings.tgDispatchers = [{name:'',chatId:''},{name:'',chatId:''}];
+    settings.tgDispatchers[0].name = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgDisp1ChatIdInput').addEventListener('input', e=>{
+    if(!settings.tgDispatchers) settings.tgDispatchers = [{name:'',chatId:''},{name:'',chatId:''}];
+    settings.tgDispatchers[0].chatId = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgDisp2NameInput').addEventListener('input', e=>{
+    if(!settings.tgDispatchers) settings.tgDispatchers = [{name:'',chatId:''},{name:'',chatId:''}];
+    settings.tgDispatchers[1].name = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgDisp2ChatIdInput').addEventListener('input', e=>{
+    if(!settings.tgDispatchers) settings.tgDispatchers = [{name:'',chatId:''},{name:'',chatId:''}];
+    settings.tgDispatchers[1].chatId = e.target.value.trim(); saveSettings();
   });
   document.getElementById('tgMyChatIdInput').addEventListener('input', e=>{
     settings.tgMyChatId = e.target.value.trim(); saveSettings();
   });
   document.getElementById('tgTestBtn').addEventListener('click', ()=> sendTelegramTestMessage(settings.tgBackupChatId, 'група-архів'));
-  document.getElementById('tgTestDispatcherBtn').addEventListener('click', ()=>{
-    const ids = getDispatcherChatIds();
-    if(!ids.length){ showToast('Спочатку заповніть Chat ID диспетчера(ів)'); return; }
-    ids.forEach(id2 => sendTelegramTestMessage(id2, 'диспетчер'));
+  document.getElementById('tgTestDisp1Btn').addEventListener('click', ()=>{
+    const d = settings.tgDispatchers && settings.tgDispatchers[0];
+    if(!d || !d.chatId){ showToast('Спочатку заповніть Chat ID диспетчера 1'); return; }
+    sendTelegramTestMessage(d.chatId, d.name || 'диспетчер 1');
+  });
+  document.getElementById('tgTestDisp2Btn').addEventListener('click', ()=>{
+    const d = settings.tgDispatchers && settings.tgDispatchers[1];
+    if(!d || !d.chatId){ showToast('Спочатку заповніть Chat ID диспетчера 2'); return; }
+    sendTelegramTestMessage(d.chatId, d.name || 'диспетчер 2');
   });
   document.getElementById('tgTestMonthlyBtn').addEventListener('click', sendMonthlyTelegramReportNow);
   document.getElementById('tgBulkExportBtn').addEventListener('click', bulkExportTicketsToTelegram);
