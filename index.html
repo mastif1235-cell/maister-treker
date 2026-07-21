@@ -545,6 +545,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
           <button type="button" class="btn" style="flex:1;" id="sharePhotoBtn">📤 Надіслати фото</button>
         </div>
         <button type="button" class="btn btn-block" id="sendTicketBtn" style="margin-bottom:8px;">📤 Надіслати заявку</button>
+        <button type="button" class="btn btn-block" id="sendToDispatcherBtn" style="margin-bottom:8px;">✈️ Надіслати диспетчеру (Telegram)</button>
         </div>
         <button type="button" class="btn btn-accent btn-block" id="saveTicketBtn">Зберегти заявку</button>
         <button type="button" class="btn btn-block hidden" id="cancelEditBtn" style="margin-top:8px;">Скасувати редагування</button>
@@ -796,6 +797,69 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
         </details>
         </div>
       </details>
+
+      <details class="card acc-card">
+        <summary>✈️ Telegram-бот <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">
+          Необов'язково. Один бот — три різні призначення нижче, кожне вмикається окремо своїм Chat ID. Якщо якесь поле лишити порожнім — відповідна функція просто не працює, решта не постраждає.
+        </div>
+        <div class="field">
+          <label>Токен бота <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(один спільний для всього нижче, від @BotFather)</span></label>
+          <input type="text" id="tgBotTokenInput" placeholder="123456789:AA...">
+        </div>
+
+        <div style="font-weight:700; font-size:13.5px; margin:16px 0 6px;">1️⃣ Диспетчеру — за кнопкою, вручну</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Кнопка "✈️ Диспетчеру" на заявці (у списку і в калькуляторі) одразу надсилає текст+фото цієї заявки диспетчеру в особисті — без відкриття системного меню "Поділитися".</div>
+        <div class="field">
+          <label>Chat ID диспетчера (особистий чат)</label>
+          <input type="text" id="tgDispatcherChatIdInput" placeholder="напр. 987654321">
+        </div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestDispatcherBtn" style="margin-top:4px;">🧪 Перевірити зв'язок з диспетчером</button>
+
+        <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">2️⃣ Резервна копія — тихо, автоматично</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">При збереженні кожної заявки текст і фото додатково тихо відправляються в закриту групу. Фото й далі зберігається на телефоні як звичайно — це лише додаткова копія на випадок, якщо локальна колись загубиться. Якщо локального фото не буде — застосунок сам підтягне його назад із цієї групи.</div>
+        <div class="field">
+          <label>Chat ID закритої групи-архіву</label>
+          <input type="text" id="tgBackupChatIdInput" placeholder="напр. -1001234567890">
+        </div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestBtn" style="margin-top:4px;">🧪 Перевірити зв'язок з групою</button>
+        <button type="button" class="btn btn-sm btn-block" id="tgBulkExportBtn" style="margin-top:8px;">📤 Вивантажити всі наявні заявки в групу (одноразово)</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:4px;">Для заявок, які вже є в базі, але ще не потрапили в групу (створені до налаштування бота). Займає час — надсилає по одній заявці з паузою, щоб не впертися в ліміти Telegram. Заявки, які вже позначені ☁️✅, повторно не надсилаються.</div>
+
+        <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">3️⃣ Місячний звіт — раз на місяць, автоматично</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">1-го числа кожного місяця бот сам надсилає вам особисто короткий звіт за щойно завершений місяць: скільки змін/годин, скільки заявок і на яку суму, яке обладнання і скільки встановлено.</div>
+        <div class="field">
+          <label>Ваш особистий Chat ID</label>
+          <input type="text" id="tgMyChatIdInput" placeholder="напр. 123456789">
+        </div>
+        <button type="button" class="btn btn-sm btn-block" id="tgTestMonthlyBtn" style="margin-top:4px;">📊 Надіслати звіт за минулий місяць зараз</button>
+
+        <details class="instructions" style="margin-top:16px;">
+          <summary>📖 Детальна інструкція: як усе налаштувати</summary>
+          <div style="font-size:12.5px; color:var(--text-dim); line-height:1.6;">
+            <strong>Крок 1 — створити бота (один раз, обслуговує все три функції):</strong><br>
+            1. У Telegram знайдіть офіційного бота <span style="font-family:var(--mono); font-size:11.5px;">@BotFather</span>.<br>
+            2. Надішліть йому команду <span style="font-family:var(--mono); font-size:11.5px;">/newbot</span>, дайте ім'я і юзернейм (має закінчуватись на "bot").<br>
+            3. BotFather надішле токен виду <span style="font-family:var(--mono); font-size:11.5px;">123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</span> — скопіюйте у поле "Токен бота" вище.<br><br>
+
+            <strong>Крок 2 — дізнатись Chat ID (для кожного окремо):</strong><br>
+            • <u>Диспетчер:</u> нехай диспетчер відкриє чат з вашим ботом і напише йому будь-що (наприклад "привіт"). Потім відкрийте в браузері (з токеном уже вставленим):<br>
+            <span style="font-family:var(--mono); font-size:11.5px; word-break:break-all;">https://api.telegram.org/bot&lt;ТОКЕН&gt;/getUpdates</span><br>
+            У відповіді знайдіть <span style="font-family:var(--mono); font-size:11.5px;">"from":{"id":987654321</span> — це Chat ID диспетчера (число без мінуса).<br><br>
+            • <u>Група-архів:</u> створіть закриту групу, додайте бота учасником, напишіть у групі будь-яке повідомлення, тим самим способом через <span style="font-family:var(--mono); font-size:11.5px;">getUpdates</span> знайдіть <span style="font-family:var(--mono); font-size:11.5px;">"chat":{"id":-1001234567890</span> — Chat ID групи (з мінусом, для груп завжди від'ємний).<br><br>
+            • <u>Ваш особистий:</u> напишіть боту від свого акаунту, так само гляньте <span style="font-family:var(--mono); font-size:11.5px;">"from":{"id":...}</span> у відповіді — це ваш Chat ID.<br><br>
+
+            <strong>Крок 3 — перевірка:</strong><br>
+            Після заповнення кожної пари полів тисніть відповідну кнопку "🧪 Перевірити" — якщо прийшло тестове повідомлення, все правильно.<br><br>
+
+            <strong>Що можна додати самому (для довідки):</strong><br>
+            Уся логіка живе у функціях <span style="font-family:var(--mono); font-size:11.5px;">sendToTelegramChat()</span>, <span style="font-family:var(--mono); font-size:11.5px;">backupTicketToTelegram()</span> і <span style="font-family:var(--mono); font-size:11.5px;">buildMonthlyTelegramReport()</span> у файлі. Наприклад, щоб додати ще одне авто-повідомлення — можна викликати <span style="font-family:var(--mono); font-size:11.5px;">sendToTelegramChat(chatId, текст)</span> у будь-якому потрібному місці коду (наприклад, після видалення заявки, або коли тег "аварія" додається до заявки).
+          </div>
+        </details>
+        </div>
+      </details>
+
 
       <details class="card acc-card">
         <summary>Синхронізація — Зміни (окремий файл) <span class="acc-chevron">▾</span></summary>
@@ -3227,7 +3291,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m}))};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgMyChatId:''};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -3317,6 +3381,28 @@ function photoDbDelete(key){
     }catch(e){ resolve(false); }
   });
 }
+/* NEW: якщо локальної копії фото немає (видалили, очистили дані сайту, новий
+   телефон через 2 роки і т.д.), а в заявці збережено tgPhotoFileId — пробуємо
+   дотягнутись до резервної копії в Telegram-групі за цим file_id. Успішний
+   результат одразу "лікуємо" назад у локальний IndexedDB під тим самим ключем,
+   щоб наступного разу вже не ходити в мережу. */
+async function fetchPhotoFromTelegram(fileId){
+  const token = (settings.tgBotToken||'').trim();
+  if(!fileId || !token) return null;
+  try{
+    const infoRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`);
+    const info = await infoRes.json();
+    if(!info.ok) return null;
+    const fileRes = await fetch(`https://api.telegram.org/file/bot${token}/${info.result.file_path}`);
+    const blob = await fileRes.blob();
+    return await new Promise(resolve=>{
+      const reader = new FileReader();
+      reader.onload = ()=> resolve(reader.result);
+      reader.onerror = ()=> resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  }catch(e){ console.error('Telegram: не вдалося підтягнути фото-бекап', e); return null; }
+}
 function photoDbGet(key){
   return new Promise((resolve)=>{
     if(!photoDb){ resolve(null); return; }
@@ -3329,23 +3415,33 @@ function photoDbGet(key){
   });
 }
 /* Повертає base64 фото за ключем заявки/калькулятора (синхронно, з кешу,
-   або асинхронно довантажує з IndexedDB та перемальовує callback-ом). */
-function getPhotoCached(photoKey, onLoaded){
+   або асинхронно довантажує з IndexedDB та перемальовує callback-ом).
+   tgFallbackFileId — необов'язковий: якщо локально нічого не знайшлось,
+   пробуємо дотягнути з Telegram-бекапу (див. fetchPhotoFromTelegram вище). */
+function getPhotoCached(photoKey, onLoaded, tgFallbackFileId){
   if(!photoKey) return null;
   if(!String(photoKey).startsWith('idb:')) return photoKey; // старі дані (base64 напряму) — сумісність
   if(photoCache.has(photoKey)) return photoCache.get(photoKey);
-  photoDbGet(photoKey).then(val=>{
+  photoDbGet(photoKey).then(async val=>{
+    if(!val && tgFallbackFileId){
+      val = await fetchPhotoFromTelegram(tgFallbackFileId);
+      if(val) await photoDbPut(photoKey, val); // лікуємо локальне сховище під тим самим ключем
+    }
     if(val){ photoCache.set(photoKey, val); if(onLoaded) onLoaded(val); }
   });
   return null;
 }
 /* Зберігає нове фото (data URL) в IndexedDB, повертає ключ для запису в заявку */
 /* Те саме, що getPhotoCached, але як Promise — для місць, де потрібно дочекатись результату (поділитися, тощо) */
-async function resolvePhotoAsync(photoKey){
+async function resolvePhotoAsync(photoKey, tgFallbackFileId){
   if(!photoKey) return null;
   if(!String(photoKey).startsWith('idb:')) return photoKey; // старі дані — сумісність
   if(photoCache.has(photoKey)) return photoCache.get(photoKey);
-  const val = await photoDbGet(photoKey);
+  let val = await photoDbGet(photoKey);
+  if(!val && tgFallbackFileId){
+    val = await fetchPhotoFromTelegram(tgFallbackFileId);
+    if(val) await photoDbPut(photoKey, val); // лікуємо локальне сховище під тим самим ключем
+  }
   if(val) photoCache.set(photoKey, val);
   return val;
 }
@@ -3790,6 +3886,8 @@ function attachAddressNavHandlers(rootEl){
     if(editBtn){ closeModal(); editTicket(editBtn.dataset.id); return; }
     const shareBtn = e.target.closest('.share-ticket-btn');
     if(shareBtn){ shareTicket(shareBtn.dataset.id); return; }
+    const tgBtn = e.target.closest('.tg-dispatcher-btn');
+    if(tgBtn){ sendTicketToDispatcher(tgBtn.dataset.id); return; }
     const copyBtn = e.target.closest('.copy-ticket-btn');
     if(copyBtn){ copyTicketCardText(copyBtn.dataset.id); return; }
     const dgBtn = e.target.closest('.contract-ticket-btn');
@@ -4243,6 +4341,7 @@ function blankTicketObject(){
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
+    tgBackedUp:false, tgPhotoFileId:null, // NEW: чи відправлено текст/фото в Telegram-групу як резервну копію
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -4421,11 +4520,12 @@ function renderTicketCard(t){
     <div class="tc-content tc-collapsed" id="tcc-${t.id}">${escapeHtml(t.content)}</div>
     <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${syncBadge}</div>
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${t.tgBackedUp ? '<span class="tc-photo-badge" title="Є резервна копія в Telegram-групі">☁️✅</span>' : ''}${syncBadge}</div>
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       ${geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
+      <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
       <button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>
       <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
@@ -4556,13 +4656,224 @@ async function copyTicketCardText(id){
   }
 }
 
+/* ---- Надіслати заявку диспетчеру через бота (за вимогою, з кнопки) ----
+   На відміну від резервного копіювання нижче — це не тихий фон, а явна дія
+   майстра: показуємо тост про успіх/помилку. Використовує той самий бот
+   (tgBotToken), але окремий chat_id — особистий чат диспетчера. */
+async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
+  const token = (settings.tgBotToken||'').trim();
+  if(!token || !chatId) return {ok:false, reason:'не налаштовано токен/chat_id'};
+  try{
+    const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({chat_id: chatId, text: (text||'').slice(0,4000)})
+    });
+    const msgData = await msgRes.json();
+    if(!msgData.ok) return {ok:false, reason: msgData.description || 'sendMessage failed'};
+    if(photoKey){
+      const photoData = await resolvePhotoAsync(photoKey, tgFileId);
+      if(photoData){
+        const blob = await (await fetch(photoData)).blob();
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('photo', blob, 'foto.jpg');
+        await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
+      }
+    }
+    return {ok:true};
+  }catch(e){ return {ok:false, reason:String(e)}; }
+}
+async function sendTicketToDispatcher(id){
+  const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
+  const chatId = (settings.tgDispatcherChatId||'').trim();
+  if(!settings.tgBotToken || !chatId){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера в Налаштуваннях'); return; }
+  showToast('Надсилаю диспетчеру…');
+  const res = await sendToTelegramChat(chatId, t.content, t.photo, t.tgPhotoFileId);
+  showToast(res.ok ? '✅ Надіслано диспетчеру!' : `Не вдалося надіслати: ${res.reason}`);
+}
+async function sendCurrentTicketToDispatcher(){
+  // працює навіть якщо заявку ще не збережено — рахуємо текст прямо з форми
+  syncFormToState();
+  const text = getCurrentTicketText();
+  if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
+  const chatId = (settings.tgDispatcherChatId||'').trim();
+  if(!settings.tgBotToken || !chatId){ showToast('Спочатку вкажіть токен бота і Chat ID диспетчера в Налаштуваннях'); return; }
+  showToast('Надсилаю диспетчеру…');
+  const res = await sendToTelegramChat(chatId, text, calcState.photo, calcState.tgPhotoFileId);
+  showToast(res.ok ? '✅ Надіслано диспетчеру!' : `Не вдалося надіслати: ${res.reason}`);
+}
+
+/* ---- Резервне копіювання заявок у закриту Telegram-групу ----
+   Не замінює локальне зберігання (фото й далі лежать в IndexedDB як завжди),
+   а лише додатково дублює текст і фото в групу — щоб через рік-два, якщо
+   локальна копія фото загубиться (новий телефон, очищені дані сайту тощо),
+   можна було підтягнути її назад (див. fetchPhotoFromTelegram вище).
+   Спрацьовує лише якщо в Налаштуваннях заповнені tgBotToken і tgBackupChatId,
+   інакше нічого не робить. Не блокує збереження заявки — викликається без await. */
+async function backupTicketToTelegram(t){
+  const token = (settings.tgBotToken||'').trim();
+  const chatId = (settings.tgBackupChatId||'').trim();
+  if(!token || !chatId || !t) return;
+  try{
+    // текст — окремим повідомленням і лише один раз (щоб не дублювати при кожному редагуванні)
+    if(!t.tgBackedUp && t.content){
+      const text = t.content.slice(0, 4000); // ліміт Telegram на текст повідомлення
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({chat_id: chatId, text})
+      });
+      const data = await res.json();
+      if(data.ok){ t.tgBackedUp = true; saveTickets(); }
+    }
+    // фото — окремим повідомленням, теж лише один раз на заявку
+    if(t.photo && !t.tgPhotoFileId){
+      const photoData = await resolvePhotoAsync(t.photo);
+      if(photoData){
+        const blob = await (await fetch(photoData)).blob();
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('caption', `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim().slice(0,1020));
+        form.append('photo', blob, 'foto.jpg');
+        const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
+        const data = await res.json();
+        if(data.ok){
+          const sizes = data.result.photo || [];
+          t.tgPhotoFileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
+          saveTickets();
+        }
+      }
+    }
+  }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
+}
+// NEW: тестове повідомлення в Налаштуваннях — перевірити, що токен і chat_id правильні.
+// Приймає chatId ззовні, щоб однією функцією перевіряти всі три призначення.
+async function sendTelegramTestMessage(chatId, label){
+  const token = (settings.tgBotToken||'').trim();
+  chatId = (chatId||'').trim();
+  if(!token || !chatId){ showToast('Спочатку заповніть токен і відповідний Chat ID'); return; }
+  try{
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({chat_id: chatId, text: `✅ Майстер-Трекер: зв'язок налаштовано (${label}).`})
+    });
+    const data = await res.json();
+    showToast(data.ok ? 'Тестове повідомлення надіслано!' : `Помилка Telegram: ${data.description||'невідома'}`);
+  }catch(e){ showToast('Не вдалося з\'єднатись із Telegram'); }
+}
+
+/* ---- Місячний звіт собі особисто (1-го числа, автоматично) ----
+   Рахує зміни/години, кількість і суму заявок, та зведення встановленого
+   обладнання/кабелю/робіт — усе за щойно завершений місяць. */
+function buildMonthlyEquipmentLines(list){
+  const eqCounts = {}, cableMeters = {}, workCounts = {};
+  list.forEach(t=>{
+    (t.equipment||[]).forEach(e=>{ if(e.checked) eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
+    (t.cables||[]).forEach(c=>{ const m = Number(c.meters)||0; if(m>0) cableMeters[c.label] = (cableMeters[c.label]||0) + m; });
+    (t.presetWorks||[]).forEach(w=>{ if(w.checked) workCounts[w.label] = (workCounts[w.label]||0) + (Number(w.qty)||1); });
+  });
+  const lines = [];
+  Object.entries(eqCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,c])=> lines.push(`${label} — ${c} шт.`));
+  Object.entries(cableMeters).sort((a,b)=>b[1]-a[1]).forEach(([label,m])=> lines.push(`${label} — ${m} м`));
+  Object.entries(workCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,q])=> lines.push(`${label} — ${q} шт.`));
+  return lines;
+}
+function buildMonthlyTelegramReport(refDate){
+  const monthTickets = tickets.filter(t=>isSameMonth(t.date, refDate));
+  const monthShifts = shifts.filter(s=>isSameMonth(s.date, refDate));
+  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
+  const totalSum = monthTickets.reduce((s,t)=>s+(Number(t.sum)||0),0);
+  const byType = {};
+  monthTickets.forEach(t=>{ const ty=t.type||'Інше'; byType[ty] = (byType[ty]||0) + 1; });
+  const lines = [];
+  lines.push(`📊 ЗВІТ ЗА ${MONTH_NAMES[refDate.getMonth()].toUpperCase()} ${refDate.getFullYear()}`);
+  lines.push('──────────');
+  lines.push(`🕒 Змін: ${monthShifts.length}, годин: ${totalHours.toFixed(1)}`);
+  lines.push(`🧾 Заявок: ${monthTickets.length}, сума: ${fmtMoney(totalSum)}`);
+  Object.entries(byType).forEach(([ty,count])=> lines.push(`   • ${ty}: ${count}`));
+  lines.push('──────────');
+  lines.push('📦 Встановлено обладнання:');
+  const eqLines = buildMonthlyEquipmentLines(monthTickets);
+  if(eqLines.length) eqLines.forEach(l=> lines.push('   • '+l));
+  else lines.push('   — немає даних');
+  return lines.join('\n');
+}
+async function sendMonthlyTelegramReportNow(){
+  const token = (settings.tgBotToken||'').trim();
+  const chatId = (settings.tgMyChatId||'').trim();
+  if(!token || !chatId){ showToast('Спочатку заповніть токен і ваш особистий Chat ID'); return; }
+  const now = new Date();
+  const lastMonthRef = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const text = buildMonthlyTelegramReport(lastMonthRef);
+  showToast('Надсилаю звіт…');
+  const res = await sendToTelegramChat(chatId, text, null, null);
+  showToast(res.ok ? '✅ Звіт надіслано!' : `Не вдалося надіслати: ${res.reason}`);
+}
+// NEW: викликається раз при старті застосунку — 1-го числа місяця сам надсилає
+// звіт за щойно завершений місяць, якщо ще не надсилав цього місяця
+async function maybeSendMonthlyTelegramReport(){
+  const token = (settings.tgBotToken||'').trim();
+  const chatId = (settings.tgMyChatId||'').trim();
+  if(!token || !chatId) return;
+  const now = new Date();
+  if(now.getDate() !== 1) return;
+  const monthKey = now.toISOString().slice(0,7);
+  if(localStorage.getItem('tgMonthlyReportMonth') === monthKey) return;
+  const lastMonthRef = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const text = buildMonthlyTelegramReport(lastMonthRef);
+  const res = await sendToTelegramChat(chatId, text, null, null);
+  if(res.ok) localStorage.setItem('tgMonthlyReportMonth', monthKey);
+}
+
+/* ---- Одноразове вивантаження вже наявних заявок у групу-архів ----
+   Для заявок, створених до налаштування бота. Надсилає послідовно, з паузою
+   між заявками, щоб не впертися в ліміти Telegram на кількість повідомлень
+   у групу за хвилину. backupTicketToTelegram сама пропускає вже надіслане
+   (tgBackedUp / tgPhotoFileId), тож повторний запуск нічого не задублює. */
+let bulkExportRunning = false;
+let bulkExportCancelled = false;
+async function bulkExportTicketsToTelegram(){
+  if(bulkExportRunning){ showToast('Вивантаження вже триває'); return; }
+  const token = (settings.tgBotToken||'').trim();
+  const chatId = (settings.tgBackupChatId||'').trim();
+  if(!token || !chatId){ showToast('Спочатку налаштуйте токен і Chat ID групи вище'); return; }
+  const todo = tickets.filter(t => (!t.tgBackedUp && t.content) || (t.photo && !t.tgPhotoFileId));
+  if(!todo.length){ showToast('Усі заявки вже вивантажено в групу'); return; }
+  const etaMin = Math.ceil(todo.length * 1.4 / 60);
+  if(!confirm(`Буде надіслано ${todo.length} заявок(и) у групу. Орієнтовно ~${etaMin} хв (навмисна пауза між заявками, щоб не впертися в ліміти Telegram). Не закривайте застосунок, поки триває. Продовжити?`)) return;
+
+  bulkExportRunning = true;
+  bulkExportCancelled = false;
+  openModal('Вивантаження в Telegram', `
+    <div style="text-align:center; padding:16px 10px;">
+      <div style="font-size:14.5px; color:var(--text-dim); margin-bottom:10px;">Надсилаю заявки в групу…</div>
+      <div class="tabular" id="bulkExportCounter" style="font-size:26px; font-weight:800;">0 / ${todo.length}</div>
+    </div>
+    <button type="button" class="btn btn-danger btn-block" id="bulkExportCancelBtn">Зупинити</button>
+  `, {onOpen: ()=>{
+    document.getElementById('bulkExportCancelBtn').addEventListener('click', ()=>{ bulkExportCancelled = true; });
+  }});
+
+  let done = 0;
+  for(const t of todo){
+    if(bulkExportCancelled) break;
+    await backupTicketToTelegram(t);
+    done++;
+    const counterEl = document.getElementById('bulkExportCounter');
+    if(counterEl) counterEl.textContent = `${done} / ${todo.length}`;
+    await new Promise(r=>setTimeout(r, 1400));
+  }
+  bulkExportRunning = false;
+  closeModal();
+  showToast(bulkExportCancelled ? `Зупинено: надіслано ${done} з ${todo.length}` : `Готово: вивантажено ${done} заявок(и)`);
+}
+
 /* Поділитися заявкою (текст + фото, якщо є) — відкриває системне меню «Поділитися»,
    де серед застосунків буде Viber, якщо він встановлений на телефоні. */
 async function shareTicket(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return; // NEW
   const text = t.content || '';
   try{
-    const photoData = t.photo ? await resolvePhotoAsync(t.photo) : null;
+    const photoData = t.photo ? await resolvePhotoAsync(t.photo, t.tgPhotoFileId) : null;
     if(photoData){
       const res = await fetch(photoData);
       const blob = await res.blob();
@@ -4733,6 +5044,12 @@ function resetCalcForm(presetDate){
   editingTicketId = null;
   feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
   tariffIsAutoDefault = true;
+  // NEW: нова заявка стартує з типом "Підключення" — одразу вмикаємо тег "підключення"
+  const defTag = TYPE_TAG_MAP[calcState.type];
+  if(defTag){
+    if(!settings.tags.includes(defTag)){ settings.tags.push(defTag); saveSettings(); }
+    if(!calcState.tags.includes(defTag)) calcState.tags.push(defTag);
+  }
   document.getElementById('saveTicketBtn').textContent = 'Зберегти заявку';
   document.getElementById('cancelEditBtn').classList.add('hidden');
   fillFormFromState();
@@ -4956,7 +5273,7 @@ function renderPhotoPreview(){
   if(calcState.photo){
     wrap.classList.remove('hidden');
     const img = document.getElementById('photoPreview');
-    const resolved = getPhotoCached(calcState.photo, (val)=>{ img.src = val; });
+    const resolved = getPhotoCached(calcState.photo, (val)=>{ img.src = val; }, calcState.tgPhotoFileId);
     img.src = resolved || ''; // поки фото з IndexedDB вантажиться, плейсхолдер порожній; підʼявиться через мить
     btn.textContent = '📷 Замінити фото';
   } else {
@@ -5119,6 +5436,27 @@ function updateCallFeeLabel(){
 
 // NEW: підставляє ціну виклику/підключення за замовчуванням при зміні типу
 // заявки — але тільки якщо майстер ще не ввів своє значення вручну.
+// NEW: коли обрано тип роботи "Підключення"/"Ремонт" — одразу вмикає відповідний
+// тег (щоб потім було зручно шукати заявки за тегом). Порівнюємо з calcState.type,
+// який на момент події 'change' ще містить ПОПЕРЕДНЄ значення (синхронізується
+// з форми лише при збереженні) — тож знімаємо старий тег типу й ставимо новий.
+const TYPE_TAG_MAP = {'Підключення':'підключення', 'Ремонт':'ремонт'};
+function applyDefaultTypeTag(){
+  const newType = document.getElementById('f_type').value;
+  const prevType = calcState.type;
+  const newTag = TYPE_TAG_MAP[newType];
+  const prevTag = TYPE_TAG_MAP[prevType];
+  if(prevTag && prevTag!==newTag){
+    const i = calcState.tags.indexOf(prevTag);
+    if(i>-1) calcState.tags.splice(i,1);
+  }
+  if(newTag){
+    if(!settings.tags.includes(newTag)){ settings.tags.push(newTag); saveSettings(); }
+    if(!calcState.tags.includes(newTag)) calcState.tags.push(newTag);
+  }
+  calcState.type = newType;
+  renderCalcTagChips();
+}
 function applyDefaultCallFee(){
   if(!feeIsAutoDefault || calcState.cloudImported) return;
   const type = getEffectiveType();
@@ -5325,7 +5663,7 @@ async function sharePhoto(){
   if(!calcState.photo){ showToast('Спочатку додайте фото'); return; }
   if(!navigator.share){ showToast('Web Share API не підтримується цим браузером'); return; }
   try{
-    const photoData = await resolvePhotoAsync(calcState.photo);
+    const photoData = await resolvePhotoAsync(calcState.photo, calcState.tgPhotoFileId);
     const res = await fetch(photoData);
     const blob = await res.blob();
     const file = new File([blob], 'foto.jpg', {type:'image/jpeg'});
@@ -5415,6 +5753,7 @@ async function saveTicketFromForm(e){
     }
   }
 
+  let savedTicketRef = null; // NEW: посилання на щойно збережений об'єкт у tickets — для бекапу в Telegram нижче
   if(editingTicketId){
     calcState.id = editingTicketId;
     const idx = tickets.findIndex(t=>t.id===editingTicketId);
@@ -5427,6 +5766,7 @@ async function saveTicketFromForm(e){
       const ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
       if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
     }
+    if(idx>-1) savedTicketRef = tickets[idx];
   } else {
     calcState.id = Date.now();
     const newTicket = JSON.parse(JSON.stringify(calcState));
@@ -5438,7 +5778,9 @@ async function saveTicketFromForm(e){
       const t = tickets.find(t=>t.id===newTicket.id);
       if(t){ t.synced = ok; saveTickets(); renderTicketsScreen(); }
     }
+    savedTicketRef = tickets.find(t=>t.id===newTicket.id);
   }
+  if(savedTicketRef) backupTicketToTelegram(savedTicketRef); // NEW: фонова резервна копія тексту/фото в Telegram (не блокує збереження)
 
   currentTicketDate = calcState.date;
   clearDraft();
@@ -5584,6 +5926,10 @@ function renderSettingsScreen(){
   document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
+  document.getElementById('tgBotTokenInput').value = settings.tgBotToken || '';
+  document.getElementById('tgBackupChatIdInput').value = settings.tgBackupChatId || '';
+  document.getElementById('tgDispatcherChatIdInput').value = settings.tgDispatcherChatId || '';
+  document.getElementById('tgMyChatIdInput').value = settings.tgMyChatId || '';
   document.getElementById('syncSecretInput').value = settings.syncSecret || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
@@ -5890,7 +6236,7 @@ async function shareCurrentTicket(){
   const text = getCurrentTicketText(); // NEW: враховує raw-режим
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
   try{
-    const photoData = calcState.photo ? await resolvePhotoAsync(calcState.photo) : null;
+    const photoData = calcState.photo ? await resolvePhotoAsync(calcState.photo, calcState.tgPhotoFileId) : null;
     if(photoData){
       const res = await fetch(photoData);
       const blob = await res.blob();
@@ -6514,6 +6860,7 @@ function bindTicketsScreen(){
     const editBtn  = e.target.closest('.edit-ticket-btn');
     const delBtn   = e.target.closest('.delete-ticket-btn');
     const shareBtn = e.target.closest('.share-ticket-btn');
+    const tgBtn    = e.target.closest('.tg-dispatcher-btn');
     const copyBtn  = e.target.closest('.copy-ticket-btn');
     const dgBtn    = e.target.closest('.contract-ticket-btn');
     const histBtn  = e.target.closest('.history-ticket-btn');
@@ -6528,6 +6875,7 @@ function bindTicketsScreen(){
     if(editBtn)  editTicket(editBtn.dataset.id);
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
+    if(tgBtn)    sendTicketToDispatcher(tgBtn.dataset.id);
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
     if(histBtn)  showAbonentHistory(histBtn.dataset.id);
@@ -6571,7 +6919,7 @@ function bindCalculatorScreen(){
     document.getElementById(id).addEventListener('input', computeTotal);
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
-  document.getElementById('f_type').addEventListener('change', ()=>{ toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
+  document.getElementById('f_type').addEventListener('change', ()=>{ applyDefaultTypeTag(); toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
   // NEW: при зміні міста — одразу підвантажуємо підказки вулиць саме для цього міста
   document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
@@ -6724,7 +7072,11 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     const tag = chip.dataset.calctag;
     const i = calcState.tags.indexOf(tag);
     if(i>-1) calcState.tags.splice(i,1); else calcState.tags.push(tag);
-    renderCalcTagChips();
+    // NEW: раніше тут викликався renderCalcTagChips(), який перебудовував весь
+    // innerHTML — це знищувало саме ту кнопку, по якій щойно тапнули, і браузер
+    // "губив" фокус та підкидав скрол сторінки вгору. Тепер міняємо лише клас.
+    chip.classList.toggle('active');
+    document.getElementById('tagsSummary').textContent = calcState.tags.length ? `— обрано: ${calcState.tags.length}` : '';
   });
   document.getElementById('calcMasterChips').addEventListener('click', e=>{
     const chip = e.target.closest('[data-master-letter]'); if(!chip) return;
@@ -6732,6 +7084,7 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     const name = chip.dataset.masterName;
     if(!calcState.connectMasters) calcState.connectMasters = [];
     const idx = calcState.connectMasters.findIndex(m=>m.name===name);
+    let newTagRegistered = false; // NEW: чи з'явився зовсім новий тег у списку (тоді таки треба перемалювати)
     if(idx>-1){
       // повторний тап на вже вибраного майстра знімає вибір
       calcState.connectMasters.splice(idx,1);
@@ -6744,13 +7097,25 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
       // напарник одразу стає тегом заявки — не треба вписувати ім'я двічі
       if(!calcState.tags.includes(name)) calcState.tags.push(name);
       // якщо такого тега ще нема серед офіційних у Налаштуваннях — реєструємо його там же
-      if(!settings.tags.includes(name)){ settings.tags.push(name); saveSettings(); }
+      if(!settings.tags.includes(name)){ settings.tags.push(name); saveSettings(); newTagRegistered = true; }
     }
-    renderMasterChips();
-    renderCalcTagChips();
+    // NEW: раніше тут завжди викликались renderMasterChips()/renderCalcTagChips(), які
+    // перебудовували весь innerHTML і губили скрол/фокус (та сама причина, що й з тегами
+    // вище). Тепер повне перемальовування тегів робимо лише тоді, коли справді з'явився
+    // новий елемент списку — інакше просто оновлюємо класи "active" на місці.
+    chip.classList.toggle('active');
+    if(newTagRegistered){
+      renderCalcTagChips();
+    } else {
+      document.getElementById('tagsSummary').textContent = calcState.tags.length ? `— обрано: ${calcState.tags.length}` : '';
+      document.querySelectorAll('#calcTagChips [data-calctag]').forEach(btn=>{
+        btn.classList.toggle('active', calcState.tags.includes(btn.dataset.calctag));
+      });
+    }
   });
 
   document.getElementById('sendTicketBtn').addEventListener('click', shareCurrentTicket);
+  document.getElementById('sendToDispatcherBtn').addEventListener('click', sendCurrentTicketToDispatcher);
   document.getElementById('copyTextBtn').addEventListener('click', copyTicketText);
   document.getElementById('sharePhotoBtn').addEventListener('click', sharePhoto);
   document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
@@ -6915,6 +7280,23 @@ function bindSettingsScreen(){
   document.getElementById('syncSecretInput').addEventListener('input', e=>{
     settings.syncSecret = e.target.value.trim(); saveSettings();
   });
+  // NEW: налаштування Telegram-бота
+  document.getElementById('tgBotTokenInput').addEventListener('input', e=>{
+    settings.tgBotToken = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgBackupChatIdInput').addEventListener('input', e=>{
+    settings.tgBackupChatId = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgDispatcherChatIdInput').addEventListener('input', e=>{
+    settings.tgDispatcherChatId = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgMyChatIdInput').addEventListener('input', e=>{
+    settings.tgMyChatId = e.target.value.trim(); saveSettings();
+  });
+  document.getElementById('tgTestBtn').addEventListener('click', ()=> sendTelegramTestMessage(settings.tgBackupChatId, 'група-архів'));
+  document.getElementById('tgTestDispatcherBtn').addEventListener('click', ()=> sendTelegramTestMessage(settings.tgDispatcherChatId, 'диспетчер'));
+  document.getElementById('tgTestMonthlyBtn').addEventListener('click', sendMonthlyTelegramReportNow);
+  document.getElementById('tgBulkExportBtn').addEventListener('click', bulkExportTicketsToTelegram);
   document.getElementById('shiftsScriptUrlInput').addEventListener('input', e=>{
     settings.shiftsScriptUrl = e.target.value.trim(); saveSettings();
   });
@@ -7118,6 +7500,7 @@ async function init(){
   setInterval(saveDraftToLocalStorage, 30000);
 
   maybeShowMonthlyCleanupReminder(); // NEW: 1-го числа кожного місяця — нагадування почистити файли бекапів
+  maybeSendMonthlyTelegramReport(); // NEW: 1-го числа кожного місяця — авто-звіт у Telegram собі особисто
 
   document.getElementById('syncQueueRetryBtn').addEventListener('click', retrySyncQueue);
   window.addEventListener('online', ()=>{
