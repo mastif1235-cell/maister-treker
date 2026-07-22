@@ -2089,6 +2089,7 @@ function fillFormFromState(){
   document.getElementById('f_client').value = calcState.clientName || '';
   document.getElementById('f_phone').value = calcState.phone || '';
   document.getElementById('f_mac').value = calcState.macAddress || '';
+  { const hint = document.getElementById('macHint'); if(hint) hint.style.display = (calcState.macAddress && !/^[0-9A-F]{12}$/.test(calcState.macAddress)) ? '' : 'none'; }
   document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
   updateCredParsedHint();
   setDateFieldValue(calcState.date || '');
@@ -3887,7 +3888,53 @@ function bindCalculatorScreen(){
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ applyDefaultTypeTag(); toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
   // NEW: при зміні міста — одразу підвантажуємо підказки вулиць саме для цього міста
-  document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
+  // NEW: підказка клієнта за адресою — якщо на цю ж адресу вже була заявка,
+// пропонуємо підставити ім'я/телефон, щоб не вбивати вручну вдруге.
+// Спрацьовує тільки для НОВОЇ заявки (не при редагуванні) і тільки якщо
+// клієнта/телефон ще не вписані — нічого не нав'язуємо, якщо вже заповнено.
+function findPreviousTicketAtAddress(city, street, house){
+  const norm = s => (s||'').trim().toLowerCase();
+  if(!norm(city) || !norm(street) || !norm(house)) return null;
+  const matches = tickets.filter(t=>
+    !t.cloudImported &&
+    norm(t.city)===norm(city) && norm(t.street)===norm(street) && norm(t.house)===norm(house) &&
+    (t.clientName || t.phone)
+  );
+  if(!matches.length) return null;
+  matches.sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+  return matches[0];
+}
+function maybeSuggestClientFromAddress(){
+  if(editingTicketId) return; // при редагуванні вже існуючої заявки нічого не пропонуємо
+  if(calcState.clientName || calcState.phone) return; // щось уже вписано — не заважаємо
+  const city = document.getElementById('f_city').value.trim();
+  const street = document.getElementById('f_street').value.trim();
+  const house = document.getElementById('f_house').value.trim();
+  const prev = findPreviousTicketAtAddress(city, street, house);
+  if(!prev) return;
+  const addr = [city, street, house].filter(Boolean).join(', ');
+  openModal('Клієнт на цій адресі', `
+    <div style="font-size:14px; margin-bottom:14px; color:var(--text-dim);">
+      На адресі <strong style="color:var(--text);">${escapeHtml(addr)}</strong> вже була заявка:<br>
+      ${prev.clientName ? escapeHtml(prev.clientName)+'<br>' : ''}${prev.phone ? escapeHtml(prev.phone) : ''}
+    </div>
+    <button type="button" class="btn btn-accent btn-block" id="useAddrClientBtn">Підставити ці дані</button>
+    <button type="button" class="btn btn-block" id="skipAddrClientBtn" style="margin-top:8px;">Ні, дякую</button>
+  `, {onOpen: ()=>{
+    document.getElementById('useAddrClientBtn').addEventListener('click', ()=>{
+      document.getElementById('f_client').value = prev.clientName || '';
+      document.getElementById('f_phone').value = prev.phone || '';
+      calcState.clientName = prev.clientName || '';
+      calcState.phone = prev.phone || '';
+      closeModal();
+      showToast('Дані клієнта підставлено');
+    });
+    document.getElementById('skipAddrClientBtn').addEventListener('click', closeModal);
+  }});
+}
+document.getElementById('f_house').addEventListener('blur', maybeSuggestClientFromAddress);
+
+document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
   document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
@@ -3971,6 +4018,9 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     e.target.value = normalizeMac(before).slice(0,12);
     // якщо не редагували середину рядка (звичайне друкування в кінці) — курсор лишаємо в кінці
     if(pos === before.length) e.target.selectionStart = e.target.selectionEnd = e.target.value.length;
+    // NEW: м'яка підказка (не блокує збереження) — повний MAC це рівно 12 символів 0-9/A-F
+    const hint = document.getElementById('macHint');
+    if(hint) hint.style.display = (e.target.value && !/^[0-9A-F]{12}$/.test(e.target.value)) ? '' : 'none';
   });
   if(!('BarcodeDetector' in window)) document.getElementById('macScanBtn').classList.add('hidden');
   document.getElementById('f_credRaw').addEventListener('input', updateCredParsedHint);
@@ -4085,7 +4135,11 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
   document.getElementById('copyTextBtn').addEventListener('click', copyTicketText);
   document.getElementById('sharePhotoBtn').addEventListener('click', sharePhoto);
   document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
-  document.getElementById('cancelEditBtn').addEventListener('click', ()=>{ clearDraft(); resetCalcForm(currentTicketDate); switchTab('tickets'); });
+  document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
+    syncFormToState(); // щоб hasUnsavedChanges бачила саме те, що зараз у полях, а не стан на момент відкриття
+    if(hasUnsavedChanges() && !confirm('Скасувати редагування? Незбережені зміни буде втрачено.')) return;
+    clearDraft(); resetCalcForm(currentTicketDate); switchTab('tickets');
+  });
 }
 
 function bindShiftsScreen(){

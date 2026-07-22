@@ -9,14 +9,14 @@
 :root[data-theme="dark"]{
   --bg:#14181C; --surface:#1E242A; --surface-2:#262E36; --surface-3:#2E3742;
   --border:#323B44; --accent:#FF8A3D; --accent-ink:#1A1006;
-  --text:#E8ECEF; --text-dim:#8B96A1; --text-faint:#5C6670;
+  --text:#E8ECEF; --text-dim:#9DA7B2; --text-faint:#6C7680; /* NEW: трохи світліше — краще читається на сонці */
   --success:#4CAF7D; --danger:#E5575C; --warn:#E5B93D;
   --overlay: rgba(8,10,12,.6);
 }
 :root[data-theme="light"]{
   --bg:#EEF1F3; --surface:#FFFFFF; --surface-2:#F4F6F8; --surface-3:#E9EDF0;
   --border:#D8DEE3; --accent:#E06A1F; --accent-ink:#FFFFFF;
-  --text:#1A2027; --text-dim:#5B6670; --text-faint:#8993A0;
+  --text:#1A2027; --text-dim:#4A545E; --text-faint:#757E8A; /* NEW: трохи темніше — краще читається на сонці */
   --success:#2E8B57; --danger:#C8373D; --warn:#A6790A;
   --overlay: rgba(20,24,28,.45);
 }
@@ -150,7 +150,7 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-card .tc-expand-btn{background:none; border:none; color:var(--accent); font-size:12px; font-weight:700; padding:4px 0; margin-top:2px; display:block;}
 .ticket-card .tc-tags{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px;}
 .ticket-card .tc-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
-.ticket-card .tc-actions .btn{flex:1 1 45%;}
+.ticket-card .tc-actions .btn{flex:1 1 45%; min-height:44px; font-size:13.5px;} /* NEW: більша тач-область для роботи в рукавицях/на морозі */
 .ticket-card .tc-photo-badge{font-size:11px; color:var(--text-dim);}
 .ticket-card .tc-sync-badge{font-size:11px; padding:2px 7px; border-radius:8px; font-weight:600;}
 .ticket-card .tc-sync-ok{color:#3fbf6f; background:rgba(63,191,111,0.12);}
