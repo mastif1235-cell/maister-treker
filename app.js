@@ -1313,7 +1313,7 @@ function renderMainTicketList(){
 
 function renderTicketCard(t){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
-  const sub = [t.clientName, t.phone, [t.city, t.address].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
   const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
   const hasContent = !!(t.content);
   const isOther = t.type === 'Інше';
