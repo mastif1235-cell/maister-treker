@@ -146,8 +146,10 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-card .tc-type{font-size:14px; font-weight:700; margin-top:2px;}
 .ticket-card .tc-sub{font-size:15px; font-weight:600; color:var(--text); margin-top:2px;} /* NEW: трохи крупніше — тепер це єдина інформація в шапці */
 .ticket-card .tc-content{font-size:13.5px; color:var(--text-dim); margin-top:8px; white-space:pre-line;}
-.ticket-card .tc-content.tc-collapsed{display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
-.ticket-card .tc-expand-btn{background:none; border:none; color:var(--accent); font-size:12px; font-weight:700; padding:4px 0; margin-top:2px; display:block;}
+.ticket-card .tc-details{margin-top:2px;}
+.ticket-card .tc-details.tc-collapsed{display:none;} /* NEW: тепер тут не лише текст, а й час/сума/договір/логін-пароль — тому ховаємо повністю, а не обрізаємо в 3 рядки */
+.ticket-card .tc-meta-row{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px;}
+.ticket-card .tc-expand-btn{background:none; border:none; color:var(--accent); font-size:12px; font-weight:700; padding:4px 0; margin-top:6px; display:block;}
 .ticket-card .tc-tags{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px;}
 .ticket-card .tc-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
 .ticket-card .tc-actions .btn{flex:1 1 45%; min-height:44px; font-size:13.5px;} /* NEW: більша тач-область для роботи в рукавицях/на морозі */

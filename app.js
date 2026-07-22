@@ -1327,26 +1327,30 @@ function renderTicketCard(t){
       ? `<span class="tc-sync-badge tc-sync-ok" title="Запит надіслано без помилок мережі">✅ Завантажено</span>`
       : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Очікує</span>`;
   }
+  // NEW: у шапці лишили тільки статус заявки + адресу; все інше (час, сума,
+  // номер договору, логін/пароль, опис, нотатка майстра) сховано всередину
+  // одного блоку tc-details, який розгортається кнопкою "▼ Розгорнути"
   return `
   <div class="ticket-card" data-id="${t.id}">
     <div class="tc-head">
       <div style="flex:1; min-width:0;">
         <div class="tc-type">${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
-        ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       </div>
-      <div style="text-align:right; flex-shrink:0;">
+    </div>
+    <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
+    <div class="tc-details tc-collapsed" id="tcc-${t.id}">
+      <div class="tc-meta-row">
         <div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div>
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
+      ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent); margin-top:8px;">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
+      ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
+        ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
+      </div>` : ''}
+      ${hasContent ? `<div class="tc-content">${escapeHtml(t.content)}</div>` : ''}
+      ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
     </div>
-    ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
-      ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
-    </div>` : ''}
-    ${hasContent ? `
-    <div class="tc-content tc-collapsed" id="tcc-${t.id}">${escapeHtml(t.content)}</div>
-    <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
-    ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${t.tgBackedUp ? `<button type="button" class="tc-photo-badge tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; background:none; padding:0; font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px;">☁️✅</button>` : ''}${syncBadge}</div>
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
