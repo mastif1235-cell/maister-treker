@@ -1337,14 +1337,14 @@ function renderTicketCard(t){
         <div class="tc-type">${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
       </div>
-    </div>
-    <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
-    <div class="tc-details tc-collapsed" id="tcc-${t.id}">
-      <div class="tc-meta-row">
+      <div style="text-align:right; flex-shrink:0;">
         <div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div>
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
-      ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent); margin-top:8px;">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
+    </div>
+    <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
+    <div class="tc-details tc-collapsed" id="tcc-${t.id}">
+      ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
