@@ -49,7 +49,7 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:''};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[]};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -1209,6 +1209,7 @@ function renderTicketsScreen(){
   renderDaySummary();
   renderMainTicketList();
   renderSyncQueueBanner();
+  renderQuickDialButtons();
 }
 
 function renderSyncQueueBanner(){
@@ -2002,6 +2003,21 @@ function restoreDraftIfAny(){
   showToast('Чернетку відновлено');
 }
 
+// NEW: "бригада на сьогодні" — перший вибір напарників за поточний календарний
+// день запам'ятовується і сам підставляється в кожну наступну НОВУ заявку,
+// поки ви його свідомо не зміните (тоді підставлятиметься вже нове значення).
+// Наступного дня скидається — знову чекає першого вибору.
+const DAILY_MASTERS_KEY = 'dailyMastersDefault';
+function loadDailyMastersDefault(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(DAILY_MASTERS_KEY));
+    if(raw && raw.date === formatDate(new Date())) return raw.masters || [];
+  }catch(e){}
+  return null; // нічого не збережено на сьогодні (або запис ще з учорашнього дня)
+}
+function saveDailyMastersDefault(masters){
+  try{ localStorage.setItem(DAILY_MASTERS_KEY, JSON.stringify({date: formatDate(new Date()), masters})); }catch(e){}
+}
 function resetCalcForm(presetDate){
   calcState = blankCalcState();
   if(presetDate) calcState.date = presetDate;
@@ -2013,6 +2029,12 @@ function resetCalcForm(presetDate){
   if(defTag){
     if(!settings.tags.includes(defTag)){ settings.tags.push(defTag); saveSettings(); }
     if(!calcState.tags.includes(defTag)) calcState.tags.push(defTag);
+  }
+  // NEW: підставляємо "бригаду на сьогодні", якщо вона вже обиралась раніше цього дня
+  const dailyMasters = loadDailyMastersDefault();
+  if(dailyMasters && dailyMasters.length){
+    calcState.connectMasters = dailyMasters.map(m=>({...m}));
+    dailyMasters.forEach(m=>{ if(!calcState.tags.includes(m.name)) calcState.tags.push(m.name); });
   }
   document.getElementById('saveTicketBtn').textContent = 'Зберегти заявку';
   document.getElementById('cancelEditBtn').classList.add('hidden');
@@ -2387,6 +2409,9 @@ function toggleTypeOtherField(){
   document.getElementById('connectMasterWrapLabel').innerHTML = isConnect
     ? 'Хто підключав <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(для номера договору)</span>'
     : 'Напарники';
+  // NEW: "(для договору)" при логіні/паролі має сенс лише для підключення —
+  // для ремонту/іншого договір не формується, тож і згадка тут зайва
+  { const sfx = document.getElementById('credCardDogovorSuffix'); if(sfx) sfx.style.display = isConnect ? '' : 'none'; }
   document.getElementById('importedRawWrap').classList.toggle('hidden', !raw); // NEW
   document.getElementById('fullFormFields').classList.toggle('hidden', other);
   document.getElementById('fullFormBlocks').classList.toggle('hidden', other);
@@ -2913,6 +2938,7 @@ function renderSettingsScreen(){
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
   document.getElementById('dogovorUrlInput').value = settings.dogovorUrl || '';
   renderTagMgmtList();
+  renderQuickDialMgmtList();
   renderCityMgmtList();
   renderCwMgmtList();
   renderMatMgmtList();
@@ -2926,6 +2952,30 @@ function renderTagMgmtList(){
   document.getElementById('tagMgmtList').innerHTML = settings.tags.map(tag=>
     `<span class="chip">${escapeHtml(tag)} <span class="chip-x remove-tag-btn" data-tag="${escapeHtml(tag)}">✕</span></span>`
   ).join('') || '<span style="color:var(--text-faint); font-size:13px;">Тегів немає</span>';
+}
+/* NEW: "Швидкий набір" — номери, які часто треба набрати (диспетчери тощо),
+   керуються в Налаштуваннях, а самі кнопки показуються внизу вкладки
+   «Заявки», під візиткою — тап одразу відкриває номеронабирач. */
+function renderQuickDialMgmtList(){
+  const wrap = document.getElementById('quickDialMgmtList');
+  if(!wrap) return;
+  const list = settings.quickDialContacts||[];
+  wrap.innerHTML = list.length ? list.map((c,i)=>`
+    <div class="settings-row" style="align-items:center;">
+      <div><div class="sr-title">${escapeHtml(c.name)}</div><div style="font-size:12px; color:var(--text-dim);">${escapeHtml(c.phone)}</div></div>
+      <button type="button" class="btn btn-sm btn-danger remove-quickdial-btn" data-idx="${i}">✕</button>
+    </div>`).join('') : '<span style="color:var(--text-faint); font-size:13px;">Контактів ще немає</span>';
+  renderQuickDialButtons();
+}
+function renderQuickDialButtons(){
+  const card = document.getElementById('quickDialCard');
+  const wrap = document.getElementById('quickDialButtons');
+  if(!card || !wrap) return;
+  const list = settings.quickDialContacts||[];
+  card.classList.toggle('hidden', !list.length);
+  wrap.innerHTML = list.map(c=>
+    `<a href="tel:${escapeHtml(c.phone.replace(/[^\d+]/g,''))}" class="btn" style="flex:1 1 45%; text-decoration:none; text-align:center;">📞 ${escapeHtml(c.name)}</a>`
+  ).join('');
 }
 function renderCityMgmtList(){
   document.getElementById('cityMgmtList').innerHTML = (settings.cities||[]).map(city=>
@@ -4133,6 +4183,7 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
     // вище). Тепер повне перемальовування тегів робимо лише тоді, коли справді з'явився
     // новий елемент списку — інакше просто оновлюємо класи "active" на місці.
     chip.classList.toggle('active');
+    saveDailyMastersDefault(calcState.connectMasters); // NEW: запам'ятовуємо поточний вибір як "бригаду на сьогодні"
     if(newTagRegistered){
       renderCalcTagChips();
     } else {
@@ -4231,6 +4282,27 @@ function bindSettingsScreen(){
   document.getElementById('resetTagsBtn').addEventListener('click', ()=>{
     if(!confirm('Скинути список тегів до стандартного?')) return;
     settings.tags = [...DEFAULT_TAGS]; saveSettings(); renderTagMgmtList();
+  });
+
+  // NEW: керування контактами швидкого набору
+  document.getElementById('quickDialMgmtList').addEventListener('click', e=>{
+    const btn = e.target.closest('.remove-quickdial-btn'); if(!btn) return;
+    settings.quickDialContacts.splice(Number(btn.dataset.idx), 1);
+    saveSettings(); renderQuickDialMgmtList();
+  });
+  document.getElementById('addQuickDialBtn').addEventListener('click', ()=>{
+    const nameInput = document.getElementById('newQuickDialName');
+    const phoneInput = document.getElementById('newQuickDialPhone');
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+    if(!name || !phone){ showToast('Вкажіть і ім\'я, і номер'); return; }
+    if(!settings.quickDialContacts) settings.quickDialContacts = [];
+    settings.quickDialContacts.push({name, phone});
+    saveSettings(); renderQuickDialMgmtList();
+    nameInput.value = ''; phoneInput.value = '';
+  });
+  document.getElementById('newQuickDialPhone').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addQuickDialBtn').click(); }
   });
 
   document.getElementById('cityMgmtList').addEventListener('click', e=>{
