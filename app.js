@@ -655,6 +655,8 @@ function attachAddressNavHandlers(rootEl){
     if(shareBtn){ shareTicket(shareBtn.dataset.id); return; }
     const tgBtn = e.target.closest('.tg-dispatcher-btn');
     if(tgBtn){ sendTicketToDispatcher(tgBtn.dataset.id); return; }
+    const tgOpenBtn = e.target.closest('.tg-open-btn');
+    if(tgOpenBtn){ openTicketInTelegram(tgOpenBtn.dataset.id); return; }
     const copyBtn = e.target.closest('.copy-ticket-btn');
     if(copyBtn){ copyTicketCardText(copyBtn.dataset.id); return; }
     const dgBtn = e.target.closest('.contract-ticket-btn');
@@ -1341,7 +1343,7 @@ function renderTicketCard(t){
     <div class="tc-content tc-collapsed" id="tcc-${t.id}">${escapeHtml(t.content)}</div>
     <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${t.tgBackedUp ? '<span class="tc-photo-badge" title="Є резервна копія в Telegram-групі">☁️✅</span>' : ''}${syncBadge}</div>
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${t.tgBackedUp ? `<button type="button" class="tc-photo-badge tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; background:none; padding:0; font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px;">☁️✅</button>` : ''}${syncBadge}</div>
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       ${geoBtn}
@@ -1480,6 +1482,27 @@ async function copyTicketCardText(id){
     catch(e2){ showToast('Не вдалося скопіювати текст'); }
     ta.remove();
   }
+}
+
+/* ---- "Знайти в Telegram" — відкриває саме повідомлення цієї заявки в групі ----
+   Працює за прямим посиланням виду https://t.me/c/<internal_id>/<message_id>,
+   де internal_id — це chat_id групи без префіксу "-100" (Telegram так формує
+   посилання на приватні супергрупи/канали). Спрацьовує лише для тих, хто вже
+   є учасником групи — саме тому доступно тільки вам, а не будь-кому з посиланням. */
+function telegramMessageLink(msgId){
+  const chatId = (settings.tgBackupChatId||'').trim();
+  if(!chatId || !msgId) return null;
+  const internalId = chatId.replace(/^-100/, '').replace(/^-/, '');
+  return `https://t.me/c/${internalId}/${msgId}`;
+}
+function openTicketInTelegram(id){
+  const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
+  // беремо перше з наявних — розділювач (початок "картки" заявки) як пріоритет,
+  // інакше текст, інакше фото чи json — щоб хоч якесь повідомлення знайшлось
+  const msgId = t.tgSepMsgId || t.tgTextMsgId || t.tgPhotoMsgId || t.tgJsonMsgId;
+  const link = telegramMessageLink(msgId);
+  if(!link){ showToast('Цю заявку ще не надіслано в Telegram-групу'); return; }
+  window.open(link, '_blank');
 }
 
 /* ---- Надіслати заявку диспетчеру через бота (за вимогою, з кнопки) ----
@@ -3802,6 +3825,7 @@ function bindTicketsScreen(){
     const delBtn   = e.target.closest('.delete-ticket-btn');
     const shareBtn = e.target.closest('.share-ticket-btn');
     const tgBtn    = e.target.closest('.tg-dispatcher-btn');
+    const tgOpenBtn= e.target.closest('.tg-open-btn');
     const copyBtn  = e.target.closest('.copy-ticket-btn');
     const dgBtn    = e.target.closest('.contract-ticket-btn');
     const histBtn  = e.target.closest('.history-ticket-btn');
@@ -3817,6 +3841,7 @@ function bindTicketsScreen(){
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
     if(tgBtn)    sendTicketToDispatcher(tgBtn.dataset.id);
+    if(tgOpenBtn) openTicketInTelegram(tgOpenBtn.dataset.id);
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
     if(histBtn)  showAbonentHistory(histBtn.dataset.id);
