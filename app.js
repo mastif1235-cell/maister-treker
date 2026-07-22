@@ -1340,6 +1340,9 @@ function renderTicketCard(t){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
+    ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
+      ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
+    </div>` : ''}
     ${hasContent ? `
     <div class="tc-content tc-collapsed" id="tcc-${t.id}">${escapeHtml(t.content)}</div>
     <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
@@ -3923,20 +3926,9 @@ function bindTicketsScreen(){
     resetCalcForm(currentTicketDate);
     switchTab('calculator');
   });
-
-  // Свайп вліво/вправо для зміни дня
-  let touchStartX = null;
-  const listEl = document.getElementById('ticketList');
-  listEl.addEventListener('touchstart', e=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
-  listEl.addEventListener('touchend', e=>{
-    if(touchStartX===null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    if(Math.abs(dx) > 70 && searchQuery==='' && activeFilterTags.size===0){
-      currentTicketDate = shiftDate(currentTicketDate, dx<0 ? 1 : -1);
-      renderTicketsScreen();
-    }
-    touchStartX = null;
-  }, {passive:true});
+  // NEW: свайп для зміни дня прибрано навмисно — занадто легко смикнути
+  // випадково під час скролу списку і опинитись не на тій даті. Дата
+  // тепер змінюється тільки кнопками ‹ › біля дати вгорі екрана.
 }
 
 function bindCalculatorScreen(){

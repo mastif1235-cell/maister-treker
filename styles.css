@@ -144,7 +144,7 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-card .tc-time{font-family:var(--mono); font-size:12px; color:var(--text-dim); font-weight:700;}
 .ticket-card .tc-sum{font-family:var(--mono); font-size:17px; font-weight:700; color:var(--accent);}
 .ticket-card .tc-type{font-size:14px; font-weight:700; margin-top:2px;}
-.ticket-card .tc-sub{font-size:13px; color:var(--text-dim); margin-top:1px;}
+.ticket-card .tc-sub{font-size:15px; font-weight:600; color:var(--text); margin-top:2px;} /* NEW: трохи крупніше — тепер це єдина інформація в шапці */
 .ticket-card .tc-content{font-size:13.5px; color:var(--text-dim); margin-top:8px; white-space:pre-line;}
 .ticket-card .tc-content.tc-collapsed{display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
 .ticket-card .tc-expand-btn{background:none; border:none; color:var(--accent); font-size:12px; font-weight:700; padding:4px 0; margin-top:2px; display:block;}
