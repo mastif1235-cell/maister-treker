@@ -1350,7 +1350,7 @@ function renderTicketCard(t){
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
-      <button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>
+      ${t.type==='Підключення' ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
       <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
@@ -1600,6 +1600,19 @@ async function deleteTicketTelegramMessages(t, token, chatId){
   }
   t.tgSepMsgId = null; t.tgTextMsgId = null; t.tgPhotoMsgId = null; t.tgJsonMsgId = null;
 }
+/* NEW: для бекапу в групу текст має бути ПОВНИМ — на відміну від t.content
+   (який навмисно без приватної примітки/геолокації/логіна-пароля, бо саме
+   t.content летить диспетчеру при "Поділитися"/"Диспетчеру"). Тут же це ваш
+   особистий архів, тож дописуємо все, чого не вистачає в звичайному тексті. */
+function buildTelegramBackupText(t){
+  const extra = [];
+  if(t.masterNote) extra.push(`🔒 Тільки для вас: ${t.masterNote}`);
+  if(t.geoLink) extra.push(`📍 Геолокація: ${t.geoLink}`);
+  if(t.login) extra.push(`👤 Логін: ${t.login}`);
+  if(t.password) extra.push(`🔑 Пароль: ${t.password}`);
+  if(!extra.length) return t.content || '';
+  return `${t.content||''}\n------------------\n${extra.join('\n')}`;
+}
 async function backupTicketToTelegram(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
@@ -1623,9 +1636,9 @@ async function backupTicketToTelegram(t){
       const data = await res.json();
       if(data.ok) t.tgSepMsgId = data.result.message_id;
     }
-    // 1) текст
+    // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
-      const text = t.content.slice(0, 4000); // ліміт Telegram на текст повідомлення
+      const text = buildTelegramBackupText(t).slice(0, 4000); // ліміт Telegram на текст повідомлення
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text})
