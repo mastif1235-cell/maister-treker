@@ -72,10 +72,16 @@
         <button type="button" class="btn" id="shareDayBtn" style="flex:1 1 45%;">📤 Надіслати за день</button>
       </div>
 
-      <div class="card" style="margin-bottom:70px;">
+      <div class="card">
         <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">💳 Візитка LNET</strong></div>
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">QR-код на контакти диспетчера — покажіть абоненту, щоб він відсканував і зберіг номери.</div>
         <button type="button" class="btn btn-block" id="showVizitkaBtn">📇 Показати QR-візитку</button>
+      </div>
+
+      <div class="card hidden" id="quickDialCard" style="margin-bottom:70px;">
+        <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">☎️ Швидкий набір</strong></div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Номери з Налаштувань — тап одразу відкриває набір, без пошуку в телефонній книзі.</div>
+        <div id="quickDialButtons" class="row wrap" style="gap:8px;"></div>
       </div>
 
       <button type="button" class="fab" id="addTicketFab">＋ Заявка</button>
@@ -180,7 +186,7 @@
         </div>
 
         <div class="card" id="calcCredCard">
-          <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">🔑 Особистий кабінет (для договору)</strong></div>
+          <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">🔑 Особистий кабінет<span id="credCardDogovorSuffix"> (для договору)</span></strong></div>
           <div class="field">
             <label>Логін і пароль <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(вставте як прислав диспетчер — окремими рядками, перший рядок логін, другий пароль)</span></label>
             <textarea id="f_credRaw" placeholder="90368&#10;88334290" style="min-height:56px;" autocomplete="off"></textarea>
@@ -485,6 +491,21 @@
         <div class="field">
           <label>URL сторінки договору</label>
           <input type="text" id="dogovorUrlInput" placeholder="https://your-dogovor.netlify.app">
+        </div>
+        </div>
+      </details>
+
+      <details class="card acc-card">
+        <summary>☎️ Швидкий набір <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Номери диспетчерів чи інших контактів, які часто набираєте. Кнопки з'являться внизу вкладки «Заявки», під візиткою — тап одразу відкриває набір номера.</div>
+        <div id="quickDialMgmtList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+        <div class="row" style="gap:8px;">
+          <input type="text" id="newQuickDialName" placeholder="Ім'я (напр. Диспетчер Оля)" style="flex:1;">
+        </div>
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <input type="tel" id="newQuickDialPhone" placeholder="Номер телефону" style="flex:1;">
+          <button type="button" class="btn btn-icon" id="addQuickDialBtn">+</button>
         </div>
         </div>
       </details>
