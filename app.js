@@ -294,7 +294,7 @@ async function maybeRunDailyBackup(){
   const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD, стабільний ключ для порівняння днів
   const index = loadDailyBackupIndex();
   if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
-  const ok = await backupDbPut(todayKey, {tickets, shifts, exportedAt: new Date().toISOString()});
+  const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
   if(!ok) return;
   index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
   const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
@@ -323,7 +323,7 @@ function renderDailyBackupList(){
 async function downloadDailyBackup(dateKey, opts={}){
   const payload = await backupDbGet(dateKey);
   if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
-  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts}, null, 2)], {type:'application/json;charset=utf-8'});
+  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings}, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `master-tracker-backup-${dateKey}.json`;
@@ -334,12 +334,13 @@ async function downloadDailyBackup(dateKey, opts={}){
 async function restoreDailyBackup(dateKey){
   const payload = await backupDbGet(dateKey);
   if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
-  if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки й зміни буде замінено.`)) return;
+  if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки, зміни й налаштування буде замінено.`)) return;
   tickets = payload.tickets || [];
   shifts = payload.shifts || [];
-  saveTickets(); saveShifts();
-  renderTicketsScreen(); renderShiftsScreen();
-  showToast('Дані відновлено з щоденного бекапу');
+  if(payload.settings) settings = payload.settings; // NEW: старі бекапи (до цього виправлення) можуть не мати settings — тоді лишаємо поточні
+  saveTickets(); saveShifts(); saveSettings();
+  renderTicketsScreen(); renderShiftsScreen(); renderSettingsScreen();
+  showToast(payload.settings ? 'Дані й налаштування відновлено з щоденного бекапу' : 'Заявки й зміни відновлено (у цьому бекапі ще не було налаштувань)');
 }
 /* ---- Щомісячне нагадування почистити старі файли бекапів у "Завантаженнях" ----
    Застосунок не може сам видаляти файли з "Завантажень" (браузер це навмисно
@@ -3169,7 +3170,8 @@ function exportJsonBackup(){
     app: 'master-tracker',
     exportedAt: new Date().toISOString(),
     tickets,
-    shifts
+    shifts,
+    settings
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
@@ -3187,12 +3189,14 @@ async function handleJsonImportFile(file){
     const data = JSON.parse(text);
     const hasTickets = Array.isArray(data.tickets);
     const hasShifts = Array.isArray(data.shifts);
-    if(!hasTickets && !hasShifts){ showToast('Файл не схожий на бекап цього застосунку'); return; }
+    const hasSettings = data.settings && typeof data.settings === 'object';
+    if(!hasTickets && !hasShifts && !hasSettings){ showToast('Файл не схожий на бекап цього застосунку'); return; }
 
     const parts = [];
     if(hasTickets) parts.push(`заявки (${data.tickets.length})`);
     if(hasShifts) parts.push(`зміни (${data.shifts.length})`);
-    if(!confirm(`Імпортувати ${parts.join(' і ')}? Це ЗАМІНИТЬ поточні локальні дані відповідного типу на цьому телефоні.`)) return;
+    if(hasSettings) parts.push('налаштування (міста, боти тощо)');
+    if(!confirm(`Імпортувати ${parts.join(', ')}? Це ЗАМІНИТЬ поточні локальні дані відповідного типу на цьому телефоні.`)) return;
 
     if(hasTickets){
       // NEW: доповнюємо кожну заявку значеннями за замовчуванням — якщо бекап
@@ -3203,6 +3207,11 @@ async function handleJsonImportFile(file){
     if(hasShifts){
       shifts = data.shifts;
       saveShifts();
+    }
+    if(hasSettings){
+      settings = data.settings;
+      saveSettings();
+      renderSettingsScreen();
     }
     renderTicketsScreen();
     renderShiftsScreen();
