@@ -1689,6 +1689,58 @@ async function backupTicketToTelegram(t){
 }
 // NEW: тестове повідомлення в Налаштуваннях — перевірити, що токен і chat_id правильні.
 // Приймає chatId ззовні, щоб однією функцією перевіряти всі три призначення.
+
+/* ---- Відновлення ОДНІЄЇ заявки з Telegram-архіву -------------------------
+   Кожна заявка при бекапі (backupTicketToTelegram) додатково зберігається в
+   групі повним JSON-файлом (ticket-<id>.json) з УСІМА полями: логін/пароль,
+   номер договору, geo, нотатка майстра, а також ідентифікатори оригінальних
+   повідомлень у групі (tgSepMsgId/tgTextMsgId/tgPhotoMsgId/tgJsonMsgId) —
+   тому після відновлення кнопки "🕘" і "☁️✅" продовжують працювати так,
+   ніби заявку й не видаляли, навіть якщо локальне фото вже загублено.
+   Майстер сам відкриває потрібний .json у Telegram, копіює весь його текст
+   і вставляє в модалку нижче — жодних токенів чи ручного набору полів. */
+function restoreTicketFromTelegramJson(jsonText){
+  let parsed;
+  try{ parsed = JSON.parse(jsonText); }
+  catch(e){ showToast('Не вдалося розпізнати текст — перевірте, що вставили ВЕСЬ вміст .json-файлу'); return false; }
+  if(!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.date){
+    showToast('Схоже, це не файл заявки — перевірте, що скопіювали правильний .json'); return false;
+  }
+  const restored = JSON.parse(JSON.stringify(parsed));
+  // якщо заявка з таким id вже є локально (напр. натиснули відновити двічі) — даємо новий id, щоб не затерти
+  if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
+  restored.synced = false; // повторно надішлемо в Google Таблицю, щоб вона теж це побачила
+  tickets.push(restored);
+  saveTickets();
+  currentTicketDate = restored.date || currentTicketDate;
+  renderTicketsScreen();
+  showToast('✅ Заявку відновлено з Telegram!');
+  if(getScriptUrl()){
+    syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
+      const found = tickets.find(x=>x.id===restored.id);
+      if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
+    });
+  }
+  return true;
+}
+function showRestoreFromTelegramModal(){
+  openModal('♻️ Відновити заявку з Telegram', `
+    <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px; line-height:1.6;">
+      1. Відкрийте закриту групу-архів у Telegram, знайдіть потрібну заявку (за датою чи адресою в тексті над файлами).<br>
+      2. Відкрийте при ній файл <span style="font-family:var(--mono); font-size:11.5px;">ticket-XXXXXXXXXXXXX.json</span> — Telegram покаже його як текст — і скопіюйте увесь вміст файлу.<br>
+      3. Вставте цей текст у поле нижче й натисніть "Відновити".
+    </div>
+    <textarea id="tgRestoreJsonInput" rows="8" style="width:100%; font-family:var(--mono); font-size:12px; resize:vertical;" placeholder='{"id":..., "type":"Ремонт", "date":"..."}'></textarea>
+    <button type="button" class="btn btn-accent btn-block" id="tgRestoreJsonBtn" style="margin-top:10px;">♻️ Відновити заявку</button>
+  `, {onOpen: (root)=>{
+    root.querySelector('#tgRestoreJsonBtn').addEventListener('click', ()=>{
+      const text = root.querySelector('#tgRestoreJsonInput').value.trim();
+      if(!text){ showToast('Вставте текст .json-файлу'); return; }
+      const ok = restoreTicketFromTelegramJson(text);
+      if(ok) closeModal();
+    });
+  }});
+}
 async function sendTelegramTestMessage(chatId, label){
   const token = (settings.tgBotToken||'').trim();
   chatId = (chatId||'').trim();
@@ -4423,6 +4475,7 @@ function bindSettingsScreen(){
   document.getElementById('tgTestMonthlyBtn').addEventListener('click', sendMonthlyTelegramReportNow);
   document.getElementById('tgBulkExportBtn').addEventListener('click', bulkExportTicketsToTelegram);
   document.getElementById('tgResyncAllBtn').addEventListener('click', resyncAllTicketsToTelegram);
+  document.getElementById('tgRestoreOneBtn').addEventListener('click', showRestoreFromTelegramModal);
   document.getElementById('shiftsScriptUrlInput').addEventListener('input', e=>{
     settings.shiftsScriptUrl = e.target.value.trim(); saveSettings();
   });
