@@ -35,6 +35,39 @@ const DEFAULT_WORK_TYPES = [
 function getEquipmentConfig(){ return (settings && settings.materials) ? settings.materials : DEFAULT_MATERIALS; }
 function getWorkTypesConfig(){ return (settings && settings.workTypes) ? settings.workTypes : DEFAULT_WORK_TYPES; }
 
+// NEW: назва тегу для матеріалу/роботи з переліку — той самий текст, що й у
+// назві матеріалу/роботи, лише в нижньому регістрі (щоб виглядало як інші
+// теги на кшталт 'ремонт', 'монтаж').
+function catalogTagFor(label){ return String(label||'').trim().toLowerCase(); }
+// NEW: додає в список тегів (Налаштування → Теги) тег для КОЖНОГО матеріалу й
+// роботи з переліку, якщо такого тегу там ще нема. Викликається при
+// завантаженні налаштувань і при доданні нового матеріалу/роботи — щоб теги
+// завжди були в наявності, навіть якщо майстер ще жодного разу не відмічав
+// цей матеріал/роботу в заявці.
+function ensureCatalogTags(){
+  let changed = false;
+  [...getEquipmentConfig(), ...getWorkTypesConfig()].forEach(item=>{
+    const tag = catalogTagFor(item.label);
+    if(tag && !settings.tags.includes(tag)){ settings.tags.push(tag); changed = true; }
+  });
+  return changed;
+}
+// NEW: коли майстер відмічає/знімає позначку з матеріалу чи роботи в
+// калькуляторі — відповідний тег автоматично вмикається/вимикається теж
+// (наприклад, поставили галочку "Роутер" — тег "роутер" теж стає активним).
+function syncCatalogTagState(label, checked){
+  const tag = catalogTagFor(label);
+  if(!tag) return;
+  if(checked){
+    if(!settings.tags.includes(tag)){ settings.tags.push(tag); saveSettings(); }
+    if(!calcState.tags.includes(tag)) calcState.tags.push(tag);
+  } else {
+    const i = calcState.tags.indexOf(tag);
+    if(i>-1) calcState.tags.splice(i,1);
+  }
+  renderCalcTagChips();
+}
+
 const DEFAULT_CABLE_TYPES = [
   {id:'utp',   label:'UTP',    pricePerMeter:7},
   {id:'optic', label:'Оптика', pricePerMeter:9},
@@ -72,6 +105,7 @@ function loadSettings(){
 }
 
 let settings = loadSettings();
+if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 let tickets  = loadJSON('tickets', []);
 let shifts   = loadJSON('shifts', []);
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
@@ -1192,6 +1226,14 @@ function parseBackupNote(note){
 function ticketsForDate(dateStr){
   return tickets.filter(t=>t.date===dateStr).sort((a,b)=> (a.time||'').localeCompare(b.time||''));
 }
+// NEW: порядковий номер заявки за день (1, 2, 3...) — рахуємо за хронологією
+// (час створення в межах дня), незалежно від того, як зараз відсортований/
+// відфільтрований список на екрані (пошук, теги тощо).
+function getDailyTicketNumber(t){
+  const sameDay = ticketsForDate(t.date); // вже відсортовано за часом зростаючо
+  const idx = sameDay.findIndex(x=>String(x.id)===String(t.id));
+  return idx>-1 ? idx+1 : null;
+}
 /* Ключ для сортування заявок за датою+часом (а не за порядком створення) —
    потрібен у пошуку й фільтрі за тегами, де на екрані одразу заявки з
    різних дат: заявка, створена заднім чи майбутнім числом, має ставати на
@@ -1315,6 +1357,7 @@ function renderMainTicketList(){
 function renderTicketCard(t){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
+  const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
   const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
   const hasContent = !!(t.content);
   const isOther = t.type === 'Інше';
@@ -1335,7 +1378,7 @@ function renderTicketCard(t){
   <div class="ticket-card" data-id="${t.id}">
     <div class="tc-head">
       <div style="flex:1; min-width:0;">
-        <div class="tc-type">${escapeHtml(t.type||'Заявка')}</div>
+        <div class="tc-type">${dayNum ? `<span class="tc-num">${dayNum}</span>` : ''}${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
       </div>
       <div style="text-align:right; flex-shrink:0;">
@@ -1359,7 +1402,7 @@ function renderTicketCard(t){
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
-      ${t.type==='Підключення' ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
+      ${(t.type==='Підключення' || t.type==='Ремонт') ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
       <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
@@ -2011,6 +2054,7 @@ function hasUnsavedChanges(){
   if(s.photo) return true;
   if(s.macAddress) return true;
   if(s.login || s.password) return true;
+  if(s.type === 'Ремонт' && s.contractNumber) return true; // NEW: вручну введений номер договору для ремонту
   if(s.geoLink) return true;
   if((s.callFee>0 && !feeIsAutoDefault) || (s.tariff>0 && !tariffIsAutoDefault)) return true; // NEW: авто-підставлена ціна за замовчуванням — не «зміна»
   if((s.cables||[]).some(c=> Number(c.meters)>0)) return true; // NEW: динамічний список кабелів
@@ -2187,6 +2231,7 @@ function fillFormFromState(){
   { const hint = document.getElementById('macHint'); if(hint) hint.style.display = (calcState.macAddress && !/^[0-9A-F]{12}$/.test(calcState.macAddress)) ? '' : 'none'; }
   document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
   updateCredParsedHint();
+  document.getElementById('f_contractManual').value = calcState.type === 'Ремонт' ? (calcState.contractNumber || '') : ''; // NEW
   setDateFieldValue(calcState.date || '');
   document.getElementById('f_time').value = calcState.time || '';
   document.getElementById('f_callFee').value = calcState.callFee || 0;
@@ -2358,6 +2403,14 @@ function computeTotal(){
    Формат: ДДММРРРРN<літери майстрів>, де N — порядковий номер підключення
    за цей день, літери — в порядку списку майстрів у Налаштуваннях. */
 function assignContractNumberIfNeeded(){
+  if(calcState.type === 'Ремонт'){
+    // NEW: для ремонту номер договору не генерується — його вже поставив
+    // syncFormToState() з поля "Номер договору абонента", лишається тільки
+    // скинути "знімок", що стосується автогенерації для підключень.
+    calcState.contractNumberDate = '';
+    calcState.contractNumberMastersKey = '';
+    return;
+  }
   if(calcState.type !== 'Підключення'){
     calcState.contractNumber = '';
     calcState.contractNumberDate = '';
@@ -2423,7 +2476,7 @@ function buildTicketContent(s, total){
   const lines = [];
   lines.push(`📋 ЗАЯВКА: ${(s.type||'').toUpperCase()}`);
   if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
-  if(s.type === 'Підключення' && s.contractNumber) lines.push(`📄 № дог.: ${s.contractNumber}`); // коротка мітка — щоб рядок влазив в один рядок у Viber
+  if((s.type === 'Підключення' || s.type === 'Ремонт') && s.contractNumber) lines.push(`📄 № дог.: ${s.contractNumber}`); // коротка мітка — щоб рядок влазив в один рядок у Viber
   if(s.city) lines.push(`🏙️ Місто: ${s.city}`);
   if(s.address) lines.push(`📍 Адреса: ${s.address}`);
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
@@ -2469,9 +2522,12 @@ function toggleTypeOtherField(){
   document.getElementById('connectMasterWrapLabel').innerHTML = isConnect
     ? 'Хто підключав <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(для номера договору)</span>'
     : 'Напарники';
-  // NEW: "(для договору)" при логіні/паролі має сенс лише для підключення —
-  // для ремонту/іншого договір не формується, тож і згадка тут зайва
-  { const sfx = document.getElementById('credCardDogovorSuffix'); if(sfx) sfx.style.display = isConnect ? '' : 'none'; }
+  // NEW: "(для договору)" при логіні/паролі актуально і для підключення
+  // (новий договір), і для ремонту (номер вже існуючого договору абонента)
+  { const sfx = document.getElementById('credCardDogovorSuffix'); if(sfx) sfx.style.display = (isConnect || isRepair) ? '' : 'none'; }
+  // NEW: для ремонту абонент вже існує — номер договору не генерується, а
+  // вводиться майстром вручну в окремому полі (див. syncFormToState/assignContractNumberIfNeeded)
+  document.getElementById('contractManualWrap').classList.toggle('hidden', !isRepair || raw);
   document.getElementById('importedRawWrap').classList.toggle('hidden', !raw); // NEW
   document.getElementById('fullFormFields').classList.toggle('hidden', other);
   document.getElementById('fullFormBlocks').classList.toggle('hidden', other);
@@ -2532,6 +2588,12 @@ function syncFormToState(){
   calcState.otherNote = document.getElementById('f_otherNote').value.trim();
   if(calcState.type !== 'Підключення'){
     calcState.connectMasters = [];
+  }
+  // NEW: для ремонту номер договору абонента вводиться вручну (абонент вже
+  // існує) — на відміну від підключення, де номер генерується автоматично
+  // в assignContractNumberIfNeeded()
+  if(calcState.type === 'Ремонт'){
+    calcState.contractNumber = document.getElementById('f_contractManual').value.trim();
   }
   calcState.city = document.getElementById('f_city').value.trim();
   calcState.street = document.getElementById('f_street').value.trim();
@@ -4153,7 +4215,12 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
 
   document.getElementById('equipmentList').addEventListener('change', e=>{
     const chk = e.target.closest('.eq-check');
-    if(chk){ calcState.equipment[Number(chk.dataset.eqidx)].checked = chk.checked; computeTotal(); renderEquipmentList(); }
+    if(chk){
+      const idx = Number(chk.dataset.eqidx);
+      calcState.equipment[idx].checked = chk.checked;
+      syncCatalogTagState(calcState.equipment[idx].label, chk.checked); // NEW: авто-тег за назвою матеріалу
+      computeTotal(); renderEquipmentList();
+    }
   });
   document.getElementById('equipmentList').addEventListener('input', e=>{
     const price = e.target.closest('.eq-price');
@@ -4170,7 +4237,12 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
 
   document.getElementById('presetWorksList').addEventListener('change', e=>{
     const chk = e.target.closest('.pw-check');
-    if(chk){ calcState.presetWorks[Number(chk.dataset.pwidx)].checked = chk.checked; computeTotal(); renderPresetWorksList(); }
+    if(chk){
+      const idx = Number(chk.dataset.pwidx);
+      calcState.presetWorks[idx].checked = chk.checked;
+      syncCatalogTagState(calcState.presetWorks[idx].label, chk.checked); // NEW: авто-тег за назвою роботи
+      computeTotal(); renderPresetWorksList();
+    }
   });
   document.getElementById('presetWorksList').addEventListener('input', e=>{
     const qty = e.target.closest('.pw-qty');
@@ -4566,6 +4638,7 @@ function bindSettingsScreen(){
     const price = Number(priceEl.value)||0;
     const id = 'mat_'+Date.now();
     settings.materials.push({id, label, price});
+    ensureCatalogTags(); // NEW: одразу створює тег з такою ж назвою
     saveSettings(); renderMatMgmtList();
     nameEl.value = ''; priceEl.value = '';
     showToast(`Матеріал «${label}» додано`);
@@ -4656,6 +4729,7 @@ function bindSettingsScreen(){
     const price = Number(priceEl.value)||0;
     const id = 'work_'+Date.now();
     settings.workTypes.push({id, label, price});
+    ensureCatalogTags(); // NEW: одразу створює тег з такою ж назвою
     saveSettings(); renderWorkMgmtList();
     nameEl.value = ''; priceEl.value = '';
     showToast(`Робота «${label}» додана`);
