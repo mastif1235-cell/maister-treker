@@ -749,6 +749,29 @@ function addrNavTitle(){
   return 'Навігатор адрес';
 }
 
+// NEW: "профіль" абонента — шапка над списком заявок конкретного будинку:
+// ім'я + телефон (з найсвіжішої заявки, де вони заповнені) + скільки разів
+// тут були. Якщо в різних заявках траплялись РІЗНІ імена/телефони — показуємо
+// це окремим попередженням, а не тихо обираємо один варіант, бо за однією
+// адресою можуть бути різні люди (сусід, родич тощо).
+function addrAbonentProfileHtml(list){
+  const named = list.filter(t=>t.clientName || t.phone); // list вже відсортовано від новіших до старіших
+  if(!named.length) return '';
+  const primary = named[0];
+  const seen = new Set([`${primary.clientName||''}|${primary.phone||''}`]);
+  const others = [];
+  named.slice(1).forEach(t=>{
+    const key = `${t.clientName||''}|${t.phone||''}`;
+    if(!seen.has(key)){ seen.add(key); others.push(t); }
+  });
+  return `
+    <div class="card" style="margin-bottom:12px; padding:14px;">
+      <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary.clientName || 'Ім’я невідоме')}</div>
+      ${primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : ''}
+      <div style="font-size:12.5px; color:var(--text-dim);">🗓️ Заявок за цією адресою: ${list.length}</div>
+      ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
+    </div>`;
+}
 function addrNavResultsAreaHtml(){
   if(addrNavSearchQuery.trim()) return addrNavSearchResultsHtml(addrNavSearchQuery);
   const tree = buildAddressTree();
@@ -775,16 +798,15 @@ function addrNavResultsAreaHtml(){
         <span>буд. ${escapeHtml(house)}</span><span style="opacity:.6;">›</span>
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Будинків не знайдено</div>`;
   } else if(addrNavState.level==='tickets'){
-    // NEW: тут уже й так усі заявки по цьому будинку показуються від новіших до
-    // старіших повними картками (дата, тип, сума одразу видно) — це і є
-    // "історія абонента за адресою", про яку домовлялись.
+    // NEW: "профіль абонента" (ім'я/телефон/скільки разів були) один раз
+    // згори, а картки під ним — уже без дублювання цих даних, лише що робили.
     const list = tickets.filter(t=>
       (t.city||'').trim()===addrNavState.city &&
       (t.street||'').trim()===addrNavState.street &&
       ((t.house||'').trim() || '(без номера)')===addrNavState.house
     ).sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
     bodyHtml += list.length
-      ? `<div class="ticket-list">${list.map(renderTicketCard).join('')}</div>`
+      ? addrAbonentProfileHtml(list) + `<div class="ticket-list">${list.map(t=>renderTicketCard(t, {workOnly:true})).join('')}</div>`
       : `<div class="empty-state" style="padding:24px 10px;">Заявок не знайдено</div>`;
   }
 
@@ -1411,7 +1433,8 @@ function refreshTicketCardDom(id){
   const t = tickets.find(x=>String(x.id)===String(id));
   if(!t) return;
   document.querySelectorAll(`.ticket-card[data-id="${id}"]`).forEach(el=>{
-    el.outerHTML = renderTicketCard(t);
+    const workOnly = el.dataset.workonly === '1'; // NEW: не втрачаємо режим "тільки робота" (профіль абонента) при фоновому оновленні
+    el.outerHTML = renderTicketCard(t, {workOnly});
   });
 }
 /* Ключ для сортування заявок за датою+часом (а не за порядком створення) —
@@ -1534,12 +1557,30 @@ function renderMainTicketList(){
   listEl.innerHTML = html;
 }
 
-function renderTicketCard(t){
+// NEW: стислий опис виконаної роботи (обладнання/кабелі/роботи/нотатка) БЕЗ
+// імені, телефону, адреси — для картки під "профілем абонента", де ці дані
+// вже показані один раз вище, а не в кожній заявці окремо.
+function buildWorkSummaryLines(t){
+  const lines = [];
+  (t.equipment||[]).filter(e=>e.checked).forEach(e=> lines.push(`🛠️ ${e.label}`));
+  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м`); });
+  (t.presetWorks||[]).filter(w=>w.checked).forEach(w=> lines.push(`🔧 ${w.label}${(Number(w.qty)>1) ? ` × ${w.qty}` : ''}`));
+  (t.additionalWork||[]).forEach(w=>{ if(w.desc) lines.push(`✏️ ${w.desc}`); });
+  if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
+  if(t.note) lines.push(`📝 ${t.note}`);
+  if(t.otherNote) lines.push(t.otherNote);
+  return lines;
+}
+function renderTicketCard(t, opts={}){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
   const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
-  const hasContent = !!(t.content);
+  // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
+  // замість повного тексту заявки (де є ім'я/телефон/адреса) показуємо лише
+  // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.
+  const displayContent = opts.workOnly ? buildWorkSummaryLines(t).join('\n') : t.content;
+  const hasContent = !!displayContent;
   const isOther = t.type === 'Інше';
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
   // ✅ означає «запит надіслано без помилок мережі», а не 100%-підтверджений запис
@@ -1564,7 +1605,7 @@ function renderTicketCard(t){
   // номер договору, логін/пароль, опис, нотатка майстра) сховано всередину
   // одного блоку tc-details, який розгортається кнопкою "▼ Розгорнути"
   return `
-  <div class="ticket-card" data-id="${t.id}">
+  <div class="ticket-card" data-id="${t.id}" data-workonly="${opts.workOnly ? '1' : '0'}">
     <div class="tc-head">
       <div style="flex:1; min-width:0;">
         <div class="tc-type">${dayNum ? `<span class="tc-num">${dayNum}</span>` : ''}${escapeHtml(t.type||'Заявка')}</div>
@@ -1582,7 +1623,7 @@ function renderTicketCard(t){
       ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
-      ${hasContent ? `<div class="tc-content">${escapeHtml(t.content)}</div>` : ''}
+      ${hasContent ? `<div class="tc-content">${escapeHtml(displayContent)}</div>` : ''}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
     </div>
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
