@@ -801,21 +801,31 @@ function addrNavTitle(){
 // це окремим попередженням, а не тихо обираємо один варіант, бо за однією
 // адресою можуть бути різні люди (сусід, родич тощо).
 function addrAbonentProfileHtml(list){
+  // NEW: шапка тепер завжди показується (адреса й кількість заявок відомі
+  // завжди) — раніше вона повністю зникала, якщо жодна заявка ще не мала
+  // заповненого ПІБ/телефону, що і виглядало як "профіль десь загубився".
   const named = list.filter(t=>t.clientName || t.phone); // list вже відсортовано від новіших до старіших
-  if(!named.length) return '';
-  const primary = named[0];
-  const seen = new Set([`${primary.clientName||''}|${primary.phone||''}`]);
+  const primary = named[0] || null;
+  const seen = primary ? new Set([`${primary.clientName||''}|${primary.phone||''}`]) : new Set();
   const others = [];
-  named.slice(1).forEach(t=>{
+  named.slice(primary?1:0).forEach(t=>{
     const key = `${t.clientName||''}|${t.phone||''}`;
     if(!seen.has(key)){ seen.add(key); others.push(t); }
   });
+  // NEW: фото абонента — не зберігаємо його додатково на телефоні "про
+  // всяк випадок": кнопка підвантажує знімок лише за запитом (з локального
+  // кешу IndexedDB, якщо вже завантажували, інакше — напряму з Telegram).
+  const photoTicket = list.find(t=>t.photo);
+  const photoBtnHtml = photoTicket ? `
+    <button type="button" class="btn btn-sm" id="abonentProfilePhotoBtn" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
+    <div id="abonentProfilePhotoWrap" class="hidden" style="margin-top:8px;"><img id="abonentProfilePhotoImg" style="max-width:100%; border-radius:10px;" alt="фото"></div>` : '';
   return `
     <div class="card" style="margin-bottom:12px; padding:14px;">
-      <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary.clientName || 'Ім’я невідоме')}</div>
-      ${primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : ''}
+      <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
+      ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
       <div style="font-size:12.5px; color:var(--text-dim);">🗓️ Заявок за цією адресою: ${list.length}</div>
       ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
+      ${photoBtnHtml}
     </div>`;
 }
 function addrNavResultsAreaHtml(){
@@ -916,6 +926,23 @@ function attachAddressNavHandlers(rootEl){
     if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; renderAddressNav(); return; }
     const houseBtn = e.target.closest('.addr-nav-house-btn');
     if(houseBtn){ addrNavState.level='tickets'; addrNavState.house=houseBtn.dataset.house; renderAddressNav(); return; }
+    // NEW: фото абонента підвантажується лише за тапом на кнопку — не сама
+    // собою при відкритті профілю, і не зберігається на телефоні окремо від
+    // звичайного кешу фото заявок (той самий IndexedDB, що й завжди)
+    const photoBtn = e.target.closest('#abonentProfilePhotoBtn');
+    if(photoBtn){
+      photoBtn.disabled = true; photoBtn.textContent = '⏳ Завантаження…';
+      const key = photoBtn.dataset.photoKey, fileId = photoBtn.dataset.tgFileId || null;
+      resolvePhotoAsync(key, fileId).then(val=>{
+        if(!val){ photoBtn.disabled = false; photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
+        const wrap = document.getElementById('abonentProfilePhotoWrap');
+        const img = document.getElementById('abonentProfilePhotoImg');
+        if(img) img.src = val;
+        if(wrap) wrap.classList.remove('hidden');
+        photoBtn.classList.add('hidden');
+      });
+      return;
+    }
     // NEW: результат глобального пошуку — веде на адресу (профіль абонента +
     // картки), а не одразу відкриває конкретну заявку
     const searchResultBtn = e.target.closest('.addr-nav-search-result-btn');
@@ -1678,7 +1705,7 @@ function renderTicketCard(t, opts={}){
       ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
-      ${hasContent ? `<div class="tc-content">${escapeHtml(displayContent)}</div>` : ''}
+      ${hasContent ? `<div class="tc-content">${escapeHtml(displayContent)}</div>` : (opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
     </div>
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
