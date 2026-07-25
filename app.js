@@ -818,7 +818,8 @@ function addrAbonentProfileHtml(list){
   const photoTicket = list.find(t=>t.photo);
   const photoBtnHtml = photoTicket ? `
     <button type="button" class="btn btn-sm" id="abonentProfilePhotoBtn" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
-    <div id="abonentProfilePhotoWrap" class="hidden" style="margin-top:8px;"><img id="abonentProfilePhotoImg" style="max-width:100%; border-radius:10px;" alt="фото"></div>` : '';
+    <div id="abonentProfilePhotoWrap" class="hidden" style="margin-top:8px;"><img id="abonentProfilePhotoImg" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
+    : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
   return `
     <div class="card" style="margin-bottom:12px; padding:14px;">
       <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
@@ -976,7 +977,12 @@ function attachAddressNavHandlers(rootEl){
     const expBtn = e.target.closest('.tc-expand-btn');
     if(expBtn){
       const id = expBtn.dataset.id;
-      const contentEl = document.getElementById('tcc-'+id);
+      // NEW: та сама заявка може одночасно бути відрендерена і тут (у модалці),
+      // і на екрані "Заявки" позаду — тоді на сторінці двоє елементів з
+      // однаковим id. document.getElementById бере ПЕРШИЙ у документі, що міг
+      // бути прихованою фоновою карткою — тому шукаємо лише всередині цієї
+      // модалки (rootEl), щоб точно розгортати саме те, що бачить користувач.
+      const contentEl = rootEl.querySelector('[id="tcc-'+id+'"]');
       if(!contentEl) return;
       const collapsed = contentEl.classList.toggle('tc-collapsed');
       expBtn.textContent = collapsed ? '▼ Розгорнути' : '▲ Згорнути';
