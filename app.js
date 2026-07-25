@@ -541,6 +541,56 @@ function findAbonentMatches(t){
   matches.sort((a,b)=> `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`));
   return matches;
 }
+// NEW: розбір "сирого" тексту наряду від диспетчера (вільна форма, як у Telegram-групі) —
+// щоб перевірити, чи вже була заявка по цьому абоненту/адресі, ще ДО того, як
+// створювати нову. Телефон шукаємо жадібно (будь-які довгі числові послідовності
+// з пробілами/дефісами) — це найнадійніший сигнал, бо номер зазвичай пишуть
+// без помилок. Адресу шукаємо м'яко, простим збігом слів — тексти диспетчерів
+// дуже різношерсті ("вул. Шевченка 21", "Майська 85" без міста тощо), тому
+// адресний збіг — лише "можливий", ніколи не точний.
+function extractPhoneCandidatesFromText(text){
+  const raw = String(text||'');
+  const found = raw.match(/[\d][\d\s\-()]{7,}\d/g) || [];
+  const keys = found.map(normalizePhoneKey).filter(Boolean);
+  return [...new Set(keys)];
+}
+const ADDRESS_STOPWORDS = new Set(['м','місто','город','вул','вулиця','ул','улица','буд','будинок','дом','кв','квартира','б','просп','проспект','с','село','селище','смт']);
+function extractAddressTokens(text){
+  return String(text||'')
+    .toLowerCase()
+    .replace(/[.,№\/]/g,' ')
+    .split(/\s+/)
+    .filter(tok => tok && tok.length>1 && !ADDRESS_STOPWORDS.has(tok));
+}
+function findNaryadMatches(rawText){
+  const phoneKeys = extractPhoneCandidatesFromText(rawText);
+  const naryadTokens = new Set(extractAddressTokens(rawText));
+  const results = [];
+  tickets.forEach(t=>{
+    const reasons = [];
+    const tPhoneKey = normalizePhoneKey(t.phone);
+    if(tPhoneKey && phoneKeys.includes(tPhoneKey)) reasons.push({label:'збіг за телефоном', strong:true});
+    const tAddrTokens = extractAddressTokens([t.city, t.street, t.house].filter(Boolean).join(' '));
+    if(tAddrTokens.length){
+      const overlap = tAddrTokens.filter(tok => naryadTokens.has(tok));
+      // потрібно принаймні одне "слово" (вулиця/місто) і збіг номера будинку,
+      // АБО два будь-яких спільних токени — щоб не спрацьовувало на одному
+      // випадковому слові
+      const hasWord = overlap.some(tok=>!/^\d+$/.test(tok) && tok.length>=3);
+      const hasHouse = t.house && naryadTokens.has(String(t.house).toLowerCase());
+      if((hasWord && hasHouse) || overlap.length>=2) reasons.push({label:'можливий збіг за адресою', strong:false});
+    }
+    if(reasons.length) results.push({ticket:t, reasons});
+  });
+  // спочатку надійні (телефон), потім лише "можливі"; в межах групи — новіші вище
+  results.sort((a,b)=>{
+    const aStrong = a.reasons.some(r=>r.strong) ? 1 : 0;
+    const bStrong = b.reasons.some(r=>r.strong) ? 1 : 0;
+    if(aStrong !== bStrong) return bStrong - aStrong;
+    return `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`);
+  });
+  return results;
+}
 function showAbonentHistory(id){
   const t = tickets.find(x=>String(x.id)===String(id));
   if(!t) return;
@@ -578,6 +628,51 @@ function showAbonentHistory(id){
 
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 
+// NEW: "Перевірити наряд" — вставляєш сирий текст від диспетчера (як у Telegram),
+// показує, чи вже була заявка по цьому телефону/адресі. Не блокує нічого і
+// нічого не створює сама — це просто підказка перед тим, як заводити нову заявку.
+function naryadMatchesHtml(matches){
+  if(!matches.length){
+    return `<div class="empty-state" style="padding:20px 10px;">Збігів не знайдено — схоже, це нова заявка</div>`;
+  }
+  return matches.map(m=>{
+    const o = m.ticket;
+    const address = [o.city, o.address].filter(Boolean).join(', ') || '—';
+    const badges = m.reasons.map(r=>`<span class="chip" style="pointer-events:none; ${r.strong ? 'background:rgba(63,191,111,0.18); color:#3fbf6f;' : ''}">${escapeHtml(r.label)}</span>`).join(' ');
+    return `
+      <div class="card" style="margin-bottom:10px; padding:12px 14px;">
+        <div class="row wrap" style="gap:4px; margin-bottom:6px;">${badges}</div>
+        <div class="row between" style="margin-bottom:4px;">
+          <strong>${escapeHtml(o.date||'')} ${escapeHtml(o.time||'')}</strong>
+          <span style="font-size:12.5px; color:var(--text-dim);">${escapeHtml(o.type||'')}</span>
+        </div>
+        <div style="font-size:13.5px; margin-bottom:2px;">📍 ${escapeHtml(address)}</div>
+        ${o.clientName ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">👤 ${escapeHtml(o.clientName)}</div>` : ''}
+        <button type="button" class="btn btn-sm btn-block open-history-ticket-btn" data-id="${o.id}">Відкрити заявку</button>
+      </div>`;
+  }).join('');
+}
+function showNaryadChecker(){
+  const bodyHtml = `
+    <textarea id="naryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px;"></textarea>
+    <button type="button" class="btn btn-block" id="naryadCheckBtn" style="margin-top:8px;">🔎 Перевірити</button>
+    <div style="font-size:11.5px; color:var(--text-faint); margin-top:6px;">Збіг за телефоном — надійний. Збіг за адресою — лише підказка: за одним будинком можуть жити різні абоненти.</div>
+    <div id="naryadResults" style="margin-top:14px;"></div>`;
+  openModal('Перевірити наряд', bodyHtml, {onOpen: (rootEl)=>{
+    const runCheck = ()=>{
+      const text = document.getElementById('naryadInput').value.trim();
+      const resultsEl = document.getElementById('naryadResults');
+      if(!text){ resultsEl.innerHTML = ''; return; }
+      resultsEl.innerHTML = naryadMatchesHtml(findNaryadMatches(text));
+    };
+    document.getElementById('naryadCheckBtn').addEventListener('click', runCheck);
+    rootEl.addEventListener('click', e=>{
+      const btn = e.target.closest('.open-history-ticket-btn');
+      if(btn){ closeModal(); editTicket(btn.dataset.id); }
+    });
+  }});
+}
+
 /* ---------- Навігатор адрес: Місто → Вулиця → Будинок → Заявки ---------- */
 // NEW: чотирирівневий пошук по факту заявок (а не по довіднику settings.cities/streets,
 // щоб туди потрапляло геть усе, включно з тим, що було записано до автопрописки).
@@ -585,6 +680,7 @@ function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 // вручну дозаповнили місто й вулицю (поля city/street/house видно й редагуються
 // навіть у "сирому" режимі) — критерій саме заповненість полів, а не сам прапорець.
 let addrNavState = {level:'city', city:null, street:null, house:null};
+let addrNavSearchQuery = ''; // NEW: глобальний пошук за ім'ям/телефоном/адресою (працює одразу по всіх заявках, не лише в межах вибраного міста/вулиці)
 
 function naturalSortStrings(arr){
   // NEW: природне сортування рядків з числами всередині — "2, 9, 12, 12а, 20",
@@ -608,6 +704,7 @@ function buildAddressTree(){
 
 function openAddressNavigator(){
   addrNavState = {level:'city', city:null, street:null, house:null};
+  addrNavSearchQuery = ''; // NEW
   renderAddressNav();
 }
 
@@ -618,14 +715,47 @@ function addrNavBreadcrumbHtml(){
   return `<div class="row wrap" style="gap:6px; margin-bottom:12px;">${crumbs.join('')}</div>`;
 }
 
-function renderAddressNav(){
+// NEW: пошук одразу по всіх заявках за іменем, телефоном (частково, досить
+// набрати кілька цифр) або будь-яким словом з адреси — щоб не обов'язково
+// пам'ятати точну адресу, а можна було знайти абонента "як завгодно".
+function ticketMatchesSearchQuery(t, q){
+  const ql = q.trim().toLowerCase();
+  if(!ql) return false;
+  const qDigits = ql.replace(/\D/g,'');
+  if(qDigits.length>=3){
+    const tDigits = String(t.phone||'').replace(/\D/g,'');
+    if(tDigits.includes(qDigits)) return true;
+  }
+  if((t.clientName||'').toLowerCase().includes(ql)) return true;
+  const addr = [t.city, t.street, t.house, t.address].filter(Boolean).join(' ').toLowerCase();
+  if(addr.includes(ql)) return true;
+  return false;
+}
+function addrNavSearchResultsHtml(query){
+  const list = tickets.filter(t=>ticketMatchesSearchQuery(t, query))
+    .sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+  const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: ${list.length}</div>`;
+  if(!list.length) return header + `<div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
+  return header + `<div class="ticket-list">${list.map(renderTicketCard).join('')}</div>`;
+}
+
+function addrNavTitle(){
+  if(addrNavSearchQuery.trim()) return `Пошук: «${addrNavSearchQuery.trim()}»`;
   const tree = buildAddressTree();
-  let title = 'Навігатор адрес';
+  if(addrNavState.level==='city') return `Місто (${tree.size})`;
+  if(addrNavState.level==='street') return addrNavState.city;
+  if(addrNavState.level==='house') return `${addrNavState.city}, ${addrNavState.street}`;
+  if(addrNavState.level==='tickets') return `буд. ${addrNavState.house}`;
+  return 'Навігатор адрес';
+}
+
+function addrNavResultsAreaHtml(){
+  if(addrNavSearchQuery.trim()) return addrNavSearchResultsHtml(addrNavSearchQuery);
+  const tree = buildAddressTree();
   let bodyHtml = addrNavBreadcrumbHtml();
 
   if(addrNavState.level==='city'){
     const cities = naturalSortStrings([...tree.keys()]);
-    title = `Місто (${cities.length})`;
     bodyHtml += cities.length ? cities.map(city=>`
       <button type="button" class="btn btn-block addr-nav-city-btn" data-city="${escapeHtml(city)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>${escapeHtml(city)}</span><span style="opacity:.6; font-weight:400;">${tree.get(city).size} вул. ›</span>
@@ -633,7 +763,6 @@ function renderAddressNav(){
   } else if(addrNavState.level==='street'){
     const streetsMap = tree.get(addrNavState.city) || new Map();
     const streets = naturalSortStrings([...streetsMap.keys()]);
-    title = addrNavState.city;
     bodyHtml += streets.length ? streets.map(street=>`
       <button type="button" class="btn btn-block addr-nav-street-btn" data-street="${escapeHtml(street)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>${escapeHtml(street)}</span><span style="opacity:.6; font-weight:400;">${streetsMap.get(street).size} буд. ›</span>
@@ -641,18 +770,19 @@ function renderAddressNav(){
   } else if(addrNavState.level==='house'){
     const streetsMap = tree.get(addrNavState.city) || new Map();
     const houses = naturalSortStrings([...(streetsMap.get(addrNavState.street) || new Set())]);
-    title = `${addrNavState.city}, ${addrNavState.street}`;
     bodyHtml += houses.length ? houses.map(house=>`
       <button type="button" class="btn btn-block addr-nav-house-btn" data-house="${escapeHtml(house)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>буд. ${escapeHtml(house)}</span><span style="opacity:.6;">›</span>
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Будинків не знайдено</div>`;
   } else if(addrNavState.level==='tickets'){
+    // NEW: тут уже й так усі заявки по цьому будинку показуються від новіших до
+    // старіших повними картками (дата, тип, сума одразу видно) — це і є
+    // "історія абонента за адресою", про яку домовлялись.
     const list = tickets.filter(t=>
       (t.city||'').trim()===addrNavState.city &&
       (t.street||'').trim()===addrNavState.street &&
       ((t.house||'').trim() || '(без номера)')===addrNavState.house
     ).sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
-    title = `буд. ${addrNavState.house}`;
     bodyHtml += list.length
       ? `<div class="ticket-list">${list.map(renderTicketCard).join('')}</div>`
       : `<div class="empty-state" style="padding:24px 10px;">Заявок не знайдено</div>`;
@@ -660,14 +790,49 @@ function renderAddressNav(){
 
   if(addrNavState.level==='city'){
     bodyHtml += `<div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border); font-size:11.5px; color:var(--text-faint); text-align:center;">
-      Заявки з таблиць з'являться тут, тільки якщо вручну заповнити для них місто й вулицю — інакше шукайте їх через звичайний пошук
+      Заявки з таблиць з'являться тут, тільки якщо вручну заповнити для них місто й вулицю — інакше шукайте їх через пошук вище
     </div>`;
   }
+  return bodyHtml;
+}
 
-  openModal(title, bodyHtml, {onOpen: attachAddressNavHandlers});
+function renderAddressNav(){
+  const title = addrNavTitle();
+  const topHtml = `
+    <div class="row" style="gap:6px; margin-bottom:10px;">
+      <input type="text" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off">
+      <button type="button" class="btn btn-icon" id="addrNavClearSearchBtn" title="Очистити пошук">✕</button>
+    </div>
+    <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
+    <div id="addrNavResultsArea">${addrNavResultsAreaHtml()}</div>`;
+  openModal(title, topHtml, {onOpen: attachAddressNavHandlers});
 }
 
 function attachAddressNavHandlers(rootEl){
+  // NEW: пошук — оновлюємо лише результати (не весь модал), щоб не губити фокус/курсор у полі вводу
+  const searchInput = document.getElementById('addrNavSearchInput');
+  const refreshAddrNavResults = ()=>{
+    document.getElementById('addrNavResultsArea').innerHTML = addrNavResultsAreaHtml();
+    const titleEl = document.querySelector('.modal-head h3');
+    if(titleEl) titleEl.textContent = addrNavTitle();
+  };
+  if(searchInput){
+    searchInput.addEventListener('input', ()=>{
+      addrNavSearchQuery = searchInput.value;
+      refreshAddrNavResults();
+    });
+  }
+  const clearSearchBtn = document.getElementById('addrNavClearSearchBtn');
+  if(clearSearchBtn){
+    clearSearchBtn.addEventListener('click', ()=>{
+      addrNavSearchQuery = '';
+      if(searchInput) searchInput.value = '';
+      refreshAddrNavResults();
+    });
+  }
+  const naryadBtn = document.getElementById('openNaryadCheckerBtn');
+  if(naryadBtn) naryadBtn.addEventListener('click', showNaryadChecker);
+
   rootEl.addEventListener('click', e=>{
     const crumb = e.target.closest('.addr-nav-crumb');
     if(crumb){
