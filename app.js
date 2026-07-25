@@ -692,6 +692,10 @@ function attachAddressNavHandlers(rootEl){
     if(tgBtn){ sendTicketToDispatcher(tgBtn.dataset.id); return; }
     const tgOpenBtn = e.target.closest('.tg-open-btn');
     if(tgOpenBtn){ openTicketInTelegram(tgOpenBtn.dataset.id); return; }
+    const retryTgBtn = e.target.closest('.retry-tg-btn');
+    if(retryTgBtn){ retryTelegramBackup(retryTgBtn.dataset.id); return; }
+    const retrySyncBtn = e.target.closest('.retry-sync-btn');
+    if(retrySyncBtn){ retrySyncTicket(retrySyncBtn.dataset.id); return; }
     const copyBtn = e.target.closest('.copy-ticket-btn');
     if(copyBtn){ copyTicketCardText(copyBtn.dataset.id); return; }
     const dgBtn = e.target.closest('.contract-ticket-btn');
@@ -1234,6 +1238,17 @@ function getDailyTicketNumber(t){
   const idx = sameDay.findIndex(x=>String(x.id)===String(t.id));
   return idx>-1 ? idx+1 : null;
 }
+// NEW: точково перемальовує ОДНУ картку заявки (за id) там, де вона зараз є на
+// екрані — без повного renderMainTicketList(), щоб не збивати позицію скролу
+// й стан "розгорнуто/згорнуто" інших карток. Картка може одночасно бути в
+// декількох місцях (список + модалка адресної навігації) — оновлюємо всі.
+function refreshTicketCardDom(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  document.querySelectorAll(`.ticket-card[data-id="${id}"]`).forEach(el=>{
+    el.outerHTML = renderTicketCard(t);
+  });
+}
 /* Ключ для сортування заявок за датою+часом (а не за порядком створення) —
    потрібен у пошуку й фільтрі за тегами, де на екрані одразу заявки з
    різних дат: заявка, створена заднім чи майбутнім числом, має ставати на
@@ -1368,8 +1383,17 @@ function renderTicketCard(t){
   let syncBadge = '';
   if(getScriptUrl()){
     syncBadge = t.synced
-      ? `<span class="tc-sync-badge tc-sync-ok" title="Запит надіслано без помилок мережі">✅ Завантажено</span>`
-      : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Очікує</span>`;
+      ? `<span class="tc-sync-badge tc-sync-ok" title="Запит надіслано без помилок мережі">✅ Таблиця</span>`
+      : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;
+  }
+  // NEW: та сама логіка для бекапу в Telegram-групу, що й вище для Google
+  // Таблиці — показуємо статус, і якщо ще не надіслано, даємо кнопку "повторити"
+  // прямо на картці (а не мовчки ховаємо індикатор, як було раніше).
+  let tgBadge = '';
+  if((settings.tgBotToken||'').trim() && (settings.tgBackupChatId||'').trim() && t.content){
+    tgBadge = t.tgBackedUp
+      ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">☁️✅ Telegram</button>`
+      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">☁️⏳ Telegram</button>`;
   }
   // NEW: у шапці лишили тільки статус заявки + адресу; все інше (час, сума,
   // номер договору, логін/пароль, опис, нотатка майстра) сховано всередину
@@ -1386,6 +1410,7 @@ function renderTicketCard(t){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
+    ${(syncBadge || tgBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}</div>` : ''}
     <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
@@ -1395,7 +1420,7 @@ function renderTicketCard(t){
       ${hasContent ? `<div class="tc-content">${escapeHtml(t.content)}</div>` : ''}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
     </div>
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}${t.tgBackedUp ? `<button type="button" class="tc-photo-badge tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; background:none; padding:0; font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px;">☁️✅</button>` : ''}${syncBadge}</div>
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       ${geoBtn}
@@ -1556,6 +1581,13 @@ function openTicketInTelegram(id){
   if(!link){ showToast('Цю заявку ще не надіслано в Telegram-групу'); return; }
   window.open(link, '_blank');
 }
+// NEW: ручний повтор бекапу в Telegram прямо з картки заявки (кнопка ☁️⏳) —
+// на випадок, коли автоматична відправка (при збереженні) не долетіла.
+function retryTelegramBackup(id){
+  const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
+  showToast('Повторно надсилаю в Telegram…');
+  backupTicketToTelegram(t);
+}
 
 /* ---- Надіслати заявку диспетчеру через бота (за вимогою, з кнопки) ----
    На відміну від резервного копіювання нижче — це не тихий фон, а явна дія
@@ -1665,6 +1697,19 @@ function buildTelegramBackupText(t){
   if(!extra.length) return t.content || '';
   return `${t.content||''}\n------------------\n${extra.join('\n')}`;
 }
+// NEW: на мобільній мережі (перемикання 4G/3G, слабкий сигнал) fetch до Telegram
+// інколи обривається саме в очікуванні відповіді — хоча повідомлення вже дійшло
+// й показалось у групі. Одна швидка повторна спроба закриває більшість таких
+// випадків, не роблячи бекап відчутно повільнішим.
+async function fetchWithRetry(url, opts, retries=1){
+  try{
+    return await fetch(url, opts);
+  }catch(e){
+    if(retries<=0) throw e;
+    await new Promise(r=>setTimeout(r, 800));
+    return fetchWithRetry(url, opts, retries-1);
+  }
+}
 async function backupTicketToTelegram(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
@@ -1681,7 +1726,7 @@ async function backupTicketToTelegram(t){
     if(t.content){
       const addr = [t.city, t.street, t.house].filter(Boolean).join(', ');
       const sepText = `➖➖➖➖➖➖➖➖➖➖\n🧾 ${(t.type||'ЗАЯВКА').toUpperCase()}${t.date? ' · '+t.date:''}${t.time? ' '+t.time:''}${addr? ' · '+addr:''}`;
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const res = await fetchWithRetry(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text: sepText})
       });
@@ -1691,7 +1736,7 @@ async function backupTicketToTelegram(t){
     // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
       const text = buildTelegramBackupText(t).slice(0, 4000); // ліміт Telegram на текст повідомлення
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const res = await fetchWithRetry(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text})
       });
@@ -1727,9 +1772,16 @@ async function backupTicketToTelegram(t){
       const data = await res.json();
       if(data.ok) t.tgJsonMsgId = data.result.message_id;
     }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
-
-    saveTickets();
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
+  finally{
+    // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
+    // якщо зв'язок обривався десь на середині (а повідомлення в Telegram все
+    // одно доходило), локально це не зберігалось і галочка "✅" губилась
+    // назавжди, навіть після перезаходу в застосунок. Тепер зберігаємо й
+    // перемальовуємо картку в будь-якому разі, незалежно від результату.
+    saveTickets();
+    refreshTicketCardDom(t.id);
+  }
 }
 // NEW: тестове повідомлення в Налаштуваннях — перевірити, що токен і chat_id правильні.
 // Приймає chatId ззовні, щоб однією функцією перевіряти всі три призначення.
@@ -4025,6 +4077,7 @@ function bindTicketsScreen(){
     const histBtn  = e.target.closest('.history-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
+    const retryTgBtn = e.target.closest('.retry-tg-btn');
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
     if(moreBtn){
       ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
@@ -4040,6 +4093,7 @@ function bindTicketsScreen(){
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
     if(histBtn)  showAbonentHistory(histBtn.dataset.id);
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
+    if(retryTgBtn) retryTelegramBackup(retryTgBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;
       const contentEl = document.getElementById('tcc-'+id);
