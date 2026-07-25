@@ -570,16 +570,15 @@ function findNaryadMatches(rawText){
     const reasons = [];
     const tPhoneKey = normalizePhoneKey(t.phone);
     if(tPhoneKey && phoneKeys.includes(tPhoneKey)) reasons.push({label:'збіг за телефоном', strong:true});
-    const tAddrTokens = extractAddressTokens([t.city, t.street, t.house].filter(Boolean).join(' '));
-    if(tAddrTokens.length){
-      const overlap = tAddrTokens.filter(tok => naryadTokens.has(tok));
-      // потрібно принаймні одне "слово" (вулиця/місто) і збіг номера будинку,
-      // АБО два будь-яких спільних токени — щоб не спрацьовувало на одному
-      // випадковому слові
-      const hasWord = overlap.some(tok=>!/^\d+$/.test(tok) && tok.length>=3);
-      const hasHouse = t.house && naryadTokens.has(String(t.house).toLowerCase());
-      if((hasWord && hasHouse) || overlap.length>=2) reasons.push({label:'можливий збіг за адресою', strong:false});
-    }
+    // NEW: збіг рахуємо лише за ВУЛИЦЕЮ + БУДИНКОМ, а не за містом/селом —
+    // назва населеного пункту сама по собі нічого не каже (в одному селі можуть
+    // бути десятки заявок на різних вулицях), тож раніше через неї спрацьовував
+    // "можливий збіг" навіть для геть різних адрес в тому ж селі.
+    const streetTokens = extractAddressTokens(t.street);
+    const houseToken = t.house ? String(t.house).toLowerCase().trim() : '';
+    const streetMatch = streetTokens.length>0 && streetTokens.every(tok=>naryadTokens.has(tok));
+    const houseMatch = houseToken && naryadTokens.has(houseToken);
+    if(streetMatch && houseMatch) reasons.push({label:'можливий збіг за адресою', strong:false});
     if(reasons.length) results.push({ticket:t, reasons});
   });
   // спочатку надійні (телефон), потім лише "можливі"; в межах групи — новіші вище
@@ -631,6 +630,21 @@ function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 // NEW: "Перевірити наряд" — вставляєш сирий текст від диспетчера (як у Telegram),
 // показує, чи вже була заявка по цьому телефону/адресі. Не блокує нічого і
 // нічого не створює сама — це просто підказка перед тим, як заводити нову заявку.
+// NEW: перехід на "профіль абонента" (адреса з картками), а не одразу в саму
+// заявку — так і з результатів пошуку, і з перевірки наряду. Якщо в заявки
+// взагалі нема структурованої адреси (місто+вулиця), навігатором туди не
+// потрапити — тоді відкриваємо саму заявку як запасний варіант.
+function openAddressForTicket(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  const city = (t.city||'').trim();
+  const street = (t.street||'').trim();
+  if(!city || !street){ closeModal(); editTicket(id); return; }
+  const house = (t.house||'').trim() || '(без номера)';
+  addrNavSearchQuery = '';
+  addrNavState = {level:'tickets', city, street, house};
+  renderAddressNav();
+}
 function naryadMatchesHtml(matches){
   if(!matches.length){
     return `<div class="empty-state" style="padding:20px 10px;">Збігів не знайдено — схоже, це нова заявка</div>`;
@@ -648,7 +662,7 @@ function naryadMatchesHtml(matches){
         </div>
         <div style="font-size:13.5px; margin-bottom:2px;">📍 ${escapeHtml(address)}</div>
         ${o.clientName ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">👤 ${escapeHtml(o.clientName)}</div>` : ''}
-        <button type="button" class="btn btn-sm btn-block open-history-ticket-btn" data-id="${o.id}">Відкрити заявку</button>
+        <button type="button" class="btn btn-sm btn-block open-address-btn" data-id="${o.id}">📍 Переглянути адресу</button>
       </div>`;
   }).join('');
 }
@@ -667,8 +681,8 @@ function showNaryadChecker(){
     };
     document.getElementById('naryadCheckBtn').addEventListener('click', runCheck);
     rootEl.addEventListener('click', e=>{
-      const btn = e.target.closest('.open-history-ticket-btn');
-      if(btn){ closeModal(); editTicket(btn.dataset.id); }
+      const btn = e.target.closest('.open-address-btn');
+      if(btn){ openAddressForTicket(btn.dataset.id); }
     });
   }});
 }
@@ -736,7 +750,39 @@ function addrNavSearchResultsHtml(query){
     .sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
   const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: ${list.length}</div>`;
   if(!list.length) return header + `<div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
-  return header + `<div class="ticket-list">${list.map(renderTicketCard).join('')}</div>`;
+
+  // NEW: групуємо результати за адресою — тап веде на адресу (профіль +
+  // картки), а не одразу відкриває конкретну заявку. Заявки без
+  // структурованої адреси (місто+вулиця) показуємо окремо як є — туди
+  // навігатором однаково не потрапити.
+  const groups = new Map(); // "місто||вулиця||будинок" -> {city,street,house,list:[]}
+  const loose = [];
+  list.forEach(t=>{
+    const city = (t.city||'').trim(), street = (t.street||'').trim();
+    if(!city || !street){ loose.push(t); return; }
+    const house = (t.house||'').trim() || '(без номера)';
+    const key = `${city}||${street}||${house}`;
+    if(!groups.has(key)) groups.set(key, {city, street, house, list:[]});
+    groups.get(key).list.push(t);
+  });
+
+  const groupsHtml = [...groups.values()].map(g=>{
+    const sorted = g.list.slice().sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+    const latest = sorted[0];
+    const addrLabel = [g.city, g.street, g.house!=='(без номера)' ? `буд. ${g.house}` : ''].filter(Boolean).join(', ');
+    const who = latest.clientName ? `${escapeHtml(latest.clientName)} · ` : '';
+    return `
+      <button type="button" class="btn btn-block addr-nav-search-result-btn" data-city="${escapeHtml(g.city)}" data-street="${escapeHtml(g.street)}" data-house="${escapeHtml(g.house)}" style="text-align:left; justify-content:space-between; margin-bottom:8px; height:auto; padding:12px 14px;">
+        <span>
+          <div style="font-weight:700; margin-bottom:2px;">📍 ${escapeHtml(addrLabel)}</div>
+          <div style="font-size:12px; opacity:.7;">${who}${g.list.length} заявок · останнє ${escapeHtml(latest.date)}</div>
+        </span>
+        <span style="opacity:.5;">›</span>
+      </button>`;
+  }).join('');
+
+  const looseHtml = loose.length ? `<div class="ticket-list">${loose.map(renderTicketCard).join('')}</div>` : '';
+  return header + groupsHtml + looseHtml;
 }
 
 function addrNavTitle(){
@@ -870,6 +916,15 @@ function attachAddressNavHandlers(rootEl){
     if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; renderAddressNav(); return; }
     const houseBtn = e.target.closest('.addr-nav-house-btn');
     if(houseBtn){ addrNavState.level='tickets'; addrNavState.house=houseBtn.dataset.house; renderAddressNav(); return; }
+    // NEW: результат глобального пошуку — веде на адресу (профіль абонента +
+    // картки), а не одразу відкриває конкретну заявку
+    const searchResultBtn = e.target.closest('.addr-nav-search-result-btn');
+    if(searchResultBtn){
+      addrNavSearchQuery = '';
+      addrNavState = {level:'tickets', city:searchResultBtn.dataset.city, street:searchResultBtn.dataset.street, house:searchResultBtn.dataset.house};
+      renderAddressNav();
+      return;
+    }
     // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
     const editBtn = e.target.closest('.edit-ticket-btn');
     if(editBtn){ closeModal(); editTicket(editBtn.dataset.id); return; }
