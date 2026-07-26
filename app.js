@@ -751,10 +751,11 @@ function addrNavSearchResultsHtml(query){
   const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: ${list.length}</div>`;
   if(!list.length) return header + `<div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
 
-  // NEW: групуємо результати за адресою — тап веде на адресу (профіль +
-  // картки), а не одразу відкриває конкретну заявку. Заявки без
-  // структурованої адреси (місто+вулиця) показуємо окремо як є — туди
-  // навігатором однаково не потрапити.
+  // NEW: результати пошуку тепер одразу показують профіль абонента + картки
+  // по кожній знайденій адресі — так само, як і при переході по списку
+  // місто→вулиця→будинок, а не окрему кнопку-перехід. Заявки без
+  // структурованої адреси (місто+вулиця) показуємо окремо як є — для них
+  // профіль зібрати нема з чого.
   const groups = new Map(); // "місто||вулиця||будинок" -> {city,street,house,list:[]}
   const loose = [];
   list.forEach(t=>{
@@ -766,19 +767,13 @@ function addrNavSearchResultsHtml(query){
     groups.get(key).list.push(t);
   });
 
-  const groupsHtml = [...groups.values()].map(g=>{
+  const groupsHtml = [...groups.values()].map((g, idx)=>{
     const sorted = g.list.slice().sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
-    const latest = sorted[0];
     const addrLabel = [g.city, g.street, g.house!=='(без номера)' ? `буд. ${g.house}` : ''].filter(Boolean).join(', ');
-    const who = latest.clientName ? `${escapeHtml(latest.clientName)} · ` : '';
     return `
-      <button type="button" class="btn btn-block addr-nav-search-result-btn" data-city="${escapeHtml(g.city)}" data-street="${escapeHtml(g.street)}" data-house="${escapeHtml(g.house)}" style="text-align:left; justify-content:space-between; margin-bottom:8px; height:auto; padding:12px 14px;">
-        <span>
-          <div style="font-weight:700; margin-bottom:2px;">📍 ${escapeHtml(addrLabel)}</div>
-          <div style="font-size:12px; opacity:.7;">${who}${g.list.length} заявок · останнє ${escapeHtml(latest.date)}</div>
-        </span>
-        <span style="opacity:.5;">›</span>
-      </button>`;
+      <div style="font-size:12px; color:var(--text-dim); margin:${idx>0?'16px':'0'} 0 4px;">📍 ${escapeHtml(addrLabel)}</div>
+      ${addrAbonentProfileHtml(sorted, `_srch${idx}`)}
+      <div class="ticket-list">${sorted.map(t=>renderTicketCard(t, {workOnly:true})).join('')}</div>`;
   }).join('');
 
   const looseHtml = loose.length ? `<div class="ticket-list">${loose.map(renderTicketCard).join('')}</div>` : '';
@@ -800,7 +795,7 @@ function addrNavTitle(){
 // тут були. Якщо в різних заявках траплялись РІЗНІ імена/телефони — показуємо
 // це окремим попередженням, а не тихо обираємо один варіант, бо за однією
 // адресою можуть бути різні люди (сусід, родич тощо).
-function addrAbonentProfileHtml(list){
+function addrAbonentProfileHtml(list, keySuffix=''){
   // NEW: шапка тепер завжди показується (адреса й кількість заявок відомі
   // завжди) — раніше вона повністю зникала, якщо жодна заявка ще не мала
   // заповненого ПІБ/телефону, що і виглядало як "профіль десь загубився".
@@ -815,10 +810,14 @@ function addrAbonentProfileHtml(list){
   // NEW: фото абонента — не зберігаємо його додатково на телефоні "про
   // всяк випадок": кнопка підвантажує знімок лише за запитом (з локального
   // кешу IndexedDB, якщо вже завантажували, інакше — напряму з Telegram).
+  // keySuffix — коли на екрані одночасно кілька профілів (результати
+  // пошуку по кількох адресах), id мають бути унікальними для кожного.
   const photoTicket = list.find(t=>t.photo);
+  const wrapId = `abonentProfilePhotoWrap${keySuffix}`;
+  const imgId = `abonentProfilePhotoImg${keySuffix}`;
   const photoBtnHtml = photoTicket ? `
-    <button type="button" class="btn btn-sm" id="abonentProfilePhotoBtn" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
-    <div id="abonentProfilePhotoWrap" class="hidden" style="margin-top:8px;"><img id="abonentProfilePhotoImg" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
+    <button type="button" class="btn btn-sm abonent-photo-btn" data-wrap-id="${wrapId}" data-img-id="${imgId}" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
+    <div id="${wrapId}" class="hidden" style="margin-top:8px;"><img id="${imgId}" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
     : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
   return `
     <div class="card" style="margin-bottom:12px; padding:14px;">
@@ -930,27 +929,18 @@ function attachAddressNavHandlers(rootEl){
     // NEW: фото абонента підвантажується лише за тапом на кнопку — не сама
     // собою при відкритті профілю, і не зберігається на телефоні окремо від
     // звичайного кешу фото заявок (той самий IndexedDB, що й завжди)
-    const photoBtn = e.target.closest('#abonentProfilePhotoBtn');
+    const photoBtn = e.target.closest('.abonent-photo-btn');
     if(photoBtn){
       photoBtn.disabled = true; photoBtn.textContent = '⏳ Завантаження…';
       const key = photoBtn.dataset.photoKey, fileId = photoBtn.dataset.tgFileId || null;
       resolvePhotoAsync(key, fileId).then(val=>{
         if(!val){ photoBtn.disabled = false; photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
-        const wrap = document.getElementById('abonentProfilePhotoWrap');
-        const img = document.getElementById('abonentProfilePhotoImg');
+        const wrap = document.getElementById(photoBtn.dataset.wrapId);
+        const img = document.getElementById(photoBtn.dataset.imgId);
         if(img) img.src = val;
         if(wrap) wrap.classList.remove('hidden');
         photoBtn.classList.add('hidden');
       });
-      return;
-    }
-    // NEW: результат глобального пошуку — веде на адресу (профіль абонента +
-    // картки), а не одразу відкриває конкретну заявку
-    const searchResultBtn = e.target.closest('.addr-nav-search-result-btn');
-    if(searchResultBtn){
-      addrNavSearchQuery = '';
-      addrNavState = {level:'tickets', city:searchResultBtn.dataset.city, street:searchResultBtn.dataset.street, house:searchResultBtn.dataset.house};
-      renderAddressNav();
       return;
     }
     // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
@@ -1649,12 +1639,18 @@ function renderMainTicketList(){
 // імені, телефону, адреси — для картки під "профілем абонента", де ці дані
 // вже показані один раз вище, а не в кожній заявці окремо.
 function buildWorkSummaryLines(t){
+  // NEW: та сама розбивка платежів/робіт, що й у повному тексті заявки
+  // (buildTicketContent) — раніше тут показувалось лише обладнання, а
+  // "Вызов: 300 грн", "Підключення: 500 грн", спосіб оплати тощо губились.
   const lines = [];
-  (t.equipment||[]).filter(e=>e.checked).forEach(e=> lines.push(`🛠️ ${e.label}`));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м`); });
-  (t.presetWorks||[]).filter(w=>w.checked).forEach(w=> lines.push(`🔧 ${w.label}${(Number(w.qty)>1) ? ` × ${w.qty}` : ''}`));
-  (t.additionalWork||[]).forEach(w=>{ if(w.desc) lines.push(`✏️ ${w.desc}`); });
   if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
+  if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${fmtMoney(t.callFee)}`);
+  if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${fmtMoney(t.tariff)}`);
+  (t.equipment||[]).filter(e=>e.checked).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`));
+  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${c.pricePerMeter}грн = ${Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
+  (t.presetWorks||[]).filter(w=>w.checked).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`));
+  (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${fmtMoney(w.sum)}`); });
+  if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
   if(t.note) lines.push(`📝 ${t.note}`);
   if(t.otherNote) lines.push(t.otherNote);
   return lines;
