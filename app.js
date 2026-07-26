@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v13 · 2026-07-26';
+const APP_VERSION = 'v14 · 2026-07-26';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -630,6 +630,14 @@ function showAbonentHistory(id){
 }
 
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+// NEW: "🔍 Повна заявка" на картці профілю абонента (де показано лише
+// стислий перелік робіт) — просто показує оригінальний повний текст заявки
+// для читання, без переходу в режим редагування.
+function showFullTicketText(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  openModal(`${t.type||'Заявка'} · ${t.date||''} ${t.time||''}`, `<div style="white-space:pre-wrap; font-size:14px; line-height:1.5;">${escapeHtml(t.content || '(немає тексту)')}</div>`);
+}
 
 // NEW: "Перевірити наряд" — вставляєш сирий текст від диспетчера (як у Telegram),
 // показує, чи вже була заявка по цьому телефону/адресі. Не блокує нічого і
@@ -873,6 +881,16 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     <button type="button" class="btn btn-sm abonent-photo-btn" data-wrap-id="${wrapId}" data-img-id="${imgId}" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
     <div id="${wrapId}" class="hidden" style="margin-top:8px;"><img id="${imgId}" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
     : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
+  // NEW: номер договору/логін/пароль — це дані абонента, а не конкретного
+  // візиту: показуємо один раз у профілі (з найсвіжішої заявки, де вони є),
+  // а не шукаємо їх щоразу в кожній картці окремо.
+  const acctTicket = list.find(t=>t.contractNumber || t.login || t.password);
+  const acctHtml = acctTicket ? `
+    <div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:13.5px; line-height:1.6;">
+      ${acctTicket.contractNumber ? `📄 <strong>№ дог.:</strong> ${escapeHtml(acctTicket.contractNumber)}<br>` : ''}
+      ${acctTicket.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.login)}</span><br>` : ''}
+      ${acctTicket.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.password)}</span>` : ''}
+    </div>` : '';
   // NEW: редагування ПІБ/телефону просто в профілі — застосовується одразу
   // до ВСІХ заявок за цією адресою (додає, де не було, виправляє, де було)
   const idsCsv = list.map(t=>t.id).join(',');
@@ -884,6 +902,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
         <button type="button" class="btn btn-sm abonent-edit-btn" data-ids="${escapeHtml(idsCsv)}" data-name="${escapeHtml(primary && primary.clientName || '')}" data-phone="${escapeHtml(primary && primary.phone || '')}" title="Редагувати ПІБ/телефон" style="flex-shrink:0;">✏️</button>
       </div>
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
+      ${acctHtml}
       ${photoBtnHtml}
       <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">🗓️ Заявок за цією адресою: ${list.length}</div>
       ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
@@ -1095,6 +1114,9 @@ function attachAddressNavHandlers(rootEl){
       showEditAbonentProfile(editProfileBtn.dataset.ids, editProfileBtn.dataset.name, editProfileBtn.dataset.phone);
       return;
     }
+    // NEW: "🔍 Повна заявка" — лише перегляд оригінального тексту, без edit-режиму
+    const viewFullBtn = e.target.closest('.view-full-ticket-btn');
+    if(viewFullBtn){ showFullTicketText(viewFullBtn.dataset.id); return; }
     // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
     const editBtn = e.target.closest('.edit-ticket-btn');
     if(editBtn){ closeModal(); editTicket(editBtn.dataset.id); return; }
@@ -1895,6 +1917,7 @@ function renderTicketCard(t, opts={}){
       </div>` : ''}
       ${hasContent ? `<div class="tc-content">${escapeHtml(displayContent)}</div>` : (opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
+      ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
     <div class="tc-actions">
@@ -4605,13 +4628,19 @@ function bindCalculatorScreen(){
 // пропонуємо підставити ім'я/телефон, щоб не вбивати вручну вдруге.
 // Спрацьовує тільки для НОВОЇ заявки (не при редагуванні) і тільки якщо
 // клієнта/телефон ще не вписані — нічого не нав'язуємо, якщо вже заповнено.
-function findPreviousTicketAtAddress(city, street, house){
+// NEW: тепер враховуємо і квартиру (не лише будинок — в одному будинку
+// різні квартири можуть належати різним абонентам), і підставляємо не лише
+// ім'я/телефон, а й логін/пароль/номер договору — це дані самого абонента,
+// а не конкретного візиту, тож мають лишатись з ним від заявки до заявки.
+function findPreviousTicketAtAddress(city, street, house, apartment){
   const norm = s => (s||'').trim().toLowerCase();
   if(!norm(city) || !norm(street) || !norm(house)) return null;
+  const aptKey = (apartment||'').trim() || '(без кв.)';
   const matches = tickets.filter(t=>
     !t.cloudImported &&
     norm(t.city)===norm(city) && norm(t.street)===norm(street) && norm(t.house)===norm(house) &&
-    (t.clientName || t.phone)
+    ticketApartmentKey(t)===aptKey &&
+    (t.clientName || t.phone || t.login || t.password || t.contractNumber)
   );
   if(!matches.length) return null;
   matches.sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
@@ -4619,33 +4648,44 @@ function findPreviousTicketAtAddress(city, street, house){
 }
 function maybeSuggestClientFromAddress(){
   if(editingTicketId) return; // при редагуванні вже існуючої заявки нічого не пропонуємо
+  if(getEffectiveType() !== 'Ремонт') return; // NEW: для Підключення номер/логін і так генеруються заново — підставляти старі не варто
   if(calcState.clientName || calcState.phone) return; // щось уже вписано — не заважаємо
   const city = document.getElementById('f_city').value.trim();
   const street = document.getElementById('f_street').value.trim();
   const house = document.getElementById('f_house').value.trim();
-  const prev = findPreviousTicketAtAddress(city, street, house);
+  const apartment = document.getElementById('f_apartment').value.trim();
+  const prev = findPreviousTicketAtAddress(city, street, house, apartment);
   if(!prev) return;
-  const addr = [city, street, house].filter(Boolean).join(', ');
+  const addr = [city, street, house, apartment ? `кв. ${apartment}` : ''].filter(Boolean).join(', ');
   openModal('Клієнт на цій адресі', `
     <div style="font-size:14px; margin-bottom:14px; color:var(--text-dim);">
       На адресі <strong style="color:var(--text);">${escapeHtml(addr)}</strong> вже була заявка:<br>
       ${prev.clientName ? escapeHtml(prev.clientName)+'<br>' : ''}${prev.phone ? escapeHtml(prev.phone) : ''}
     </div>
-    <button type="button" class="btn btn-accent btn-block" id="useAddrClientBtn">Підставити ці дані</button>
-    <button type="button" class="btn btn-block" id="skipAddrClientBtn" style="margin-top:8px;">Ні, дякую</button>
+    <button type="button" class="btn btn-accent btn-block" id="useAddrClientBtn">Підставити дані</button>
+    <button type="button" class="btn btn-block" id="skipAddrClientBtn" style="margin-top:8px;">Ні, це інша людина</button>
   `, {onOpen: ()=>{
     document.getElementById('useAddrClientBtn').addEventListener('click', ()=>{
       document.getElementById('f_client').value = prev.clientName || '';
       document.getElementById('f_phone').value = prev.phone || '';
       calcState.clientName = prev.clientName || '';
       calcState.phone = prev.phone || '';
+      // NEW: логін/пароль/номер договору — теж дані абонента, підставляємо разом з ім'ям
+      if(prev.login || prev.password){
+        document.getElementById('f_credRaw').value = [prev.login, prev.password].filter(Boolean).join('\n');
+        updateCredParsedHint();
+      }
+      if(prev.contractNumber){
+        document.getElementById('f_contractManual').value = prev.contractNumber;
+      }
       closeModal();
-      showToast('Дані клієнта підставлено');
+      showToast('Дані абонента підставлено');
     });
     document.getElementById('skipAddrClientBtn').addEventListener('click', closeModal);
   }});
 }
 document.getElementById('f_house').addEventListener('blur', maybeSuggestClientFromAddress);
+document.getElementById('f_apartment').addEventListener('blur', maybeSuggestClientFromAddress); // NEW: якщо адресу вже вбито, а квартиру дописали останньою
 
 document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
