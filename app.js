@@ -6,6 +6,10 @@
    ===================================================================== */
 
 /* ---------- 0. Константи та стан ---------- */
+// NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
+// свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
+// разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
+const APP_VERSION = 'v12 · 2026-07-26';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -3497,6 +3501,7 @@ async function sendShiftsReportToTelegram(){
 
 /* ---------- 7. Екран «Налаштування» ---------- */
 function renderSettingsScreen(){
+  document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`; // NEW
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
   document.getElementById('defaultTariffInput').value = settings.defaultTariff;
