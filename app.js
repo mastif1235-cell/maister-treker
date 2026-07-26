@@ -715,9 +715,28 @@ function buildAddressTree(){
   });
   return tree;
 }
+// NEW: один будинок може мати кілька квартир з РІЗНИМИ абонентами — тому
+// "профіль" будується не просто на рівні будинку, а на рівні будинок+квартира.
+// Якщо квартира не вказана, всі такі заявки потрапляють в один спільний
+// "профіль" (приватний будинок без поділу на квартири).
+function ticketApartmentKey(t){ return (t.apartment||'').trim() || '(без кв.)'; }
+function getApartmentGroupsForHouse(city, street, house){
+  const list = tickets.filter(t=>
+    (t.city||'').trim()===city &&
+    (t.street||'').trim()===street &&
+    ((t.house||'').trim() || '(без номера)')===house
+  );
+  const groups = new Map(); // apartmentKey -> [tickets]
+  list.forEach(t=>{
+    const key = ticketApartmentKey(t);
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  return groups;
+}
 
 function openAddressNavigator(){
-  addrNavState = {level:'city', city:null, street:null, house:null};
+  addrNavState = {level:'city', city:null, street:null, house:null, apartment:null};
   addrNavSearchQuery = ''; // NEW
   renderAddressNav();
 }
@@ -726,6 +745,7 @@ function addrNavBreadcrumbHtml(){
   const crumbs = [`<span class="chip addr-nav-crumb" data-crumb="city" style="cursor:pointer;">🧭 Усі міста</span>`];
   if(addrNavState.city) crumbs.push(`<span class="chip addr-nav-crumb" data-crumb="street" style="cursor:pointer;">${escapeHtml(addrNavState.city)}</span>`);
   if(addrNavState.street) crumbs.push(`<span class="chip addr-nav-crumb" data-crumb="house" style="cursor:pointer;">${escapeHtml(addrNavState.street)}</span>`);
+  if(addrNavState.house && (addrNavState.level==='profiles' || addrNavState.level==='tickets')) crumbs.push(`<span class="chip addr-nav-crumb" data-crumb="profiles" style="cursor:pointer;">буд. ${escapeHtml(addrNavState.house)}</span>`);
   return `<div class="row wrap" style="gap:6px; margin-bottom:12px;">${crumbs.join('')}</div>`;
 }
 
@@ -748,35 +768,40 @@ function ticketMatchesSearchQuery(t, q){
 function addrNavSearchResultsHtml(query){
   const list = tickets.filter(t=>ticketMatchesSearchQuery(t, query))
     .sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
-  const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: ${list.length}</div>`;
-  if(!list.length) return header + `<div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
+  const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено профілів:</div>`;
+  if(!list.length) return `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: 0</div><div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
 
-  // NEW: результати пошуку тепер одразу показують профіль абонента + картки
-  // по кожній знайденій адресі — так само, як і при переході по списку
-  // місто→вулиця→будинок, а не окрему кнопку-перехід. Заявки без
-  // структурованої адреси (місто+вулиця) показуємо окремо як є — для них
-  // профіль зібрати нема з чого.
-  const groups = new Map(); // "місто||вулиця||будинок" -> {city,street,house,list:[]}
+  // NEW: результати пошуку — це список ПРОФІЛІВ (адреса + ім'я + телефон),
+  // а не одразу картки заявок. Групуємо за місто+вулиця+будинок+КВАРТИРА
+  // (не просто будинком — в одному будинку можуть жити різні абоненти по
+  // різних квартирах). Тап на профіль веде всередину — там уже шапка
+  // профілю й картки. Заявки без структурованої адреси (місто+вулиця)
+  // показуємо окремо як прості картки — для них профіль зібрати нема з чого.
+  const groups = new Map(); // "місто||вулиця||будинок||кв" -> {city,street,house,apartment,list:[]}
   const loose = [];
   list.forEach(t=>{
     const city = (t.city||'').trim(), street = (t.street||'').trim();
     if(!city || !street){ loose.push(t); return; }
     const house = (t.house||'').trim() || '(без номера)';
-    const key = `${city}||${street}||${house}`;
-    if(!groups.has(key)) groups.set(key, {city, street, house, list:[]});
+    const apartment = ticketApartmentKey(t);
+    const key = `${city}||${street}||${house}||${apartment}`;
+    if(!groups.has(key)) groups.set(key, {city, street, house, apartment, list:[]});
     groups.get(key).list.push(t);
   });
 
-  const groupsHtml = [...groups.values()].map((g, idx)=>{
-    const sorted = g.list.slice().sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
-    const addrLabel = [g.city, g.street, g.house!=='(без номера)' ? `буд. ${g.house}` : ''].filter(Boolean).join(', ');
-    return `
-      <div style="font-size:12px; color:var(--text-dim); margin:${idx>0?'16px':'0'} 0 4px;">📍 ${escapeHtml(addrLabel)}</div>
-      ${addrAbonentProfileHtml(sorted, `_srch${idx}`)}
-      <div class="ticket-list">${sorted.map(t=>renderTicketCard(t, {workOnly:true})).join('')}</div>`;
-  }).join('');
+  const groupsHtml = [...groups.values()]
+    .sort((a,b)=>{
+      const aLatest = a.list.slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
+      const bLatest = b.list.slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
+      return `${bLatest.date} ${bLatest.time}`.localeCompare(`${aLatest.date} ${aLatest.time}`);
+    })
+    .map(g=>{
+      const sorted = g.list.slice().sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+      const addrLabel = [g.city, g.street, g.house!=='(без номера)' ? `буд. ${g.house}` : '', g.apartment!=='(без кв.)' ? `кв. ${g.apartment}` : ''].filter(Boolean).join(', ');
+      return addrProfileSummaryButtonHtml(sorted, addrLabel, `data-city="${escapeHtml(g.city)}" data-street="${escapeHtml(g.street)}" data-house="${escapeHtml(g.house)}" data-apartment="${escapeHtml(g.apartment)}"`);
+    }).join('');
 
-  const looseHtml = loose.length ? `<div class="ticket-list">${loose.map(renderTicketCard).join('')}</div>` : '';
+  const looseHtml = loose.length ? `<div style="font-size:12px; color:var(--text-dim); margin:14px 0 4px;">Без структурованої адреси:</div><div class="ticket-list">${loose.map(renderTicketCard).join('')}</div>` : '';
   return header + groupsHtml + looseHtml;
 }
 
@@ -786,8 +811,28 @@ function addrNavTitle(){
   if(addrNavState.level==='city') return `Місто (${tree.size})`;
   if(addrNavState.level==='street') return addrNavState.city;
   if(addrNavState.level==='house') return `${addrNavState.city}, ${addrNavState.street}`;
-  if(addrNavState.level==='tickets') return `буд. ${addrNavState.house}`;
+  if(addrNavState.level==='profiles') return `буд. ${addrNavState.house} — профілі`;
+  if(addrNavState.level==='tickets') return addrNavState.apartment && addrNavState.apartment!=='(без кв.)' ? `буд. ${addrNavState.house}, кв. ${addrNavState.apartment}` : `буд. ${addrNavState.house}`;
   return 'Навігатор адрес';
+}
+
+// NEW: компактна кнопка-профіль для списків (профілі в будинку, результати
+// пошуку) — лише ім'я/телефон/адреса/кількість заявок, тап веде всередину
+// до повного профілю з картками. Той самий вигляд в обох місцях.
+function addrProfileSummaryButtonHtml(list, addrLabel, dataAttrs){
+  const named = list.filter(t=>t.clientName || t.phone);
+  const primary = named[0] || null;
+  const name = primary && primary.clientName ? primary.clientName : 'Ім’я невідоме';
+  const phone = primary && primary.phone ? primary.phone : '';
+  return `
+    <button type="button" class="btn btn-block addr-profile-btn" ${dataAttrs} style="text-align:left; justify-content:space-between; margin-bottom:8px; height:auto; padding:12px 14px;">
+      <span>
+        <div style="font-weight:700; margin-bottom:2px;">👤 ${escapeHtml(name)}</div>
+        <div style="font-size:12px; opacity:.7; margin-bottom:1px;">📍 ${escapeHtml(addrLabel)}</div>
+        <div style="font-size:12px; opacity:.7;">${phone ? escapeHtml(phone)+' · ' : ''}${list.length} заявок</div>
+      </span>
+      <span style="opacity:.5;">›</span>
+    </button>`;
 }
 
 // NEW: "профіль" абонента — шапка над списком заявок конкретного будинку:
@@ -853,13 +898,29 @@ function addrNavResultsAreaHtml(){
       <button type="button" class="btn btn-block addr-nav-house-btn" data-house="${escapeHtml(house)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>буд. ${escapeHtml(house)}</span><span style="opacity:.6;">›</span>
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Будинків не знайдено</div>`;
+  } else if(addrNavState.level==='profiles'){
+    // NEW: у будинку кілька квартир з різними абонентами — показуємо список
+    // профілів (не одразу картки), тап на профіль веде всередину до нього.
+    const groups = getApartmentGroupsForHouse(addrNavState.city, addrNavState.street, addrNavState.house);
+    const entries = [...groups.entries()].sort((a,b)=>{
+      const aLatest = a[1].slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
+      const bLatest = b[1].slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
+      return `${bLatest.date} ${bLatest.time}`.localeCompare(`${aLatest.date} ${aLatest.time}`);
+    });
+    bodyHtml += entries.length ? entries.map(([aptKey, aptList])=>{
+      const addrLabel = aptKey!=='(без кв.)' ? `кв. ${aptKey}` : `буд. ${addrNavState.house}`;
+      return addrProfileSummaryButtonHtml(aptList, addrLabel, `data-apartment="${escapeHtml(aptKey)}"`);
+    }).join('') : `<div class="empty-state" style="padding:24px 10px;">Профілів не знайдено</div>`;
   } else if(addrNavState.level==='tickets'){
     // NEW: "профіль абонента" (ім'я/телефон/скільки разів були) один раз
     // згори, а картки під ним — уже без дублювання цих даних, лише що робили.
+    // Фільтруємо і за квартирою теж — інакше різні абоненти в одному будинку
+    // змішувались би в один профіль.
     const list = tickets.filter(t=>
       (t.city||'').trim()===addrNavState.city &&
       (t.street||'').trim()===addrNavState.street &&
-      ((t.house||'').trim() || '(без номера)')===addrNavState.house
+      ((t.house||'').trim() || '(без номера)')===addrNavState.house &&
+      ticketApartmentKey(t)===addrNavState.apartment
     ).sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
     bodyHtml += list.length
       ? addrAbonentProfileHtml(list) + `<div class="ticket-list">${list.map(t=>renderTicketCard(t, {workOnly:true})).join('')}</div>`
@@ -915,17 +976,44 @@ function attachAddressNavHandlers(rootEl){
     const crumb = e.target.closest('.addr-nav-crumb');
     if(crumb){
       const to = crumb.dataset.crumb;
-      if(to==='city') addrNavState = {level:'city', city:null, street:null, house:null};
-      else if(to==='street'){ addrNavState.level='street'; addrNavState.street=null; addrNavState.house=null; }
-      else if(to==='house'){ addrNavState.level='house'; addrNavState.house=null; }
+      if(to==='city') addrNavState = {level:'city', city:null, street:null, house:null, apartment:null};
+      else if(to==='street'){ addrNavState.level='street'; addrNavState.street=null; addrNavState.house=null; addrNavState.apartment=null; }
+      else if(to==='house'){ addrNavState.level='house'; addrNavState.house=null; addrNavState.apartment=null; }
+      else if(to==='profiles'){ addrNavState.level='profiles'; addrNavState.apartment=null; }
       renderAddressNav(); return;
     }
     const cityBtn = e.target.closest('.addr-nav-city-btn');
-    if(cityBtn){ addrNavState = {level:'street', city:cityBtn.dataset.city, street:null, house:null}; renderAddressNav(); return; }
+    if(cityBtn){ addrNavState = {level:'street', city:cityBtn.dataset.city, street:null, house:null, apartment:null}; renderAddressNav(); return; }
     const streetBtn = e.target.closest('.addr-nav-street-btn');
-    if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; renderAddressNav(); return; }
+    if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; addrNavState.apartment=null; renderAddressNav(); return; }
     const houseBtn = e.target.closest('.addr-nav-house-btn');
-    if(houseBtn){ addrNavState.level='tickets'; addrNavState.house=houseBtn.dataset.house; renderAddressNav(); return; }
+    if(houseBtn){
+      addrNavState.house = houseBtn.dataset.house;
+      // NEW: якщо в цьому будинку заявки лише по одній квартирі (чи квартира
+      // взагалі не використовується) — одразу показуємо профіль, не змушуючи
+      // тапати зайвий раз; якщо квартир кілька — спершу список профілів.
+      const groups = getApartmentGroupsForHouse(addrNavState.city, addrNavState.street, addrNavState.house);
+      if(groups.size <= 1){
+        addrNavState.apartment = groups.size ? [...groups.keys()][0] : '(без кв.)';
+        addrNavState.level = 'tickets';
+      } else {
+        addrNavState.level = 'profiles';
+        addrNavState.apartment = null;
+      }
+      renderAddressNav(); return;
+    }
+    const profileBtn = e.target.closest('.addr-profile-btn');
+    if(profileBtn){
+      // NEW: результати пошуку несуть повну адресу в data-*, а кнопки
+      // всередині одного будинку (рівень 'profiles') — лише квартиру
+      if(profileBtn.dataset.city) addrNavState.city = profileBtn.dataset.city;
+      if(profileBtn.dataset.street) addrNavState.street = profileBtn.dataset.street;
+      if(profileBtn.dataset.house) addrNavState.house = profileBtn.dataset.house;
+      addrNavState.apartment = profileBtn.dataset.apartment;
+      addrNavState.level = 'tickets';
+      addrNavSearchQuery = '';
+      renderAddressNav(); return;
+    }
     // NEW: фото абонента підвантажується лише за тапом на кнопку — не сама
     // собою при відкритті профілю, і не зберігається на телефоні окремо від
     // звичайного кешу фото заявок (той самий IndexedDB, що й завжди)
@@ -1292,6 +1380,20 @@ function ticketToSyncPayload(t){
   if(t.masterNote) backupExtra.push(`Приватна примітка майстра: ${t.masterNote}`);
   if(t.login) backupExtra.push(`Логін: ${t.login}`);
   if(t.password) backupExtra.push(`Пароль: ${t.password}`);
+  // NEW: "Завантажити дані з хмари" раніше замінювала заявки лише на
+  // id/date/time/content/sum/tags — місто/вулиця/будинок/квартира/ПІБ/
+  // телефон/MAC/обладнання/оплата губились назавжди, хоча текст (content)
+  // виглядав повним. Кладемо ці поля одним JSON-рядком у той самий службовий
+  // стовпець (без змін на боці Google Apps Script) — і при завантаженні з
+  // хмари відновлюємо їх назад.
+  const fullData = {
+    type:t.type, city:t.city, street:t.street, house:t.house, apartment:t.apartment,
+    address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
+    payment:t.payment, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
+    equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
+    note:t.note, otherNote:t.otherNote
+  };
+  backupExtra.push(`ПовніДаніJSON: ${JSON.stringify(fullData)}`);
   return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n')};
 }
 function shiftToSyncPayload(s){
@@ -1311,8 +1413,8 @@ async function loadFromCloud(){
       const data = await res.json();
       tickets = (data.tickets||[]).map(t=>{
         const blank = blankTicketObject();
-        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра
-        return Object.assign(blank, {
+        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра/повні структуровані дані
+        const merged = Object.assign(blank, {
           id: t.id, date: t.date, time: t.time, content: t.content,
           sum: Number(t.sum)||0,
           tags: Array.isArray(t.tags) ? t.tags : String(t.tags||'').split(',').map(s=>s.trim()).filter(Boolean),
@@ -1322,8 +1424,15 @@ async function loadFromCloud(){
           login: extra.login,           // NEW
           password: extra.password,     // NEW
           synced: true,       // NEW: дані щойно прийшли з хмари — вже синхронізовані, повторно надсилати не треба
-          cloudImported: true // NEW: увімкне режим сирого редагування тексту при відкритті заявки
+          // NEW: якщо в бекапі є повний JSON зі структурованими полями (заявки,
+          // збережені після цього оновлення) — відновлюємо адресу/MAC/обладнання/
+          // оплату один в один, і сирий режим редагування більше не потрібен.
+          // Старі бекапи без цього поля відновлюються як і раніше — лише за
+          // текстом, у режимі сирого редагування.
+          cloudImported: !extra.fullData
         });
+        if(extra.fullData) Object.assign(merged, extra.fullData);
+        return merged;
       });
       saveTickets();
     }catch(err){ console.error(err); ok = false; }
@@ -1477,17 +1586,22 @@ function blankTicketObject(){
    повертає таблиця для кожної заявки, і дістає з нього геолокацію та
    приватну примітку майстра — щоб відновити їх при завантаженні з хмари. */
 function parseBackupNote(note){
-  const result = {geoLink:'', masterNote:'', login:'', password:''};
+  const result = {geoLink:'', masterNote:'', login:'', password:'', fullData:null};
   if(!note) return result;
   String(note).split('\n').forEach(line=>{
     const geoMatch = line.match(/^Геолокація:\s*(.+)$/);
     const noteMatch = line.match(/^Приватна примітка майстра:\s*(.+)$/);
     const loginMatch = line.match(/^Логін:\s*(.+)$/);
     const passMatch = line.match(/^Пароль:\s*(.+)$/);
+    const fullDataMatch = line.match(/^ПовніДаніJSON:\s*(.+)$/); // NEW
     if(geoMatch) result.geoLink = geoMatch[1].trim();
     else if(noteMatch) result.masterNote = noteMatch[1].trim();
     else if(loginMatch) result.login = loginMatch[1].trim();
     else if(passMatch) result.password = passMatch[1].trim();
+    else if(fullDataMatch){
+      try{ result.fullData = JSON.parse(fullDataMatch[1].trim()); }
+      catch(e){ /* старий бекап без цього поля або пошкоджений рядок — просто ігноруємо, лишиться лише content */ }
+    }
   });
   return result;
 }
