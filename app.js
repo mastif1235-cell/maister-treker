@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v12 · 2026-07-26';
+const APP_VERSION = 'v13 · 2026-07-26';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -856,9 +856,14 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     const key = `${t.clientName||''}|${t.phone||''}`;
     if(!seen.has(key)){ seen.add(key); others.push(t); }
   });
+  // NEW: повна адреса — першим рядком у профілі (навіть якщо це очевидно з
+  // заголовку екрана, тут вона під рукою разом з рештою даних абонента)
+  const first = list[0] || {};
+  const addrLine = [first.city, first.street, first.house ? `${first.house}` : '', first.apartment ? `кв. ${first.apartment}` : ''].filter(Boolean).join(', ');
   // NEW: фото абонента — не зберігаємо його додатково на телефоні "про
   // всяк випадок": кнопка підвантажує знімок лише за запитом (з локального
-  // кешу IndexedDB, якщо вже завантажували, інакше — напряму з Telegram).
+  // кешу IndexedDB, якщо вже завантажували, інакше — напряму з Telegram), і
+  // тепер її можна натиснути повторно, щоб знову приховати фото.
   // keySuffix — коли на екрані одночасно кілька профілів (результати
   // пошуку по кількох адресах), id мають бути унікальними для кожного.
   const photoTicket = list.find(t=>t.photo);
@@ -868,14 +873,48 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     <button type="button" class="btn btn-sm abonent-photo-btn" data-wrap-id="${wrapId}" data-img-id="${imgId}" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
     <div id="${wrapId}" class="hidden" style="margin-top:8px;"><img id="${imgId}" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
     : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
+  // NEW: редагування ПІБ/телефону просто в профілі — застосовується одразу
+  // до ВСІХ заявок за цією адресою (додає, де не було, виправляє, де було)
+  const idsCsv = list.map(t=>t.id).join(',');
   return `
     <div class="card" style="margin-bottom:12px; padding:14px;">
-      <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
+      <div style="font-size:13px; color:var(--text-dim); margin-bottom:6px;">📍 ${escapeHtml(addrLine || 'Адреса не вказана')}</div>
+      <div class="row between" style="align-items:flex-start; gap:8px;">
+        <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
+        <button type="button" class="btn btn-sm abonent-edit-btn" data-ids="${escapeHtml(idsCsv)}" data-name="${escapeHtml(primary && primary.clientName || '')}" data-phone="${escapeHtml(primary && primary.phone || '')}" title="Редагувати ПІБ/телефон" style="flex-shrink:0;">✏️</button>
+      </div>
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
-      <div style="font-size:12.5px; color:var(--text-dim);">🗓️ Заявок за цією адресою: ${list.length}</div>
-      ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
       ${photoBtnHtml}
+      <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">🗓️ Заявок за цією адресою: ${list.length}</div>
+      ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
     </div>`;
+}
+// NEW: редагування ПІБ/телефону просто з профілю абонента (навігатор адрес) —
+// застосовується одразу до ВСІХ заявок за цією адресою: де було порожньо —
+// додасть, де вже було — виправить. Синхронізацію в хмару/Telegram для
+// кожної із заявок при цьому НЕ запускаємо (щоб не заспамити Telegram
+// повідомленнями за кожну заявку одразу) — вони підхоплять зміну при
+// наступному звичайному збереженні.
+function showEditAbonentProfile(idsCsv, currentName, currentPhone){
+  const ids = String(idsCsv||'').split(',').filter(Boolean);
+  const bodyHtml = `
+    <div class="field"><label>ПІБ</label><input type="text" id="abonentEditName" value="${escapeHtml(currentName||'')}"></div>
+    <div class="field" style="margin-top:10px;"><label>Телефон</label><input type="text" id="abonentEditPhone" value="${escapeHtml(currentPhone||'')}"></div>
+    <div style="font-size:11.5px; color:var(--text-faint); margin-top:8px;">Застосується до всіх заявок за цією адресою (${ids.length} шт.) — де ПІБ/телефон уже були, зміняться; де не було — додадуться.</div>
+    <button type="button" class="btn btn-block" id="abonentEditSaveBtn" style="margin-top:12px;">Зберегти</button>`;
+  openModal('Редагувати абонента', bodyHtml, {onOpen: ()=>{
+    document.getElementById('abonentEditSaveBtn').addEventListener('click', ()=>{
+      const name = document.getElementById('abonentEditName').value.trim();
+      const phone = document.getElementById('abonentEditPhone').value.trim();
+      ids.forEach(id=>{
+        const t = tickets.find(x=>String(x.id)===String(id));
+        if(t){ t.clientName = name; t.phone = phone; }
+      });
+      saveTickets();
+      showToast('Дані абонента оновлено');
+      renderAddressNav(); // повертає на той самий профіль, вже з новими даними
+    });
+  }});
 }
 function addrNavResultsAreaHtml(){
   if(addrNavSearchQuery.trim()) return addrNavSearchResultsHtml(addrNavSearchQuery);
@@ -1020,19 +1059,40 @@ function attachAddressNavHandlers(rootEl){
     }
     // NEW: фото абонента підвантажується лише за тапом на кнопку — не сама
     // собою при відкритті профілю, і не зберігається на телефоні окремо від
-    // звичайного кешу фото заявок (той самий IndexedDB, що й завжди)
+    // звичайного кешу фото заявок (той самий IndexedDB, що й завжди). Кнопку
+    // тепер можна натиснути повторно, щоб знову приховати фото — раніше вона
+    // ховалась назавжди після першого показу.
     const photoBtn = e.target.closest('.abonent-photo-btn');
     if(photoBtn){
+      const wrap = document.getElementById(photoBtn.dataset.wrapId);
+      const img = document.getElementById(photoBtn.dataset.imgId);
+      if(wrap && !wrap.classList.contains('hidden')){
+        wrap.classList.add('hidden');
+        photoBtn.textContent = '📷 Показати фото';
+        return;
+      }
+      if(img && img.src){
+        wrap.classList.remove('hidden');
+        photoBtn.textContent = '🔼 Сховати фото';
+        return;
+      }
       photoBtn.disabled = true; photoBtn.textContent = '⏳ Завантаження…';
       const key = photoBtn.dataset.photoKey, fileId = photoBtn.dataset.tgFileId || null;
       resolvePhotoAsync(key, fileId).then(val=>{
-        if(!val){ photoBtn.disabled = false; photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
-        const wrap = document.getElementById(photoBtn.dataset.wrapId);
-        const img = document.getElementById(photoBtn.dataset.imgId);
+        photoBtn.disabled = false;
+        if(!val){ photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
         if(img) img.src = val;
         if(wrap) wrap.classList.remove('hidden');
-        photoBtn.classList.add('hidden');
+        photoBtn.textContent = '🔼 Сховати фото';
       });
+      return;
+    }
+    // NEW: редагування ПІБ/телефону абонента прямо з профілю — застосується
+    // одразу до всіх заявок за цією адресою (додасть, де порожньо, виправить,
+    // де вже було)
+    const editProfileBtn = e.target.closest('.abonent-edit-btn');
+    if(editProfileBtn){
+      showEditAbonentProfile(editProfileBtn.dataset.ids, editProfileBtn.dataset.name, editProfileBtn.dataset.phone);
       return;
     }
     // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
@@ -1387,9 +1447,10 @@ function ticketToSyncPayload(t){
   // NEW: "Завантажити дані з хмари" раніше замінювала заявки лише на
   // id/date/time/content/sum/tags — місто/вулиця/будинок/квартира/ПІБ/
   // телефон/MAC/обладнання/оплата губились назавжди, хоча текст (content)
-  // виглядав повним. Кладемо ці поля одним JSON-рядком у той самий службовий
-  // стовпець (без змін на боці Google Apps Script) — і при завантаженні з
-  // хмари відновлюємо їх назад.
+  // виглядав повним. Кладемо ці поля в окреме поле payload'а (не в
+  // backupNote — щоб не роздувати той самий текстовий стовпець) — на боці
+  // Apps Script воно йде в окремий стовпець "повніДаніJSON" (див. оновлений
+  // скрипт), а при завантаженні з хмари відновлюємо їх назад.
   const fullData = {
     type:t.type, city:t.city, street:t.street, house:t.house, apartment:t.apartment,
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
@@ -1397,8 +1458,7 @@ function ticketToSyncPayload(t){
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
     note:t.note, otherNote:t.otherNote
   };
-  backupExtra.push(`ПовніДаніJSON: ${JSON.stringify(fullData)}`);
-  return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n')};
+  return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n'), fullDataJson: JSON.stringify(fullData)};
 }
 function shiftToSyncPayload(s){
   return {id:s.id, date:s.date, hours:s.hours, coworker:s.coworker};
@@ -1417,7 +1477,16 @@ async function loadFromCloud(){
       const data = await res.json();
       tickets = (data.tickets||[]).map(t=>{
         const blank = blankTicketObject();
-        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра/повні структуровані дані
+        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра (і, для старих рядків, повні дані, якщо вони туди ще потрапляли)
+        // NEW: новий, чистіший шлях — окремий стовпець "повніДаніJSON" у
+        // таблиці (не роздуває нотатки_майстра). Для рядків, які встигли
+        // синхронізуватись ДО оновлення Apps Script, підстраховуємось старим
+        // способом (parseBackupNote вище).
+        let fullData = extra.fullData;
+        if(t.fullDataJson){
+          try{ fullData = JSON.parse(t.fullDataJson); }
+          catch(e){ /* пошкоджений JSON у цьому стовпці — лишаємо те, що вже дістали з backupNote (може бути null) */ }
+        }
         const merged = Object.assign(blank, {
           id: t.id, date: t.date, time: t.time, content: t.content,
           sum: Number(t.sum)||0,
@@ -1428,14 +1497,13 @@ async function loadFromCloud(){
           login: extra.login,           // NEW
           password: extra.password,     // NEW
           synced: true,       // NEW: дані щойно прийшли з хмари — вже синхронізовані, повторно надсилати не треба
-          // NEW: якщо в бекапі є повний JSON зі структурованими полями (заявки,
-          // збережені після цього оновлення) — відновлюємо адресу/MAC/обладнання/
-          // оплату один в один, і сирий режим редагування більше не потрібен.
-          // Старі бекапи без цього поля відновлюються як і раніше — лише за
-          // текстом, у режимі сирого редагування.
-          cloudImported: !extra.fullData
+          // NEW: якщо є повні структуровані дані (заявки, збережені після
+          // цього оновлення) — відновлюємо адресу/MAC/обладнання/оплату один
+          // в один, і сирий режим редагування більше не потрібен. Старі
+          // заявки без цих даних відновлюються як і раніше — лише за текстом.
+          cloudImported: !fullData
         });
-        if(extra.fullData) Object.assign(merged, extra.fullData);
+        if(fullData) Object.assign(merged, fullData);
         return merged;
       });
       saveTickets();
