@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v17 · 2026-07-27';
+const APP_VERSION = 'v19 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -113,7 +113,7 @@ if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для вс�
 let tickets  = loadJSON('tickets', []);
 let shifts   = loadJSON('shifts', []);
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
-const DELETED_TICKETS_MAX = 10;
+const DELETED_TICKETS_MAX = 30;
 
 let currentTicketDate = formatDate(new Date()); // 'DD.MM.YYYY'
 let currentShiftDate  = formatDate(new Date());
@@ -785,6 +785,8 @@ function ticketMatchesSearchQuery(t, q){
   if(qDigits.length>=3){
     const tDigits = String(t.phone||'').replace(/\D/g,'');
     if(tDigits.includes(qDigits)) return true;
+    // NEW: шукаємо і серед додаткових телефонів абонента
+    if((t.extraPhones||[]).some(p=>String(p||'').replace(/\D/g,'').includes(qDigits))) return true;
   }
   if((t.clientName||'').toLowerCase().includes(ql)) return true;
   const addr = [t.city, t.street, t.house, t.address].filter(Boolean).join(' ').toLowerCase();
@@ -905,6 +907,18 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${acctTicket.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.login)}</span><br>` : ''}
       ${acctTicket.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.password)}</span>` : ''}
     </div>` : '';
+  // NEW: додаткові телефони абонента (окрім основного) — рівня профілю, як
+  // і решта полів; беремо з найсвіжішої заявки, де вони вказані.
+  const extraPhonesTicket = list.find(t=>t.extraPhones && t.extraPhones.length);
+  const extraPhonesHtml = (extraPhonesTicket && extraPhonesTicket.extraPhones.length)
+    ? `<div style="margin-bottom:4px;">${extraPhonesTicket.extraPhones.map(p=>`<a href="tel:${escapeHtml(p)}" style="display:inline-block; margin-right:12px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(p)}</a>`).join('')}</div>`
+    : '';
+  // NEW: примітка про абонента (не про конкретний візит — та примітка
+  // (masterNote) лишається в кожній заявці окремо) — теж рівня профілю.
+  const noteTicket = list.find(t=>t.abonentNote);
+  const noteHtml = (noteTicket && noteTicket.abonentNote)
+    ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim); white-space:pre-wrap;">📝 ${escapeHtml(noteTicket.abonentNote)}</div>`
+    : '';
   // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
   // профілю — а не дублюються в кожній картці заявки нижче
   const geoTicket = list.find(t=>t.geoLink);
@@ -928,7 +942,9 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     clientName: primary && primary.clientName || '', phone: primary && primary.phone || '',
     city: first.city||'', street: first.street||'', house: first.house||'', apartment: first.apartment||'',
     login: acctTicket && acctTicket.login || '', password: acctTicket && acctTicket.password || '',
-    contractNumber: acctTicket && acctTicket.contractNumber || ''
+    contractNumber: acctTicket && acctTicket.contractNumber || '',
+    note: noteTicket && noteTicket.abonentNote || '',
+    extraPhones: (extraPhonesTicket && extraPhonesTicket.extraPhones) || []
   };
   return `
     <div class="card abonent-profile-card" style="margin-bottom:12px; padding:14px;">
@@ -938,7 +954,9 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       </div>
       <div style="font-size:13.5px; font-weight:600; color:var(--text-dim); margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
+      ${extraPhonesHtml}
       ${acctHtml}
+      ${noteHtml}
       ${actionBtnsHtml}
       ${photoBtnHtml}
       <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">🗓️ Заявок за цією адресою: ${list.length}</div>
@@ -967,6 +985,12 @@ function showEditAbonentProfile(profileJson){
     </div>
     <div class="field" style="margin-top:10px;"><label>ПІБ</label><input type="text" id="abonentEditName" value="${escapeHtml(data.clientName||'')}"></div>
     <div class="field" style="margin-top:10px;"><label>Телефон</label><input type="text" id="abonentEditPhone" value="${escapeHtml(data.phone||'')}"></div>
+    <div class="field" style="margin-top:10px;">
+      <label>Додаткові телефони</label>
+      <div id="abonentEditExtraPhonesList"></div>
+      <button type="button" class="btn btn-sm" id="abonentEditAddPhoneBtn" style="margin-top:6px;">➕ Додати телефон</button>
+    </div>
+    <div class="field" style="margin-top:10px;"><label>Примітка (про абонента)</label><textarea id="abonentEditNote" style="min-height:60px;">${escapeHtml(data.note||'')}</textarea></div>
     <div class="field" style="margin-top:10px;"><label>Логін</label><input type="text" id="abonentEditLogin" value="${escapeHtml(data.login||'')}"></div>
     <div class="field" style="margin-top:10px;"><label>Пароль</label><input type="text" id="abonentEditPassword" value="${escapeHtml(data.password||'')}"></div>
     <div class="field" style="margin-top:10px;"><label>№ договору</label><input type="text" id="abonentEditContract" value="${escapeHtml(data.contractNumber||'')}"></div>
@@ -979,6 +1003,22 @@ function showEditAbonentProfile(profileJson){
     const abonentEditPhoneEl = document.getElementById('abonentEditPhone');
     abonentEditPhoneEl.addEventListener('input', formatPhoneInput);
     formatPhoneInput({target: abonentEditPhoneEl});
+    // NEW: додаткові телефони — рядки додаються/видаляються прямо в DOM
+    // (без перерендеру всієї модалки, щоб не губити те, що вже надруковано
+    // в інших полях); кожен новий рядок одразу отримує ту саму маску.
+    const extraPhonesWrap = document.getElementById('abonentEditExtraPhonesList');
+    function addAbonentExtraPhoneRow(value){
+      const row = document.createElement('div');
+      row.className = 'row abonent-extra-phone-row';
+      row.style.cssText = 'gap:6px; margin-top:6px;';
+      row.innerHTML = `<input type="text" class="abonent-extra-phone-input" value="${escapeHtml(value||'')}" style="flex:1;"><button type="button" class="btn btn-sm btn-danger abonent-extra-phone-remove">✕</button>`;
+      extraPhonesWrap.appendChild(row);
+      const inp = row.querySelector('.abonent-extra-phone-input');
+      inp.addEventListener('input', formatPhoneInput);
+      row.querySelector('.abonent-extra-phone-remove').addEventListener('click', ()=> row.remove());
+    }
+    (data.extraPhones||[]).forEach(p=> addAbonentExtraPhoneRow(p));
+    document.getElementById('abonentEditAddPhoneBtn').addEventListener('click', ()=> addAbonentExtraPhoneRow(''));
     // NEW: ті самі підказки міст/вулиць (через <datalist>), що й у формі
     // створення заявки — вулиці підвантажуються окремо для кожного міста
     // і оновлюються при зміні поля "Місто"
@@ -1000,16 +1040,26 @@ function showEditAbonentProfile(profileJson){
         apartment: document.getElementById('abonentEditApartment').value.trim(),
         clientName: document.getElementById('abonentEditName').value.trim(),
         phone: document.getElementById('abonentEditPhone').value.trim(),
+        extraPhones: Array.from(document.querySelectorAll('.abonent-extra-phone-input')).map(inp=>inp.value.trim()).filter(Boolean),
+        note: document.getElementById('abonentEditNote').value.trim(),
         login: document.getElementById('abonentEditLogin').value.trim(),
         password: document.getElementById('abonentEditPassword').value.trim(),
         contractNumber: document.getElementById('abonentEditContract').value.trim()
       };
+      // NEW: адреса застосовується одразу до ВСІХ заявок цього профілю —
+      // якщо її справді змінили (а не просто ПІБ/телефон/тощо), попереджаємо,
+      // скільки заявок "переїде" на нову адресу, щоб не зробити це випадково
+      const addressChanged = vals.city!==(data.city||'') || vals.street!==(data.street||'') || vals.house!==(data.house||'') || vals.apartment!==(data.apartment||'');
+      if(addressChanged){
+        const sure = confirm(`Адресу змінено — вона застосується до ${ids.length} заявок(и) за старою адресою (вони «переїдуть» на нову). Якщо це насправді інший абонент — краще скасувати й створити нову заявку з новою адресою. Продовжити?`);
+        if(!sure) return;
+      }
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
         if(t){
           t.city = vals.city; t.street = vals.street; t.house = vals.house; t.apartment = vals.apartment;
           t.address = [[vals.street, vals.house].filter(Boolean).join(' '), vals.apartment ? `кв. ${vals.apartment}` : ''].filter(Boolean).join(', ');
-          t.clientName = vals.clientName; t.phone = vals.phone;
+          t.clientName = vals.clientName; t.phone = vals.phone; t.extraPhones = vals.extraPhones; t.abonentNote = vals.note;
           t.login = vals.login; t.password = vals.password; t.contractNumber = vals.contractNumber;
         }
       });
@@ -1585,7 +1635,7 @@ function ticketToSyncPayload(t){
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
     payment:t.payment, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
-    note:t.note, otherNote:t.otherNote
+    note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones // NEW: щоб примітка й додаткові телефони теж відновлювались при завантаженні з хмари
   };
   return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n'), fullDataJson: JSON.stringify(fullData)};
 }
@@ -1778,6 +1828,7 @@ function blankTicketObject(){
     presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
     additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
+    abonentNote:'', extraPhones:[], // NEW: примітка про абонента й додаткові телефони — рівня профілю, як login/password
     tgBackedUp:false, tgPhotoFileId:null, tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
@@ -2451,10 +2502,28 @@ function restoreTicketFromTelegramJson(jsonText){
   let parsed;
   try{ parsed = JSON.parse(jsonText); }
   catch(e){ showToast('Не вдалося розпізнати текст — перевірте, що вставили ВЕСЬ вміст .json-файлу'); return false; }
-  if(!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.date){
+  if(!parsed || typeof parsed !== 'object' || Array.isArray(parsed)){
     showToast('Схоже, це не файл заявки — перевірте, що скопіювали правильний .json'); return false;
   }
+  // NEW: перевіряємо не лише наявність date, а й що це справді схоже на
+  // заявку (дата у форматі ДД.ММ.РРРР, тип — непорожній рядок, сума — число,
+  // якщо взагалі вказана) — щоб випадковий чи пошкоджений JSON не потрапив
+  // у список заявок і не поламав рендер картки.
+  if(typeof parsed.date !== 'string' || !/^\d{2}\.\d{2}\.\d{4}$/.test(parsed.date.trim())){
+    showToast('У файлі немає коректної дати (формат ДД.ММ.РРРР) — це точно заявка з Майстер-Трекера?'); return false;
+  }
+  if(typeof parsed.type !== 'string' || !parsed.type.trim()){
+    showToast('У файлі не вказано тип заявки — перевірте, що скопіювали правильний .json'); return false;
+  }
+  if(parsed.sum!==undefined && parsed.sum!==null && typeof parsed.sum!=='number' && isNaN(Number(parsed.sum))){
+    showToast('Поле "сума" у файлі має неправильний формат — перевірте .json'); return false;
+  }
+  if(parsed.content!==undefined && parsed.content!==null && typeof parsed.content!=='string'){
+    showToast('Поле "зміст" у файлі має неправильний формат — перевірте .json'); return false;
+  }
   const restored = JSON.parse(JSON.stringify(parsed));
+  if(restored.sum!==undefined && restored.sum!==null) restored.sum = Number(restored.sum) || 0;
+  if(!restored.id) restored.id = Date.now(); // NEW: у пошкодженому чи ручному JSON id міг бути відсутній
   // якщо заявка з таким id вже є локально (напр. натиснули відновити двічі) — даємо новий id, щоб не затерти
   if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
   restored.synced = false; // повторно надішлемо в Google Таблицю, щоб вона теж це побачила
