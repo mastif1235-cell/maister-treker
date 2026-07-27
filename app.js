@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v20 · 2026-07-27';
+const APP_VERSION = 'v21 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -440,15 +440,21 @@ function normalizeMac(raw){
 }
 
 /* Маска телефону у форматі (050)555-55-55, поки користувач вводить цифри */
-function formatPhoneInput(e){
-  const digits = e.target.value.replace(/\D/g,'').slice(0,10);
+// NEW: та сама логіка маски телефону (050)555-55-55, винесена в чисту
+// функцію — щоб застосовувати її не лише до <input>, а й, наприклад, до
+// номера, знайденого в сирому тексті наряду.
+function phoneDigitsToMask(raw){
+  const digits = String(raw||'').replace(/\D/g,'').slice(0,10);
   let out = '';
   if(digits.length>0) out = '(' + digits.substring(0,3);
   if(digits.length>=3) out += ')';
   if(digits.length>3) out += digits.substring(3,6);
   if(digits.length>6) out += '-' + digits.substring(6,8);
   if(digits.length>8) out += '-' + digits.substring(8,10);
-  e.target.value = out;
+  return out;
+}
+function formatPhoneInput(e){
+  e.target.value = phoneDigitsToMask(e.target.value);
 }
 function formatDate(d){ return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`; }
 function formatTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
@@ -685,8 +691,14 @@ function showNaryadChecker(){
     <textarea id="naryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px;"></textarea>
     <button type="button" class="btn btn-block" id="naryadCheckBtn" style="margin-top:8px;">🔎 Перевірити</button>
     <div style="font-size:11.5px; color:var(--text-faint); margin-top:6px;">Збіг за телефоном — надійний. Збіг за адресою — лише підказка: за одним будинком можуть жити різні абоненти.</div>
-    <div id="naryadResults" style="margin-top:14px;"></div>`;
-  openModal('Перевірити наряд', bodyHtml, {onOpen: (rootEl)=>{
+    <div id="naryadResults" style="margin-top:14px;"></div>
+    <div style="font-size:11.5px; color:var(--text-faint); margin:14px 0 6px;">Якщо збігів немає — це нова заявка:</div>
+    <div class="row" style="gap:8px;">
+      <button type="button" class="btn btn-block" id="naryadNewConnectBtn" style="flex:1;">🔌 Підключення</button>
+      <button type="button" class="btn btn-block" id="naryadNewRepairBtn" style="flex:1;">🛠️ Ремонт</button>
+    </div>
+    <button type="button" class="btn btn-block" id="naryadBackBtn" style="margin-top:8px;">⬅ Назад до пошуку</button>`;
+  openModal('Перевірити наряд', bodyHtml, {onClose: renderAddressNav, onOpen: (rootEl)=>{
     const runCheck = ()=>{
       const text = document.getElementById('naryadInput').value.trim();
       const resultsEl = document.getElementById('naryadResults');
@@ -698,6 +710,22 @@ function showNaryadChecker(){
       const btn = e.target.closest('.open-address-btn');
       if(btn){ openAddressForTicket(btn.dataset.id); }
     });
+    // NEW: створити заявку прямо звідси, не виходячи в загальний список —
+    // вставлений текст наряду переносимо в зміст заявки, а якщо в тексті
+    // знайшовся номер телефону — підставляємо і його. Тип обирається кнопкою,
+    // окремий пікер тут не потрібен, бо диспетчер завжди каже, підключення це
+    // чи ремонт.
+    const startFromNaryad = type=>{
+      const rawText = document.getElementById('naryadInput').value.trim();
+      const prefill = {};
+      if(rawText) prefill.content = rawText;
+      const phoneMatch = rawText.match(/[\d][\d\s\-()]{7,}\d/);
+      if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
+      startNewTicketFlow(type, prefill, {...addrNavState});
+    };
+    document.getElementById('naryadNewConnectBtn').addEventListener('click', ()=> startFromNaryad('Підключення'));
+    document.getElementById('naryadNewRepairBtn').addEventListener('click', ()=> startFromNaryad('Ремонт'));
+    document.getElementById('naryadBackBtn').addEventListener('click', renderAddressNav);
   }});
 }
 
@@ -948,10 +976,17 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     : '';
   // NEW: примітка про абонента (не про конкретний візит — та примітка
   // (masterNote) лишається в кожній заявці окремо) — теж рівня профілю.
+  // Тепер має власну кнопку редагування — не треба заходити в повне
+  // "Редагувати абонента", щоб просто дописати чи виправити примітку.
   const noteTicket = list.find(t=>t.abonentNote);
-  const noteHtml = (noteTicket && noteTicket.abonentNote)
-    ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim); white-space:pre-wrap;">📝 ${escapeHtml(noteTicket.abonentNote)}</div>`
-    : '';
+  const noteIdsJson = escapeHtml(JSON.stringify(list.map(t=>t.id)));
+  const noteVal = (noteTicket && noteTicket.abonentNote) || '';
+  const noteHtml = noteVal
+    ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim); display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <span style="white-space:pre-wrap;">📝 ${escapeHtml(noteVal)}</span>
+        <button type="button" class="btn btn-sm abonent-note-edit-btn" data-ids="${noteIdsJson}" data-note="${escapeHtml(noteVal)}" title="Редагувати примітку" style="flex-shrink:0;">✏️</button>
+      </div>`
+    : `<button type="button" class="btn btn-sm abonent-note-edit-btn" data-ids="${noteIdsJson}" data-note="" style="margin-top:8px;">📝 Додати примітку</button>`;
   // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
   // профілю — а не дублюються в кожній картці заявки нижче
   const geoTicket = list.find(t=>t.geoLink);
@@ -1185,10 +1220,7 @@ function renderAddressNav(){
       <input type="text" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off">
       <button type="button" class="btn btn-icon" id="addrNavClearSearchBtn" title="Очистити пошук">✕</button>
     </div>
-    <div class="row" style="gap:8px; margin-bottom:12px;">
-      <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="flex:1;">📋 Перевірити наряд</button>
-      <button type="button" class="btn btn-block" id="addrNavQuickNewTicketBtn" style="flex:1;">➕ Заявка</button>
-    </div>
+    <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
     <div id="addrNavResultsArea">${addrNavResultsAreaHtml()}</div>`;
   openModal(title, topHtml, {onOpen: attachAddressNavHandlers});
 }
@@ -1217,13 +1249,6 @@ function attachAddressNavHandlers(rootEl){
   }
   const naryadBtn = document.getElementById('openNaryadCheckerBtn');
   if(naryadBtn) naryadBtn.addEventListener('click', showNaryadChecker);
-  // NEW: "➕ Заявка" на екрані пошуку — створити заявку, не виходячи з
-  // навігатора; після збереження/скасування повертає саме на цей екран
-  // (на той рівень навігації, де зараз перебуває користувач)
-  const quickNewTicketBtn = document.getElementById('addrNavQuickNewTicketBtn');
-  if(quickNewTicketBtn) quickNewTicketBtn.addEventListener('click', ()=>{
-    showTicketTypePicker(type=> startNewTicketFlow(type, null, {...addrNavState}), renderAddressNav);
-  });
 
   rootEl.addEventListener('click', e=>{
     const crumb = e.target.closest('.addr-nav-crumb');
@@ -1319,6 +1344,15 @@ function attachAddressNavHandlers(rootEl){
       let ids = [];
       try{ ids = JSON.parse(geoEditBtn.dataset.ids || '[]'); }catch(err){ ids = []; }
       openAbonentGeoEditModal(ids, geoEditBtn.dataset.geoLink || '');
+      return;
+    }
+    // NEW: редагування примітки про абонента прямо з профілю — без заходу
+    // у повне "Редагувати абонента"
+    const noteEditBtn = e.target.closest('.abonent-note-edit-btn');
+    if(noteEditBtn){
+      let ids = [];
+      try{ ids = JSON.parse(noteEditBtn.dataset.ids || '[]'); }catch(err){ ids = []; }
+      openAbonentNoteEditModal(ids, noteEditBtn.dataset.note || '');
       return;
     }
     // NEW: "🔍 Повна заявка" — лише перегляд оригінального тексту, без edit-режиму
@@ -3633,6 +3667,34 @@ function openAbonentGeoEditModal(ids, currentLink){
       ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=link; });
       saveTickets();
       showToast('✅ Геолокацію збережено');
+      renderAddressNav();
+    };
+  }});
+}
+
+/* NEW: редагування примітки про абонента прямо з профілю — окремо від
+   повного "Редагувати абонента", щоб не заходити всередину заради одного
+   поля. Так само застосовується одразу до всіх заявок за цією адресою. */
+function openAbonentNoteEditModal(ids, currentNote){
+  openModal(currentNote ? '✏️ Примітка про абонента' : '📝 Додати примітку', `
+    <div class="field"><textarea id="abonentNoteEditInput" placeholder="Наприклад: землячка з Кураховки" style="min-height:100px;">${escapeHtml(currentNote||'')}</textarea></div>
+    <div class="row" style="gap:8px; margin-top:10px;">
+      ${currentNote ? `<button type="button" class="btn btn-danger" id="abonentNoteClearBtn" style="flex:1;">🗑️ Прибрати</button>` : ''}
+      <button type="button" class="btn btn-accent" id="abonentNoteSaveBtn" style="flex:2;">✅ Зберегти</button>
+    </div>
+  `, {onClose: renderAddressNav, onOpen: ()=>{
+    const clearBtn = document.getElementById('abonentNoteClearBtn');
+    if(clearBtn) clearBtn.onclick = ()=>{
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.abonentNote=''; });
+      saveTickets();
+      showToast('Примітку прибрано');
+      renderAddressNav();
+    };
+    document.getElementById('abonentNoteSaveBtn').onclick = ()=>{
+      const val = document.getElementById('abonentNoteEditInput').value.trim();
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.abonentNote=val; });
+      saveTickets();
+      showToast('✅ Примітку збережено');
       renderAddressNav();
     };
   }});
