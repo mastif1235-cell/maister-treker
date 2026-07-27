@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v19 · 2026-07-27';
+const APP_VERSION = 'v20 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -722,6 +722,39 @@ function returnAfterTicketEdit(){
   }
 }
 
+// NEW: маленький пікер типу заявки — використовується і на головній кнопці
+// "+ Заявка", і на кнопці створення заявки в профілі абонента, і на кнопці
+// створення заявки прямо з екрана пошуку навігатора адрес.
+function showTicketTypePicker(onPick, onCancel){
+  openModal('Оберіть тип заявки', `
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button type="button" class="btn btn-block ticket-type-pick-btn" data-type="Підключення">🔌 Підключення</button>
+      <button type="button" class="btn btn-block ticket-type-pick-btn" data-type="Ремонт">🛠️ Ремонт</button>
+      <button type="button" class="btn btn-block ticket-type-pick-btn" data-type="Інше">📋 Інше</button>
+    </div>`, {onClose: onCancel || closeModal, onOpen: (rootEl)=>{
+    rootEl.querySelectorAll('.ticket-type-pick-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ closeModal(); onPick(btn.dataset.type); });
+    });
+  }});
+}
+
+// NEW: відкриває порожню форму заявки з уже обраним типом і (за наявності)
+// підставленими даними абонента з профілю. Якщо передано returnState —
+// запам'ятовуємо, куди повернутись (як і при редагуванні з профілю), і
+// показуємо кнопку "Назад" замість "Скасувати редагування", бо це нова
+// заявка, а не редагування наявної.
+function startNewTicketFlow(type, prefill, returnState){
+  closeModal(); // на випадок, якщо запуск стався з модалки пошуку/профілю
+  resetCalcForm(formatDate(new Date()), Object.assign({type}, prefill||{}));
+  if(returnState){
+    editReturnAddrState = {...returnState};
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    cancelBtn.textContent = '⬅ Назад до пошуку';
+    cancelBtn.classList.remove('hidden');
+  }
+  switchTab('calculator');
+}
+
 function naturalSortStrings(arr){
   // NEW: природне сортування рядків з числами всередині — "2, 9, 12, 12а, 20",
   // а не "12, 12а, 2, 20", як дав би звичайний .sort()
@@ -946,11 +979,22 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     note: noteTicket && noteTicket.abonentNote || '',
     extraPhones: (extraPhonesTicket && extraPhonesTicket.extraPhones) || []
   };
+  // NEW: "Створити заявку" з профілю — той самий тип-пікер, що й на "+
+  // Заявка", але форма одразу відкривається з підставленими даними абонента
+  // (адреса/ПІБ/телефон/логін/пароль/договір), як просив користувач.
+  const newTicketPrefill = {
+    city: editData.city, street: editData.street, house: editData.house, apartment: editData.apartment,
+    clientName: editData.clientName, phone: editData.phone,
+    login: editData.login, password: editData.password, contractNumber: editData.contractNumber
+  };
   return `
     <div class="card abonent-profile-card" style="margin-bottom:12px; padding:14px;">
       <div class="row between" style="align-items:flex-start; gap:8px;">
         <div style="font-size:17px; font-weight:700; margin-bottom:4px;">📍 ${escapeHtml(addrLine || 'Адреса не вказана')}</div>
-        <button type="button" class="btn btn-sm abonent-edit-btn" data-profile="${escapeHtml(JSON.stringify(editData))}" title="Редагувати дані абонента" style="flex-shrink:0;">✏️</button>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button type="button" class="btn btn-sm abonent-new-ticket-btn" data-prefill="${escapeHtml(JSON.stringify(newTicketPrefill))}" title="Створити заявку на цю адресу">➕</button>
+          <button type="button" class="btn btn-sm abonent-edit-btn" data-profile="${escapeHtml(JSON.stringify(editData))}" title="Редагувати дані абонента">✏️</button>
+        </div>
       </div>
       <div style="font-size:13.5px; font-weight:600; color:var(--text-dim); margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
@@ -1141,7 +1185,10 @@ function renderAddressNav(){
       <input type="text" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off">
       <button type="button" class="btn btn-icon" id="addrNavClearSearchBtn" title="Очистити пошук">✕</button>
     </div>
-    <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
+    <div class="row" style="gap:8px; margin-bottom:12px;">
+      <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="flex:1;">📋 Перевірити наряд</button>
+      <button type="button" class="btn btn-block" id="addrNavQuickNewTicketBtn" style="flex:1;">➕ Заявка</button>
+    </div>
     <div id="addrNavResultsArea">${addrNavResultsAreaHtml()}</div>`;
   openModal(title, topHtml, {onOpen: attachAddressNavHandlers});
 }
@@ -1170,6 +1217,13 @@ function attachAddressNavHandlers(rootEl){
   }
   const naryadBtn = document.getElementById('openNaryadCheckerBtn');
   if(naryadBtn) naryadBtn.addEventListener('click', showNaryadChecker);
+  // NEW: "➕ Заявка" на екрані пошуку — створити заявку, не виходячи з
+  // навігатора; після збереження/скасування повертає саме на цей екран
+  // (на той рівень навігації, де зараз перебуває користувач)
+  const quickNewTicketBtn = document.getElementById('addrNavQuickNewTicketBtn');
+  if(quickNewTicketBtn) quickNewTicketBtn.addEventListener('click', ()=>{
+    showTicketTypePicker(type=> startNewTicketFlow(type, null, {...addrNavState}), renderAddressNav);
+  });
 
   rootEl.addEventListener('click', e=>{
     const crumb = e.target.closest('.addr-nav-crumb');
@@ -1248,6 +1302,15 @@ function attachAddressNavHandlers(rootEl){
     const editProfileBtn = e.target.closest('.abonent-edit-btn');
     if(editProfileBtn){
       showEditAbonentProfile(editProfileBtn.dataset.profile);
+      return;
+    }
+    // NEW: "➕ Заявка" в профілі — та сама форма створення заявки, але з уже
+    // підставленими даними абонента; повертаємось сюди ж після збереження
+    const newTicketBtn = e.target.closest('.abonent-new-ticket-btn');
+    if(newTicketBtn){
+      let prefill = {};
+      try{ prefill = JSON.parse(newTicketBtn.dataset.prefill || '{}'); }catch(err){ prefill = {}; }
+      showTicketTypePicker(type=> startNewTicketFlow(type, prefill, {...addrNavState}), renderAddressNav);
       return;
     }
     // NEW: редагування геолокації прямо з профілю — не лише "Перейти"
@@ -2895,9 +2958,13 @@ function loadDailyMastersDefault(){
 function saveDailyMastersDefault(masters){
   try{ localStorage.setItem(DAILY_MASTERS_KEY, JSON.stringify({date: formatDate(new Date()), masters})); }catch(e){}
 }
-function resetCalcForm(presetDate){
+function resetCalcForm(presetDate, overrides){
   calcState = blankCalcState();
   if(presetDate) calcState.date = presetDate;
+  // NEW: дозволяє одразу підставити тип заявки й дані абонента (з профілю
+  // навігатора адрес) у щойно відкриту порожню форму — застосовується ДО
+  // логіки тегу за типом нижче, щоб автотег теж підхопив правильний тип.
+  if(overrides) Object.assign(calcState, overrides);
   editingTicketId = null;
   feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
   tariffIsAutoDefault = true;
@@ -2916,6 +2983,10 @@ function resetCalcForm(presetDate){
   document.getElementById('saveTicketBtn').textContent = 'Зберегти заявку';
   document.getElementById('cancelEditBtn').classList.add('hidden');
   fillFormFromState();
+  // NEW: якщо тип підставили через overrides (не "Підключення" за замовчуванням) —
+  // ціну виклику/тариф перерахуємо під фактичний тип, а не під той, для якого
+  // їх порахував blankCalcState() ще до застосування overrides.
+  if(overrides && overrides.type){ applyDefaultCallFee(); applyDefaultTariff(); }
 }
 
 function loadTicketIntoForm(t){
@@ -2953,7 +3024,7 @@ function loadTicketIntoForm(t){
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
   tariffIsAutoDefault = false;
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
-  document.getElementById('cancelEditBtn').classList.remove('hidden');
+  { const cancelBtn = document.getElementById('cancelEditBtn'); cancelBtn.textContent = 'Скасувати редагування'; cancelBtn.classList.remove('hidden'); } // NEW: скидаємо підпис — міг лишитись "Назад до пошуку" від попереднього створення нової заявки з профілю
   fillFormFromState();
 }
 
@@ -4867,8 +4938,8 @@ function bindTicketsScreen(){
   });
   document.getElementById('showVizitkaBtn').addEventListener('click', showVizitka);
   document.getElementById('addTicketFab').addEventListener('click', ()=>{
-    resetCalcForm(currentTicketDate);
-    switchTab('calculator');
+    // NEW: спершу обираємо тип заявки, а не одразу відкриваємо порожню форму
+    showTicketTypePicker(type=> startNewTicketFlow(type, null, null));
   });
   // NEW: свайп для зміни дня прибрано навмисно — занадто легко смикнути
   // випадково під час скролу списку і опинитись не на тій даті. Дата
@@ -5164,7 +5235,11 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
   document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
   document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
     syncFormToState(); // щоб hasUnsavedChanges бачила саме те, що зараз у полях, а не стан на момент відкриття
-    if(hasUnsavedChanges() && !confirm('Скасувати редагування? Незбережені зміни буде втрачено.')) return;
+    // NEW: та сама кнопка тепер править і "Скасувати редагування" (для наявної
+    // заявки), і "Назад до пошуку" (для нової заявки, відкритої з профілю/
+    // пошуку) — текст підтвердження підбираємо залежно від того, що з двох
+    const confirmMsg = editingTicketId ? 'Скасувати редагування? Незбережені зміни буде втрачено.' : 'Повернутись назад? Введені у заявку дані буде втрачено.';
+    if(hasUnsavedChanges() && !confirm(confirmMsg)) return;
     clearDraft(); resetCalcForm(currentTicketDate); returnAfterTicketEdit();
   });
 }
