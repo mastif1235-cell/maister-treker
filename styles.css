@@ -78,6 +78,7 @@ nav.tabbar{
 
 /* ===== Базові компоненти ===== */
 .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:12px;}
+.abonent-profile-card{background:var(--surface-2); border:1px solid var(--accent);} /* NEW: шапка профілю абонента виділяється серед звичайних карток заявок */
 .row{display:flex; gap:8px; align-items:center;}
 .row.between{justify-content:space-between;}
 .row.wrap{flex-wrap:wrap;}

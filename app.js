@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v14 · 2026-07-26';
+const APP_VERSION = 'v15 · 2026-07-26';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -503,8 +503,9 @@ function openModal(title, bodyHtml, opts={}){
         <div id="modalBody">${bodyHtml}</div>
       </div>
     </div>`;
-  document.getElementById('modalCloseBtn').onclick = closeModal;
-  document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+  const doClose = opts.onClose || closeModal; // NEW: дозволяє викликачу повернутись до свого контексту (напр. профілю) замість повного закриття
+  document.getElementById('modalCloseBtn').onclick = doClose;
+  document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') doClose(); });
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
 }
 /* ---------- Історія абонента (пошук збігів по телефону/адресі/MAC) ---------- */
@@ -636,7 +637,7 @@ function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
 function showFullTicketText(id){
   const t = tickets.find(x=>String(x.id)===String(id));
   if(!t) return;
-  openModal(`${t.type||'Заявка'} · ${t.date||''} ${t.time||''}`, `<div style="white-space:pre-wrap; font-size:14px; line-height:1.5;">${escapeHtml(t.content || '(немає тексту)')}</div>`);
+  openModal(`${t.type||'Заявка'} · ${t.date||''} ${t.time||''}`, `<div style="white-space:pre-wrap; font-size:14px; line-height:1.5;">${escapeHtml(t.content || '(немає тексту)')}</div>`, {onClose: renderAddressNav});
 }
 
 // NEW: "Перевірити наряд" — вставляєш сирий текст від диспетчера (як у Telegram),
@@ -653,8 +654,9 @@ function openAddressForTicket(id){
   const street = (t.street||'').trim();
   if(!city || !street){ closeModal(); editTicket(id); return; }
   const house = (t.house||'').trim() || '(без номера)';
+  const apartment = ticketApartmentKey(t); // NEW: без цього фільтр на рівні 'tickets' не знаходив жодної заявки
   addrNavSearchQuery = '';
-  addrNavState = {level:'tickets', city, street, house};
+  addrNavState = {level:'tickets', city, street, house, apartment};
   renderAddressNav();
 }
 function naryadMatchesHtml(matches){
@@ -705,8 +707,20 @@ function showNaryadChecker(){
 // Заявки, відновлені з хмари (cloudImported), потрапляють сюди лише якщо для них
 // вручну дозаповнили місто й вулицю (поля city/street/house видно й редагуються
 // навіть у "сирому" режимі) — критерій саме заповненість полів, а не сам прапорець.
-let addrNavState = {level:'city', city:null, street:null, house:null};
+let addrNavState = {level:'city', city:null, street:null, house:null, apartment:null};
 let addrNavSearchQuery = ''; // NEW: глобальний пошук за ім'ям/телефоном/адресою (працює одразу по всіх заявках, не лише в межах вибраного міста/вулиці)
+// NEW: якщо заявку відкрили на редагування з профілю абонента (навігатор
+// адрес) — запам'ятовуємо, куди повернутись після скасування/збереження,
+// замість того, щоб завжди приземлятись на звичайний список "Заявки".
+let editReturnAddrState = null;
+function returnAfterTicketEdit(){
+  switchTab('tickets');
+  if(editReturnAddrState){
+    addrNavState = editReturnAddrState;
+    editReturnAddrState = null;
+    renderAddressNav();
+  }
+}
 
 function naturalSortStrings(arr){
   // NEW: природне сортування рядків з числами всередині — "2, 9, 12, 12а, 20",
@@ -864,8 +878,8 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     const key = `${t.clientName||''}|${t.phone||''}`;
     if(!seen.has(key)){ seen.add(key); others.push(t); }
   });
-  // NEW: повна адреса — першим рядком у профілі (навіть якщо це очевидно з
-  // заголовку екрана, тут вона під рукою разом з рештою даних абонента)
+  // NEW: повна адреса — першим рядком у профілі, крупніше за ПІБ (адреса тут
+  // головний орієнтир, ПІБ — другорядний підпис)
   const first = list[0] || {};
   const addrLine = [first.city, first.street, first.house ? `${first.house}` : '', first.apartment ? `кв. ${first.apartment}` : ''].filter(Boolean).join(', ');
   // NEW: фото абонента — не зберігаємо його додатково на телефоні "про
@@ -883,7 +897,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
   // NEW: номер договору/логін/пароль — це дані абонента, а не конкретного
   // візиту: показуємо один раз у профілі (з найсвіжішої заявки, де вони є),
-  // а не шукаємо їх щоразу в кожній картці окремо.
+  // а не дублюємо в кожній картці нижче (там вони прибрані).
   const acctTicket = list.find(t=>t.contractNumber || t.login || t.password);
   const acctHtml = acctTicket ? `
     <div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:13.5px; line-height:1.6;">
@@ -891,47 +905,95 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${acctTicket.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.login)}</span><br>` : ''}
       ${acctTicket.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(acctTicket.password)}</span>` : ''}
     </div>` : '';
-  // NEW: редагування ПІБ/телефону просто в профілі — застосовується одразу
-  // до ВСІХ заявок за цією адресою (додає, де не було, виправляє, де було)
-  const idsCsv = list.map(t=>t.id).join(',');
+  // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
+  // профілю — а не дублюються в кожній картці заявки нижче
+  const geoTicket = list.find(t=>t.geoLink);
+  const actionBtnsHtml = (acctTicket && acctTicket.contractNumber) || geoTicket ? `
+    <div class="row" style="gap:8px; margin-top:8px;">
+      ${acctTicket && acctTicket.contractNumber ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
+      ${geoTicket ? `<a href="${escapeHtml(geoTicket.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">📍 Перейти</a>` : ''}
+    </div>` : '';
+  // NEW: редагування ПІБ/телефону/адреси/логіна/пароля/договору просто в
+  // профілі — застосовується одразу до ВСІХ заявок за цією адресою (додає,
+  // де не було, виправляє, де було). Дані пакуємо в один data-атрибут, щоб
+  // не тягнути купу окремих data-*.
+  const editData = {
+    ids: list.map(t=>t.id),
+    clientName: primary && primary.clientName || '', phone: primary && primary.phone || '',
+    city: first.city||'', street: first.street||'', house: first.house||'', apartment: first.apartment||'',
+    login: acctTicket && acctTicket.login || '', password: acctTicket && acctTicket.password || '',
+    contractNumber: acctTicket && acctTicket.contractNumber || ''
+  };
   return `
-    <div class="card" style="margin-bottom:12px; padding:14px;">
-      <div style="font-size:13px; color:var(--text-dim); margin-bottom:6px;">📍 ${escapeHtml(addrLine || 'Адреса не вказана')}</div>
+    <div class="card abonent-profile-card" style="margin-bottom:12px; padding:14px;">
       <div class="row between" style="align-items:flex-start; gap:8px;">
-        <div style="font-size:16.5px; font-weight:700; margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
-        <button type="button" class="btn btn-sm abonent-edit-btn" data-ids="${escapeHtml(idsCsv)}" data-name="${escapeHtml(primary && primary.clientName || '')}" data-phone="${escapeHtml(primary && primary.phone || '')}" title="Редагувати ПІБ/телефон" style="flex-shrink:0;">✏️</button>
+        <div style="font-size:17px; font-weight:700; margin-bottom:4px;">📍 ${escapeHtml(addrLine || 'Адреса не вказана')}</div>
+        <button type="button" class="btn btn-sm abonent-edit-btn" data-profile="${escapeHtml(JSON.stringify(editData))}" title="Редагувати дані абонента" style="flex-shrink:0;">✏️</button>
       </div>
+      <div style="font-size:13.5px; font-weight:600; color:var(--text-dim); margin-bottom:4px;">👤 ${escapeHtml(primary && primary.clientName ? primary.clientName : 'Ім’я невідоме')}</div>
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
       ${acctHtml}
+      ${actionBtnsHtml}
       ${photoBtnHtml}
       <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">🗓️ Заявок за цією адресою: ${list.length}</div>
       ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}
     </div>`;
 }
-// NEW: редагування ПІБ/телефону просто з профілю абонента (навігатор адрес) —
-// застосовується одразу до ВСІХ заявок за цією адресою: де було порожньо —
-// додасть, де вже було — виправить. Синхронізацію в хмару/Telegram для
-// кожної із заявок при цьому НЕ запускаємо (щоб не заспамити Telegram
-// повідомленнями за кожну заявку одразу) — вони підхоплять зміну при
-// наступному звичайному збереженні.
-function showEditAbonentProfile(idsCsv, currentName, currentPhone){
-  const ids = String(idsCsv||'').split(',').filter(Boolean);
+// NEW: редагування ПІБ/телефону/адреси/логіна/пароля/договору просто з
+// профілю абонента (навігатор адрес) — застосовується одразу до ВСІХ
+// заявок за цією адресою: де було порожньо — додасть, де вже було —
+// виправить. Синхронізацію в хмару/Telegram для кожної із заявок при
+// цьому НЕ запускаємо (щоб не заспамити Telegram повідомленнями за кожну
+// заявку одразу) — вони підхоплять зміну при наступному звичайному
+// збереженні.
+function showEditAbonentProfile(profileJson){
+  let data;
+  try{ data = JSON.parse(profileJson); }catch(e){ return; }
+  const ids = data.ids || [];
   const bodyHtml = `
-    <div class="field"><label>ПІБ</label><input type="text" id="abonentEditName" value="${escapeHtml(currentName||'')}"></div>
-    <div class="field" style="margin-top:10px;"><label>Телефон</label><input type="text" id="abonentEditPhone" value="${escapeHtml(currentPhone||'')}"></div>
-    <div style="font-size:11.5px; color:var(--text-faint); margin-top:8px;">Застосується до всіх заявок за цією адресою (${ids.length} шт.) — де ПІБ/телефон уже були, зміняться; де не було — додадуться.</div>
+    <div class="row" style="gap:10px;">
+      <div class="field" style="flex:1;"><label>Місто</label><input type="text" id="abonentEditCity" value="${escapeHtml(data.city||'')}"></div>
+      <div class="field" style="flex:2;"><label>Вулиця</label><input type="text" id="abonentEditStreet" value="${escapeHtml(data.street||'')}"></div>
+    </div>
+    <div class="row" style="gap:10px; margin-top:10px;">
+      <div class="field" style="flex:1;"><label>Будинок</label><input type="text" id="abonentEditHouse" value="${escapeHtml(data.house||'')}"></div>
+      <div class="field" style="flex:1;"><label>Квартира</label><input type="text" id="abonentEditApartment" value="${escapeHtml(data.apartment||'')}"></div>
+    </div>
+    <div class="field" style="margin-top:10px;"><label>ПІБ</label><input type="text" id="abonentEditName" value="${escapeHtml(data.clientName||'')}"></div>
+    <div class="field" style="margin-top:10px;"><label>Телефон</label><input type="text" id="abonentEditPhone" value="${escapeHtml(data.phone||'')}"></div>
+    <div class="field" style="margin-top:10px;"><label>Логін</label><input type="text" id="abonentEditLogin" value="${escapeHtml(data.login||'')}"></div>
+    <div class="field" style="margin-top:10px;"><label>Пароль</label><input type="text" id="abonentEditPassword" value="${escapeHtml(data.password||'')}"></div>
+    <div class="field" style="margin-top:10px;"><label>№ договору</label><input type="text" id="abonentEditContract" value="${escapeHtml(data.contractNumber||'')}"></div>
+    <div style="font-size:11.5px; color:var(--text-faint); margin-top:8px;">Застосується до всіх заявок за цією адресою (${ids.length} шт.) — де вже було заповнено, зміниться; де не було — додасться.</div>
     <button type="button" class="btn btn-block" id="abonentEditSaveBtn" style="margin-top:12px;">Зберегти</button>`;
-  openModal('Редагувати абонента', bodyHtml, {onOpen: ()=>{
+  openModal('Редагувати абонента', bodyHtml, {onClose: renderAddressNav, onOpen: ()=>{
     document.getElementById('abonentEditSaveBtn').addEventListener('click', ()=>{
-      const name = document.getElementById('abonentEditName').value.trim();
-      const phone = document.getElementById('abonentEditPhone').value.trim();
+      const vals = {
+        city: document.getElementById('abonentEditCity').value.trim(),
+        street: document.getElementById('abonentEditStreet').value.trim(),
+        house: document.getElementById('abonentEditHouse').value.trim(),
+        apartment: document.getElementById('abonentEditApartment').value.trim(),
+        clientName: document.getElementById('abonentEditName').value.trim(),
+        phone: document.getElementById('abonentEditPhone').value.trim(),
+        login: document.getElementById('abonentEditLogin').value.trim(),
+        password: document.getElementById('abonentEditPassword').value.trim(),
+        contractNumber: document.getElementById('abonentEditContract').value.trim()
+      };
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
-        if(t){ t.clientName = name; t.phone = phone; }
+        if(t){
+          t.city = vals.city; t.street = vals.street; t.house = vals.house; t.apartment = vals.apartment;
+          t.address = [[vals.street, vals.house].filter(Boolean).join(' '), vals.apartment ? `кв. ${vals.apartment}` : ''].filter(Boolean).join(', ');
+          t.clientName = vals.clientName; t.phone = vals.phone;
+          t.login = vals.login; t.password = vals.password; t.contractNumber = vals.contractNumber;
+        }
       });
       saveTickets();
       showToast('Дані абонента оновлено');
-      renderAddressNav(); // повертає на той самий профіль, вже з новими даними
+      // NEW: якщо адресу виправили — навігатор слідує за заявками на їхню
+      // нову адресу, а не лишається дивитись на порожнє місце
+      addrNavState = {level:'tickets', city: vals.city, street: vals.street, house: vals.house || '(без номера)', apartment: vals.apartment || '(без кв.)'};
+      renderAddressNav();
     });
   }});
 }
@@ -1106,20 +1168,30 @@ function attachAddressNavHandlers(rootEl){
       });
       return;
     }
-    // NEW: редагування ПІБ/телефону абонента прямо з профілю — застосується
-    // одразу до всіх заявок за цією адресою (додасть, де порожньо, виправить,
-    // де вже було)
+    // NEW: редагування даних абонента (адреса/ПІБ/телефон/логін/пароль/договір)
+    // прямо з профілю — застосується одразу до всіх заявок за цією адресою
     const editProfileBtn = e.target.closest('.abonent-edit-btn');
     if(editProfileBtn){
-      showEditAbonentProfile(editProfileBtn.dataset.ids, editProfileBtn.dataset.name, editProfileBtn.dataset.phone);
+      showEditAbonentProfile(editProfileBtn.dataset.profile);
       return;
     }
     // NEW: "🔍 Повна заявка" — лише перегляд оригінального тексту, без edit-режиму
     const viewFullBtn = e.target.closest('.view-full-ticket-btn');
     if(viewFullBtn){ showFullTicketText(viewFullBtn.dataset.id); return; }
+    // NEW: "🗓️ На дату" — перейти в основний список заявок на день, коли
+    // саме ця заявка була зроблена (замість гортати вручну по днях)
+    const jumpDateBtn = e.target.closest('.jump-to-date-btn');
+    if(jumpDateBtn){
+      const t = tickets.find(x=>String(x.id)===String(jumpDateBtn.dataset.id));
+      if(t){ currentTicketDate = t.date; closeModal(); switchTab('tickets'); renderTicketsScreen(); }
+      return;
+    }
     // NEW: далі — ті самі дії, що й на звичайних картках заявок у списку
     const editBtn = e.target.closest('.edit-ticket-btn');
-    if(editBtn){ closeModal(); editTicket(editBtn.dataset.id); return; }
+    if(editBtn){
+      editReturnAddrState = {...addrNavState}; // NEW: щоб після скасування/збереження повернутись саме сюди, а не на головний список
+      closeModal(); editTicket(editBtn.dataset.id); return;
+    }
     const shareBtn = e.target.closest('.share-ticket-btn');
     if(shareBtn){ shareTicket(shareBtn.dataset.id); return; }
     const tgBtn = e.target.closest('.tg-dispatcher-btn');
@@ -1911,8 +1983,8 @@ function renderTicketCard(t, opts={}){
     ${(syncBadge || tgBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}</div>` : ''}
     <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
-      ${t.contractNumber ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
-      ${(t.login || t.password) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
+      ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
+      ${((t.login || t.password) && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
       ${hasContent ? `<div class="tc-content">${escapeHtml(displayContent)}</div>` : (opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
@@ -1922,11 +1994,12 @@ function renderTicketCard(t, opts={}){
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
-      ${geoBtn}
+      <button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>
+      ${opts.workOnly ? '' : geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
-      ${(t.type==='Підключення' || t.type==='Ремонт') ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
+      ${(!opts.workOnly && (t.type==='Підключення' || t.type==='Ремонт')) ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
       <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
@@ -3448,7 +3521,7 @@ async function saveTicketFromForm(e){
   currentTicketDate = calcState.date;
   clearDraft();
   resetCalcForm();
-  switchTab('tickets');
+  returnAfterTicketEdit();
   renderTicketsScreen();
 }
 
@@ -4578,13 +4651,19 @@ function bindTicketsScreen(){
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
     const retryTgBtn = e.target.closest('.retry-tg-btn');
+    const jumpDateBtn = e.target.closest('.jump-to-date-btn'); // NEW
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
     if(moreBtn){
       ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
       renderMainTicketList();
       return;
     }
-    if(editBtn)  editTicket(editBtn.dataset.id);
+    if(jumpDateBtn){
+      const t = tickets.find(x=>String(x.id)===String(jumpDateBtn.dataset.id));
+      if(t){ currentTicketDate = t.date; searchQuery=''; document.getElementById('searchInput').value=''; activeFilterTags.clear(); renderTicketsScreen(); }
+      return;
+    }
+    if(editBtn){ editReturnAddrState = null; editTicket(editBtn.dataset.id); } // NEW: редагування зі звичайного списку — повертатись нема куди, скидаємо можливий "хвіст" від профілю
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
     if(tgBtn)    sendTicketToDispatcher(tgBtn.dataset.id);
@@ -4902,7 +4981,7 @@ document.getElementById('photoBtn').addEventListener('click', ()=> document.getE
   document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
     syncFormToState(); // щоб hasUnsavedChanges бачила саме те, що зараз у полях, а не стан на момент відкриття
     if(hasUnsavedChanges() && !confirm('Скасувати редагування? Незбережені зміни буде втрачено.')) return;
-    clearDraft(); resetCalcForm(currentTicketDate); switchTab('tickets');
+    clearDraft(); resetCalcForm(currentTicketDate); returnAfterTicketEdit();
   });
 }
 
