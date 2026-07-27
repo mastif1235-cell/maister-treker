@@ -853,8 +853,8 @@ function addrProfileSummaryButtonHtml(list, addrLabel, dataAttrs){
   return `
     <button type="button" class="btn btn-block addr-profile-btn" ${dataAttrs} style="text-align:left; justify-content:space-between; margin-bottom:8px; height:auto; padding:12px 14px;">
       <span>
-        <div style="font-weight:700; margin-bottom:2px;">👤 ${escapeHtml(name)}</div>
-        <div style="font-size:12px; opacity:.7; margin-bottom:1px;">📍 ${escapeHtml(addrLabel)}</div>
+        <div style="font-size:15px; font-weight:700; margin-bottom:2px;">📍 ${escapeHtml(addrLabel)}</div>
+        <div style="font-size:12px; opacity:.7; margin-bottom:1px;">👤 ${escapeHtml(name)}</div>
         <div style="font-size:12px; opacity:.7;">${phone ? escapeHtml(phone)+' · ' : ''}${list.length} заявок</div>
       </span>
       <span style="opacity:.5;">›</span>
@@ -908,11 +908,17 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
   // профілю — а не дублюються в кожній картці заявки нижче
   const geoTicket = list.find(t=>t.geoLink);
-  const actionBtnsHtml = (acctTicket && acctTicket.contractNumber) || geoTicket ? `
+  // NEW: геолокацію тепер можна не лише переглянути ("Перейти"), а й
+  // додати/виправити прямо з профілю — застосовується одразу до ВСІХ
+  // заявок за цією адресою, як і решта полів профілю.
+  const geoIdsJson = escapeHtml(JSON.stringify(list.map(t=>t.id)));
+  const geoEditBtnHtml = `<button type="button" class="btn btn-sm abonent-geo-edit-btn" data-ids="${geoIdsJson}" data-geo-link="${escapeHtml(geoTicket ? geoTicket.geoLink : '')}" title="${geoTicket ? 'Редагувати геолокацію' : 'Додати геолокацію'}" style="${geoTicket ? '' : 'flex:1;'}">${geoTicket ? '✏️' : '📍 Додати геолокацію'}</button>`;
+  const actionBtnsHtml = `
     <div class="row" style="gap:8px; margin-top:8px;">
       ${acctTicket && acctTicket.contractNumber ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
       ${geoTicket ? `<a href="${escapeHtml(geoTicket.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">📍 Перейти</a>` : ''}
-    </div>` : '';
+      ${geoEditBtnHtml}
+    </div>`;
   // NEW: редагування ПІБ/телефону/адреси/логіна/пароля/договору просто в
   // профілі — застосовується одразу до ВСІХ заявок за цією адресою (додає,
   // де не було, виправляє, де було). Дані пакуємо в один data-атрибут, щоб
@@ -952,8 +958,8 @@ function showEditAbonentProfile(profileJson){
   const ids = data.ids || [];
   const bodyHtml = `
     <div class="row" style="gap:10px;">
-      <div class="field" style="flex:1;"><label>Місто</label><input type="text" id="abonentEditCity" value="${escapeHtml(data.city||'')}"></div>
-      <div class="field" style="flex:2;"><label>Вулиця</label><input type="text" id="abonentEditStreet" value="${escapeHtml(data.street||'')}"></div>
+      <div class="field" style="flex:1;"><label>Місто</label><input type="text" id="abonentEditCity" list="abonentEditCityDatalist" autocomplete="off" value="${escapeHtml(data.city||'')}"><datalist id="abonentEditCityDatalist"></datalist></div>
+      <div class="field" style="flex:2;"><label>Вулиця</label><input type="text" id="abonentEditStreet" list="abonentEditStreetDatalist" autocomplete="off" value="${escapeHtml(data.street||'')}"><datalist id="abonentEditStreetDatalist"></datalist></div>
     </div>
     <div class="row" style="gap:10px; margin-top:10px;">
       <div class="field" style="flex:1;"><label>Будинок</label><input type="text" id="abonentEditHouse" value="${escapeHtml(data.house||'')}"></div>
@@ -967,6 +973,25 @@ function showEditAbonentProfile(profileJson){
     <div style="font-size:11.5px; color:var(--text-faint); margin-top:8px;">Застосується до всіх заявок за цією адресою (${ids.length} шт.) — де вже було заповнено, зміниться; де не було — додасться.</div>
     <button type="button" class="btn btn-block" id="abonentEditSaveBtn" style="margin-top:12px;">Зберегти</button>`;
   openModal('Редагувати абонента', bodyHtml, {onClose: renderAddressNav, onOpen: ()=>{
+    // NEW: та сама маска телефону (050)555-55-55, що й у калькуляторі, плюс
+    // одразу приводимо вже наявне значення до маски (могло бути внесене
+    // раніше у "сирому" вигляді, з таблиці тощо)
+    const abonentEditPhoneEl = document.getElementById('abonentEditPhone');
+    abonentEditPhoneEl.addEventListener('input', formatPhoneInput);
+    formatPhoneInput({target: abonentEditPhoneEl});
+    // NEW: ті самі підказки міст/вулиць (через <datalist>), що й у формі
+    // створення заявки — вулиці підвантажуються окремо для кожного міста
+    // і оновлюються при зміні поля "Місто"
+    const abonentEditCityEl = document.getElementById('abonentEditCity');
+    const abonentEditCityDl = document.getElementById('abonentEditCityDatalist');
+    const abonentEditStreetDl = document.getElementById('abonentEditStreetDatalist');
+    abonentEditCityDl.innerHTML = (settings.cities||[]).map(c=>`<option value="${escapeHtml(c)}"></option>`).join('');
+    const updateAbonentEditStreetDl = city=>{
+      const list = (settings.streets && settings.streets[city]) || [];
+      abonentEditStreetDl.innerHTML = list.map(s=>`<option value="${escapeHtml(s)}"></option>`).join('');
+    };
+    updateAbonentEditStreetDl(data.city||'');
+    abonentEditCityEl.addEventListener('input', e=> updateAbonentEditStreetDl(e.target.value.trim()));
     document.getElementById('abonentEditSaveBtn').addEventListener('click', ()=>{
       const vals = {
         city: document.getElementById('abonentEditCity').value.trim(),
@@ -1175,6 +1200,14 @@ function attachAddressNavHandlers(rootEl){
       showEditAbonentProfile(editProfileBtn.dataset.profile);
       return;
     }
+    // NEW: редагування геолокації прямо з профілю — не лише "Перейти"
+    const geoEditBtn = e.target.closest('.abonent-geo-edit-btn');
+    if(geoEditBtn){
+      let ids = [];
+      try{ ids = JSON.parse(geoEditBtn.dataset.ids || '[]'); }catch(err){ ids = []; }
+      openAbonentGeoEditModal(ids, geoEditBtn.dataset.geoLink || '');
+      return;
+    }
     // NEW: "🔍 Повна заявка" — лише перегляд оригінального тексту, без edit-режиму
     const viewFullBtn = e.target.closest('.view-full-ticket-btn');
     if(viewFullBtn){ showFullTicketText(viewFullBtn.dataset.id); return; }
@@ -1210,6 +1243,8 @@ function attachAddressNavHandlers(rootEl){
     if(histBtn){ closeModal(); showAbonentHistory(histBtn.dataset.id); return; }
     const delBtn = e.target.closest('.delete-ticket-btn');
     if(delBtn){ deleteTicket(delBtn.dataset.id); renderAddressNav(); return; }
+    const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
+    if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, rootEl); return; }
     const expBtn = e.target.closest('.tc-expand-btn');
     if(expBtn){
       const id = expBtn.dataset.id;
@@ -1991,7 +2026,8 @@ function renderTicketCard(t, opts={}){
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? '<span class="tc-photo-badge">📷</span>' : ''}</div>
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-key="${escapeHtml(t.photo)}" data-tg-file-id="${escapeHtml(t.tgPhotoFileId||'')}">📷 Фото</button>` : ''}</div>
+    ${t.photo ? `<div class="tc-photo-wrap hidden" id="tcp-${t.id}"><img id="tcp-img-${t.id}" style="max-width:100%; border-radius:10px; margin-top:8px;" alt="фото"></div>` : ''}
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       <button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>
@@ -2006,6 +2042,37 @@ function renderTicketCard(t, opts={}){
   </div>`;
 }
 
+// NEW: 📷-бейдж на картці заявки тепер можна натиснути, щоб показати фото
+// (підвантажується лише за тапом, як і фото абонента) та натиснути ще раз,
+// щоб знову сховати. scopeEl — корінь пошуку елементів (щоб не сплутати з
+// однаковим id тієї самої заявки, відрендереної одночасно і в модалці, і
+// позаду на екрані).
+function toggleTicketCardPhoto(btn, scopeEl){
+  const root = scopeEl || document;
+  const id = btn.dataset.id;
+  const wrap = root.querySelector('[id="tcp-'+id+'"]');
+  const img = root.querySelector('[id="tcp-img-'+id+'"]');
+  if(!wrap) return;
+  if(!wrap.classList.contains('hidden')){
+    wrap.classList.add('hidden');
+    btn.textContent = '📷 Фото';
+    return;
+  }
+  if(img && img.src){
+    wrap.classList.remove('hidden');
+    btn.textContent = '🔼 Сховати фото';
+    return;
+  }
+  const key = btn.dataset.photoKey, fileId = btn.dataset.tgFileId || null;
+  btn.disabled = true; btn.textContent = '⏳ Завантаження…';
+  resolvePhotoAsync(key, fileId).then(val=>{
+    btn.disabled = false;
+    if(!val){ btn.textContent = '📷 Не вдалося завантажити'; return; }
+    if(img) img.src = val;
+    wrap.classList.remove('hidden');
+    btn.textContent = '🔼 Сховати фото';
+  });
+}
 function deleteTicket(id){
   if(!confirm('Видалити цю заявку?')) return;
   const idx = tickets.findIndex(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
@@ -3379,6 +3446,45 @@ function openGeoPasteModal(headerMsg){
   }});
 }
 
+/* NEW: редагування геолокації прямо з профілю абонента (навігатор адрес) —
+   на відміну від калькулятора, тут немає власного calcState, тож посилання
+   застосовується одразу до всіх заявок за цією адресою (ids), як і решта
+   полів профілю. */
+function openAbonentGeoEditModal(ids, currentLink){
+  openModal(currentLink ? '✏️ Геолокація абонента' : '📍 Додати геолокацію', `
+    <div style="font-size:13px; color:var(--text-dim); margin-bottom:10px;">
+      Відкрий Google Maps → постав мітку → Поділитися → Копіювати посилання → встав нижче. Застосується до всіх заявок за цією адресою (${ids.length} шт.).
+    </div>
+    <button type="button" class="btn btn-block" id="abonentGeoOpenMapsBtn" style="margin-bottom:10px;">🗺️ Відкрити Google Maps</button>
+    <div class="field"><label>Посилання або координати (50.4501, 30.5234)</label>
+      <textarea id="abonentGeoPasteInput" placeholder="https://maps.app.goo.gl/... або 50.4501, 30.5234" style="min-height:60px;">${escapeHtml(currentLink||'')}</textarea>
+    </div>
+    <div class="row" style="gap:8px; margin-top:10px;">
+      ${currentLink ? `<button type="button" class="btn btn-danger" id="abonentGeoClearBtn" style="flex:1;">🗑️ Прибрати</button>` : ''}
+      <button type="button" class="btn btn-accent" id="abonentGeoSaveBtn" style="flex:2;">✅ Зберегти</button>
+    </div>
+  `, {onClose: renderAddressNav, onOpen: ()=>{
+    document.getElementById('abonentGeoOpenMapsBtn').onclick = ()=> window.open('https://www.google.com/maps', '_blank');
+    const clearBtn = document.getElementById('abonentGeoClearBtn');
+    if(clearBtn) clearBtn.onclick = ()=>{
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=''; });
+      saveTickets();
+      showToast('Геолокацію прибрано');
+      renderAddressNav();
+    };
+    document.getElementById('abonentGeoSaveBtn').onclick = ()=>{
+      const raw = document.getElementById('abonentGeoPasteInput').value.trim();
+      if(!raw){ showToast('Встав посилання або координати'); return; }
+      const coords = parseMapsLink(raw);
+      const link = coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw;
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=link; });
+      saveTickets();
+      showToast('✅ Геолокацію збережено');
+      renderAddressNav();
+    };
+  }});
+}
+
 /* ---- Копіювати текст / Поділитись фото ---- */
 async function copyTicketText(){
   syncFormToState();
@@ -4653,6 +4759,8 @@ function bindTicketsScreen(){
     const retryTgBtn = e.target.closest('.retry-tg-btn');
     const jumpDateBtn = e.target.closest('.jump-to-date-btn'); // NEW
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
+    const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
+    if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, document.getElementById('ticketList')); return; }
     if(moreBtn){
       ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
       renderMainTicketList();

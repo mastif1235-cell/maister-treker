@@ -155,7 +155,12 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-card .tc-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
 .ticket-card .tc-actions .btn{flex:1 1 45%; min-height:44px; font-size:13.5px;} /* NEW: більша тач-область для роботи в рукавицях/на морозі */
 .ticket-card .tc-status-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;} /* NEW: постійне місце під шапкою для статусів (Таблиця/Telegram) — більше не залежить від кількості тегів */
-.ticket-card .tc-photo-badge{font-size:11px; color:var(--text-dim);}
+.ticket-card .tc-photo-badge{
+  font-size:11px; color:var(--text-dim); cursor:pointer;
+  display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:999px;
+  background:var(--surface-2); border:1px solid var(--border); font-weight:600;
+}
+.ticket-card .tc-photo-wrap img{display:block;}
 .ticket-card .tc-sync-badge{font-size:11px; padding:2px 7px; border-radius:8px; font-weight:600; font-family:inherit; line-height:1.6;}
 .ticket-card .tc-sync-ok{color:#3fbf6f; background:rgba(63,191,111,0.12);}
 .ticket-card .tc-sync-pending{color:#ffb84d; background:rgba(255,184,77,0.12); cursor:pointer;}
