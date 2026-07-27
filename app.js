@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v15 · 2026-07-26';
+const APP_VERSION = 'v17 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1239,8 +1239,8 @@ function attachAddressNavHandlers(rootEl){
     if(copyBtn){ copyTicketCardText(copyBtn.dataset.id); return; }
     const dgBtn = e.target.closest('.contract-ticket-btn');
     if(dgBtn){ showDogovor(dgBtn.dataset.id); return; }
-    const histBtn = e.target.closest('.history-ticket-btn');
-    if(histBtn){ closeModal(); showAbonentHistory(histBtn.dataset.id); return; }
+    const gotoProfileBtn = e.target.closest('.goto-profile-btn'); // NEW: для "loose"-заявок без структурованої адреси, показаних тут же
+    if(gotoProfileBtn){ goToTicketProfile(gotoProfileBtn.dataset.id); return; }
     const delBtn = e.target.closest('.delete-ticket-btn');
     if(delBtn){ deleteTicket(delBtn.dataset.id); renderAddressNav(); return; }
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
@@ -2030,13 +2030,13 @@ function renderTicketCard(t, opts={}){
     ${t.photo ? `<div class="tc-photo-wrap hidden" id="tcp-${t.id}"><img id="tcp-img-${t.id}" style="max-width:100%; border-radius:10px; margin-top:8px;" alt="фото"></div>` : ''}
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
-      <button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>
+      ${opts.workOnly
+        ? `<button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>`
+        : `<button type="button" class="btn btn-sm goto-profile-btn" data-id="${t.id}" title="Перейти до профілю абонента">👤 В профіль</button>`}
       ${opts.workOnly ? '' : geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
       <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
-      ${(!opts.workOnly && (t.type==='Підключення' || t.type==='Ремонт')) ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${t.id}" title="Договір">📜 Договір</button>` : ''}
-      <button type="button" class="btn btn-sm history-ticket-btn" data-id="${t.id}" title="Історія абонента">🕘 Історія</button>
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
   </div>`;
@@ -2047,6 +2047,19 @@ function renderTicketCard(t, opts={}){
 // щоб знову сховати. scopeEl — корінь пошуку елементів (щоб не сплутати з
 // однаковим id тієї самої заявки, відрендереної одночасно і в модалці, і
 // позаду на екрані).
+// NEW: "👤 В профіль" на картці заявки — веде одразу до профілю абонента
+// (навігатор адрес, той самий екран, де видно повну історію заявок за цією
+// адресою) замість колишньої кнопки "На дату". В профілі кнопки самих
+// заявок лишились із "На дату" — там вона й досі корисна.
+function goToTicketProfile(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  const city = (t.city||'').trim(), street = (t.street||'').trim();
+  if(!city || !street){ showToast('У цієї заявки немає структурованої адреси — профіль зібрати нема з чого'); return; }
+  addrNavSearchQuery = '';
+  addrNavState = {level:'tickets', city, street, house: (t.house||'').trim() || '(без номера)', apartment: ticketApartmentKey(t)};
+  renderAddressNav();
+}
 function toggleTicketCardPhoto(btn, scopeEl){
   const root = scopeEl || document;
   const id = btn.dataset.id;
@@ -4753,22 +4766,17 @@ function bindTicketsScreen(){
     const tgOpenBtn= e.target.closest('.tg-open-btn');
     const copyBtn  = e.target.closest('.copy-ticket-btn');
     const dgBtn    = e.target.closest('.contract-ticket-btn');
-    const histBtn  = e.target.closest('.history-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
     const retryTgBtn = e.target.closest('.retry-tg-btn');
-    const jumpDateBtn = e.target.closest('.jump-to-date-btn'); // NEW
+    const gotoProfileBtn = e.target.closest('.goto-profile-btn'); // NEW: замінила "На дату" на звичайних картках
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
     if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, document.getElementById('ticketList')); return; }
+    if(gotoProfileBtn){ goToTicketProfile(gotoProfileBtn.dataset.id); return; }
     if(moreBtn){
       ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
       renderMainTicketList();
-      return;
-    }
-    if(jumpDateBtn){
-      const t = tickets.find(x=>String(x.id)===String(jumpDateBtn.dataset.id));
-      if(t){ currentTicketDate = t.date; searchQuery=''; document.getElementById('searchInput').value=''; activeFilterTags.clear(); renderTicketsScreen(); }
       return;
     }
     if(editBtn){ editReturnAddrState = null; editTicket(editBtn.dataset.id); } // NEW: редагування зі звичайного списку — повертатись нема куди, скидаємо можливий "хвіст" від профілю
@@ -4778,7 +4786,6 @@ function bindTicketsScreen(){
     if(tgOpenBtn) openTicketInTelegram(tgOpenBtn.dataset.id);
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
-    if(histBtn)  showAbonentHistory(histBtn.dataset.id);
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
     if(retryTgBtn) retryTelegramBackup(retryTgBtn.dataset.id);
     if(expBtn){
