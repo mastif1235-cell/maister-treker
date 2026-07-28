@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v23 · 2026-07-27';
+const APP_VERSION = 'v25 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -110,7 +110,10 @@ function loadSettings(){
 
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
-let tickets  = loadJSON('tickets', []);
+// NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
+// дані підвантажуються асинхронно з IndexedDB у init() (loadTicketsFromIdb),
+// до першого рендеру екрану заявок ще встигає бути порожній масив.
+let tickets  = [];
 let shifts   = loadJSON('shifts', []);
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
 const DELETED_TICKETS_MAX = 30;
@@ -137,7 +140,70 @@ let tariffIsAutoDefault = true; // те саме, але для поля "Тар
 let coworkerSelection = new Set(['Сам']);
 
 /* ---------- 1. Допоміжні функції ---------- */
-function saveTickets(){ localStorage.setItem('tickets', JSON.stringify(tickets)); }
+/* ---- Заявки зберігаються в IndexedDB, а не в localStorage ----
+   Причина (той самий діагноз, що й для фото вище): localStorage має
+   жорсткий ліміт (~5-10МБ на весь сайт) і кожне збереження раніше робило
+   синхронний JSON.stringify(tickets) прямо в головному потоці — при великій
+   базі це і ризик впертись у ліміт, і відчутне "підвисання" при кожному
+   збереженні. IndexedDB такого ліміту не має і працює асинхронно, не
+   блокуючи інтерфейс. Зберігаємо весь масив одним записом під фіксованим
+   ключем (як і фото — по одному значенню на ключ), а не по заявці на запис:
+   це найпростіша зміна, що прибирає обидві проблеми, і НЕ вимагає переписувати
+   сотні місць у коді, де tickets.find/filter/push використовуються як
+   звичайний синхронний масив у пам'яті — вони лишаються без змін. */
+const TICKETS_DB_NAME = 'masterTrackerTickets';
+const TICKETS_STORE = 'tickets';
+const TICKETS_KEY = 'all';
+let ticketsDb = null;
+
+function openTicketsDb(){
+  return new Promise((resolve)=>{
+    if(!window.indexedDB){ resolve(null); return; }
+    const req = indexedDB.open(TICKETS_DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(TICKETS_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=>{ console.error('IndexedDB заявок: помилка відкриття', req.error); resolve(null); };
+  });
+}
+function ticketsDbGet(){
+  return new Promise((resolve)=>{
+    if(!ticketsDb){ resolve(undefined); return; }
+    try{
+      const tx = ticketsDb.transaction(TICKETS_STORE, 'readonly');
+      const req = tx.objectStore(TICKETS_STORE).get(TICKETS_KEY);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=>{ console.error('IndexedDB заявок: помилка читання', req.error); resolve(undefined); };
+    }catch(e){ console.error(e); resolve(undefined); }
+  });
+}
+function ticketsDbPut(value){
+  return new Promise((resolve)=>{
+    if(!ticketsDb){ resolve(false); return; }
+    try{
+      const tx = ticketsDb.transaction(TICKETS_STORE, 'readwrite');
+      tx.objectStore(TICKETS_STORE).put(value, TICKETS_KEY);
+      tx.oncomplete = ()=> resolve(true);
+      tx.onerror = ()=>{ console.error('IndexedDB заявок: помилка запису', tx.error); resolve(false); };
+    }catch(e){ console.error(e); resolve(false); }
+  });
+}
+/* Одноразова міграція: якщо в IndexedDB заявок ще нема (перший запуск після
+   цього оновлення), а в localStorage лежить стара база — переносимо її і
+   прибираємо з localStorage (звільняючи той самий обмежений простір, заради
+   якого й робився весь перенос). Якщо в IndexedDB вже щось є — довіряємо їй
+   і localStorage більше не чіпаємо. */
+async function loadTicketsFromIdb(){
+  const stored = await ticketsDbGet();
+  if(Array.isArray(stored)){
+    tickets = stored;
+    return;
+  }
+  const legacy = loadJSON('tickets', []);
+  tickets = Array.isArray(legacy) ? legacy : [];
+  await ticketsDbPut(tickets);
+  localStorage.removeItem('tickets');
+}
+function saveTickets(){ return ticketsDbPut(tickets); }
 function saveShifts(){ localStorage.setItem('shifts', JSON.stringify(shifts)); }
 function saveSettings(){ localStorage.setItem('settings', JSON.stringify(settings)); }
 
@@ -1590,12 +1656,46 @@ async function postToUrl(url, action, payload){
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body
     });
+    // NEW: сам no-cors запит підтверджує лише "запит відправлено", а не
+    // "рядок реально з'явився в таблиці" (саме це і було критичним пунктом
+    // аудиту). Замість повторної спроби записати іншим способом (те, що вже
+    // одного разу спричинило подвійний запис і лаги — див. коментар вище),
+    // робимо ОКРЕМИЙ, суто читальний GET-запит, який нічого не пише і тому
+    // не ризикує нічого задублювати. Якщо перевірка сама не вдалась (стара
+    // версія Apps Script без цієї дії, немає інтернету тощо) — просто
+    // довіряємось старій оптимістичній поведінці, як і раніше.
+    if(action === 'addTicket' && payload && payload.id){
+      const confirmed = await verifyTicketSyncedOnServer(url, payload.id);
+      if(confirmed !== null){
+        setSyncState(confirmed ? 'ok' : 'err');
+        return confirmed;
+      }
+    }
     setSyncState('ok');
     return true;
   }catch(err){
     console.error('Помилка синхронізації:', err);
     setSyncState('err');
     return false;
+  }
+}
+// NEW: читальна перевірка (без побічних ефектів) — чи є в аркуші "Заявки"
+// рядок із таким id. Повертає true/false, коли вдалось перевірити, і null,
+// якщо перевірка сама не вдалась — тоді викликач має довіритись старій
+// оптимістичній поведінці, а не вважати це провалом синхронізації.
+async function verifyTicketSyncedOnServer(url, id){
+  try{
+    const params = new URLSearchParams();
+    params.set('action', 'checkTicketExists');
+    params.set('id', id);
+    params.set('secret', settings.syncSecret || '');
+    const res = await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'cors'});
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(typeof data.exists !== 'boolean') return null; // стара версія скрипта — ще без цієї дії
+    return data.exists;
+  }catch(err){
+    return null; // не вдалось перевірити (стара версія скрипта, немає мережі тощо) — не заважаємо основному потоку
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
@@ -4533,6 +4633,31 @@ function doPost(e) {
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// NEW: єдина read-only дія (нічого не пише в таблицю, тож не потребує
+// LockService) — застосунок використовує її ПІСЛЯ основного (no-cors,
+// "сліпого") запиту на додавання заявки, щоб перевірити, чи рядок справді
+// з'явився в таблиці, а не просто повірити на слово, що запит кудись дійшов.
+function doGet(e) {
+  var result = {status: 'error', message: 'Unknown action'};
+  try {
+    if (e.parameter.action === 'checkTicketExists') {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
+      var last = sheet.getLastRow();
+      var exists = false;
+      if (last > 1) {
+        var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        var targetId = String(e.parameter.id);
+        exists = ids.some(function(r){ return String(r[0]) === targetId; });
+      }
+      result = {status: 'ok', exists: exists};
+    }
+  } catch (err) {
+    result = {status: 'error', message: String(err)};
+  }
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function getOrCreateSheet(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
@@ -5672,6 +5797,9 @@ async function init(){
   bindCalculatorScreen();
   bindShiftsScreen();
   bindSettingsScreen();
+
+  ticketsDb = await openTicketsDb();
+  await loadTicketsFromIdb(); // NEW: підвантажує заявки з IndexedDB (з одноразовою міграцією зі старого localStorage, якщо потрібно) — має відбутись ДО міграції фото нижче, бо та проходиться по tickets
 
   photoDb = await openPhotoDb();
   await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
