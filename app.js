@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v21 · 2026-07-27';
+const APP_VERSION = 'v23 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -474,10 +474,6 @@ function ddmmyyyyToIso(s){
   const m = String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
 }
-function isoToDdmmyyyy(iso){
-  const m = String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
-}
 function setDateFieldValue(ddmmyyyy){
   document.getElementById('f_date').value = ddmmyyyy || '';
   document.getElementById('f_dateNative').value = ddmmyyyyToIso(ddmmyyyy);
@@ -522,35 +518,6 @@ function normalizePhoneKey(raw){
   // Порівнюємо останні 9 цифр — так номери з +380, з 0 на початку чи
   // без коду країни однаково зводяться до одного ключа.
   return digits.slice(-9);
-}
-function normalizeAddressKey(t){
-  const raw = [t.city, t.address, t.street, t.house, t.apartment].filter(Boolean).join(' ');
-  if(!raw) return '';
-  // \b у JS не працює з кирилицею (вона не входить у \w), тому прибираємо
-  // службові слова токен за токеном, а не через word-boundary regex.
-  const stop = new Set(['м','місто','вул','вулиця','буд','будинок','кв','квартира','б','просп','проспект']);
-  return raw.toLowerCase()
-    .replace(/[.,№]/g,' ')
-    .split(/\s+/)
-    .filter(tok => tok && !stop.has(tok))
-    .join('');
-}
-function findAbonentMatches(t){
-  const phoneKey = normalizePhoneKey(t.phone);
-  const addrKey = normalizeAddressKey(t);
-  const macKey = normalizeMac(t.macAddress);
-  if(!phoneKey && !addrKey && !macKey) return [];
-  const matches = [];
-  tickets.forEach(other=>{
-    if(String(other.id) === String(t.id)) return;
-    const reasons = [];
-    if(phoneKey && normalizePhoneKey(other.phone) === phoneKey) reasons.push('телефон');
-    if(addrKey && normalizeAddressKey(other) === addrKey) reasons.push('адреса');
-    if(macKey && normalizeMac(other.macAddress) === macKey) reasons.push('MAC ONU');
-    if(reasons.length) matches.push({ticket:other, reasons});
-  });
-  matches.sort((a,b)=> `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`));
-  return matches;
 }
 // NEW: розбір "сирого" тексту наряду від диспетчера (вільна форма, як у Telegram-групі) —
 // щоб перевірити, чи вже була заявка по цьому абоненту/адресі, ще ДО того, як
@@ -600,40 +567,6 @@ function findNaryadMatches(rawText){
     return `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`);
   });
   return results;
-}
-function showAbonentHistory(id){
-  const t = tickets.find(x=>String(x.id)===String(id));
-  if(!t) return;
-  const matches = findAbonentMatches(t);
-  if(!matches.length){
-    showToast('Збігів не знайдено — це перша заявка для цього абонента');
-    return;
-  }
-  const itemsHtml = matches.map(m=>{
-    const o = m.ticket;
-    const address = [o.city, o.address].filter(Boolean).join(', ') || '—';
-    const badges = m.reasons.map(r=>`<span class="chip" style="pointer-events:none;">${escapeHtml(r)}</span>`).join(' ');
-    return `
-      <div class="card" style="margin-bottom:10px; padding:12px 14px;">
-        <div class="row between" style="margin-bottom:4px;">
-          <strong>${escapeHtml(o.date||'')} ${escapeHtml(o.time||'')}</strong>
-          <span style="font-size:12.5px; color:var(--text-dim);">${escapeHtml(o.type||'')}</span>
-        </div>
-        <div style="font-size:13.5px; margin-bottom:2px;">📍 ${escapeHtml(address)}</div>
-        ${o.macAddress ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">MAC: ${escapeHtml(o.macAddress)}</div>` : ''}
-        ${o.sum ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:6px;">Сума: ${escapeHtml(String(o.sum))} грн</div>` : ''}
-        <div class="row wrap" style="gap:4px; margin-bottom:6px;">${badges}</div>
-        <button type="button" class="btn btn-sm btn-block open-history-ticket-btn" data-id="${o.id}">Відкрити заявку</button>
-      </div>`;
-  }).join('');
-  openModal(`Історія абонента (${matches.length})`, `<div>${itemsHtml}</div>`, {onOpen: (rootEl)=>{
-    rootEl.querySelectorAll('.open-history-ticket-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        closeModal();
-        editTicket(btn.dataset.id);
-      });
-    });
-  }});
 }
 
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
@@ -1666,7 +1599,6 @@ async function postToUrl(url, action, payload){
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
-function syncShiftPost(action, payload){ return postToUrl(getShiftsScriptUrl(), action, payload); }
 const syncPost = syncTicketPost; // зворотна сумісність з рештою коду заявок
 
 /* ---- Адаптер для готового doGet-скрипта змін (формат GET-параметрів,
@@ -1920,15 +1852,52 @@ function blankTicketObject(){
     id:null, date:'', time:'', content:'', sum:0, tags:[], photo:null,
     type:'Підключення', city:'', address:'', clientName:'', phone:'',
     callFee:0, tariff:0,
-    equipment: getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false})),
-    cables: getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter})), // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
-    presetWorks: getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false})),
+    // NEW: у самій заявці зберігаємо лише ВИБРАНЕ (checked / meters>0), а не
+    // весь каталог обладнання/кабелів/робіт з переважно checked:false —
+    // повний каталог для форми розгортається окремо (див. blankCalcState()
+    // і mergeEquipmentWithCatalog() / mergeCablesWithCatalog() /
+    // mergePresetWorksWithCatalog(), що використовуються в loadTicketIntoForm()).
+    equipment: [],
+    cables: [], // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
+    presetWorks: [],
     additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
     abonentNote:'', extraPhones:[], // NEW: примітка про абонента й додаткові телефони — рівня профілю, як login/password
     tgBackedUp:false, tgPhotoFileId:null, tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
+}
+
+// NEW: розгортають "розріджений" (лише вибране) список заявки назад у повний
+// каталог для форми — checked/price/qty/meters підтягуються за id з того, що
+// збережено, решта каталогу лишається невибраною. Працює однаково і для
+// нового формату (лише вибране), і для старих заявок (де зберігався весь
+// каталог із checked:false) — бо в обох випадках ми просто дивимось,
+// що саме лежить під конкретним id.
+function mergeEquipmentWithCatalog(saved){
+  const savedMap = new Map((saved||[]).map(e=>[e.id, e]));
+  return getEquipmentConfig().map(e=>{
+    const s = savedMap.get(e.id);
+    // NEW: у "розрідженому" форматі збережений запис взагалі не має поля
+    // checked (ми його свідомо не зберігаємо) — сама присутність id у списку
+    // й означає "вибрано". У старому "щільному" форматі checked:false
+    // збережено явно — і це так само коректно читається як "не вибрано".
+    return {id:e.id, label:e.label, price: s ? (Number(s.price)||e.price) : e.price, checked: s ? (s.checked !== false) : false};
+  });
+}
+function mergeCablesWithCatalog(saved){
+  const savedMap = new Map((saved||[]).map(c=>[c.id, c]));
+  return getCableTypesConfig().map(c=>{
+    const s = savedMap.get(c.id);
+    return {id:c.id, label:c.label, meters: s ? (Number(s.meters)||0) : 0, pricePerMeter: s ? (Number(s.pricePerMeter)||c.pricePerMeter) : c.pricePerMeter};
+  });
+}
+function mergePresetWorksWithCatalog(saved){
+  const savedMap = new Map((saved||[]).map(w=>[w.id, w]));
+  return getWorkTypesConfig().map(w=>{
+    const s = savedMap.get(w.id);
+    return {id:w.id, label:w.label, price: s ? (Number(s.price)||w.price) : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
+  });
 }
 
 /* NEW: розбирає службовий стовпець "нотатки_майстра" (backupNote), який
@@ -2910,6 +2879,12 @@ function blankCalcState(){
   // (тип за замовчуванням — "Підключення"); змінюється в Налаштуваннях.
   t.callFee = Number(settings.defaultConnectFee) || 0;
   t.tariff = (t.type === 'Підключення') ? (Number(settings.defaultTariff) || 0) : 0; // тариф лише для підключення
+  // NEW: на відміну від blankTicketObject() (порожні масиви — так зберігається
+  // у самій заявці), тут, у стані ЖИВОЇ форми, одразу розгортаємо повний
+  // каталог обладнання/кабелів/робіт — щоб було з чого вибирати чекбоксами.
+  t.equipment = mergeEquipmentWithCatalog([]);
+  t.cables = mergeCablesWithCatalog([]);
+  t.presetWorks = mergePresetWorksWithCatalog([]);
   return t;
 }
 
@@ -3025,21 +3000,23 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
-  // сумісність зі старими записами, де могло не бути структурних полів
-  if(!calcState.equipment || !calcState.equipment.length){
-    calcState.equipment = getEquipmentConfig().map(e=>({id:e.id, label:e.label, price:e.price, checked:false}));
-  }
-  if(!calcState.presetWorks || !calcState.presetWorks.length){
-    calcState.presetWorks = getWorkTypesConfig().map(w=>({id:w.id, label:w.label, price:w.price, qty:1, checked:false}));
-  }
+  // NEW: у самій заявці тепер зберігається лише вибране (checked / meters>0),
+  // тож тут завжди розгортаємо це назад у повний каталог для форми — працює
+  // однаково і для нового "розрідженого" формату, і для старих заявок, де
+  // ще зберігався весь каталог із checked:false (просто нічого не зміниться).
+  calcState.equipment = mergeEquipmentWithCatalog(calcState.equipment);
+  calcState.presetWorks = mergePresetWorksWithCatalog(calcState.presetWorks);
   if(!calcState.cables || !calcState.cables.length){
-    // NEW: сумісність зі старими заявками — переносимо старі окремі поля
-    // UTP/Оптика (якщо були) у новий динамічний список кабелів
+    // NEW: сумісність із зовсім старими заявками — переносимо старі окремі поля
+    // UTP/Оптика (якщо були) у новий динамічний список кабелів; для заявок, де
+    // просто не було вибрано жодного кабелю, дає той самий (порожній) результат
     calcState.cables = getCableTypesConfig().map(c=>({id:c.id, label:c.label, meters:0, pricePerMeter:c.pricePerMeter}));
     const utp = calcState.cables.find(c=>c.id==='utp');
     if(utp && calcState.utpMeters) { utp.meters = Number(calcState.utpMeters)||0; utp.pricePerMeter = Number(calcState.utpPrice)||utp.pricePerMeter; }
     const optic = calcState.cables.find(c=>c.id==='optic');
     if(optic && calcState.opticMeters) { optic.meters = Number(calcState.opticMeters)||0; optic.pricePerMeter = Number(calcState.opticPrice)||optic.pricePerMeter; }
+  } else {
+    calcState.cables = mergeCablesWithCatalog(calcState.cables);
   }
   // якщо в збереженій заявці немає додаткових робіт — все одно показуємо
   // одне порожнє поле для вводу, а не порожній список з кнопкою "+"
@@ -3577,37 +3554,6 @@ function handleGeoBtn(){
   openGeoPasteModal();
 }
 
-function tryGps(){
-  if(!navigator.geolocation || window.isSecureContext === false){
-    // GPS точно не спрацює — одразу відкриваємо ручне введення
-    openGeoPasteModal();
-    return;
-  }
-  const btn = document.getElementById('geoBtn');
-  btn.textContent = '⏳';
-  btn.disabled = true;
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      btn.textContent = '📍';
-      btn.disabled = false;
-      const link = `https://www.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}`;
-      setGeoLink(link);
-      showToast('✅ Геолокацію збережено');
-    },
-    err=>{
-      btn.textContent = '📍';
-      btn.disabled = false;
-      // GPS не спрацював — відкриваємо ручне введення з поясненням
-      let hint = '';
-      if(err.code===1) hint = 'GPS заблоковано. ';
-      else if(err.code===2) hint = 'GPS недоступний. ';
-      else if(err.code===3) hint = 'Час очікування вийшов. ';
-      openGeoPasteModal(hint + 'Встав посилання з Google Maps вручну:');
-    },
-    {enableHighAccuracy:true, timeout:8000}
-  );
-}
-
 /* Модалка ручного введення — відкривається автоматично при відмові GPS */
 function openGeoPasteModal(headerMsg){
   openModal('📍 Додати геолокацію', `
@@ -3778,6 +3724,15 @@ async function saveTicketFromForm(e){
     calcState.sum = total;
     calcState.content = buildTicketContent(calcState, total);
   }
+
+  // NEW: у саму заявку записуємо лише вибрані позиції каталогу (checked /
+  // meters>0), а не весь каталог обладнання/кабелів/робіт із checked:false —
+  // це і є той рефакторинг, що прибирає роздування об'єкта заявки. Форма й
+  // далі повністю розгортає каталог при відкритті (loadTicketIntoForm /
+  // blankCalcState) — тут лише те, що потрапляє у збережений об'єкт.
+  calcState.equipment = (calcState.equipment||[]).filter(e=>e.checked).map(e=>({id:e.id, label:e.label, price:Number(e.price)||0}));
+  calcState.cables = (calcState.cables||[]).filter(c=>Number(c.meters)>0).map(c=>({id:c.id, label:c.label, meters:Number(c.meters)||0, pricePerMeter:Number(c.pricePerMeter)||0}));
+  calcState.presetWorks = (calcState.presetWorks||[]).filter(w=>w.checked).map(w=>({id:w.id, label:w.label, price:Number(w.price)||0, qty:Number(w.qty)||1}));
 
   // Якщо фото нове (сирий base64, а не вже збережений ключ idb:...) — переносимо в IndexedDB,
   // а попереднє фото заявки (якщо було інше) видаляємо, щоб не накопичувати «сирітські» записи.
