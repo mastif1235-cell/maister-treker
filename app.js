@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v25 · 2026-07-27';
+const APP_VERSION = 'v26 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -117,6 +117,11 @@ let tickets  = [];
 let shifts   = loadJSON('shifts', []);
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
 const DELETED_TICKETS_MAX = 30;
+// NEW: черга "сирих" нарядів від диспетчера — вставив текст як є (з Viber
+// тощо), поки не перетворив на заявку. Маленькі текстові записи, тож
+// localStorage тут цілком доречний (не той випадок, що з tickets).
+let naryadQueue = loadJSON('naryadQueue', []);
+function saveNaryadQueue(){ localStorage.setItem('naryadQueue', JSON.stringify(naryadQueue)); }
 
 let currentTicketDate = formatDate(new Date()); // 'DD.MM.YYYY'
 let currentShiftDate  = formatDate(new Date());
@@ -685,6 +690,91 @@ function naryadMatchesHtml(matches){
       </div>`;
   }).join('');
 }
+// NEW: черга "сирих" нарядів від диспетчера (окремо від "Перевірити наряд" —
+// той інструмент для одноразової перевірки збігів, а це — список того, що
+// диспетчер скинув, а ти ще не встиг доїхати й перетворити на заявку).
+// Оновлює підпис кнопки під датою: показує кількість ще не виконаних.
+function updateNaryadQueueBtn(){
+  const btn = document.getElementById('naryadQueueBtn');
+  if(!btn) return;
+  const pending = naryadQueue.filter(n=>!n.done).length;
+  btn.textContent = pending ? `📋 Наряди від диспетчера (${pending})` : '📋 Наряди від диспетчера';
+}
+
+function naryadQueueItemHtml(n){
+  return `
+    <div class="card" style="margin-bottom:10px; padding:12px 14px; ${n.done ? 'opacity:.55;' : ''}">
+      <div style="white-space:pre-wrap; font-size:13.5px; ${n.done ? 'text-decoration:line-through;' : ''}">${escapeHtml(n.text)}</div>
+      <div style="font-size:11px; color:var(--text-dim); margin:4px 0 8px;">додано ${escapeHtml(n.createdAt||'')}</div>
+      <div class="row" style="gap:6px;">
+        <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
+        ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}
+        <button type="button" class="btn btn-sm btn-danger naryad-queue-delete-btn" data-id="${n.id}">🗑️</button>
+      </div>
+    </div>`;
+}
+function naryadQueueListHtml(){
+  if(!naryadQueue.length) return `<div style="font-size:12.5px; color:var(--text-faint); text-align:center; margin-top:10px;">Черга порожня</div>`;
+  // Спочатку невиконані (новіші зверху), потім виконані (теж новіші зверху) —
+  // щоб те, що ще треба зробити, завжди було на видноті над архівом.
+  const pending = naryadQueue.filter(n=>!n.done).sort((a,b)=>b.id-a.id);
+  const done = naryadQueue.filter(n=>n.done).sort((a,b)=>b.id-a.id);
+  return [...pending, ...done].map(naryadQueueItemHtml).join('');
+}
+function showNaryadQueue(){
+  const bodyHtml = `
+    <textarea id="naryadQueueInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:80px;"></textarea>
+    <button type="button" class="btn btn-block" id="naryadQueueAddBtn" style="margin-top:8px;">➕ Додати в чергу</button>
+    <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml()}</div>`;
+  openModal('Наряди від диспетчера', bodyHtml, {onOpen: (rootEl)=>{
+    document.getElementById('naryadQueueAddBtn').addEventListener('click', ()=>{
+      const input = document.getElementById('naryadQueueInput');
+      const text = input.value.trim();
+      if(!text){ showToast('Встав текст наряду'); return; }
+      const now = new Date();
+      naryadQueue.push({id: Date.now(), text, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
+      saveNaryadQueue();
+      input.value = '';
+      document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml();
+      updateNaryadQueueBtn();
+    });
+    rootEl.addEventListener('click', e=>{
+      const doneBtn = e.target.closest('.naryad-queue-done-btn');
+      if(doneBtn){
+        const n = naryadQueue.find(x=>String(x.id)===doneBtn.dataset.id);
+        if(n){ n.done = !n.done; saveNaryadQueue(); document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml(); updateNaryadQueueBtn(); }
+        return;
+      }
+      const delBtn = e.target.closest('.naryad-queue-delete-btn');
+      if(delBtn){
+        if(!confirm('Прибрати цей наряд з черги?')) return;
+        naryadQueue = naryadQueue.filter(x=>String(x.id)!==delBtn.dataset.id);
+        saveNaryadQueue();
+        document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml();
+        updateNaryadQueueBtn();
+        return;
+      }
+      const createBtn = e.target.closest('.naryad-queue-create-btn');
+      if(createBtn){
+        const n = naryadQueue.find(x=>String(x.id)===createBtn.dataset.id);
+        if(!n) return;
+        // NEW: тап "➕ Заявка" одразу позначає наряд виконаним (як ти й
+        // казав — доїхав, створив заявку, галочка) — це саме той один тап
+        // замість двох; якщо роздумав чи скасував заявку — є "↩️ Повернути".
+        n.done = true;
+        saveNaryadQueue();
+        updateNaryadQueueBtn();
+        const prefill = {};
+        prefill.content = n.text;
+        const phoneMatch = n.text.match(/[\d][\d\s\-()]{7,}\d/);
+        if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
+        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), showNaryadQueue);
+      }
+    });
+  }});
+}
+
+
 function showNaryadChecker(){
   const bodyHtml = `
     <textarea id="naryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px;"></textarea>
@@ -4877,7 +4967,22 @@ function safeNumber(v) {
   return isNaN(n) ? 0 : n;
 }
 
-function doGet() {
+function doGet(e) {
+  // NEW: read-only перевірка "чи є вже такий id в аркуші Заявки" —
+  // застосунок викликає це одразу після додавання нової заявки (окремим
+  // запитом, ПІСЛЯ основного no-cors POST), щоб підтвердити, що вона
+  // реально потрапила в таблицю. Нічого не пише — жодних побічних ефектів.
+  if (e && e.parameter && e.parameter.action === 'checkTicketExists') {
+    var checkSheet = getOrCreateSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Заявки', TICKET_HEADERS);
+    var checkLast = checkSheet.getLastRow();
+    var exists = false;
+    if (checkLast > 1) {
+      var checkIds = checkSheet.getRange(2, 1, checkLast - 1, 1).getValues().flat();
+      var targetId = String(e.parameter.id);
+      exists = checkIds.some(function (v) { return String(v) === targetId; });
+    }
+    return ContentService.createTextOutput(JSON.stringify({status: 'ok', exists: exists})).setMimeType(ContentService.MimeType.JSON);
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
   var tSheet = ss.getSheetByName('Заявки');
@@ -4949,6 +5054,10 @@ function bindTabBar(){
 }
 
 function bindTicketsScreen(){
+  // NEW: черга нарядів від диспетчера — кнопка під датою
+  document.getElementById('naryadQueueBtn').addEventListener('click', showNaryadQueue);
+  updateNaryadQueueBtn();
+
   document.getElementById('copyDayBtn').addEventListener('click', async ()=>{
     const text = buildDayReportText();
     try{ await navigator.clipboard.writeText(text); showToast('Заявки за день скопійовано'); }
