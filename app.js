@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v26 · 2026-07-27';
+const APP_VERSION = 'v27 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -693,12 +693,19 @@ function naryadMatchesHtml(matches){
 // NEW: черга "сирих" нарядів від диспетчера (окремо від "Перевірити наряд" —
 // той інструмент для одноразової перевірки збігів, а це — список того, що
 // диспетчер скинув, а ти ще не встиг доїхати й перетворити на заявку).
-// Оновлює підпис кнопки під датою: показує кількість ще не виконаних.
+// Кожен наряд прив'язаний до конкретної дати виконання (не дати додавання!)
+// — диспетчер каже "це на післязавтра", ти одразу ставиш післязавтра, і коли
+// доходить той день — наряд сам там і чекає.
+function naryadItemDate(n){
+  return n.date || (n.createdAt||'').split(' ')[0] || formatDate(new Date());
+}
+// Підпис кнопки під датою — кількість ще не виконаних нарядів САМЕ на дату,
+// яка зараз переглядається в календарі заявок (оновлюється разом з нею).
 function updateNaryadQueueBtn(){
   const btn = document.getElementById('naryadQueueBtn');
   if(!btn) return;
-  const pending = naryadQueue.filter(n=>!n.done).length;
-  btn.textContent = pending ? `📋 Наряди від диспетчера (${pending})` : '📋 Наряди від диспетчера';
+  const pending = naryadQueue.filter(n=>!n.done && naryadItemDate(n)===currentTicketDate).length;
+  btn.textContent = pending ? `📋 Наряди на цю дату (${pending})` : '📋 Наряди від диспетчера';
 }
 
 function naryadQueueItemHtml(n){
@@ -713,36 +720,42 @@ function naryadQueueItemHtml(n){
       </div>
     </div>`;
 }
-function naryadQueueListHtml(){
-  if(!naryadQueue.length) return `<div style="font-size:12.5px; color:var(--text-faint); text-align:center; margin-top:10px;">Черга порожня</div>`;
+function naryadQueueListHtml(date){
+  const forDate = naryadQueue.filter(n=>naryadItemDate(n)===date);
+  if(!forDate.length) return `<div style="font-size:12.5px; color:var(--text-faint); text-align:center; margin-top:10px;">На цю дату нарядів нема</div>`;
   // Спочатку невиконані (новіші зверху), потім виконані (теж новіші зверху) —
   // щоб те, що ще треба зробити, завжди було на видноті над архівом.
-  const pending = naryadQueue.filter(n=>!n.done).sort((a,b)=>b.id-a.id);
-  const done = naryadQueue.filter(n=>n.done).sort((a,b)=>b.id-a.id);
+  const pending = forDate.filter(n=>!n.done).sort((a,b)=>b.id-a.id);
+  const done = forDate.filter(n=>n.done).sort((a,b)=>b.id-a.id);
   return [...pending, ...done].map(naryadQueueItemHtml).join('');
 }
-function showNaryadQueue(){
+// Головний список — з навігацією по днях (як і на екрані "Заявки"), щоб
+// можна було глянути наперед чи назад, не виходячи звідси.
+function showNaryadQueue(date){
+  let viewDate = date || currentTicketDate;
   const bodyHtml = `
-    <textarea id="naryadQueueInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:80px;"></textarea>
-    <button type="button" class="btn btn-block" id="naryadQueueAddBtn" style="margin-top:8px;">➕ Додати в чергу</button>
-    <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml()}</div>`;
+    <div class="row" style="gap:6px; align-items:center; margin-bottom:12px;">
+      <button type="button" class="btn btn-icon" id="naryadQueuePrevDayBtn">‹</button>
+      <div style="flex:1; text-align:center; font-weight:700;" id="naryadQueueDateLabel">${escapeHtml(viewDate)}</div>
+      <button type="button" class="btn btn-icon" id="naryadQueueNextDayBtn">›</button>
+    </div>
+    <button type="button" class="btn btn-block" id="naryadQueueAddBtn">➕ Додати наряд</button>
+    <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml(viewDate)}</div>`;
   openModal('Наряди від диспетчера', bodyHtml, {onOpen: (rootEl)=>{
-    document.getElementById('naryadQueueAddBtn').addEventListener('click', ()=>{
-      const input = document.getElementById('naryadQueueInput');
-      const text = input.value.trim();
-      if(!text){ showToast('Встав текст наряду'); return; }
-      const now = new Date();
-      naryadQueue.push({id: Date.now(), text, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
-      saveNaryadQueue();
-      input.value = '';
-      document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml();
-      updateNaryadQueueBtn();
-    });
+    const refresh = ()=>{
+      document.getElementById('naryadQueueDateLabel').textContent = viewDate;
+      document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml(viewDate);
+    };
+    document.getElementById('naryadQueuePrevDayBtn').addEventListener('click', ()=>{ viewDate = shiftDate(viewDate,-1); refresh(); });
+    document.getElementById('naryadQueueNextDayBtn').addEventListener('click', ()=>{ viewDate = shiftDate(viewDate,1); refresh(); });
+    // NEW: поле вводу — окрема "на весь екран" модалка (див. showAddNaryadModal
+    // нижче), а не тісний textarea поруч зі списком
+    document.getElementById('naryadQueueAddBtn').addEventListener('click', ()=> showAddNaryadModal(viewDate));
     rootEl.addEventListener('click', e=>{
       const doneBtn = e.target.closest('.naryad-queue-done-btn');
       if(doneBtn){
         const n = naryadQueue.find(x=>String(x.id)===doneBtn.dataset.id);
-        if(n){ n.done = !n.done; saveNaryadQueue(); document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml(); updateNaryadQueueBtn(); }
+        if(n){ n.done = !n.done; saveNaryadQueue(); refresh(); updateNaryadQueueBtn(); }
         return;
       }
       const delBtn = e.target.closest('.naryad-queue-delete-btn');
@@ -750,7 +763,7 @@ function showNaryadQueue(){
         if(!confirm('Прибрати цей наряд з черги?')) return;
         naryadQueue = naryadQueue.filter(x=>String(x.id)!==delBtn.dataset.id);
         saveNaryadQueue();
-        document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml();
+        refresh();
         updateNaryadQueueBtn();
         return;
       }
@@ -768,8 +781,42 @@ function showNaryadQueue(){
         prefill.content = n.text;
         const phoneMatch = n.text.match(/[\d][\d\s\-()]{7,}\d/);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
-        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), showNaryadQueue);
+        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
       }
+    });
+  }});
+}
+// NEW: окрема модалка лише для вставки тексту наряду — поле вводу займає
+// майже весь екран (замість тісного блоку поряд зі списком), плюс швидкий
+// вибір дати виконання (Сьогодні/Завтра/Післязавтра або довільна дата).
+function showAddNaryadModal(defaultDate){
+  const today = formatDate(new Date());
+  const bodyHtml = `
+    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:52vh;"></textarea>
+    <div class="row" style="gap:6px; margin-top:10px;">
+      <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${today}" style="flex:1;">Сьогодні</button>
+      <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${shiftDate(today,1)}" style="flex:1;">Завтра</button>
+      <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${shiftDate(today,2)}" style="flex:1;">Післязавтра</button>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Дата виконання</label>
+      <input type="date" id="addNaryadDateInput" value="${ddmmyyyyToIso(defaultDate||today)}">
+    </div>
+    <button type="button" class="btn btn-block btn-accent" id="addNaryadSaveBtn" style="margin-top:12px;">✅ Додати в чергу</button>`;
+  openModal('Новий наряд', bodyHtml, {onClose: ()=> showNaryadQueue(defaultDate), onOpen: ()=>{
+    document.getElementById('addNaryadInput').focus();
+    document.querySelectorAll('.addNaryadDateBtn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ document.getElementById('addNaryadDateInput').value = ddmmyyyyToIso(btn.dataset.date); });
+    });
+    document.getElementById('addNaryadSaveBtn').addEventListener('click', ()=>{
+      const text = document.getElementById('addNaryadInput').value.trim();
+      if(!text){ showToast('Встав текст наряду'); return; }
+      const chosenDate = isoToDdmmyyyy(document.getElementById('addNaryadDateInput').value) || defaultDate || formatDate(new Date());
+      const now = new Date();
+      naryadQueue.push({id: Date.now(), text, date: chosenDate, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
+      saveNaryadQueue();
+      updateNaryadQueueBtn();
+      showNaryadQueue(chosenDate);
     });
   }});
 }
@@ -2151,6 +2198,7 @@ function ticketSortKey(t){
 
 function renderTicketsScreen(){
   document.getElementById('currentDateDisplay').textContent = currentTicketDate;
+  updateNaryadQueueBtn(); // NEW: підпис кнопки залежить від поточної дати — оновлюємо разом з нею
   renderDateNavVisibility();
   renderDaySummary();
   renderMainTicketList();
@@ -5055,7 +5103,7 @@ function bindTabBar(){
 
 function bindTicketsScreen(){
   // NEW: черга нарядів від диспетчера — кнопка під датою
-  document.getElementById('naryadQueueBtn').addEventListener('click', showNaryadQueue);
+  document.getElementById('naryadQueueBtn').addEventListener('click', ()=> showNaryadQueue());
   updateNaryadQueueBtn();
 
   document.getElementById('copyDayBtn').addEventListener('click', async ()=>{
