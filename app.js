@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v27 · 2026-07-27';
+const APP_VERSION = 'v29 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -141,6 +141,13 @@ let calcState = blankCalcState();
 let editingTicketId = null;
 let feeIsAutoDefault = true; // NEW: поки true — ціну виклику/підключення можна автоматично підставити при зміні типу заявки; false — майстер вже ввів своє значення вручну, чіпати не можна
 let tariffIsAutoDefault = true; // те саме, але для поля "Тариф" — щоб автопідставлене за замовчуванням значення не вважалось "незбереженою зміною"
+// NEW: чи торкався користувач полів форми руками. Потрібно окремо від
+// hasUnsavedChanges(), бо швидке створення заявки з наряду/профілю саме
+// собою вже підставляє телефон/зміст — і якщо просто глянути на таку форму
+// й піти на іншу вкладку, вона раніше вважалась "чернеткою" й нав'язливо
+// пропонувала відновитись при кожному відкритті застосунку, хоча користувач
+// нічого сам не вводив.
+let formTouchedByUser = false;
 
 let coworkerSelection = new Set(['Сам']);
 
@@ -713,9 +720,10 @@ function naryadQueueItemHtml(n){
     <div class="card" style="margin-bottom:10px; padding:12px 14px; ${n.done ? 'opacity:.55;' : ''}">
       <div style="white-space:pre-wrap; font-size:13.5px; ${n.done ? 'text-decoration:line-through;' : ''}">${escapeHtml(n.text)}</div>
       <div style="font-size:11px; color:var(--text-dim); margin:4px 0 8px;">додано ${escapeHtml(n.createdAt||'')}</div>
-      <div class="row" style="gap:6px;">
+      <div class="row" style="gap:6px; flex-wrap:wrap;">
         <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
         ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}
+        <button type="button" class="btn btn-sm naryad-queue-reschedule-btn" data-id="${n.id}">🔁 Перенести</button>
         <button type="button" class="btn btn-sm btn-danger naryad-queue-delete-btn" data-id="${n.id}">🗑️</button>
       </div>
     </div>`;
@@ -767,6 +775,8 @@ function showNaryadQueue(date){
         updateNaryadQueueBtn();
         return;
       }
+      const rescheduleBtn = e.target.closest('.naryad-queue-reschedule-btn');
+      if(rescheduleBtn){ showRescheduleNaryadModal(rescheduleBtn.dataset.id); return; }
       const createBtn = e.target.closest('.naryad-queue-create-btn');
       if(createBtn){
         const n = naryadQueue.find(x=>String(x.id)===createBtn.dataset.id);
@@ -792,7 +802,7 @@ function showNaryadQueue(date){
 function showAddNaryadModal(defaultDate){
   const today = formatDate(new Date());
   const bodyHtml = `
-    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:52vh;"></textarea>
+    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px; width:calc(100% + 32px); margin-left:-16px; margin-right:-16px; border-radius:0;"></textarea>
     <div class="row" style="gap:6px; margin-top:10px;">
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${today}" style="flex:1;">Сьогодні</button>
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${shiftDate(today,1)}" style="flex:1;">Завтра</button>
@@ -817,6 +827,43 @@ function showAddNaryadModal(defaultDate){
       saveNaryadQueue();
       updateNaryadQueueBtn();
       showNaryadQueue(chosenDate);
+    });
+  }});
+}
+// NEW: "🔁 Перенести" на нарядi — абонент попросив на інший день, тож
+// потрібно швидко перекласти цей самий наряд на нову дату, не видаляючи й
+// не створюючи заново.
+function showRescheduleNaryadModal(id){
+  const n = naryadQueue.find(x=>String(x.id)===String(id));
+  if(!n) return;
+  const today = formatDate(new Date());
+  const curDate = naryadItemDate(n);
+  const preview = n.text.length>200 ? n.text.slice(0,200)+'…' : n.text;
+  const bodyHtml = `
+    <div style="font-size:13px; color:var(--text-dim); margin-bottom:10px; white-space:pre-wrap;">${escapeHtml(preview)}</div>
+    <div style="font-size:12.5px; color:var(--text-faint); margin-bottom:10px;">Зараз стоїть на: ${escapeHtml(curDate)}</div>
+    <div class="row" style="gap:6px;">
+      <button type="button" class="btn btn-sm rescheduleNaryadDateBtn" data-date="${today}" style="flex:1;">Сьогодні</button>
+      <button type="button" class="btn btn-sm rescheduleNaryadDateBtn" data-date="${shiftDate(today,1)}" style="flex:1;">Завтра</button>
+      <button type="button" class="btn btn-sm rescheduleNaryadDateBtn" data-date="${shiftDate(today,7)}" style="flex:1;">+ Тиждень</button>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Або оберіть дату</label>
+      <input type="date" id="rescheduleNaryadDateInput" value="${ddmmyyyyToIso(curDate)}">
+    </div>
+    <button type="button" class="btn btn-block btn-accent" id="rescheduleNaryadSaveBtn" style="margin-top:12px;">✅ Перенести</button>`;
+  openModal('Перенести наряд', bodyHtml, {onClose: ()=> showNaryadQueue(curDate), onOpen: ()=>{
+    document.querySelectorAll('.rescheduleNaryadDateBtn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ document.getElementById('rescheduleNaryadDateInput').value = ddmmyyyyToIso(btn.dataset.date); });
+    });
+    document.getElementById('rescheduleNaryadSaveBtn').addEventListener('click', ()=>{
+      const newDate = isoToDdmmyyyy(document.getElementById('rescheduleNaryadDateInput').value);
+      if(!newDate){ showToast('Оберіть дату'); return; }
+      n.date = newDate;
+      saveNaryadQueue();
+      updateNaryadQueueBtn();
+      showToast('Наряд перенесено на ' + newDate);
+      showNaryadQueue(newDate);
     });
   }});
 }
@@ -3158,6 +3205,7 @@ const DRAFT_KEY = 'ticketDraft';
 
 function saveDraftToLocalStorage(){
   if(!hasUnsavedChanges()) return; // немає що зберігати — не смітимо сховище
+  if(!formTouchedByUser) return; // NEW: форму лише відкрили (можливо, з автопідстановкою з наряду/профілю) — руками ще нічого не вводили, це не "чернетка"
   try{
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       ts: Date.now(),
@@ -3215,6 +3263,7 @@ function resetCalcForm(presetDate, overrides){
   editingTicketId = null;
   feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
   tariffIsAutoDefault = true;
+  formTouchedByUser = false; // NEW: нова (можливо, підставлена з наряду/профілю) форма — ще не "чернетка", доки самі не почнете її заповнювати
   // NEW: нова заявка стартує з типом "Підключення" — одразу вмикаємо тег "підключення"
   const defTag = TYPE_TAG_MAP[calcState.type];
   if(defTag){
@@ -3272,6 +3321,7 @@ function loadTicketIntoForm(t){
   editingTicketId = t.id;
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
   tariffIsAutoDefault = false;
+  formTouchedByUser = true; // NEW: це або реальне редагування наявної заявки, або відновлення чернетки — в обох випадках це вже "справжній" вміст, а не щойно підставлені за замовчуванням дані
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
   { const cancelBtn = document.getElementById('cancelEditBtn'); cancelBtn.textContent = 'Скасувати редагування'; cancelBtn.classList.remove('hidden'); } // NEW: скидаємо підпис — міг лишитись "Назад до пошуку" від попереднього створення нової заявки з профілю
   fillFormFromState();
@@ -5246,6 +5296,11 @@ function bindTicketsScreen(){
 }
 
 function bindCalculatorScreen(){
+  // NEW: будь-яка реальна взаємодія з полями форми (а не автопідстановка з
+  // наряду/профілю) позначає форму як "торкнуту руками" — від цього залежить,
+  // чи вважати її чернеткою (див. formTouchedByUser і saveDraftToLocalStorage)
+  document.getElementById('calcForm').addEventListener('input', ()=>{ formTouchedByUser = true; });
+  document.getElementById('calcForm').addEventListener('change', ()=>{ formTouchedByUser = true; });
   // Автоматично виділяємо весь вміст числового поля при фокусі —
   // щоб не доводилось вручну видаляти «0» перед введенням ціни
   document.querySelectorAll('#calcForm input[type="number"]').forEach(el=>{
