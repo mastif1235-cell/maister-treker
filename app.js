@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v29 · 2026-07-27';
+const APP_VERSION = 'v30 · 2026-07-27';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -4825,27 +4825,6 @@ function doPost(e) {
 // LockService) — застосунок використовує її ПІСЛЯ основного (no-cors,
 // "сліпого") запиту на додавання заявки, щоб перевірити, чи рядок справді
 // з'явився в таблиці, а не просто повірити на слово, що запит кудись дійшов.
-function doGet(e) {
-  var result = {status: 'error', message: 'Unknown action'};
-  try {
-    if (e.parameter.action === 'checkTicketExists') {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
-      var last = sheet.getLastRow();
-      var exists = false;
-      if (last > 1) {
-        var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-        var targetId = String(e.parameter.id);
-        exists = ids.some(function(r){ return String(r[0]) === targetId; });
-      }
-      result = {status: 'ok', exists: exists};
-    }
-  } catch (err) {
-    result = {status: 'error', message: String(err)};
-  }
-  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-}
-
 function getOrCreateSheet(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
