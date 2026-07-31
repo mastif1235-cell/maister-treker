@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v31 · 2026-07-30';
+const APP_VERSION = 'v32 · 2026-07-30';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1157,13 +1157,6 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   const extraPhonesHtml = (extraPhonesTicket && extraPhonesTicket.extraPhones.length)
     ? `<div style="margin-bottom:4px;">${extraPhonesTicket.extraPhones.map(p=>`<a href="tel:${escapeHtml(p)}" style="display:inline-block; margin-right:12px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(p)}</a>`).join('')}</div>`
     : '';
-  // NEW: обладнання (наприклад, роутер), яке ставили на цій адресі — щоб
-  // було видно прямо в профілі, а не лише всередині "Розгорнути" в самій
-  // заявці. Беремо з найсвіжішої заявки, де взагалі щось обране.
-  const equipTicket = list.find(t=>t.equipment && t.equipment.length);
-  const equipHtml = (equipTicket && equipTicket.equipment.length)
-    ? `<div style="margin-top:8px; font-size:13px; color:var(--text-dim);">🔧 <strong>Обладнання:</strong> ${equipTicket.equipment.map(e=>escapeHtml(e.label)).join(', ')}</div>`
-    : '';
   // NEW: примітка про абонента (не про конкретний візит — та примітка
   // (masterNote) лишається в кожній заявці окремо) — теж рівня профілю.
   // Тепер має власну кнопку редагування — не треба заходити в повне
@@ -1225,7 +1218,6 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
       ${extraPhonesHtml}
       ${acctHtml}
-      ${equipHtml}
       ${noteHtml}
       ${actionBtnsHtml}
       ${photoBtnHtml}
@@ -2371,9 +2363,13 @@ function buildWorkSummaryLines(t){
   if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
   if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${fmtMoney(t.callFee)}`);
   if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${fmtMoney(t.tariff)}`);
-  (t.equipment||[]).filter(e=>e.checked).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`));
+  // NEW: у збереженій заявці обладнання/роботи зберігаються "розріджено" —
+  // без явного поля checked (сама присутність у масиві й означає "вибрано").
+  // checked!==false замість checked — так само коректно читає і старі
+  // заявки (де checked:false ще явно є), і нові (де поля checked просто нема).
+  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`));
   (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${c.pricePerMeter}грн = ${Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
-  (t.presetWorks||[]).filter(w=>w.checked).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`));
+  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`));
   (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${fmtMoney(w.sum)}`); });
   if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
   if(t.note) lines.push(`📝 ${t.note}`);
@@ -2937,9 +2933,11 @@ async function sendTelegramTestMessage(chatId, label){
 function buildMonthlyEquipmentLines(list){
   const eqCounts = {}, cableMeters = {}, workCounts = {};
   list.forEach(t=>{
-    (t.equipment||[]).forEach(e=>{ if(e.checked) eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
+    // NEW: та сама причина, що й у buildWorkSummaryLines — у збереженій
+    // заявці немає явного checked:false, є лише сама присутність позиції
+    (t.equipment||[]).forEach(e=>{ if(e.checked!==false) eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
     (t.cables||[]).forEach(c=>{ const m = Number(c.meters)||0; if(m>0) cableMeters[c.label] = (cableMeters[c.label]||0) + m; });
-    (t.presetWorks||[]).forEach(w=>{ if(w.checked) workCounts[w.label] = (workCounts[w.label]||0) + (Number(w.qty)||1); });
+    (t.presetWorks||[]).forEach(w=>{ if(w.checked!==false) workCounts[w.label] = (workCounts[w.label]||0) + (Number(w.qty)||1); });
   });
   const lines = [];
   Object.entries(eqCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,c])=> lines.push(`${label} — ${c} шт.`));
