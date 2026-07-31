@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v32 · 2026-07-30';
+const APP_VERSION = 'v33 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -149,7 +149,12 @@ let tariffIsAutoDefault = true; // те саме, але для поля "Тар
 // нічого сам не вводив.
 let formTouchedByUser = false;
 
-let coworkerSelection = new Set(['Сам']);
+// NEW: раніше тут одразу лежало 'Сам' — і воно ніколи не прибиралось при
+// виборі реального напарника (бо "Сам" не рендериться як власна фішка,
+// яку можна зняти), тож зміна зберігалась як "Сам, Артем" замість просто
+// "Артем". Тепер стартуємо з порожнього набору; якщо нічого не обрано —
+// нижче (addShift) все одно підставляється рядок "Сам" за замовчуванням.
+let coworkerSelection = new Set();
 
 /* ---------- 1. Допоміжні функції ---------- */
 /* ---- Заявки зберігаються в IndexedDB, а не в localStorage ----
@@ -4158,14 +4163,20 @@ function renderShiftHistory(){
     card.innerHTML = `<div class="empty-state"><div class="es-icon">🕒</div>Змін у цьому місяці ще немає</div>`;
     return;
   }
-  card.innerHTML = monthShifts.map(s=>`
+  card.innerHTML = monthShifts.map(s=>{
+    // NEW: скільки заробив саме за цю зміну — лише для себе, в самому
+    // застосунку; у текст звіту (шеринг/Telegram) це не потрапляє, бо
+    // формується окремою функцією, яка цей рядок не чіпає.
+    const earned = (Number(s.hours)||0) * (Number(settings.hourlyRate)||0);
+    return `
     <div class="shift-row" data-id="${s.id}">
       <div>
         <div class="sr-main">${escapeHtml(s.date)} · ${s.hours} год</div>
-        <div class="sr-sub">${escapeHtml(s.coworker)}</div>
+        <div class="sr-sub">${escapeHtml(s.coworker)}${earned>0 ? ` · ${fmtMoney(earned)}` : ''}</div>
       </div>
       <button type="button" class="delete-shift-btn" data-id="${s.id}">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addShift(){
@@ -4177,7 +4188,7 @@ function addShift(){
   saveShifts();
   syncShiftPostGet('add', shiftToSyncPayload(shift));
   document.getElementById('shiftHours').value = '';
-  coworkerSelection = new Set(['Сам']);
+  coworkerSelection = new Set();
   statsViewDate = parseDate(currentShiftDate);
   renderShiftsScreen();
   showToast('Зміну додано');
