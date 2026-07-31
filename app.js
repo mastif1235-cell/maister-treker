@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v30 · 2026-07-27';
+const APP_VERSION = 'v31 · 2026-07-30';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1157,6 +1157,13 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   const extraPhonesHtml = (extraPhonesTicket && extraPhonesTicket.extraPhones.length)
     ? `<div style="margin-bottom:4px;">${extraPhonesTicket.extraPhones.map(p=>`<a href="tel:${escapeHtml(p)}" style="display:inline-block; margin-right:12px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(p)}</a>`).join('')}</div>`
     : '';
+  // NEW: обладнання (наприклад, роутер), яке ставили на цій адресі — щоб
+  // було видно прямо в профілі, а не лише всередині "Розгорнути" в самій
+  // заявці. Беремо з найсвіжішої заявки, де взагалі щось обране.
+  const equipTicket = list.find(t=>t.equipment && t.equipment.length);
+  const equipHtml = (equipTicket && equipTicket.equipment.length)
+    ? `<div style="margin-top:8px; font-size:13px; color:var(--text-dim);">🔧 <strong>Обладнання:</strong> ${equipTicket.equipment.map(e=>escapeHtml(e.label)).join(', ')}</div>`
+    : '';
   // NEW: примітка про абонента (не про конкретний візит — та примітка
   // (masterNote) лишається в кожній заявці окремо) — теж рівня профілю.
   // Тепер має власну кнопку редагування — не треба заходити в повне
@@ -1218,6 +1225,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${primary && primary.phone ? `<a href="tel:${escapeHtml(primary.phone)}" style="display:inline-block; margin-bottom:4px; color:var(--accent); text-decoration:none;">📞 ${escapeHtml(primary.phone)}</a>` : `<div style="font-size:12.5px; color:var(--text-faint); margin-bottom:4px;">📞 телефон не вказано</div>`}
       ${extraPhonesHtml}
       ${acctHtml}
+      ${equipHtml}
       ${noteHtml}
       ${actionBtnsHtml}
       ${photoBtnHtml}
