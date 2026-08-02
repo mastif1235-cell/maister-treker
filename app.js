@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v34 · 2026-07-31';
+const APP_VERSION = 'v35 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -86,7 +86,11 @@ function loadJSON(key, fallback){
 }
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[]};
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
+    // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
+    // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
+    // керується браузером/ОС, у нас лежить лише посилання на нього)
+    appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:''};
   const merged = s ? Object.assign(base, s) : base;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
@@ -4266,6 +4270,12 @@ function renderSettingsScreen(){
   renderDeletedTicketsList();
   document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
+  // NEW: стан захисту входу
+  document.getElementById('appLockToggle').checked = !!settings.appLockEnabled;
+  document.getElementById('appLockStatusDesc').textContent = settings.appLockEnabled ? 'Увімкнено' : 'Вимкнено';
+  document.getElementById('appLockChangePwBtn').classList.toggle('hidden', !settings.appLockEnabled);
+  document.getElementById('appLockBiometricRow').classList.toggle('hidden', !settings.appLockEnabled);
+  document.getElementById('appLockBiometricToggle').checked = !!settings.appLockBiometricEnabled;
   document.getElementById('scriptUrlInput').value = settings.scriptUrl || '';
   document.getElementById('tgBotTokenInput').value = settings.tgBotToken || '';
   document.getElementById('tgBackupChatIdInput').value = settings.tgBackupChatId || '';
@@ -5781,6 +5791,33 @@ function bindSettingsScreen(){
     settings.theme = e.target.checked ? 'dark' : 'light';
     saveSettings(); applyTheme();
   });
+  // NEW: захист входу
+  document.getElementById('appLockToggle').addEventListener('change', e=>{
+    if(e.target.checked){
+      e.target.checked = false; // вмикаємо лише після того, як пароль реально встановлено
+      openSetPasswordModal(true);
+    } else {
+      if(!confirm('Вимкнути захист входу? Пароль і відбиток буде видалено.')){ e.target.checked = true; return; }
+      settings.appLockEnabled = false;
+      settings.appLockPasswordHash = '';
+      settings.appLockBiometricEnabled = false;
+      settings.appLockCredentialId = '';
+      saveSettings();
+      renderSettingsScreen();
+    }
+  });
+  document.getElementById('appLockChangePwBtn').addEventListener('click', ()=> openSetPasswordModal(false));
+  document.getElementById('appLockBiometricToggle').addEventListener('change', async e=>{
+    if(e.target.checked){
+      const ok = await registerBiometricCredential();
+      if(ok){ settings.appLockBiometricEnabled = true; saveSettings(); showToast('✅ Відбиток налаштовано'); }
+      else{ e.target.checked = false; }
+    } else {
+      settings.appLockBiometricEnabled = false;
+      settings.appLockCredentialId = '';
+      saveSettings();
+    }
+  });
   document.getElementById('scriptUrlInput').addEventListener('input', e=>{
     settings.scriptUrl = e.target.value.trim(); saveSettings();
   });
@@ -6011,7 +6048,136 @@ function bindSettingsScreen(){
   });
 }
 
+/* ---------- Захист входу (пароль + опційно відбиток пальця) ----------
+   Важливо чесно розуміти рівень захисту: це бар'єр від чужого погляду на
+   екран (загублений/вкрадений телефон), а НЕ криптографічний захист від
+   технічного втручання — будь-хто з доступом до консолі розробника в
+   цьому ж браузері технічно може обійти екран блокування. Пароль
+   зберігається як SHA-256 хеш, а не відкритим текстом, щоб він хоча б не
+   був видний людині, яка просто відкриє налаштування чи експортований
+   бекап. */
+// NEW: встановлення чи зміна пароля захисту входу
+function openSetPasswordModal(isFirstSetup){
+  openModal(isFirstSetup ? '🔒 Встановити пароль' : 'Змінити пароль', `
+    <div class="field"><label>Новий пароль</label><input type="password" id="newAppLockPw" autocomplete="off"></div>
+    <div class="field" style="margin-top:10px;"><label>Повторіть пароль</label><input type="password" id="newAppLockPwConfirm" autocomplete="off"></div>
+    <button type="button" class="btn btn-block btn-accent" id="saveAppLockPwBtn" style="margin-top:14px;">Зберегти</button>
+  `, {onOpen: ()=>{
+    document.getElementById('newAppLockPw').focus();
+    document.getElementById('saveAppLockPwBtn').addEventListener('click', async ()=>{
+      const pw = document.getElementById('newAppLockPw').value;
+      const pw2 = document.getElementById('newAppLockPwConfirm').value;
+      if(!pw || pw.length<4){ showToast('Пароль має бути не коротшим за 4 символи'); return; }
+      if(pw !== pw2){ showToast('Паролі не збігаються'); return; }
+      settings.appLockPasswordHash = await sha256Hex(pw);
+      settings.appLockEnabled = true;
+      saveSettings();
+      closeModal();
+      showToast('✅ Пароль встановлено');
+      renderSettingsScreen();
+    });
+  }});
+}
+
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// NEW: чекає розблокування (якщо захист увімкнено) перш ніж застосунок
+// продовжить ініціалізацію — жодні дані абонентів не підвантажуються і не
+// малюються до успішного вводу пароля/відбитка.
+function ensureAppUnlocked(){
+  return new Promise(resolve=>{
+    if(!settings.appLockEnabled || !settings.appLockPasswordHash){ resolve(); return; }
+    showLockScreen(resolve);
+  });
+}
+
+function showLockScreen(onUnlock){
+  const screen = document.getElementById('lockScreen');
+  const bioBtn = document.getElementById('lockBiometricBtn');
+  const pwInput = document.getElementById('lockPasswordInput');
+  const errMsg = document.getElementById('lockErrorMsg');
+  screen.classList.remove('hidden');
+  errMsg.textContent = '';
+  pwInput.value = '';
+
+  const finishUnlock = ()=>{
+    screen.classList.add('hidden');
+    onUnlock();
+  };
+
+  const tryPassword = async ()=>{
+    const val = pwInput.value;
+    if(!val){ errMsg.textContent = 'Введіть пароль'; return; }
+    const hash = await sha256Hex(val);
+    if(hash === settings.appLockPasswordHash){ finishUnlock(); }
+    else{ errMsg.textContent = '❌ Невірний пароль'; pwInput.value=''; pwInput.focus(); }
+  };
+  document.getElementById('lockUnlockBtn').onclick = tryPassword;
+  pwInput.onkeydown = e=>{ if(e.key==='Enter') tryPassword(); };
+
+  const tryBiometric = async ()=>{
+    if(!settings.appLockBiometricEnabled || !settings.appLockCredentialId) return false;
+    try{
+      const credId = Uint8Array.from(atob(settings.appLockCredentialId), c=>c.charCodeAt(0));
+      const cred = await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          allowCredentials: [{id: credId, type: 'public-key'}],
+          userVerification: 'required',
+          timeout: 30000
+        }
+      });
+      if(cred){ finishUnlock(); return true; }
+    }catch(err){ /* відмінено, не спрацювало, чи не підтримується — тихо переходимо на пароль */ }
+    return false;
+  };
+
+  if(settings.appLockBiometricEnabled && settings.appLockCredentialId && window.PublicKeyCredential){
+    bioBtn.classList.remove('hidden');
+    bioBtn.onclick = tryBiometric;
+    // NEW: одразу пробуємо відбиток сам, без зайвого тапу — якщо не
+    // вийде чи скасують, просто лишається видиме поле пароля
+    tryBiometric();
+  } else {
+    bioBtn.classList.add('hidden');
+  }
+}
+
+// NEW: реєстрація WebAuthn-облікових даних (відбиток/Face/PIN екрана) —
+// викликається один раз при увімкненні перемикача "Відбиток пальця" в
+// налаштуваннях. Сам ключ керується браузером/ОС, ми зберігаємо лише
+// його ідентифікатор, щоб пізніше просити підтвердження саме ним.
+async function registerBiometricCredential(){
+  if(!window.PublicKeyCredential){ showToast('Цей браузер не підтримує вхід за відбитком'); return false; }
+  try{
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: {name: 'Майстер-Трекер'},
+        user: {id: crypto.getRandomValues(new Uint8Array(16)), name: 'maister', displayName: 'Майстер-Трекер'},
+        pubKeyCredParams: [{alg:-7, type:'public-key'}, {alg:-257, type:'public-key'}],
+        authenticatorSelection: {authenticatorAttachment:'platform', userVerification:'required'},
+        timeout: 30000
+      }
+    });
+    if(!cred) return false;
+    settings.appLockCredentialId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+    saveSettings();
+    return true;
+  }catch(err){
+    console.error('WebAuthn registration failed:', err);
+    showToast('Не вдалося налаштувати відбиток — спробуйте ще раз або лишіть лише пароль');
+    return false;
+  }
+}
+
+
 async function init(){
+  await ensureAppUnlocked(); // NEW: якщо ввімкнено захист входу — чекаємо пароль/відбиток, перш ніж щось малювати чи підвантажувати
   applyTheme();
   bindTabBar();
   bindTicketsScreen();
