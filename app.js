@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v33 · 2026-07-31';
+const APP_VERSION = 'v34 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -237,6 +237,18 @@ const PHOTO_DB_NAME = 'masterTrackerPhotos';
 const PHOTO_STORE = 'photos';
 let photoDb = null;
 const photoCache = new Map();
+const PHOTO_CACHE_MAX = 40; // NEW: обмеження пам'яткового кешу фото — без цього Map ріс необмежено за довгу сесію перегляду заявок
+// NEW: та сама Map, але зі стелею розміру (LRU — найдавніше використане
+// прибирається першим). Дані все одно завжди лежать в IndexedDB — це лише
+// кеш для швидкого синхронного доступу, тож витіснення нічого не губить.
+function photoCacheSet(key, value){
+  if(photoCache.has(key)) photoCache.delete(key); // переставляємо в кінець (найсвіжіше використання)
+  photoCache.set(key, value);
+  while(photoCache.size > PHOTO_CACHE_MAX){
+    const oldestKey = photoCache.keys().next().value; // Map зберігає порядок вставки — перший ключ і є найдавнішим
+    photoCache.delete(oldestKey);
+  }
+}
 
 function openPhotoDb(){
   return new Promise((resolve)=>{
@@ -315,7 +327,7 @@ function getPhotoCached(photoKey, onLoaded, tgFallbackFileId){
       val = await fetchPhotoFromTelegram(tgFallbackFileId);
       if(val) await photoDbPut(photoKey, val); // лікуємо локальне сховище під тим самим ключем
     }
-    if(val){ photoCache.set(photoKey, val); if(onLoaded) onLoaded(val); }
+    if(val){ photoCacheSet(photoKey, val); if(onLoaded) onLoaded(val); }
   });
   return null;
 }
@@ -330,12 +342,12 @@ async function resolvePhotoAsync(photoKey, tgFallbackFileId){
     val = await fetchPhotoFromTelegram(tgFallbackFileId);
     if(val) await photoDbPut(photoKey, val); // лікуємо локальне сховище під тим самим ключем
   }
-  if(val) photoCache.set(photoKey, val);
+  if(val) photoCacheSet(photoKey, val);
   return val;
 }
 async function storePhoto(dataUrl){
   const key = 'idb:' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-  photoCache.set(key, dataUrl);
+  photoCacheSet(key, dataUrl);
   await photoDbPut(key, dataUrl);
   return key;
 }
@@ -516,10 +528,11 @@ async function migrateLegacyPhotosToIdb(){
 function pad2(n){ return String(n).padStart(2,'0'); }
 function normalizeMac(raw){
   if(!raw) return '';
-  // Прибираємо все, окрім літер і цифр (тире, двокрапки, крапки, пробіли —
-  // штрих-коди на різних наліпках дають різні розділювачі), і приводимо
-  // до верхнього регістру для однаковості.
-  return String(raw).replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+  // NEW: раніше приймався будь-який буквено-цифровий символ (напр. G, Z —
+  // це не валідні символи MAC-адреси), і про невалідність можна було
+  // дізнатись лише з підказки під полем. Тепер такі символи просто не
+  // потраплять у значення взагалі — лишаються тільки 0-9 та A-F.
+  return String(raw).toUpperCase().replace(/[^0-9A-F]/g,'');
 }
 
 /* Маска телефону у форматі (050)555-55-55, поки користувач вводить цифри */
