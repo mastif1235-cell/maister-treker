@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v36 · 2026-07-31';
+const APP_VERSION = 'v37 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -848,7 +848,29 @@ function showAddNaryadModal(defaultDate){
       naryadQueue.push({id: Date.now(), text, date: chosenDate, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
       saveNaryadQueue();
       updateNaryadQueueBtn();
-      showNaryadQueue(chosenDate);
+      // NEW: одразу перевіряємо, чи це вже знайомий абонент (за телефоном
+      // чи адресою з тексту наряду) — наряд у будь-якому разі вже додано,
+      // це лише підказка з можливістю одразу перейти в профіль і глянути
+      // попередні заявки, перш ніж їхати на об'єкт.
+      const matches = findNaryadMatches(text);
+      if(matches.length){ showNaryadMatchResultsModal(matches, chosenDate); }
+      else{ showNaryadQueue(chosenDate); }
+    });
+  }});
+}
+// NEW: результат перевірки збігів одразу після додавання наряду — той самий
+// вигляд карток, що й у "Перевірити наряд", з кнопкою переходу в профіль
+// абонента для перегляду попередніх заявок.
+function showNaryadMatchResultsModal(matches, continueDate){
+  const bodyHtml = `
+    <div style="font-size:12.5px; color:var(--text-faint); margin-bottom:10px;">Наряд уже додано в чергу. Знайдено схожі заявки — можливо, це той самий абонент:</div>
+    <div>${naryadMatchesHtml(matches)}</div>
+    <button type="button" class="btn btn-block" id="naryadMatchContinueBtn" style="margin-top:10px;">➡️ До черги нарядів</button>`;
+  openModal('⚠️ Знайдено збіг', bodyHtml, {onClose: ()=> showNaryadQueue(continueDate), onOpen: (rootEl)=>{
+    document.getElementById('naryadMatchContinueBtn').addEventListener('click', ()=> showNaryadQueue(continueDate));
+    rootEl.addEventListener('click', e=>{
+      const btn = e.target.closest('.open-address-btn');
+      if(btn) openAddressForTicket(btn.dataset.id);
     });
   }});
 }
