@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v37 · 2026-07-31';
+const APP_VERSION = 'v38 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -69,7 +69,19 @@ function syncCatalogTagState(label, checked){
     const i = calcState.tags.indexOf(tag);
     if(i>-1) calcState.tags.splice(i,1);
   }
-  renderCalcTagChips();
+  // NEW: як і для прямого кліку по чипу тегу — намагаємось лише перемкнути
+  // клас на вже наявній кнопці, а не перебудовувати весь innerHTML (це
+  // скидало фокус і підкидало скрол сторінки вгору при кожній галочці
+  // обладнання/роботи з автотегом). Повний перерендер лишається лише на
+  // випадок, коли тег геть новий і кнопки для нього ще нема в DOM.
+  const chip = Array.from(document.querySelectorAll('#calcTagChips [data-calctag]')).find(el=>el.dataset.calctag===tag);
+  if(chip){
+    chip.classList.toggle('active', calcState.tags.includes(tag));
+    const summary = document.getElementById('tagsSummary');
+    if(summary) summary.textContent = calcState.tags.length ? `— обрано: ${calcState.tags.length}` : '';
+  } else {
+    renderCalcTagChips();
+  }
 }
 
 const DEFAULT_CABLE_TYPES = [
@@ -643,6 +655,14 @@ function extractAddressTokens(text){
 function findNaryadMatches(rawText){
   const phoneKeys = extractPhoneCandidatesFromText(rawText);
   const naryadTokens = new Set(extractAddressTokens(rawText));
+  // NEW: номер будинку типу "10 А" в тексті наряду розпадається на два
+  // окремих слова ("10" і "а"), а в самій заявці зберігається як один
+  // рядок — тому окремо будуємо "сирі" слова БЕЗ фільтра довжини (інакше
+  // самотня літера "а" губиться) і додаємо ще й пари сусідніх слів, злиті
+  // без пробілу, у порядку появи в тексті — щоб зловити обидва записи.
+  const rawWords = String(rawText||'').toLowerCase().replace(/[.,№\/]/g,' ').split(/\s+/).filter(Boolean);
+  const naryadHouseCandidates = new Set(rawWords);
+  for(let i=0;i<rawWords.length-1;i++){ naryadHouseCandidates.add(rawWords[i]+rawWords[i+1]); }
   const results = [];
   tickets.forEach(t=>{
     const reasons = [];
@@ -653,9 +673,9 @@ function findNaryadMatches(rawText){
     // бути десятки заявок на різних вулицях), тож раніше через неї спрацьовував
     // "можливий збіг" навіть для геть різних адрес в тому ж селі.
     const streetTokens = extractAddressTokens(t.street);
-    const houseToken = t.house ? String(t.house).toLowerCase().trim() : '';
+    const houseToken = t.house ? String(t.house).toLowerCase().replace(/\s+/g,'').trim() : '';
     const streetMatch = streetTokens.length>0 && streetTokens.every(tok=>naryadTokens.has(tok));
-    const houseMatch = houseToken && naryadTokens.has(houseToken);
+    const houseMatch = houseToken && naryadHouseCandidates.has(houseToken);
     if(streetMatch && houseMatch) reasons.push({label:'можливий збіг за адресою', strong:false});
     if(reasons.length) results.push({ticket:t, reasons});
   });
@@ -2107,7 +2127,15 @@ async function sendAllToCloud(){
   const ticketsUrl = getScriptUrl();
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
-  if(ticketsUrl) await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
+  if(ticketsUrl){
+    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
+    // NEW: раніше після масової відправки статус synced НІЯК не оновлювався —
+    // локально всі заявки назавжди лишались "не синхронізовано", хоча дані вже
+    // потрапили в таблицю. Це не створювало дублів (Apps Script сам відкидає
+    // повтори за id), але зайво ганяло мережу при кожному retry і показувало
+    // невірний банер "є несинхронізовані".
+    if(ok){ tickets.forEach(t=>{ t.synced = true; }); saveTickets(); renderTicketsScreen(); }
+  }
   if(shiftsUrl){
     // Скрипт змін користувача приймає лише по одній зміні через GET (без
     // масової синхронізації) — емулюємо "відправити все" послідовними
@@ -3254,6 +3282,7 @@ function hasUnsavedChanges(){
 const DRAFT_KEY = 'ticketDraft';
 
 function saveDraftToLocalStorage(){
+  syncFormToState(); // NEW: без цього calcState міг лишатись застарілим (не оновлювався на кожне натискання клавіші) — автозбереження раз на 30с іноді записувало старі дані, а не те, що реально введено в полях
   if(!hasUnsavedChanges()) return; // немає що зберігати — не смітимо сховище
   if(!formTouchedByUser) return; // NEW: форму лише відкрили (можливо, з автопідстановкою з наряду/профілю) — руками ще нічого не вводили, це не "чернетка"
   try{
@@ -3858,6 +3887,7 @@ function renderGeoBadge(){
 
 function setGeoLink(link){
   calcState.geoLink = link;
+  formTouchedByUser = true; // NEW: модалка геолокації живе поза #calcForm, тож звичайний input/change-делегат її не бачить — без цього рядка чернетка з самою лише геолокацією (без інших полів) не зберігалась
   // Геолокація тепер НЕ потрапляє в текст примітки/заявки — вона лише
   // для власного використання майстра (кнопка 📍 і бейдж з посиланням).
   renderGeoBadge();
@@ -4077,12 +4107,12 @@ async function saveTicketFromForm(e){
   if(calcState.photo && !String(calcState.photo).startsWith('idb:')){
     const rawPhoto = calcState.photo;
     if(editingTicketId){
-      const prev = tickets.find(t=>t.id===editingTicketId);
+      const prev = tickets.find(t=>String(t.id)===String(editingTicketId)); // NEW: String() — id з хмари приходить рядком, а локально створений може бути числом
       if(prev && prev.photo && prev.photo!==rawPhoto) await deletePhotoKey(prev.photo);
     }
     calcState.photo = await storePhoto(rawPhoto);
   } else if(!calcState.photo && editingTicketId){
-    const prev = tickets.find(t=>t.id===editingTicketId);
+    const prev = tickets.find(t=>String(t.id)===String(editingTicketId)); // NEW: те саме
     if(prev && prev.photo) await deletePhotoKey(prev.photo);
   }
 
@@ -4106,14 +4136,22 @@ async function saveTicketFromForm(e){
   let savedTicketRef = null; // NEW: посилання на щойно збережений об'єкт у tickets — для бекапу в Telegram нижче
   if(editingTicketId){
     calcState.id = editingTicketId;
-    const idx = tickets.findIndex(t=>t.id===editingTicketId);
+    const idx = tickets.findIndex(t=>String(t.id)===String(editingTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
     saveTickets();
     showToast('Заявку оновлено');
     if(syncConfigured){
       // у схемі синку немає updateTicket — імітуємо оновлення видаленням і повторним додаванням
       await syncPost('deleteTicket', {id: editingTicketId});
-      const ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+      // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
+      // з першого разу, рядок у таблиці лишиться відсутнім аж до наступного
+      // retrySyncQueue. Пробуємо ще раз одразу (з невеликою паузою), щоб
+      // звузити це вікно ризику, а не покладатись лише на майбутній retry.
+      let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+      if(!ok){
+        await new Promise(r=>setTimeout(r, 1500));
+        ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+      }
       if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
     }
     if(idx>-1) savedTicketRef = tickets[idx];
@@ -4590,9 +4628,9 @@ function openImportModal(){
     </div>
     <button class="btn btn-accent btn-block" id="importRunBtn">Імпортувати</button>
   `, {onOpen:()=>{
-    document.getElementById('importRunBtn').onclick = ()=>{
+    document.getElementById('importRunBtn').onclick = async ()=>{
       const text = document.getElementById('importTextarea').value;
-      const count = runBulkImport(text);
+      const count = await runBulkImport(text);
       closeModal();
       showToast(`Імпортовано заявок: ${count}`);
       renderTicketsScreen();
@@ -4722,7 +4760,7 @@ async function repairCorruptedTickets(){
   }
 }
 
-function runBulkImport(text){
+async function runBulkImport(text){
   if(!text.trim()) return 0;
   const dateRe = /^(\d{2}\.\d{2}\.\d{4})/;
   const lines = text.split('\n');
@@ -4738,6 +4776,7 @@ function runBulkImport(text){
   });
   if(current) blocks.push(current);
   let imported = 0;
+  const importedTickets = [];
   blocks.forEach(b=>{
     const content = b.lines.join('\n').trim();
     if(!content) return;
@@ -4752,10 +4791,20 @@ function runBulkImport(text){
     t.sum = sum;
     t.type = 'Імпорт';
     tickets.push(t);
-    syncPost('addTicket', ticketToSyncPayload(t));
+    importedTickets.push(t);
     imported++;
   });
   saveTickets();
+  // NEW: раніше кожна імпортована заявка відправлялась окремим addTicket без
+  // очікування відповіді й БЕЗ оновлення t.synced — вони назавжди лишались
+  // "не синхронізовано" локально, хоча текст (наприклад) уже міг піти в
+  // таблицю. Тепер після імпорту робимо один спільний синк і чесно
+  // проставляємо реальний статус усім щойно доданим заявкам.
+  if(imported && getScriptUrl()){
+    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
+    importedTickets.forEach(t=>{ t.synced = ok; });
+    saveTickets();
+  }
   return imported;
 }
 
