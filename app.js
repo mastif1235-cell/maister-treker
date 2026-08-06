@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v38 · 2026-07-31';
+const APP_VERSION = 'v39 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -440,19 +440,26 @@ function saveDailyBackupIndex(index){
 // автобекапу, робить знімок і кладе його в IndexedDB, старший за 10-й видаляє
 async function maybeRunDailyBackup(){
   if(!backupDb) return;
-  const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD, стабільний ключ для порівняння днів
-  const index = loadDailyBackupIndex();
-  if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
-  const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
-  if(!ok) return;
-  index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
-  const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
-  for(const old of overflow) backupDbDelete(old.date);
-  saveDailyBackupIndex(index);
-  // NEW: одразу ж скачуємо цей знімок як справжній файл у "Завантаження" —
-  // саме він переживе очищення кешу/даних сайту, на відміну від копії в IndexedDB.
-  // Браузер може першого разу запитати дозвіл на автозавантаження — його треба дозволити.
-  if(tickets.length || shifts.length) await downloadDailyBackup(todayKey, {silent:true});
+  // NEW: усе тіло в try/catch — якщо автозавантаження файлу впаде (напр.
+  // браузер заблокував програмний download, бо це не пряма дія користувача),
+  // виняток раніше піднімався аж до init() і міг перервати решту запуску
+  // застосунку (жодна вкладка не встигала прив'язатись). Тепер збій цього
+  // кроку тихо ігнорується — сам знімок в IndexedDB вже записаний рядком вище.
+  try{
+    const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD, стабільний ключ для порівняння днів
+    const index = loadDailyBackupIndex();
+    if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
+    const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
+    if(!ok) return;
+    index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
+    const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
+    for(const old of overflow) backupDbDelete(old.date);
+    saveDailyBackupIndex(index);
+    // NEW: одразу ж скачуємо цей знімок як справжній файл у "Завантаження" —
+    // саме він переживе очищення кешу/даних сайту, на відміну від копії в IndexedDB.
+    // Браузер може першого разу запитати дозвіл на автозавантаження — його треба дозволити.
+    if(tickets.length || shifts.length) await downloadDailyBackup(todayKey, {silent:true});
+  }catch(err){ console.error('Помилка щоденного автобекапу (не критично):', err); }
 }
 function renderDailyBackupList(){
   const wrap = document.getElementById('dailyBackupList');
@@ -674,7 +681,11 @@ function findNaryadMatches(rawText){
     // "можливий збіг" навіть для геть різних адрес в тому ж селі.
     const streetTokens = extractAddressTokens(t.street);
     const houseToken = t.house ? String(t.house).toLowerCase().replace(/\s+/g,'').trim() : '';
-    const streetMatch = streetTokens.length>0 && streetTokens.every(tok=>naryadTokens.has(tok));
+    // NEW: раніше вимагався збіг УСІХ слів вулиці — але диспетчери часто
+    // скорочують багатослівні назви (напр. "Тараса Шевченка" пишуть просто
+    // "Шевченка"). Тепер достатньо збігу останнього слова — в українських
+    // назвах саме воно зазвичай прізвище, і саме так їх найчастіше скорочують.
+    const streetMatch = streetTokens.length>0 && naryadTokens.has(streetTokens[streetTokens.length-1]);
     const houseMatch = houseToken && naryadHouseCandidates.has(houseToken);
     if(streetMatch && houseMatch) reasons.push({label:'можливий збіг за адресою', strong:false});
     if(reasons.length) results.push({ticket:t, reasons});
@@ -2027,6 +2038,19 @@ async function loadFromCloud(){
   if(!confirm('Завантажити дані з хмари? Це замінить локальні заявки та/або зміни.')) return;
   setSyncState('syncing');
   let ok = true;
+  // NEW: у хмарі немає полів photo/tg* (там лише текст, суми, теги) — раніше
+  // після "Завантажити з хмари" ці посилання просто стирались навіть якщо
+  // фото фізично й досі лежить в IndexedDB, а повідомлення — в Telegram-групі.
+  // Зберігаємо їх заздалегідь за id, щоб повернути в об'єднані заявки нижче.
+  const localPhotoAndTgById = new Map();
+  tickets.forEach(t=>{
+    if(t.photo || t.tgBackedUp || t.tgPhotoFileId){
+      localPhotoAndTgById.set(String(t.id), {
+        photo: t.photo, tgBackedUp: t.tgBackedUp, tgPhotoFileId: t.tgPhotoFileId,
+        tgSepMsgId: t.tgSepMsgId, tgTextMsgId: t.tgTextMsgId, tgPhotoMsgId: t.tgPhotoMsgId, tgJsonMsgId: t.tgJsonMsgId
+      });
+    }
+  });
   if(ticketsUrl){
     try{
       const res = await fetch(`${ticketsUrl}${ticketsUrl.includes('?')?'&':'?'}secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
@@ -2060,6 +2084,9 @@ async function loadFromCloud(){
           cloudImported: !fullData
         });
         if(fullData) Object.assign(merged, fullData);
+        // NEW: якщо для цього id є збережені локальні photo/tg* — повертаємо їх
+        const local = localPhotoAndTgById.get(String(merged.id));
+        if(local) Object.assign(merged, local);
         return merged;
       });
       saveTickets();
@@ -2349,16 +2376,22 @@ async function retrySyncQueue(){
   retryBtn.disabled = true; // NEW
   const total = pending.length;
   let done = 0;
-  for(const t of pending){
-    // NEW: живий прогрес замість одного статичного тосту — видно, що процес не завис
-    bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
-    const ok = await syncPost('addTicket', ticketToSyncPayload(t));
-    t.synced = ok;
-    done++;
-    saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
+  // NEW: якщо щось усередині циклу кине виняток (малоймовірно, але
+  // можливо) — без try/finally кнопка лишалась би заблокованою назавжди,
+  // аж до перезапуску застосунку.
+  try{
+    for(const t of pending){
+      // NEW: живий прогрес замість одного статичного тосту — видно, що процес не завис
+      bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
+      const ok = await syncPost('addTicket', ticketToSyncPayload(t));
+      t.synced = ok;
+      done++;
+      saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
+    }
+  } finally {
+    retryBtn.disabled = false;
+    syncQueueBusy = false;
   }
-  retryBtn.disabled = false;
-  syncQueueBusy = false;
   renderTicketsScreen();
   const stillPending = tickets.filter(t=>!t.synced).length;
   showToast(stillPending ? `Залишилось не синхронізовано: ${stillPending}` : 'Усе синхронізовано ✅');
@@ -2494,7 +2527,7 @@ function renderTicketCard(t, opts={}){
       </div>
     </div>
     ${(syncBadge || tgBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}</div>` : ''}
-    <button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>
+    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${((t.login || t.password) && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
@@ -2619,7 +2652,7 @@ function restoreDeletedTicket(deletedAt){
   showToast('Заявку відновлено');
   if(getScriptUrl()){
     syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
-      const found = tickets.find(x=>x.id===restored.id);
+      const found = tickets.find(x=>String(x.id)===String(restored.id)); // NEW: String() — той самий захист, що й в решті коду
       if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
     });
   }
@@ -2961,7 +2994,7 @@ function restoreTicketFromTelegramJson(jsonText){
   showToast('✅ Заявку відновлено з Telegram!');
   if(getScriptUrl()){
     syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
-      const found = tickets.find(x=>x.id===restored.id);
+      const found = tickets.find(x=>String(x.id)===String(restored.id)); // NEW: String() — той самий захист, що й в решті коду
       if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
     });
   }
@@ -3084,16 +3117,22 @@ async function runBulkTelegramJob(list, title){
   }});
 
   let done = 0;
-  for(const t of list){
-    if(bulkExportCancelled) break;
-    await backupTicketToTelegram(t);
-    done++;
-    const counterEl = document.getElementById('bulkExportCounter');
-    if(counterEl) counterEl.textContent = `${done} / ${list.length}`;
-    await new Promise(r=>setTimeout(r, 1400));
+  // NEW: те саме застереження, що й у retrySyncQueue — без try/finally
+  // виняток усередині циклу назавжди заблокував би повторний запуск і
+  // лишив би модалку відкритою.
+  try{
+    for(const t of list){
+      if(bulkExportCancelled) break;
+      await backupTicketToTelegram(t);
+      done++;
+      const counterEl = document.getElementById('bulkExportCounter');
+      if(counterEl) counterEl.textContent = `${done} / ${list.length}`;
+      await new Promise(r=>setTimeout(r, 1400));
+    }
+  } finally {
+    bulkExportRunning = false;
+    closeModal();
   }
-  bulkExportRunning = false;
-  closeModal();
   showToast(bulkExportCancelled ? `Зупинено: оброблено ${done} з ${list.length}` : `Готово: оброблено ${done} заявок(и)`);
 }
 
@@ -4050,6 +4089,17 @@ async function sharePhoto(){
 /* ---- Збереження / оновлення заявки ---- */
 async function saveTicketFromForm(e){
   e.preventDefault();
+  // NEW: захист від подвійного тапу — на телефоні під час мережевої затримки
+  // легко тапнути "Зберегти" двічі поспіль, і без цього обидва виклики
+  // проходили валідацію й створювали дві майже однакові заявки. Кнопку
+  // блокуємо одразу і гарантовано розблоковуємо в finally, незалежно від
+  // того, яким шляхом (успіх, скасування, помилка) функція завершиться.
+  const saveBtn = document.getElementById('saveTicketBtn');
+  if(saveBtn.disabled) return;
+  saveBtn.disabled = true;
+  const saveBtnOriginalText = saveBtn.textContent;
+  saveBtn.textContent = '⏳ Збереження...';
+  try{
   syncFormToState();
   // прибираємо порожні рядки додаткових робіт (незаповнений рядок за
   // замовчуванням не повинен потрапляти у збережену заявку)
@@ -4175,6 +4225,10 @@ async function saveTicketFromForm(e){
   resetCalcForm();
   returnAfterTicketEdit();
   renderTicketsScreen();
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = saveBtnOriginalText;
+  }
 }
 
 /* ---------- 6. Екран «Зміни» ---------- */
