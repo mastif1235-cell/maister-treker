@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v39 · 2026-07-31';
+const APP_VERSION = 'v40 · 2026-07-31';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1650,6 +1650,8 @@ function attachAddressNavHandlers(rootEl){
     if(delBtn){ deleteTicket(delBtn.dataset.id); renderAddressNav(); return; }
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
     if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, rootEl); return; }
+    const photoThumb = e.target.closest('.tc-photo-thumb');
+    if(photoThumb){ openTicketPhotoFullscreen(photoThumb.dataset.full); return; }
     const expBtn = e.target.closest('.tc-expand-btn');
     if(expBtn){
       const id = expBtn.dataset.id;
@@ -1915,22 +1917,28 @@ async function postToUrl(url, action, payload){
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body
     });
-    // NEW: сам no-cors запит підтверджує лише "запит відправлено", а не
-    // "рядок реально з'явився в таблиці" (саме це і було критичним пунктом
-    // аудиту). Замість повторної спроби записати іншим способом (те, що вже
-    // одного разу спричинило подвійний запис і лаги — див. коментар вище),
-    // робимо ОКРЕМИЙ, суто читальний GET-запит, який нічого не пише і тому
-    // не ризикує нічого задублювати. Якщо перевірка сама не вдалась (стара
-    // версія Apps Script без цієї дії, немає інтернету тощо) — просто
-    // довіряємось старій оптимістичній поведінці, як і раніше.
-    if(action === 'addTicket' && payload && payload.id){
-      const confirmed = await verifyTicketSyncedOnServer(url, payload.id);
-      if(confirmed !== null){
-        setSyncState(confirmed ? 'ok' : 'err');
-        return confirmed;
-      }
-    }
     setSyncState('ok');
+    // NEW: раніше перевірка checkTicketExists чекалась ТУТ (await) —
+    // тобто кожне збереження заявки чекало ДВА послідовні мережеві запити
+    // (POST, потім окремий GET), а не один. На слабкому/нестабільному
+    // інтернеті це роздувало збереження заявки до десятків секунд, хоча
+    // сам запис уже пішов на сервер. Тепер повертаємось одразу після POST
+    // (як і до появи цієї перевірки), а сам GET летить у фоні: якщо він
+    // таки виявить, що рядка в таблиці нема — статус конкретної заявки
+    // виправиться заднім числом, не змушуючи майстра чекати на це зараз.
+    if(action === 'addTicket' && payload && payload.id){
+      verifyTicketSyncedOnServer(url, payload.id).then(confirmed=>{
+        if(confirmed === false){
+          const t = tickets.find(x=>String(x.id)===String(payload.id));
+          if(t && t.synced){
+            t.synced = false;
+            saveTickets();
+            renderTicketsScreen();
+            setSyncState('err');
+          }
+        }
+      });
+    }
     return true;
   }catch(err){
     console.error('Помилка синхронізації:', err);
@@ -1948,13 +1956,21 @@ async function verifyTicketSyncedOnServer(url, id){
     params.set('action', 'checkTicketExists');
     params.set('id', id);
     params.set('secret', settings.syncSecret || '');
-    const res = await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'cors'});
+    // NEW: тепер це фоновий запит (не блокує збереження заявки), але все
+    // одно варто обмежити його в часі — інакше на дуже слабкому зв'язку
+    // такі запити можуть накопичуватись без кінця.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=> controller.abort(), 15000);
+    let res;
+    try{
+      res = await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'cors', signal: controller.signal});
+    } finally { clearTimeout(timeoutId); }
     if(!res.ok) return null;
     const data = await res.json();
     if(typeof data.exists !== 'boolean') return null; // стара версія скрипта — ще без цієї дії
     return data.exists;
   }catch(err){
-    return null; // не вдалось перевірити (стара версія скрипта, немає мережі тощо) — не заважаємо основному потоку
+    return null; // не вдалось перевірити (стара версія скрипта, немає мережі, таймаут тощо) — не заважаємо основному потоку
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
@@ -2233,6 +2249,7 @@ function switchTab(tab){
 function blankTicketObject(){
   return {
     id:null, date:'', time:'', content:'', sum:0, tags:[], photo:null,
+    photos:[], // NEW: до 3 фото на заявку; photo (одне) лишається як дублікат першого фото — для сумісності зі старим кодом, який ще читає лише photo
     type:'Підключення', city:'', address:'', clientName:'', phone:'',
     callFee:0, tariff:0,
     // NEW: у самій заявці зберігаємо лише ВИБРАНЕ (checked / meters>0), а не
@@ -2537,8 +2554,8 @@ function renderTicketCard(t, opts={}){
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-key="${escapeHtml(t.photo)}" data-tg-file-id="${escapeHtml(t.tgPhotoFileId||'')}">📷 Фото</button>` : ''}</div>
-    ${t.photo ? `<div class="tc-photo-wrap hidden" id="tcp-${t.id}"><img id="tcp-img-${t.id}" style="max-width:100%; border-radius:10px; margin-top:8px;" alt="фото"></div>` : ''}
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${(t.photos&&t.photos.length)||t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-id="${escapeHtml(t.tgPhotoFileId||'')}">📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>` : ''}</div>
+    ${(t.photos&&t.photos.length)||t.photo ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
       ${opts.workOnly
@@ -2575,27 +2592,40 @@ function toggleTicketCardPhoto(btn, scopeEl){
   const root = scopeEl || document;
   const id = btn.dataset.id;
   const wrap = root.querySelector('[id="tcp-'+id+'"]');
-  const img = root.querySelector('[id="tcp-img-'+id+'"]');
   if(!wrap) return;
   if(!wrap.classList.contains('hidden')){
     wrap.classList.add('hidden');
-    btn.textContent = '📷 Фото';
+    btn.textContent = btn.dataset.origLabel || '📷 Фото';
     return;
   }
-  if(img && img.src){
+  if(wrap.dataset.loaded === '1'){
     wrap.classList.remove('hidden');
     btn.textContent = '🔼 Сховати фото';
     return;
   }
-  const key = btn.dataset.photoKey, fileId = btn.dataset.tgFileId || null;
+  let keys = [];
+  try{ keys = JSON.parse(btn.dataset.photoKeys || '[]'); }catch(err){ keys = []; }
+  keys = keys.filter(Boolean);
+  if(!keys.length) return;
+  const fileId = btn.dataset.tgFileId || null;
+  btn.dataset.origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Завантаження…';
-  resolvePhotoAsync(key, fileId).then(val=>{
+  // NEW: до 3 фото на заявку — вантажимо всі паралельно, кожне у своєму
+  // мініатюрному блоці (тап по мініатюрі відкриває фото на весь екран)
+  Promise.all(keys.map((key, i)=> resolvePhotoAsync(key, i===0 ? fileId : null))).then(values=>{
     btn.disabled = false;
-    if(!val){ btn.textContent = '📷 Не вдалося завантажити'; return; }
-    if(img) img.src = val;
+    const loadedAny = values.some(Boolean);
+    if(!loadedAny){ btn.textContent = '📷 Не вдалося завантажити'; return; }
+    wrap.innerHTML = values.map((val,i)=> val ? `<img src="${val}" class="tc-photo-thumb" data-full="${val}" alt="фото ${i+1}" style="width:96px; height:96px; object-fit:cover; border-radius:10px; cursor:pointer;">` : '').join('');
+    wrap.dataset.loaded = '1';
     wrap.classList.remove('hidden');
     btn.textContent = '🔼 Сховати фото';
   });
+}
+// NEW: тап по мініатюрі в розгорнутому списку фото заявки — показує це фото
+// на весь екран (просте модальне вікно, без зайвих кнопок)
+function openTicketPhotoFullscreen(src){
+  openModal('Фото', `<img src="${src}" style="width:100%; border-radius:10px;">`, {});
 }
 function deleteTicket(id){
   if(!confirm('Видалити цю заявку?')) return;
@@ -3405,6 +3435,13 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
+  // NEW: старі заявки мають лише одне фото в полі photo — якщо масиву photos
+  // ще нема (чи він порожній), а старе фото є, переносимо його в масив, щоб
+  // форма з підтримкою до 3 фото показала його як завжди.
+  if((!calcState.photos || !calcState.photos.length) && calcState.photo){
+    calcState.photos = [calcState.photo];
+  }
+  if(!calcState.photos) calcState.photos = [];
   // NEW: у самій заявці тепер зберігається лише вибране (checked / meters>0),
   // тож тут завжди розгортаємо це назад у повний каталог для форми — працює
   // однаково і для нового "розрідженого" формату, і для старих заявок, де
@@ -3623,16 +3660,23 @@ function renderCalcTagChips(){
 function renderPhotoPreview(){
   const wrap = document.getElementById('photoPreviewWrap');
   const btn = document.getElementById('photoBtn');
-  if(calcState.photo){
-    wrap.classList.remove('hidden');
-    const img = document.getElementById('photoPreview');
-    const resolved = getPhotoCached(calcState.photo, (val)=>{ img.src = val; }, calcState.tgPhotoFileId);
-    img.src = resolved || ''; // поки фото з IndexedDB вантажиться, плейсхолдер порожній; підʼявиться через мить
-    btn.textContent = '📷 Замінити фото';
-  } else {
-    wrap.classList.add('hidden');
-    btn.textContent = '📷 Зробити фото';
-  }
+  const photos = calcState.photos || [];
+  wrap.innerHTML = photos.map((p, i)=>`
+    <div class="photo-thumb-wrap">
+      <img class="photo-thumb" id="photoPreview${i}" src="">
+      <button type="button" class="photo-remove" data-idx="${i}">✕</button>
+    </div>`).join('');
+  photos.forEach((p, i)=>{
+    const img = document.getElementById('photoPreview'+i);
+    // NEW: резервне підтягування з Telegram (за file_id) лишається лише для
+    // першого фото — так само, як і раніше воно було лише одне на заявку;
+    // друге й третє живуть тільки в IndexedDB, без цього fallback.
+    const fallbackId = i===0 ? calcState.tgPhotoFileId : null;
+    const resolved = getPhotoCached(p, (val)=>{ if(img) img.src = val; }, fallbackId);
+    if(img) img.src = resolved || '';
+  });
+  btn.disabled = photos.length >= 3;
+  btn.textContent = photos.length >= 3 ? '📷 Максимум 3 фото' : (photos.length ? `📷 Додати ще фото (${photos.length}/3)` : '📷 Додати фото (до 3)');
 }
 
 function computeTotal(){
@@ -3883,6 +3927,8 @@ function syncFormToState(){
 /* ---- Фото: зчитування + стиснення до ширини 800px ---- */
 function handlePhotoFile(file){
   if(!file) return;
+  if(!calcState.photos) calcState.photos = [];
+  if(calcState.photos.length >= 3){ showToast('Максимум 3 фото на заявку'); return; }
   const reader = new FileReader();
   reader.onload = (e)=>{
     const img = new Image();
@@ -3894,7 +3940,9 @@ function handlePhotoFile(file){
       canvas.height = Math.round(img.height*scale);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      calcState.photo = canvas.toDataURL('image/jpeg', 0.72); // сире фото; в IndexedDB переноситься при збереженні заявки
+      if(calcState.photos.length >= 3) return; // NEW: могли додати паралельно кілька файлів одразу — перевіряємо ще раз перед пушем
+      calcState.photos.push(canvas.toDataURL('image/jpeg', 0.72)); // сире фото; в IndexedDB переноситься при збереженні заявки
+      calcState.photo = calcState.photos[0]; // NEW: перше фото дублюється в старе поле photo — для коду, який ще читає лише його
       renderPhotoPreview();
     };
     img.src = e.target.result;
@@ -4070,17 +4118,26 @@ async function copyTicketText(){
 }
 
 async function sharePhoto(){
-  if(!calcState.photo){ showToast('Спочатку додайте фото'); return; }
+  const photos = calcState.photos && calcState.photos.length ? calcState.photos : (calcState.photo ? [calcState.photo] : []);
+  if(!photos.length){ showToast('Спочатку додайте фото'); return; }
   if(!navigator.share){ showToast('Web Share API не підтримується цим браузером'); return; }
   try{
-    const photoData = await resolvePhotoAsync(calcState.photo, calcState.tgPhotoFileId);
-    const res = await fetch(photoData);
-    const blob = await res.blob();
-    const file = new File([blob], 'foto.jpg', {type:'image/jpeg'});
-    if(navigator.canShare && !navigator.canShare({files:[file]})){
+    // NEW: до 3 фото — резолвимо й пакуємо всі одразу в один виклик share()
+    // (Web Share API 2-го рівня підтримує кілька файлів за раз)
+    const files = [];
+    for(let i=0;i<photos.length;i++){
+      const fallbackId = i===0 ? calcState.tgPhotoFileId : null;
+      const photoData = await resolvePhotoAsync(photos[i], fallbackId);
+      if(!photoData) continue;
+      const res = await fetch(photoData);
+      const blob = await res.blob();
+      files.push(new File([blob], `foto${i+1}.jpg`, {type:'image/jpeg'}));
+    }
+    if(!files.length){ showToast('Не вдалося завантажити фото'); return; }
+    if(navigator.canShare && !navigator.canShare({files})){
       showToast('Цей браузер не підтримує надсилання фото'); return;
     }
-    await navigator.share({files:[file], title:'Фото заявки'});
+    await navigator.share({files, title:'Фото заявки'});
   }catch(e){
     if(e.name !== 'AbortError') showToast('Не вдалося надіслати фото');
   }
@@ -4152,18 +4209,28 @@ async function saveTicketFromForm(e){
   calcState.cables = (calcState.cables||[]).filter(c=>Number(c.meters)>0).map(c=>({id:c.id, label:c.label, meters:Number(c.meters)||0, pricePerMeter:Number(c.pricePerMeter)||0}));
   calcState.presetWorks = (calcState.presetWorks||[]).filter(w=>w.checked).map(w=>({id:w.id, label:w.label, price:Number(w.price)||0, qty:Number(w.qty)||1}));
 
-  // Якщо фото нове (сирий base64, а не вже збережений ключ idb:...) — переносимо в IndexedDB,
-  // а попереднє фото заявки (якщо було інше) видаляємо, щоб не накопичувати «сирітські» записи.
-  if(calcState.photo && !String(calcState.photo).startsWith('idb:')){
-    const rawPhoto = calcState.photo;
-    if(editingTicketId){
-      const prev = tickets.find(t=>String(t.id)===String(editingTicketId)); // NEW: String() — id з хмари приходить рядком, а локально створений може бути числом
-      if(prev && prev.photo && prev.photo!==rawPhoto) await deletePhotoKey(prev.photo);
+  // NEW: до 3 фото на заявку — кожне НОВЕ (сире, ще не idb:...) переносимо
+  // в IndexedDB, а всі старі фото цієї заявки, яких більше нема в новому
+  // списку (видалені чи замінені майстром), приберемо з IndexedDB, щоб не
+  // копичити "сирітські" записи.
+  if(!calcState.photos) calcState.photos = [];
+  const prevPhotoKeys = [];
+  if(editingTicketId){
+    const prev = tickets.find(t=>String(t.id)===String(editingTicketId)); // NEW: String() — id з хмари приходить рядком, а локально створений може бути числом
+    if(prev){
+      if(prev.photos && prev.photos.length) prevPhotoKeys.push(...prev.photos);
+      else if(prev.photo) prevPhotoKeys.push(prev.photo);
     }
-    calcState.photo = await storePhoto(rawPhoto);
-  } else if(!calcState.photo && editingTicketId){
-    const prev = tickets.find(t=>String(t.id)===String(editingTicketId)); // NEW: те саме
-    if(prev && prev.photo) await deletePhotoKey(prev.photo);
+  }
+  const newPhotoKeys = [];
+  for(const p of calcState.photos){
+    if(p && !String(p).startsWith('idb:')) newPhotoKeys.push(await storePhoto(p));
+    else if(p) newPhotoKeys.push(p);
+  }
+  calcState.photos = newPhotoKeys;
+  calcState.photo = newPhotoKeys[0] || null; // NEW: перше фото дублюється у старе поле — для коду, який ще читає лише його
+  for(const key of prevPhotoKeys){
+    if(!newPhotoKeys.includes(key)) await deletePhotoKey(key);
   }
 
   const syncConfigured = !!getScriptUrl();
@@ -5406,6 +5473,8 @@ function bindTicketsScreen(){
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
     if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, document.getElementById('ticketList')); return; }
+    const photoThumb = e.target.closest('.tc-photo-thumb');
+    if(photoThumb){ openTicketPhotoFullscreen(photoThumb.dataset.full); return; }
     if(gotoProfileBtn){ goToTicketProfile(gotoProfileBtn.dataset.id); return; }
     if(moreBtn){
       ticketListRenderLimit += TICKET_LIST_PAGE_SIZE;
@@ -5591,10 +5660,21 @@ function stopMacScan(){
 
 document.getElementById('photoBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
   document.getElementById('f_photoInput').addEventListener('change', e=>{
-    if(e.target.files && e.target.files[0]) handlePhotoFile(e.target.files[0]);
+    const files = Array.from(e.target.files || []);
+    const remaining = 3 - (calcState.photos||[]).length;
+    files.slice(0, remaining).forEach(handlePhotoFile);
+    if(files.length > remaining && remaining>0) showToast(`Додано лише ${remaining} з ${files.length} — максимум 3 фото на заявку`);
+    else if(remaining<=0 && files.length) showToast('Максимум 3 фото на заявку');
     e.target.value = '';
   });
-  document.getElementById('photoRemoveBtn').addEventListener('click', ()=>{ calcState.photo=null; renderPhotoPreview(); });
+  document.getElementById('photoPreviewWrap').addEventListener('click', e=>{
+    const btn = e.target.closest('.photo-remove');
+    if(!btn) return;
+    const idx = Number(btn.dataset.idx);
+    calcState.photos.splice(idx, 1);
+    calcState.photo = calcState.photos[0] || null; // NEW: перше фото — і далі дублюється у старе поле photo
+    renderPhotoPreview();
+  });
   document.getElementById('macScanBtn').addEventListener('click', startMacScan);
   document.getElementById('macScanCloseBtn').addEventListener('click', stopMacScan);
   document.getElementById('f_mac').addEventListener('input', e=>{

@@ -215,12 +215,9 @@
         <div class="card">
           <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">Фото</strong></div>
           <div class="photo-zone">
-            <input type="file" id="f_photoInput" accept="image/*" capture="environment" class="hidden">
-            <button type="button" class="btn" id="photoBtn">📷 Зробити фото</button>
-            <div id="photoPreviewWrap" class="photo-thumb-wrap hidden">
-              <img id="photoPreview" class="photo-thumb" src="">
-              <button type="button" class="photo-remove" id="photoRemoveBtn">✕</button>
-            </div>
+            <input type="file" id="f_photoInput" accept="image/*" multiple class="hidden">
+            <button type="button" class="btn" id="photoBtn">📷 Додати фото (до 3)</button>
+            <div id="photoPreviewWrap" class="row wrap" style="gap:8px; margin-top:8px;"></div>
           </div>
         </div>
 
