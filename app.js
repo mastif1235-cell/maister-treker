@@ -1204,17 +1204,23 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   const first = list[0] || {};
   const addrLine = [first.city, first.street, first.house ? `${first.house}` : '', first.apartment ? `кв. ${first.apartment}` : ''].filter(Boolean).join(', ');
   // NEW: фото абонента — не зберігаємо його додатково на телефоні "про
-  // всяк випадок": кнопка підвантажує знімок лише за запитом (з локального
+  // всяк випадок": кнопка підвантажує знімки лише за запитом (з локального
   // кешу IndexedDB, якщо вже завантажували, інакше — напряму з Telegram), і
   // тепер її можна натиснути повторно, щоб знову приховати фото.
   // keySuffix — коли на екрані одночасно кілька профілів (результати
   // пошуку по кількох адресах), id мають бути унікальними для кожного.
-  const photoTicket = list.find(t=>t.photo);
+  // NEW: раніше показувалось лише ОДНЕ (найсвіжіше) фото з усіх заявок за
+  // адресою — тепер збираємо фото з УСІХ заявок (кожен виклик міг мати своє
+  // фото), щоб у профілі було видно всю ситуацію по адресі одразу.
+  const photoEntries = [];
+  list.forEach(t=>{
+    const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    keys.forEach((key, i)=>{ if(key) photoEntries.push({key, fileId: i===0 ? (t.tgPhotoFileId || null) : null}); });
+  });
   const wrapId = `abonentProfilePhotoWrap${keySuffix}`;
-  const imgId = `abonentProfilePhotoImg${keySuffix}`;
-  const photoBtnHtml = photoTicket ? `
-    <button type="button" class="btn btn-sm abonent-photo-btn" data-wrap-id="${wrapId}" data-img-id="${imgId}" data-photo-key="${escapeHtml(photoTicket.photo)}" data-tg-file-id="${escapeHtml(photoTicket.tgPhotoFileId||'')}" style="margin-top:8px;">📷 Показати фото</button>
-    <div id="${wrapId}" class="hidden" style="margin-top:8px;"><img id="${imgId}" style="max-width:100%; border-radius:10px;" alt="фото"></div>`
+  const photoBtnHtml = photoEntries.length ? `
+    <button type="button" class="btn btn-sm abonent-photo-btn" data-wrap-id="${wrapId}" data-photo-keys='${escapeHtml(JSON.stringify(photoEntries.map(p=>p.key)))}' data-tg-file-ids='${escapeHtml(JSON.stringify(photoEntries.map(p=>p.fileId)))}' style="margin-top:8px;">📷 Показати фото (${photoEntries.length})</button>
+    <div id="${wrapId}" class="hidden row wrap" style="gap:8px; margin-top:8px;"></div>`
     : `<div style="font-size:12px; color:var(--text-faint); margin-top:8px;">📷 Фото до жодної заявки тут не додано</div>`;
   // NEW: номер договору/логін/пароль — це дані абонента, а не конкретного
   // візиту: показуємо один раз у профілі (з найсвіжішої заявки, де вони є),
@@ -1558,24 +1564,34 @@ function attachAddressNavHandlers(rootEl){
     const photoBtn = e.target.closest('.abonent-photo-btn');
     if(photoBtn){
       const wrap = document.getElementById(photoBtn.dataset.wrapId);
-      const img = document.getElementById(photoBtn.dataset.imgId);
-      if(wrap && !wrap.classList.contains('hidden')){
+      if(!wrap) return;
+      // NEW: галерея фото з УСІХ заявок за адресою (не одне фото) — той самий
+      // підхід, що й у toggleTicketCardPhoto: підвантажуємо всі паралельно,
+      // кожне у своїй мініатюрі, тап по мініатюрі відкриває на весь екран.
+      if(!wrap.classList.contains('hidden')){
         wrap.classList.add('hidden');
-        photoBtn.textContent = '📷 Показати фото';
+        photoBtn.textContent = photoBtn.dataset.origLabel || photoBtn.textContent;
         return;
       }
-      if(img && img.src){
+      if(wrap.dataset.loaded === '1'){
         wrap.classList.remove('hidden');
         photoBtn.textContent = '🔼 Сховати фото';
         return;
       }
+      let keys = [], fileIds = [];
+      try{ keys = JSON.parse(photoBtn.dataset.photoKeys || '[]'); }catch(err){ keys = []; }
+      try{ fileIds = JSON.parse(photoBtn.dataset.tgFileIds || '[]'); }catch(err){ fileIds = []; }
+      keys = keys.filter(Boolean);
+      if(!keys.length) return;
+      photoBtn.dataset.origLabel = photoBtn.textContent;
       photoBtn.disabled = true; photoBtn.textContent = '⏳ Завантаження…';
-      const key = photoBtn.dataset.photoKey, fileId = photoBtn.dataset.tgFileId || null;
-      resolvePhotoAsync(key, fileId).then(val=>{
+      Promise.all(keys.map((key, i)=> resolvePhotoAsync(key, fileIds[i] || null))).then(values=>{
         photoBtn.disabled = false;
-        if(!val){ photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
-        if(img) img.src = val;
-        if(wrap) wrap.classList.remove('hidden');
+        const loadedAny = values.some(Boolean);
+        if(!loadedAny){ photoBtn.textContent = '📷 Не вдалося завантажити, спробувати ще раз'; return; }
+        wrap.innerHTML = values.map((val,i)=> val ? `<img src="${val}" class="tc-photo-thumb" data-full="${val}" alt="фото ${i+1}" style="width:96px; height:96px; object-fit:cover; border-radius:10px; cursor:pointer;">` : '').join('');
+        wrap.dataset.loaded = '1';
+        wrap.classList.remove('hidden');
         photoBtn.textContent = '🔼 Сховати фото';
       });
       return;
@@ -2264,6 +2280,7 @@ function blankTicketObject(){
     payment:'', note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
     abonentNote:'', extraPhones:[], // NEW: примітка про абонента й додаткові телефони — рівня профілю, як login/password
     tgBackedUp:false, tgPhotoFileId:null, tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
+    tgPhotoFileIds:[], tgPhotoMsgIds:[], // NEW: file_id/message_id ВСІХ фото заявки (до 3) — tgPhotoFileId/tgPhotoMsgId лишаються як дублікат першого, для сумісності зі старим кодом
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
 }
@@ -2866,7 +2883,11 @@ async function sendCurrentTicketToDispatcher(){
    Спрацьовує лише якщо в Налаштуваннях заповнені tgBotToken і tgBackupChatId,
    інакше нічого не робить. Не блокує збереження заявки — викликається без await. */
 async function deleteTicketTelegramMessages(t, token, chatId){
-  const ids = [t.tgSepMsgId, t.tgTextMsgId, t.tgPhotoMsgId, t.tgJsonMsgId].filter(Boolean);
+  // NEW: tgPhotoMsgIds — усі повідомлення з фото (до 3), tgPhotoMsgId лишається
+  // як дублікат першого для сумісності зі старими заявками, тож не дублюємо його
+  // в списку, якщо він вже є в масиві.
+  const photoIds = (t.tgPhotoMsgIds && t.tgPhotoMsgIds.length) ? t.tgPhotoMsgIds : [t.tgPhotoMsgId].filter(Boolean);
+  const ids = [t.tgSepMsgId, t.tgTextMsgId, ...photoIds, t.tgJsonMsgId].filter(Boolean);
   for(const msgId of ids){
     try{
       await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
@@ -2875,7 +2896,7 @@ async function deleteTicketTelegramMessages(t, token, chatId){
       });
     }catch(e){ /* повідомлення могло вже бути видалене вручну — не критично */ }
   }
-  t.tgSepMsgId = null; t.tgTextMsgId = null; t.tgPhotoMsgId = null; t.tgJsonMsgId = null;
+  t.tgSepMsgId = null; t.tgTextMsgId = null; t.tgPhotoMsgId = null; t.tgJsonMsgId = null; t.tgPhotoMsgIds = []; t.tgPhotoFileIds = [];
 }
 /* NEW: для бекапу в групу текст має бути ПОВНИМ — на відміну від t.content
    (який навмисно без приватної примітки/геолокації/логіна-пароля, бо саме
@@ -2936,24 +2957,32 @@ async function backupTicketToTelegram(t){
       const data = await res.json();
       if(data.ok){ t.tgBackedUp = true; t.tgTextMsgId = data.result.message_id; }
     }
-    // 2) фото
-    if(t.photo){
-      const photoData = await resolvePhotoAsync(t.photo);
-      if(photoData){
-        const blob = await (await fetch(photoData)).blob();
-        const form = new FormData();
-        form.append('chat_id', chatId);
-        form.append('caption', `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim().slice(0,1020));
-        form.append('photo', blob, 'foto.jpg');
-        const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
-        const data = await res.json();
-        if(data.ok){
-          const sizes = data.result.photo || [];
-          t.tgPhotoFileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
-          t.tgPhotoMsgId = data.result.message_id;
-        }
+    // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
+    // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
+    // з підписом і номером (1/3, 2/3...), щоб було видно, що це саме ця заявка.
+    const photosToSend = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];
+    for(let pi=0; pi<photosToSend.length; pi++){
+      const photoData = await resolvePhotoAsync(photosToSend[pi], pi===0 ? t.tgPhotoFileId : null);
+      if(!photoData) continue;
+      const blob = await (await fetch(photoData)).blob();
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      const caption = `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim();
+      form.append('caption', (photosToSend.length>1 ? `${caption} (${pi+1}/${photosToSend.length})` : caption).slice(0,1020));
+      form.append('photo', blob, 'foto.jpg');
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
+      const data = await res.json();
+      if(data.ok){
+        const sizes = data.result.photo || [];
+        const fileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
+        t.tgPhotoFileIds.push(fileId);
+        t.tgPhotoMsgIds.push(data.result.message_id);
       }
     }
+    // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
+    t.tgPhotoFileId = t.tgPhotoFileIds[0] || null;
+    t.tgPhotoMsgId = t.tgPhotoMsgIds[0] || null;
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
     try{
@@ -3659,7 +3688,8 @@ function renderCalcTagChips(){
 
 function renderPhotoPreview(){
   const wrap = document.getElementById('photoPreviewWrap');
-  const btn = document.getElementById('photoBtn');
+  const cameraBtn = document.getElementById('photoCameraBtn');
+  const galleryBtn = document.getElementById('photoGalleryBtn');
   const photos = calcState.photos || [];
   wrap.innerHTML = photos.map((p, i)=>`
     <div class="photo-thumb-wrap">
@@ -3675,8 +3705,14 @@ function renderPhotoPreview(){
     const resolved = getPhotoCached(p, (val)=>{ if(img) img.src = val; }, fallbackId);
     if(img) img.src = resolved || '';
   });
-  btn.disabled = photos.length >= 3;
-  btn.textContent = photos.length >= 3 ? '📷 Максимум 3 фото' : (photos.length ? `📷 Додати ще фото (${photos.length}/3)` : '📷 Додати фото (до 3)');
+  // NEW: два окремі входи — "Камера" (capture=environment, відкриває саме
+  // камеру) і "Галерея" (multiple, без capture — вибір із наявних фото).
+  // Раніше була одна кнопка з input[multiple], а на Android Chrome
+  // атрибут multiple прибирає пункт "Камера" з системного вибору — тому
+  // зняти фото прямо з застосунку не виходило, лишалась тільки галерея.
+  const full = photos.length >= 3;
+  if(cameraBtn){ cameraBtn.disabled = full; cameraBtn.textContent = full ? '📷 Максимум 3 фото' : '📷 Камера'; }
+  if(galleryBtn){ galleryBtn.disabled = full; galleryBtn.textContent = full ? '🖼️ Максимум 3 фото' : `🖼️ Галерея${photos.length ? ` (${photos.length}/3)` : ''}`; }
 }
 
 function computeTotal(){
@@ -3684,6 +3720,14 @@ function computeTotal(){
     const total = Number(document.getElementById('f_rawSum').value)||0;
     document.getElementById('calcTotal').textContent = fmtMoney(total);
     return total;
+  }
+  // NEW: якщо оплату позначено як "Безкоштовно" — сума завжди 0, незалежно
+  // від того, скільки обладнання/робіт/кабелів заповнено в калькуляторі
+  // (раніше сума рахувалась як завжди, і "Безкоштовно" в оплаті на неї не впливало).
+  const paymentEl = document.getElementById('f_payment');
+  if(paymentEl && paymentEl.value === 'Безкоштовно'){
+    document.getElementById('calcTotal').textContent = fmtMoney(0);
+    return 0;
   }
   const callFee = Number(document.getElementById('f_callFee').value)||0;
   const tariff  = Number(document.getElementById('f_tariff').value)||0;
@@ -5522,6 +5566,9 @@ function bindCalculatorScreen(){
   ['f_callFee','f_tariff'].forEach(id=>{
     document.getElementById(id).addEventListener('input', computeTotal);
   });
+  // NEW: при виборі "Безкоштовно" сума одразу обнуляється (див. computeTotal),
+  // а при поверненні на "Готівка"/"Безготівка" — рахується знову як завжди.
+  document.getElementById('f_payment').addEventListener('change', computeTotal);
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ applyDefaultTypeTag(); toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
   // NEW: при зміні міста — одразу підвантажуємо підказки вулиць саме для цього міста
@@ -5658,7 +5705,18 @@ function stopMacScan(){
   document.getElementById('macScanModal').classList.add('hidden');
 }
 
-document.getElementById('photoBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
+document.getElementById('photoCameraBtn').addEventListener('click', ()=> document.getElementById('f_photoCameraInput').click());
+  document.getElementById('photoGalleryBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
+  document.getElementById('f_photoCameraInput').addEventListener('change', e=>{
+    // NEW: капча з камери завжди дає лише один файл за раз (на відміну від
+    // галереї, де можна вибрати одразу декілька) — тому обробляємо просто files[0]
+    const file = e.target.files && e.target.files[0];
+    if(file){
+      if((calcState.photos||[]).length >= 3) showToast('Максимум 3 фото на заявку');
+      else handlePhotoFile(file);
+    }
+    e.target.value = '';
+  });
   document.getElementById('f_photoInput').addEventListener('change', e=>{
     const files = Array.from(e.target.files || []);
     const remaining = 3 - (calcState.photos||[]).length;

@@ -216,7 +216,11 @@
           <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">Фото</strong></div>
           <div class="photo-zone">
             <input type="file" id="f_photoInput" accept="image/*" multiple class="hidden">
-            <button type="button" class="btn" id="photoBtn">📷 Додати фото (до 3)</button>
+            <input type="file" id="f_photoCameraInput" accept="image/*" capture="environment" class="hidden">
+            <div class="row wrap" style="gap:8px;">
+              <button type="button" class="btn" id="photoCameraBtn" style="flex:1;">📷 Камера</button>
+              <button type="button" class="btn" id="photoGalleryBtn" style="flex:1;">🖼️ Галерея</button>
+            </div>
             <div id="photoPreviewWrap" class="row wrap" style="gap:8px; margin-top:8px;"></div>
           </div>
         </div>
