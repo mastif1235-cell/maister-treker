@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v44 · 2026-08-09';
+const APP_VERSION = 'v45 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -155,6 +155,11 @@ let activeFilterTags = new Set();
 
 let calcState = blankCalcState();
 let editingTicketId = null;
+// NEW: знімок ключів фото на момент відкриття форми (нової чи існуючої
+// заявки) — потрібен, щоб при скасуванні редагування прибрати з IndexedDB
+// лише ФОТО, ЗНЯТІ В ЦЬОМУ СЕАНСІ (щойно сфотографовані, ще ніде не
+// збережені), а не ті, що вже належать заявці й мають лишитись.
+let calcOriginalPhotoKeys = [];
 let feeIsAutoDefault = true; // NEW: поки true — ціну виклику/підключення можна автоматично підставити при зміні типу заявки; false — майстер вже ввів своє значення вручну, чіпати не можна
 let tariffIsAutoDefault = true; // те саме, але для поля "Тариф" — щоб автопідставлене за замовчуванням значення не вважалось "незбереженою зміною"
 // NEW: чи торкався користувач полів форми руками. Потрібно окремо від
@@ -841,7 +846,13 @@ function showNaryadQueue(date){
         saveNaryadQueue();
         updateNaryadQueueBtn();
         const prefill = {};
-        prefill.content = n.text;
+        // NEW: раніше текст наряду клали в prefill.content — це поле
+        // перезаписувалось з нуля при збереженні заявки (buildTicketContent),
+        // а бачив його майстер лише в прихованому полі (воно показується
+        // тільки для заявок, відновлених із хмари) — текст диспетчера
+        // безслідно губився. Тепер кладемо в note — це видиме поле
+        // "Примітка", яке й лишається в тексті заявки після збереження.
+        prefill.note = n.text;
         const phoneMatch = n.text.match(/[\d][\d\s\-()]{7,}\d/);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
         showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
@@ -976,7 +987,9 @@ function showNaryadChecker(){
     const startFromNaryad = type=>{
       const rawText = document.getElementById('naryadInput').value.trim();
       const prefill = {};
-      if(rawText) prefill.content = rawText;
+      // NEW: те саме виправлення, що й вище — текст наряду в note (видиме
+      // поле "Примітка"), а не в content (перезаписувався і губився).
+      if(rawText) prefill.note = rawText;
       const phoneMatch = rawText.match(/[\d][\d\s\-()]{7,}\d/);
       if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
       startNewTicketFlow(type, prefill, {...addrNavState});
@@ -1927,12 +1940,25 @@ async function postToUrl(url, action, payload){
   // (включно з повторним пересортуванням всього листа), звідси й затримка.
   // Повертаємось до одного надійного no-cors запиту.
   try{
-    await fetch(url, {
-      method:'POST',
-      mode:'no-cors', // Apps Script + no-cors: запит «глухий», відповідь прочитати не можна
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body
-    });
+    // NEW: раніше цей fetch не мав таймауту — на "мертвому" 2G/обірваному
+    // зв'язку await міг висіти десятки секунд чи довше (системний таймаут
+    // браузера), і весь цей час форма заявки лишалась заблокованою
+    // ("⏳ Збереження..."), майстер не міг ні почати нову заявку, ні вийти
+    // з екрана. AbortController рве запит через 20с — якщо сервер за цей
+    // час не відповів, вважаємо спробу невдалою (заявка вже надійно
+    // збережена локально до цього моменту) і повертаємо майстру керування;
+    // повторна синхронізація підхопить це пізніше (retrySyncQueue).
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=> controller.abort(), 20000);
+    try{
+      await fetch(url, {
+        method:'POST',
+        mode:'no-cors', // Apps Script + no-cors: запит «глухий», відповідь прочитати не можна
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body,
+        signal: controller.signal
+      });
+    } finally { clearTimeout(timeoutId); }
     setSyncState('ok');
     // NEW: раніше перевірка checkTicketExists чекалась ТУТ (await) —
     // тобто кожне збереження заявки чекало ДВА послідовні мережеві запити
@@ -2499,17 +2525,23 @@ function buildWorkSummaryLines(t){
   // (buildTicketContent) — раніше тут показувалось лише обладнання, а
   // "Вызов: 300 грн", "Підключення: 500 грн", спосіб оплати тощо губились.
   const lines = [];
+  // NEW: якщо оплата "Безкоштовно" — так само, як і в тексті самої заявки
+  // (buildTicketContent), показуємо "0 грн" замість реальних цін. Раніше ця
+  // функція (використовується в профілі абонента) не звіряла t.payment і
+  // показувала старі ціни, тоді як у самій заявці вже стояло "0 грн" —
+  // виходила суперечність між профілем і текстом заявки.
+  const isFree = t.payment === 'Безкоштовно';
   if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
-  if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${fmtMoney(t.callFee)}`);
-  if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${fmtMoney(t.tariff)}`);
+  if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${isFree ? '0 грн' : fmtMoney(t.callFee)}`);
+  if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(t.tariff)}`);
   // NEW: у збереженій заявці обладнання/роботи зберігаються "розріджено" —
   // без явного поля checked (сама присутність у масиві й означає "вибрано").
   // checked!==false замість checked — так само коректно читає і старі
   // заявки (де checked:false ще явно є), і нові (де поля checked просто нема).
-  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${c.pricePerMeter}грн = ${Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
-  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`));
-  (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${fmtMoney(w.sum)}`); });
+  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`));
+  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
+  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`));
+  (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
   if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
   if(t.note) lines.push(`📝 ${t.note}`);
   if(t.otherNote) lines.push(t.otherNote);
@@ -2916,13 +2948,20 @@ function buildTelegramBackupText(t){
 // й показалось у групі. Одна швидка повторна спроба закриває більшість таких
 // випадків, не роблячи бекап відчутно повільнішим.
 async function fetchWithRetry(url, opts, retries=1){
+  // NEW: без таймауту цей fetch міг висіти нескінченно довго на поганому
+  // зв'язку — Telegram-бекап відбувається у фоні (не блокує збереження
+  // заявки), але без ліміту такі "зависші" запити накопичувались би без
+  // кінця. 15с — цього достатньо навіть для повільного 3G, але не дає
+  // запиту висіти вічно на мертвому з'єднанні.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=> controller.abort(), 15000);
   try{
-    return await fetch(url, opts);
+    return await fetch(url, {...opts, signal: controller.signal});
   }catch(e){
     if(retries<=0) throw e;
     await new Promise(r=>setTimeout(r, 800));
     return fetchWithRetry(url, opts, retries-1);
-  }
+  } finally { clearTimeout(timeoutId); }
 }
 async function backupTicketToTelegram(t){
   const token = (settings.tgBotToken||'').trim();
@@ -3396,6 +3435,15 @@ function clearDraft(){
   localStorage.removeItem(DRAFT_KEY);
 }
 
+// NEW: прибирає з IndexedDB фото, додані в поточному сеансі редагування,
+// але так і не збережені в жодній заявці (щоб не накопичувалось "сміття"
+// при скасуванні редагування/створення заявки з уже зробленими фото).
+function cleanupUnsavedNewPhotos(){
+  (calcState.photos||[]).forEach(key=>{
+    if(key && String(key).startsWith('idb:') && !calcOriginalPhotoKeys.includes(key)) deletePhotoKey(key);
+  });
+}
+
 function restoreDraftIfAny(){
   const raw = localStorage.getItem(DRAFT_KEY);
   if(!raw) return;
@@ -3433,6 +3481,7 @@ function saveDailyMastersDefault(masters){
 function resetCalcForm(presetDate, overrides){
   calcState = blankCalcState();
   if(presetDate) calcState.date = presetDate;
+  calcOriginalPhotoKeys = []; // NEW: нова порожня заявка — жодного "оригінального" фото ще нема
   // NEW: дозволяє одразу підставити тип заявки й дані абонента (з профілю
   // навігатора адрес) у щойно відкриту порожню форму — застосовується ДО
   // логіки тегу за типом нижче, щоб автотег теж підхопив правильний тип.
@@ -3471,6 +3520,7 @@ function loadTicketIntoForm(t){
     calcState.photos = [calcState.photo];
   }
   if(!calcState.photos) calcState.photos = [];
+  calcOriginalPhotoKeys = calcState.photos.slice(); // NEW: знімок "рідних" фото заявки — щоб при скасуванні прибрати з IndexedDB лише щойно додані в цьому сеансі, а не ці
   // NEW: у самій заявці тепер зберігається лише вибране (checked / meters>0),
   // тож тут завжди розгортаємо це назад у повний каталог для форми — працює
   // однаково і для нового "розрідженого" формату, і для старих заявок, де
@@ -3970,6 +4020,15 @@ function syncFormToState(){
   calcState.payment = document.getElementById('f_payment').value;
   calcState.note = document.getElementById('f_note').value.trim();
   calcState.masterNote = document.getElementById('f_masterNote').value.trim();
+  // NEW: для заявки, відновленої з хмари (cloudImported), контент і сума
+  // редагуються напряму в полях f_rawContent/f_rawSum (не через звичайний
+  // калькулятор) — раніше ця функція їх не читала, тож автозбереження
+  // чернетки (яке викликає саме syncFormToState) записувало СТАРІ значення,
+  // і правки в цих двох полях губились при випадковому закритті застосунку.
+  if(calcState.cloudImported){
+    calcState.content = document.getElementById('f_rawContent').value.trim();
+    calcState.sum = Number(document.getElementById('f_rawSum').value)||0;
+  }
   // geoLink вже синхронізується через setGeoLink
 }
 
@@ -3990,9 +4049,26 @@ function handlePhotoFile(file){
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       if(calcState.photos.length >= 3) return; // NEW: могли додати паралельно кілька файлів одразу — перевіряємо ще раз перед пушем
-      calcState.photos.push(canvas.toDataURL('image/jpeg', 0.72)); // сире фото; в IndexedDB переноситься при збереженні заявки
-      calcState.photo = calcState.photos[0]; // NEW: перше фото дублюється в старе поле photo — для коду, який ще читає лише його
-      renderPhotoPreview();
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+      // NEW: раніше сире фото (сотні КБ у base64) лежало прямо в
+      // calcState.photos, і кожні 30с автозбереження чернетки записувало
+      // ЙОГО ЦІЛИКОМ у localStorage (ліміт ~5МБ). 2-3 фото за зміну легко
+      // переповнювали сховище — JSON.stringify падав з QuotaExceededError,
+      // яка гасилась порожнім catch(e){}, і чернетка (весь введений текст,
+      // не лише фото) тихо переставала зберігатись, без жодного попередження.
+      // Тепер фото одразу переносимо в IndexedDB (як і при остаточному
+      // збереженні заявки — storePhoto) ДО того, як воно потрапить у
+      // calcState.photos — запис в IndexedDB займає долі секунди, тож
+      // затримка перед появою у прев'ю непомітна, зате чернетка в
+      // localStorage завжди лишається легкою, незалежно від кількості й
+      // розміру фото.
+      storePhoto(dataUrl).then(key=>{
+        if(calcState.photos.length >= 3){ deletePhotoKey(key); return; } // могли встигнути додати ще, поки це фото записувалось
+        photoCacheSet(key, dataUrl); // одразу в кеш — прев'ю показується миттєво, без походу в IndexedDB
+        calcState.photos.push(key);
+        calcState.photo = calcState.photos[0]; // NEW: перше фото дублюється в старе поле photo — для коду, який ще читає лише його
+        renderPhotoPreview();
+      });
     };
     img.src = e.target.result;
   };
@@ -4295,6 +4371,7 @@ async function saveTicketFromForm(e){
       (nowMs - Number(t.id||0)) < threeHoursMs
     );
     if(similar && !confirm(`Схожа заявка вже є (${similar.date} ${similar.time}, ${similar.city||''} ${similar.address}).\nЗберегти ще одну?`)){
+      cleanupUnsavedNewPhotos(); // NEW: якщо скасували через дубль — не лишати щойно зроблені фото сиротами в IndexedDB
       return;
     }
   }
@@ -4310,12 +4387,19 @@ async function saveTicketFromForm(e){
       // у схемі синку немає updateTicket — імітуємо оновлення видаленням і повторним додаванням
       await syncPost('deleteTicket', {id: editingTicketId});
       // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
-      // з першого разу, рядок у таблиці лишиться відсутнім аж до наступного
-      // retrySyncQueue. Пробуємо ще раз одразу (з невеликою паузою), щоб
-      // звузити це вікно ризику, а не покладатись лише на майбутній retry.
+      // одразу, рядок у таблиці лишиться відсутнім аж до наступного
+      // retrySyncQueue. Пробуємо ще двічі одразу (з паузами, що
+      // збільшуються), щоб звузити це вікно ризику, а не покладатись лише
+      // на майбутній фоновий retry (він все одно лишається підстраховкою,
+      // якщо й ці спроби не вдадуться — статус заявки стане "не
+      // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
       let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
       if(!ok){
         await new Promise(r=>setTimeout(r, 1500));
+        ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+      }
+      if(!ok){
+        await new Promise(r=>setTimeout(r, 3000));
         ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
       }
       if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
@@ -5743,6 +5827,13 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
     const btn = e.target.closest('.photo-remove');
     if(!btn) return;
     const idx = Number(btn.dataset.idx);
+    // NEW: якщо це фото ще НЕ належить збереженій заявці (додане щойно в
+    // цьому сеансі) — одразу прибираємо його з IndexedDB, а не лишаємо
+    // "сиротою" без жодного посилання. Фото, які вже були в заявці до
+    // початку редагування (є в calcOriginalPhotoKeys), не чіпаємо тут —
+    // ними керує saveTicketFromForm при збереженні.
+    const key = calcState.photos[idx];
+    if(key && String(key).startsWith('idb:') && !calcOriginalPhotoKeys.includes(key)) deletePhotoKey(key);
     calcState.photos.splice(idx, 1);
     calcState.photo = calcState.photos[0] || null; // NEW: перше фото — і далі дублюється у старе поле photo
     renderPhotoPreview();
@@ -5890,6 +5981,7 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
     // пошуку) — текст підтвердження підбираємо залежно від того, що з двох
     const confirmMsg = editingTicketId ? 'Скасувати редагування? Незбережені зміни буде втрачено.' : 'Повернутись назад? Введені у заявку дані буде втрачено.';
     if(hasUnsavedChanges() && !confirm(confirmMsg)) return;
+    cleanupUnsavedNewPhotos(); // NEW: не лишати в IndexedDB фото, зроблені в цьому сеансі, якщо заявку скасовано
     clearDraft(); resetCalcForm(currentTicketDate); returnAfterTicketEdit();
   });
 }
