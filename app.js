@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v43 · 2026-08-09';
+const APP_VERSION = 'v44 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -3832,26 +3832,24 @@ function buildTicketContent(s, total){
   if(s.phone) lines.push(`📞 Тел: ${s.phone}`);
   if(s.macAddress) lines.push(`🔧 MAC ONU: ${s.macAddress}`);
   lines.push('------------------');
-  // NEW: якщо оплата "Безкоштовно" — не показуємо порядкові суми (виклик,
-  // тариф, обладнання, кабелі, роботи), бо вони виглядають суперечливо поруч
-  // із "ІТОГО: 0 грн" (наче з абонента щось таки має стягуватись). Самі
-  // позиції (що саме зроблено/встановлено) лишаємо — тільки без цін.
+  // NEW: якщо оплата "Безкоштовно" — кожна позиція (виклик, тариф,
+  // обладнання, кабелі, роботи) показує "0 грн" замість реальної ціни, а не
+  // просто прибирається — так одразу видно, що саме зроблено безкоштовно,
+  // а не губиться інформація про склад заявки.
   const isFree = s.payment === 'Безкоштовно';
-  if(!isFree){
-    if(s.callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${fmtMoney(s.callFee)}`);
-    if(s.tariff>0) lines.push(`💎 Тариф: ${fmtMoney(s.tariff)}`);
-  }
+  if(s.callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${isFree ? '0 грн' : fmtMoney(s.callFee)}`);
+  if(s.tariff>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(s.tariff)}`);
   s.equipment.filter(e=>e.checked).forEach(e=>{
-    lines.push(isFree ? `🛠️ ${e.label}: 1 шт.` : `🛠️ ${e.label}: 1 шт. х ${Math.round(e.price)} грн`);
+    lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`);
   });
   (s.cables||[]).forEach(c=>{
     const meters = Number(c.meters)||0;
-    if(meters>0) lines.push(isFree ? `🔌 ${c.label}: ${meters}м` : `🔌 ${c.label}: ${meters}м х ${c.pricePerMeter}грн = ${Math.round(meters*(Number(c.pricePerMeter)||0))}грн`);
+    if(meters>0) lines.push(`🔌 ${c.label}: ${meters}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(meters*(Number(c.pricePerMeter)||0))}грн`);
   });
   (s.presetWorks||[]).filter(w=>w.checked).forEach(w=>{
-    lines.push(isFree ? `🔧 ${w.label}: ${w.qty||1} шт.` : `🔧 ${w.label}: ${w.qty||1} шт. х ${Math.round(w.price)} грн = ${Math.round((w.price||0)*(w.qty||1))}грн`);
+    lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`);
   });
-  s.additionalWork.forEach(w=>{ if(w.desc || w.sum) lines.push(isFree ? `✏️ ${w.desc||'Робота'}` : `✏️ ${w.desc||'Робота'}: ${fmtMoney(w.sum)}`); });
+  s.additionalWork.forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
   lines.push('------------------');
   if(s.payment) lines.push(`💳 Оплата: ${s.payment}`);
   lines.push(`💵 ІТОГО: ${fmtMoney(total)}`);
