@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v45 · 2026-08-09';
+const APP_VERSION = 'v46 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -5209,21 +5209,6 @@ function getOrCreateSheet(ss, name, headers) {
   return sheet;
 }
 
-function writeTicketRow(sheet, rowIndex, t) {
-  var row = [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || ''];
-  var range = sheet.getRange(rowIndex, 1, 1, row.length);
-  sheet.getRange(rowIndex, 1, 1, 1).setNumberFormat('@'); // id
-  sheet.getRange(rowIndex, 2, 1, 1).setNumberFormat('@'); // date
-  sheet.getRange(rowIndex, 3, 1, 1).setNumberFormat('@'); // time
-  sheet.getRange(rowIndex, 6, 1, 1).setNumberFormat('@'); // tags
-  sheet.getRange(rowIndex, 7, 1, 1).setNumberFormat('@'); // нотатки_майстра
-  sheet.getRange(rowIndex, 5, 1, 1).setNumberFormat('0.##'); // sum
-  range.setValues([row]);
-  // перенос тексту + автопідбір висоти рядка під довгий опис
-  sheet.getRange(rowIndex, 4, 1, 1).setWrap(true);
-  sheet.setRowHeightsAuto(rowIndex, 1);
-}
-
 function addTicketRow(ss, t) {
   var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
 
@@ -5352,9 +5337,25 @@ function writeAllTickets(sheet, tickets) {
   sheet.appendRow(TICKET_HEADERS);
   sheet.getRange(1, 1, Math.max(sorted.length + 1, 1000), 3).setNumberFormat('@');
   sheet.getRange(1, 6, Math.max(sorted.length + 1, 1000), 2).setNumberFormat('@');
-  sorted.forEach(function (t, i) {
-    writeTicketRow(sheet, i + 2, t);
-  });
+  // NEW: раніше тут був forEach з writeTicketRow на кожну заявку — а
+  // writeTicketRow сама по собі робить 8 окремих звернень до Google Sheets
+  // API (6× форматування комірок, які тут ВЖЕ зроблено масово рядком вище —
+  // тобто дублювались даремно, + запис значень + автовисота рядка). При
+  // 500-1000+ заявках це тисячі окремих API-викликів в одному запуску
+  // Apps Script — реальний ризик впертись у ліміт часу виконання (6 хв) і
+  // лишити лист із частково записаними (або взагалі порожніми) даними
+  // просто через sheet.clear() вище. Тепер збираємо всі рядки в пам'яті й
+  // пишемо ОДНИМ викликом setValues — швидкість не залежить від кількості
+  // заявок так драматично, і час виконання лишається малим навіть при
+  // великій базі.
+  if (sorted.length > 0) {
+    var values = sorted.map(function (t) {
+      return [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || ''];
+    });
+    sheet.getRange(2, 1, sorted.length, TICKET_HEADERS.length).setValues(values);
+    sheet.getRange(2, 4, sorted.length, 1).setWrap(true); // перенос тексту в колонці "зміст" — масово, не по рядку
+    sheet.setRowHeightsAuto(2, sorted.length); // автовисота під перенесений текст — теж одним викликом на весь блок
+  }
 }
 
 // сортує заявки від найновішої (за датою і часом) до найстарішої
@@ -5374,9 +5375,16 @@ function writeAllShifts(sheet, shifts) {
   sheet.clear();
   sheet.appendRow(SHIFT_HEADERS);
   sheet.getRange(1, 1, Math.max(shifts.length + 1, 1000), 2).setNumberFormat('@');
-  shifts.forEach(function (s, i) {
-    writeShiftRow(sheet, i + 2, s);
-  });
+  // NEW: та сама причина, що й у writeAllTickets вище — один пакетний запис
+  // замість по-рядкового forEach(writeShiftRow), щоб не впертись у ліміт
+  // часу виконання Apps Script при великій кількості змін.
+  if (shifts.length > 0) {
+    var values = shifts.map(function (s) {
+      return [s.id, s.date, s.hours, s.coworker];
+    });
+    sheet.getRange(2, 1, shifts.length, SHIFT_HEADERS.length).setValues(values);
+    sheet.getRange(2, 3, shifts.length, 1).setNumberFormat('0.##'); // hours — окремий числовий формат для всього блоку одразу
+  }
 }
 
 function deleteRowById(sheet, id) {
