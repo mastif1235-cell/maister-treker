@@ -5705,9 +5705,18 @@ function stopMacScan(){
   document.getElementById('macScanModal').classList.add('hidden');
 }
 
-document.getElementById('photoCameraBtn').addEventListener('click', ()=> document.getElementById('f_photoCameraInput').click());
-  document.getElementById('photoGalleryBtn').addEventListener('click', ()=> document.getElementById('f_photoInput').click());
-  document.getElementById('f_photoCameraInput').addEventListener('change', e=>{
+const photoCameraBtnEl = document.getElementById('photoCameraBtn');
+  const photoGalleryBtnEl = document.getElementById('photoGalleryBtn');
+  const f_photoCameraInputEl = document.getElementById('f_photoCameraInput');
+  const f_photoInputEl = document.getElementById('f_photoInput');
+  // NEW: захист від падіння всього застосунку, якщо на сторінці випадково
+  // опиниться СТАРА версія index.html (без кнопок "Камера"/"Галерея") разом
+  // із НОВИМ app.js — раніше через відсутній елемент тут виникала помилка
+  // "Cannot read properties of null", яка зупиняла виконання решти скрипта
+  // (звідси зникала дата, версія застосунку, список заявок).
+  if(photoCameraBtnEl) photoCameraBtnEl.addEventListener('click', ()=> f_photoCameraInputEl && f_photoCameraInputEl.click());
+  if(photoGalleryBtnEl) photoGalleryBtnEl.addEventListener('click', ()=> f_photoInputEl && f_photoInputEl.click());
+  if(f_photoCameraInputEl) f_photoCameraInputEl.addEventListener('change', e=>{
     // NEW: капча з камери завжди дає лише один файл за раз (на відміну від
     // галереї, де можна вибрати одразу декілька) — тому обробляємо просто files[0]
     const file = e.target.files && e.target.files[0];
@@ -5717,7 +5726,7 @@ document.getElementById('photoCameraBtn').addEventListener('click', ()=> documen
     }
     e.target.value = '';
   });
-  document.getElementById('f_photoInput').addEventListener('change', e=>{
+  if(f_photoInputEl) f_photoInputEl.addEventListener('change', e=>{
     const files = Array.from(e.target.files || []);
     const remaining = 3 - (calcState.photos||[]).length;
     files.slice(0, remaining).forEach(handlePhotoFile);
