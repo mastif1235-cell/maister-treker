@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v46 · 2026-08-09';
+const APP_VERSION = 'v47 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -5142,23 +5142,30 @@ function renderReport(range){
 }
 
 /* ---- Код Apps Script (для довідки користувачу) ---- */
-const APPS_SCRIPT_CODE = `var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра'];
-var SHIFT_HEADERS = ['id','date','hours','coworker'];
-
+const APPS_SCRIPT_CODE = `var SYNC_SECRET = '2112Av';
+ 
+var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON']; // NEW: 8-й стовпець — окремо від нотаток майстра
+var SHIFT_HEADERS  = ['id','date','hours','coworker'];
+ 
+ 
+/* ---------- Вхідні точки ---------- */
+ 
 function doPost(e) {
   var data = JSON.parse(e.postData.contents);
+ 
+  if (!checkSecret(data.secret)) return forbiddenResponse();
+ 
   var action = data.action;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result = {status: 'ok'};
-
+ 
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({status:'error', message:'Busy, try again'}))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({status: 'error', message: 'Busy, try again'});
   }
-
+ 
   try {
     if (action === 'addTicket') {
       addTicketRow(ss, data);
@@ -5171,9 +5178,9 @@ function doPost(e) {
     } else if (action === 'syncAll') {
       syncAllData(ss, data.tickets, data.shifts);
     } else if (action === 'syncAllTickets') {
-      writeAllTickets(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.tickets || []);
+      writeAllTickets(ss, data.tickets || []);
     } else if (action === 'syncAllShifts') {
-      writeAllShifts(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.shifts || []);
+      writeAllShifts(ss, data.shifts || []);
     } else if (action === 'clearAll') {
       syncAllData(ss, [], []);
     }
@@ -5182,93 +5189,253 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
-
-  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+ 
+  return jsonResponse(result);
 }
-
-// NEW: єдина read-only дія (нічого не пише в таблицю, тож не потребує
-// LockService) — застосунок використовує її ПІСЛЯ основного (no-cors,
-// "сліпого") запиту на додавання заявки, щоб перевірити, чи рядок справді
-// з'явився в таблиці, а не просто повірити на слово, що запит кудись дійшов.
+ 
+function doGet(e) {
+  // e може бути відсутній при ручному запуску з редактора Apps Script,
+  // тому звертаємось до e.parameter обережно.
+  var secret = (e && e.parameter && e.parameter.secret) || '';
+  if (!checkSecret(secret)) return forbiddenResponse();
+ 
+  // NEW: read-only перевірка "чи є вже такий id в аркуші Заявки" —
+  // застосунок викликає це одразу після додавання нової заявки (окремим
+  // запитом, ПІСЛЯ основного no-cors POST), щоб підтвердити, що вона
+  // реально потрапила в таблицю, а не просто повірити, що запит кудись
+  // дійшов. Нічого не пише — тому не має жодного побічного ефекту.
+  if (e && e.parameter && e.parameter.action === 'checkTicketExists') {
+    var checkSheet = getOrCreateSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Заявки', TICKET_HEADERS);
+    var checkLast = checkSheet.getLastRow();
+    var exists = false;
+    if (checkLast > 1) {
+      var checkIds = checkSheet.getRange(2, 1, checkLast - 1, 1).getValues().flat();
+      var targetId = String(e.parameter.id);
+      exists = checkIds.some(function (v) { return String(v) === targetId; });
+    }
+    return jsonResponse({status: 'ok', exists: exists});
+  }
+ 
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var tSheet = ss.getSheetByName('Заявки');
+  var sSheet = ss.getSheetByName('Зміни');
+  var tickets = [];
+  var shifts = [];
+ 
+  if (tSheet && tSheet.getLastRow() > 1) {
+    // NEW: 8 колонок замість 7 — додався повніДаніJSON
+    tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 8).getValues().forEach(function (r) {
+      if (!r[0] && !r[1]) return;
+      tickets.push({
+        id: safeString(r[0]),
+        date: cellToDateString(r[1], tz),
+        time: cellToTimeString(r[2], tz),
+        content: r[3] === null || r[3] === undefined ? '' : String(r[3]),
+        sum: safeNumber(r[4]),
+        tags: r[5] ? String(r[5]).split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [],
+        backupNote: safeString(r[6]),
+        fullDataJson: safeString(r[7]), // NEW
+        photo: null
+      });
+    });
+  }
+ 
+  if (sSheet && sSheet.getLastRow() > 1) {
+    sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 4).getValues().forEach(function (r) {
+      if (!r[0] && !r[1]) return;
+      shifts.push({
+        id: safeString(r[0]),
+        date: cellToDateString(r[1], tz),
+        hours: safeNumber(r[2]),
+        coworker: safeString(r[3])
+      });
+    });
+  }
+ 
+  return jsonResponse({tickets: tickets, shifts: shifts});
+}
+ 
+ 
+/* ---------- Авторизація / відповіді ---------- */
+ 
+function checkSecret(value) {
+  return String(value || '') === SYNC_SECRET;
+}
+ 
+function forbiddenResponse() {
+  return jsonResponse({status: 'error', message: 'forbidden'});
+}
+ 
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+ 
+ 
+/* ---------- Лист і заголовки ---------- */
+ 
 function getOrCreateSheet(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1000, 3).setNumberFormat('@');
-    if (name === 'Заявки') {
-      sheet.getRange(1, 6, 1000, 2).setNumberFormat('@'); // tags + нотатки_майстра
-    }
   }
+  // NEW: форматуємо колонки в "Звичайний текст" щоразу (а не лише при
+  // створенні листа) — інакше на вже існуючих таблицях старі клітинки з
+  // датою могли лишитись типом Date, а не текстом, через що сортування
+  // за датою ламалось (див. parseDdMmYyyy нижче — тепер він розуміє й
+  // Date, і текст, але формат все одно варто тримати єдиним).
+  sheet.getRange(1, 1, 1000, 3).setNumberFormat('@');
   if (name === 'Заявки') {
-    // перенос тексту в колонці "content" (D) — довгий опис буде повністю
+    sheet.getRange(1, 6, 1000, 3).setNumberFormat('@'); // NEW: tags + нотатки_майстра + повніДаніJSON (було 2 колонки, стало 3)
+    // Перенос тексту в колонці "content" (D) — довгий опис буде повністю
     // видно в клітинці, а не обрізатись. Виконується щоразу (не лише при
     // створенні листа), щоб застосуватись і до вже існуючої таблиці.
     sheet.getRange(1, 4, Math.max(sheet.getMaxRows(), 1000), 1).setWrap(true);
+    // NEW: за бажанням — сховати технічний стовпець H (повніДаніJSON), щоб
+    // він не муляв око при перегляді таблиці. � озкоментуйте рядок нижче,
+    // якщо хочете, щоб він ховався автоматично щоразу:
+    // sheet.hideColumns(8);
   }
   return sheet;
 }
-
+ 
+ 
+/* ---------- Заявки ---------- */
+ 
 function addTicketRow(ss, t) {
   var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
-
+ 
   var last = sheet.getLastRow();
-  var existingRows = [];
   if (last > 1) {
-    existingRows = sheet.getRange(2, 1, last - 1, TICKET_HEADERS.length).getValues();
-    var alreadyExists = existingRows.some(function(r){ return String(r[0]) === String(t.id); });
-    if (alreadyExists) return;
+    var ids = sheet.getRange(2, 1, last - 1, 1).getValues().flat();
+    if (ids.some(function (v) { return String(v) === String(t.id); })) {
+      return; // дублікат за id — нічого не робимо
+    }
   }
-
-  var newRow = [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || ''];
-  existingRows.push(newRow);
-
-  // Сортуємо в пам'яті й переписуємо весь блок даних одним разом — це
-  // те саме, що вже надійно робить ручний запуск sortExistingTicketsNow.
-  // Раніше тут було "вставити рядок і одразу пересортувати на місці"
-  // (insertRowBefore + сортування), і це раз у раз "губило" щойно
-  // вставлений рядок — сортування ніби виконувалось по старому стану
-  // листа. Такий спосіб (прочитати все → додати → відсортувати →
-  // переписати) цієї проблеми не має.
-  existingRows.sort(function(a, b) {
-    return rowDateKey(b) - rowDateKey(a);
-  });
-
+ 
+  // NEW: замість "вставити в row 2, а потім пересортувати ВЕСЬ лист" (це
+  // могло тихо падати з помилкою на якомусь із існуючих рядків і лишати
+  // нову заявку назавжди зверху) — одразу шукаємо правильну позицію за
+  // датою/часом, так само як це вже давно і надійно працює для "Зміни".
+  var newKey = ticketDateKey(t);
+  var insertRow = last + 1; // за замовчуванням — у кінець (найстаріша)
   if (last > 1) {
-    sheet.getRange(2, 1, last - 1, TICKET_HEADERS.length).clearContent();
+    var dateTimeCols = sheet.getRange(2, 2, last - 1, 2).getValues(); // B (дата), C (час)
+    insertRow = last + 1;
+    for (var i = 0; i < dateTimeCols.length; i++) {
+      var existingKey = rowDateKey([null, dateTimeCols[i][0], dateTimeCols[i][1]]);
+      if (existingKey < newKey) { insertRow = i + 2; break; } // нова заявка новіша за цю — стає перед нею
+    }
   }
-  var range = sheet.getRange(2, 1, existingRows.length, TICKET_HEADERS.length);
-  range.setNumberFormat('@');
-  range.setValues(existingRows);
-  sheet.getRange(2, 5, existingRows.length, 1).setNumberFormat('0.##'); // sum
-  sheet.getRange(2, 4, existingRows.length, 1).setWrap(true); // content — перенос тексту
-  sheet.setRowHeightsAuto(2, existingRows.length);
+  if (insertRow <= last) sheet.insertRowBefore(insertRow);
+  writeTicketRow(sheet, insertRow, t);
 }
-
-// пересортовує всі рядки листа "Заявки" за датою і часом — від
+ 
+function writeTicketRow(sheet, rowIndex, t) {
+  var row = [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '', t.fullDataJson || '']; // NEW: 8-й елемент
+  var range = sheet.getRange(rowIndex, 1, 1, row.length);
+  sheet.getRange(rowIndex, 1, 1, 1).setNumberFormat('@'); // id
+  sheet.getRange(rowIndex, 2, 1, 1).setNumberFormat('@'); // date
+  sheet.getRange(rowIndex, 3, 1, 1).setNumberFormat('@'); // time
+  sheet.getRange(rowIndex, 6, 1, 1).setNumberFormat('@'); // tags
+  sheet.getRange(rowIndex, 7, 1, 1).setNumberFormat('@'); // нотатки_майстра
+  sheet.getRange(rowIndex, 8, 1, 1).setNumberFormat('@'); // NEW: повніДаніJSON
+  sheet.getRange(rowIndex, 5, 1, 1).setNumberFormat('0.##'); // sum
+  range.setValues([row]);
+  // Перенос тексту + автопідбір висоти рядка під довгий опис
+  sheet.getRange(rowIndex, 4, 1, 1).setWrap(true);
+  sheet.setRowHeightsAuto(rowIndex, 1);
+}
+ 
+// NEW: раніше тут було sheet.clear(), а потім цикл з сотень окремих
+// writeTicketRow() (кожен — кілька власних getRange()/setValues()
+// викликів). Якщо скрипт падав по таймауту Apps Script чи обривався
+// інтернет ПОСЕ� ЕД цього циклу — лист лишався вже очищеним, але заповненим
+// лише частково (або взагалі порожнім). Тепер: спочатку повністю збираємо
+// нові дані в пам'яті й пишемо їх у ОК� ЕМ�Й тимчасовий лист, і лише коли
+// він вже повністю готовий — міняємо його місцями зі старим "Заявки".
+// Стару таблицю ніхто не чіпає, доки заміна не готова на 100%: якщо щось
+// впаде вище (до заміни) — "Заявки" так і лишиться, якою була, а не
+// порожньою.
+function writeAllTickets(ss, tickets) {
+  var sorted = sortTicketsByDateDesc(tickets); // щоб і повний синк тримав порядок за датою
+  var tempSheet = ss.insertSheet('_Заявки_tmp_' + Date.now());
+  try {
+    tempSheet.appendRow(TICKET_HEADERS);
+    if (sorted.length) {
+      var rows = sorted.map(function (t) {
+        return [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '', t.fullDataJson || ''];
+      });
+      tempSheet.getRange(2, 1, rows.length, 1).setNumberFormat('@'); // id
+      tempSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@'); // date
+      tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('@'); // time
+      tempSheet.getRange(2, 5, rows.length, 1).setNumberFormat('0.##'); // sum
+      tempSheet.getRange(2, 6, rows.length, 3).setNumberFormat('@'); // tags + нотатки_майстра + повніДаніJSON
+      tempSheet.getRange(2, 1, rows.length, 8).setValues(rows); // ОД�Н запис одразу для всіх рядків
+      tempSheet.getRange(2, 4, rows.length, 1).setWrap(true);
+    }
+    swapInPlace(ss, tempSheet, 'Заявки');
+    getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS); // застосовує форматування шапки/переносу тексту й нових порожніх рядків
+  } catch (err) {
+    ss.deleteSheet(tempSheet); // невдала спроба — прибираємо чернетку, стара "Заявки" й не торкалась
+    throw err;
+  }
+}
+ 
+// Атомарна (наскільки це можливо в Apps Script) заміна листа: старий
+// перейменовується в резервний, новий стає під потрібною назвою, і лише
+// ПІСЛЯ цього видаляється резервний. Навіть якщо скрипт впаде рівно між
+// цими кроками — в таблиці лишаться ОБ�ДВА листи (з новими й старими
+// даними), а не жоден.
+function swapInPlace(ss, newSheet, finalName) {
+  var oldSheet = ss.getSheetByName(finalName);
+  var backupName = null;
+  if (oldSheet) {
+    backupName = '_' + finalName + '_old_' + Date.now();
+    oldSheet.setName(backupName);
+  }
+  newSheet.setName(finalName);
+  if (oldSheet) ss.deleteSheet(oldSheet);
+}
+ 
+// Пересортовує всі рядки листа "Заявки" за датою і часом — від
 // найновішої зверху до найстарішої знизу, незалежно від того, у якому
 // порядку вони туди потрапили раніше.
 function sortTicketsSheet(sheet) {
   var last = sheet.getLastRow();
   if (last <= 2) return; // 0 або 1 заявка — сортувати нічого
-
+ 
   var range = sheet.getRange(2, 1, last - 1, TICKET_HEADERS.length);
   var rows = range.getValues();
-
-  rows.sort(function(a, b) {
+ 
+  rows.sort(function (a, b) {
     return rowDateKey(b) - rowDateKey(a);
   });
-
+ 
   range.setValues(rows);
 }
-
+ 
+// Сортує масив заявок від найновішої (за датою і часом) до найстарішої
+function sortTicketsByDateDesc(list) {
+  return (list || []).slice().sort(function (a, b) {
+    return ticketDateKey(b) - ticketDateKey(a);
+  });
+}
+ 
 function rowDateKey(row) {
   var d = parseDdMmYyyy(row[1]); // колонка B — дата
   if (!d) return 0;
   return d.getTime() + timeToMs(row[2]); // колонка C — час
 }
-
-// одноразова ручна функція — запустіть її один раз з редактора Apps
+ 
+function ticketDateKey(t) {
+  var d = parseDdMmYyyy(t.date);
+  if (!d) return 0;
+  return d.getTime() + timeToMs(t.time);
+}
+ 
+// Одноразова ручна функція — запустіть її один раз з редактора Apps
 // Script (кнопка ▶ Запустити, обравши "sortExistingTicketsNow" у списку
 // функцій зверху), щоб одразу впорядкувати вже наявні заявки за датою.
 // Далі порядок буде підтримуватись автоматично при кожному новому додаванні.
@@ -5277,33 +5444,10 @@ function sortExistingTicketsNow() {
   var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
   sortTicketsSheet(sheet);
 }
-
-
-// переводить "ГГ:ХХ" у мілісекунди для порівняння в межах однієї доби
-function timeToMs(t) {
-  if (t instanceof Date) {
-    return (t.getHours() * 60 + t.getMinutes()) * 60000;
-  }
-  var m = String(t || '').match(/^(\\d{1,2}):(\\d{2})/);
-  if (!m) return 0;
-  return (Number(m[1]) * 60 + Number(m[2])) * 60000;
-}
-
-function parseDdMmYyyy(s) {
-  // Деякі клітинки Google Таблиця могла зберегти як справжню дату (тип
-  // Date), а не текст — навіть якщо колонці задано текстовий формат: формат
-  // не перетворює заднім числом уже наявне значення. Якщо це не врахувати,
-  // такий рядок не парситься, отримує "нульовий" ключ сортування і
-  // провалюється в самий низ (чи випадково опиняється не на своєму місці).
-  if (s instanceof Date) {
-    return isNaN(s.getTime()) ? null : new Date(s.getFullYear(), s.getMonth(), s.getDate());
-  }
-  var parts = String(s || '').split('.');
-  if (parts.length !== 3) return null;
-  var d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-  return isNaN(d.getTime()) ? null : d;
-}
-
+ 
+ 
+/* ---------- Зміни ---------- */
+ 
 function addShiftRow(ss, s) {
   var sheet = getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS);
   var newDate = parseDdMmYyyy(s.date);
@@ -5320,7 +5464,7 @@ function addShiftRow(ss, s) {
   if (insertRow <= last) sheet.insertRowBefore(insertRow);
   writeShiftRow(sheet, insertRow, s);
 }
-
+ 
 function writeShiftRow(sheet, rowIndex, s) {
   var row = [s.id, s.date, s.hours, s.coworker];
   var range = sheet.getRange(rowIndex, 1, 1, row.length);
@@ -5330,63 +5474,33 @@ function writeShiftRow(sheet, rowIndex, s) {
   sheet.getRange(rowIndex, 4, 1, 1).setNumberFormat('@'); // coworker
   range.setValues([row]);
 }
-
-function writeAllTickets(sheet, tickets) {
-  var sorted = sortTicketsByDateDesc(tickets); // щоб і повний синк тримав порядок за датою
-  sheet.clear();
-  sheet.appendRow(TICKET_HEADERS);
-  sheet.getRange(1, 1, Math.max(sorted.length + 1, 1000), 3).setNumberFormat('@');
-  sheet.getRange(1, 6, Math.max(sorted.length + 1, 1000), 2).setNumberFormat('@');
-  // NEW: раніше тут був forEach з writeTicketRow на кожну заявку — а
-  // writeTicketRow сама по собі робить 8 окремих звернень до Google Sheets
-  // API (6× форматування комірок, які тут ВЖЕ зроблено масово рядком вище —
-  // тобто дублювались даремно, + запис значень + автовисота рядка). При
-  // 500-1000+ заявках це тисячі окремих API-викликів в одному запуску
-  // Apps Script — реальний ризик впертись у ліміт часу виконання (6 хв) і
-  // лишити лист із частково записаними (або взагалі порожніми) даними
-  // просто через sheet.clear() вище. Тепер збираємо всі рядки в пам'яті й
-  // пишемо ОДНИМ викликом setValues — швидкість не залежить від кількості
-  // заявок так драматично, і час виконання лишається малим навіть при
-  // великій базі.
-  if (sorted.length > 0) {
-    var values = sorted.map(function (t) {
-      return [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || ''];
-    });
-    sheet.getRange(2, 1, sorted.length, TICKET_HEADERS.length).setValues(values);
-    sheet.getRange(2, 4, sorted.length, 1).setWrap(true); // перенос тексту в колонці "зміст" — масово, не по рядку
-    sheet.setRowHeightsAuto(2, sorted.length); // автовисота під перенесений текст — теж одним викликом на весь блок
+ 
+// NEW: та сама проблема й те саме рішення, що й у writeAllTickets вище —
+// тимчасовий лист + атомарна заміна замість clear()+цикл.
+function writeAllShifts(ss, shifts) {
+  var list = shifts || [];
+  var tempSheet = ss.insertSheet('_Зміни_tmp_' + Date.now());
+  try {
+    tempSheet.appendRow(SHIFT_HEADERS);
+    if (list.length) {
+      var rows = list.map(function (s) { return [s.id, s.date, s.hours, s.coworker]; });
+      tempSheet.getRange(2, 1, rows.length, 1).setNumberFormat('@'); // id
+      tempSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@'); // date
+      tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.##'); // hours
+      tempSheet.getRange(2, 4, rows.length, 1).setNumberFormat('@'); // coworker
+      tempSheet.getRange(2, 1, rows.length, 4).setValues(rows); // ОД�Н запис одразу для всіх рядків
+    }
+    swapInPlace(ss, tempSheet, 'Зміни');
+    getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS);
+  } catch (err) {
+    ss.deleteSheet(tempSheet);
+    throw err;
   }
 }
-
-// сортує заявки від найновішої (за датою і часом) до найстарішої
-function sortTicketsByDateDesc(list) {
-  return (list || []).slice().sort(function(a, b) {
-    return ticketDateKey(b) - ticketDateKey(a);
-  });
-}
-
-function ticketDateKey(t) {
-  var d = parseDdMmYyyy(t.date);
-  if (!d) return 0;
-  return d.getTime() + timeToMs(t.time);
-}
-
-function writeAllShifts(sheet, shifts) {
-  sheet.clear();
-  sheet.appendRow(SHIFT_HEADERS);
-  sheet.getRange(1, 1, Math.max(shifts.length + 1, 1000), 2).setNumberFormat('@');
-  // NEW: та сама причина, що й у writeAllTickets вище — один пакетний запис
-  // замість по-рядкового forEach(writeShiftRow), щоб не впертись у ліміт
-  // часу виконання Apps Script при великій кількості змін.
-  if (shifts.length > 0) {
-    var values = shifts.map(function (s) {
-      return [s.id, s.date, s.hours, s.coworker];
-    });
-    sheet.getRange(2, 1, shifts.length, SHIFT_HEADERS.length).setValues(values);
-    sheet.getRange(2, 3, shifts.length, 1).setNumberFormat('0.##'); // hours — окремий числовий формат для всього блоку одразу
-  }
-}
-
+ 
+ 
+/* ---------- Спільне ---------- */
+ 
 function deleteRowById(sheet, id) {
   var last = sheet.getLastRow();
   if (last < 2) return;
@@ -5394,78 +5508,55 @@ function deleteRowById(sheet, id) {
   var idx = ids.findIndex(function (v) { return String(v) === String(id); });
   if (idx > -1) sheet.deleteRow(idx + 2);
 }
-
+ 
 function syncAllData(ss, tickets, shifts) {
-  writeAllTickets(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), tickets || []);
-  writeAllShifts(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), shifts || []);
+  writeAllTickets(ss, tickets || []);
+  writeAllShifts(ss, shifts || []);
 }
-
+ 
+ 
+/* ---------- Утиліти форматування/парсингу ---------- */
+ 
+function parseDdMmYyyy(s) {
+  // NEW: клітинка може зберігатись і як текст "dd.MM.yyyy", і як справжня
+  // дата Google Sheets (Date) — якщо колонку відформатували в текст не
+  // одразу, старі значення могли лишитись типом Date. � аніше в такому
+  // випадку парсер повертав null, і рядок отримував "вагу" 0 при
+  // сортуванні — через це нові заявки завжди вилазили нагору, бо їхня
+  // вага (справжня дата) завжди більша за 0.
+  if (s instanceof Date) return isNaN(s.getTime()) ? null : s;
+  var parts = String(s || '').split('.');
+  if (parts.length !== 3) return null;
+  var d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+  return isNaN(d.getTime()) ? null : d;
+}
+ 
+// Переводить "ГГ:ХХ" у мілісекунди для порівняння в межах однієї доби
+function timeToMs(t) {
+  if (t instanceof Date) return (t.getHours() * 60 + t.getMinutes()) * 60000; // те саме застереження, що й у parseDdMmYyyy
+  var m = String(t || '').match(/^(\\d{1,2}):(\\d{2})/);
+  if (!m) return 0;
+  return (Number(m[1]) * 60 + Number(m[2])) * 60000;
+}
+ 
 function cellToDateString(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'dd.MM.yyyy');
   return v === null || v === undefined ? '' : String(v).trim();
 }
+ 
 function cellToTimeString(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'HH:mm');
   return v === null || v === undefined ? '' : String(v).trim();
 }
+ 
 function safeString(v) {
   return v === null || v === undefined ? '' : String(v).trim();
 }
+ 
 function safeNumber(v) {
   if (v instanceof Date) return 0;
   var n = Number(v);
   return isNaN(n) ? 0 : n;
-}
-
-function doGet(e) {
-  // NEW: read-only перевірка "чи є вже такий id в аркуші Заявки" —
-  // застосунок викликає це одразу після додавання нової заявки (окремим
-  // запитом, ПІСЛЯ основного no-cors POST), щоб підтвердити, що вона
-  // реально потрапила в таблицю. Нічого не пише — жодних побічних ефектів.
-  if (e && e.parameter && e.parameter.action === 'checkTicketExists') {
-    var checkSheet = getOrCreateSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Заявки', TICKET_HEADERS);
-    var checkLast = checkSheet.getLastRow();
-    var exists = false;
-    if (checkLast > 1) {
-      var checkIds = checkSheet.getRange(2, 1, checkLast - 1, 1).getValues().flat();
-      var targetId = String(e.parameter.id);
-      exists = checkIds.some(function (v) { return String(v) === targetId; });
-    }
-    return ContentService.createTextOutput(JSON.stringify({status: 'ok', exists: exists})).setMimeType(ContentService.MimeType.JSON);
-  }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var tz = ss.getSpreadsheetTimeZone();
-  var tSheet = ss.getSheetByName('Заявки');
-  var sSheet = ss.getSheetByName('Зміни');
-  var tickets = [];
-  var shifts = [];
-  if (tSheet && tSheet.getLastRow() > 1) {
-    tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 7).getValues().forEach(function (r) {
-      if (!r[0] && !r[1]) return;
-      tickets.push({
-        id: safeString(r[0]),
-        date: cellToDateString(r[1], tz),
-        time: cellToTimeString(r[2], tz),
-        content: r[3] === null || r[3] === undefined ? '' : String(r[3]),
-        sum: safeNumber(r[4]),
-        tags: r[5] ? String(r[5]).split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [],
-        backupNote: safeString(r[6]),
-        photo: null
-      });
-    });
-  }
-  if (sSheet && sSheet.getLastRow() > 1) {
-    sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 4).getValues().forEach(function (r) {
-      if (!r[0] && !r[1]) return;
-      shifts.push({
-        id: safeString(r[0]),
-        date: cellToDateString(r[1], tz),
-        hours: safeNumber(r[2]),
-        coworker: safeString(r[3])
-      });
-    });
-  }
-  return ContentService.createTextOutput(JSON.stringify({tickets: tickets, shifts: shifts})).setMimeType(ContentService.MimeType.JSON);
 }`;
 
 function showAppsScriptModal(){
