@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v48 · 2026-08-09';
+const APP_VERSION = 'v49 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -3029,9 +3029,18 @@ async function backupTicketToTelegram(t){
     // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
     // з підписом і номером (1/3, 2/3...), щоб було видно, що це саме ця заявка.
     const photosToSend = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    // NEW: раніше запасний Telegram file_id (на випадок, якщо локальної копії
+    // фото в IndexedDB вже немає) передавався ЛИШЕ для першого фото
+    // (t.tgPhotoFileId — старе одиничне поле), а для другого й третього —
+    // завжди null, хоча правильні id для КОЖНОГО фото вже лежать у масиві
+    // t.tgPhotoFileIds (заповнюється нижче ж таки після кожної успішної
+    // відправки). Через це повторний бекап/відновлення другого-третього фото
+    // мовчки не спрацьовував би, якщо локальна копія загубилась.
+    const prevTgPhotoFileIds = t.tgPhotoFileIds || [];
     t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];
     for(let pi=0; pi<photosToSend.length; pi++){
-      const photoData = await resolvePhotoAsync(photosToSend[pi], pi===0 ? t.tgPhotoFileId : null);
+      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? t.tgPhotoFileId : null);
+      const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
       if(!photoData) continue;
       const blob = await (await fetch(photoData)).blob();
       const form = new FormData();
@@ -4859,6 +4868,12 @@ async function handleJsonImportFile(file){
       // зроблено старішою версією застосунку і в ньому бракує якихось полів
       tickets = data.tickets.map(t=>Object.assign(blankTicketObject(), t));
       saveTickets();
+      // NEW: якщо в імпортованому бекапі лишились старі фото прямо як base64
+      // (t.photo, а не ключ idb:...) — переносимо їх в IndexedDB тим самим
+      // шляхом, що й при першому запуску застосунку. Раніше це робилось
+      // лише ОДИН РАЗ при старті, і на такий бекап (зроблений старою версією,
+      // з фото ще в base64) не спрацьовувало при імпорті під час роботи.
+      await migrateLegacyPhotosToIdb();
     }
     if(hasShifts){
       shifts = data.shifts;
@@ -5628,10 +5643,17 @@ function bindTabBar(){
     btn.addEventListener('click', ()=>{
       const tab = btn.dataset.tab;
       const currentlyOnCalculator = document.getElementById('screen-calculator').classList.contains('active');
-      if(currentlyOnCalculator && tab!=='calculator' && editingTicketId===null){
+      // NEW: раніше умова тут ще й перевіряла editingTicketId===null — тобто
+      // попередження про незбережені зміни спрацьовувало ЛИШЕ для НОВОЇ
+      // заявки. Якщо редагувати вже існуючу заявку (звичайну чи ☁️
+      // відновлену з хмари) і просто тапнути на іншу вкладку — правки
+      // тихо губились без жодного попередження (кнопка "Скасувати
+      // редагування" своє попередження показує, але перехід через таби
+      // йде іншим шляхом і її не зачіпає).
+      if(currentlyOnCalculator && tab!=='calculator'){
         syncFormToState();
         if(hasUnsavedChanges()){
-          const leave = confirm('У калькуляторі є незбережені дані. Перейти без збереження?');
+          const leave = confirm(editingTicketId ? 'Є незбережені правки заявки. Перейти без збереження?' : 'У калькуляторі є незбережені дані. Перейти без збереження?');
           if(!leave) return;
         }
       }
@@ -6756,11 +6778,11 @@ if('serviceWorker' in navigator){
    у PWA-режимі або деяких мобільних webview це попередження може не
    показуватись через обмеження платформи, але шкоди від нього немає. */
 window.addEventListener('beforeunload', (e)=>{
-  if(editingTicketId===null){
-    syncFormToState();
-    if(hasUnsavedChanges()){
-      e.preventDefault();
-      e.returnValue = '';
-    }
+  // NEW: та сама причина, що й у bindTabBar вище — прибрано editingTicketId===null,
+  // яке раніше вимикало це попередження для редагування вже існуючої заявки.
+  syncFormToState();
+  if(hasUnsavedChanges()){
+    e.preventDefault();
+    e.returnValue = '';
   }
 });
