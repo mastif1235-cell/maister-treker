@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v47 · 2026-08-09';
+const APP_VERSION = 'v48 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -160,6 +160,13 @@ let editingTicketId = null;
 // лише ФОТО, ЗНЯТІ В ЦЬОМУ СЕАНСІ (щойно сфотографовані, ще ніде не
 // збережені), а не ті, що вже належать заявці й мають лишитись.
 let calcOriginalPhotoKeys = [];
+// NEW: лічильник "сеансу форми" — росте щоразу, коли відкривається нова
+// порожня форма (resetCalcForm) чи форма редагування (loadTicketIntoForm).
+// handlePhotoFile знімає поточне значення ДО того, як піде асинхронний
+// storePhoto (запис в IndexedDB) — якщо до моменту, коли запис завершиться,
+// користувач встиг скасувати заявку чи відкрити іншу (сеанс змінився), фото
+// видаляється з IndexedDB замість того, щоб "прилипнути" до чужої заявки.
+let formSessionId = 0;
 let feeIsAutoDefault = true; // NEW: поки true — ціну виклику/підключення можна автоматично підставити при зміні типу заявки; false — майстер вже ввів своє значення вручну, чіпати не можна
 let tariffIsAutoDefault = true; // те саме, але для поля "Тариф" — щоб автопідставлене за замовчуванням значення не вважалось "незбереженою зміною"
 // NEW: чи торкався користувач полів форми руками. Потрібно окремо від
@@ -2102,10 +2109,22 @@ async function loadFromCloud(){
   // Зберігаємо їх заздалегідь за id, щоб повернути в об'єднані заявки нижче.
   const localPhotoAndTgById = new Map();
   tickets.forEach(t=>{
-    if(t.photo || t.tgBackedUp || t.tgPhotoFileId){
+    // NEW: раніше зберігали лише ОДНЕ фото (t.photo) і одинарні tg-поля —
+    // для заявок із 2-3 фото (masiv photos/tgPhotoFileIds/tgPhotoMsgIds)
+    // друге й третє фото після "Завантажити з хмари" тихо відв'язувались
+    // від заявки (лишались в IndexedDB сиротами, але заявка про них більше
+    // "не знала" — картка показувала тільки перше фото).
+    if(t.photo || (t.photos && t.photos.length) || t.tgBackedUp || t.tgPhotoFileId || (t.tgPhotoFileIds && t.tgPhotoFileIds.length)){
       localPhotoAndTgById.set(String(t.id), {
-        photo: t.photo, tgBackedUp: t.tgBackedUp, tgPhotoFileId: t.tgPhotoFileId,
-        tgSepMsgId: t.tgSepMsgId, tgTextMsgId: t.tgTextMsgId, tgPhotoMsgId: t.tgPhotoMsgId, tgJsonMsgId: t.tgJsonMsgId
+        photo: t.photo,
+        photos: t.photos ? t.photos.slice() : undefined,
+        tgBackedUp: t.tgBackedUp,
+        tgPhotoFileId: t.tgPhotoFileId,
+        tgPhotoFileIds: t.tgPhotoFileIds ? t.tgPhotoFileIds.slice() : undefined,
+        tgSepMsgId: t.tgSepMsgId, tgTextMsgId: t.tgTextMsgId,
+        tgPhotoMsgId: t.tgPhotoMsgId,
+        tgPhotoMsgIds: t.tgPhotoMsgIds ? t.tgPhotoMsgIds.slice() : undefined,
+        tgJsonMsgId: t.tgJsonMsgId
       });
     }
   });
@@ -2144,7 +2163,17 @@ async function loadFromCloud(){
         if(fullData) Object.assign(merged, fullData);
         // NEW: якщо для цього id є збережені локальні photo/tg* — повертаємо їх
         const local = localPhotoAndTgById.get(String(merged.id));
-        if(local) Object.assign(merged, local);
+        if(local){
+          Object.assign(merged, local);
+          // NEW: Object.assign копіює й undefined-значення (якщо в local не
+          // було масиву photos — властивість все одно перезаписується на
+          // undefined) — тож після злиття завжди узгоджуємо одне з одним,
+          // а не покладаємось, що обидва поля прийшли синхронізованими.
+          if((!merged.photos || !merged.photos.length) && merged.photo) merged.photos = [merged.photo];
+          if(merged.photos && merged.photos.length && !merged.photo) merged.photo = merged.photos[0];
+          if(!merged.tgPhotoFileIds || !merged.tgPhotoFileIds.length){ merged.tgPhotoFileIds = merged.tgPhotoFileId ? [merged.tgPhotoFileId] : []; }
+          if(!merged.tgPhotoMsgIds || !merged.tgPhotoMsgIds.length){ merged.tgPhotoMsgIds = merged.tgPhotoMsgId ? [merged.tgPhotoMsgId] : []; }
+        }
         return merged;
       });
       saveTickets();
@@ -3398,6 +3427,14 @@ function hasUnsavedChanges(){
   if(s.note || s.masterNote) return true;
   if(s.photo) return true;
   if(s.macAddress) return true;
+  // NEW: для заявки, відновленої з хмари (cloudImported), правки в контенті
+  // й сумі (поля f_rawContent/f_rawSum, синхронізуються syncFormToState)
+  // раніше НІЯК не потрапляли в цю перевірку — жодне з полів вище для такої
+  // заявки типово не заповнене (вона зберігає лише текстовий content, а не
+  // розібрані city/address/phone/...). Через це для raw-заявок автозбереження
+  // чернетки НЕ спрацьовувало, і попередження "є незбережені зміни" при виході
+  // без збереження НЕ з'являлось — правки тихо губились.
+  if(s.cloudImported && (s.content !== s._origContent || s.sum !== s._origSum)) return true;
   if(s.login || s.password) return true;
   if(s.type === 'Ремонт' && s.contractNumber) return true; // NEW: вручну введений номер договору для ремонту
   if(s.geoLink) return true;
@@ -3480,6 +3517,7 @@ function saveDailyMastersDefault(masters){
 }
 function resetCalcForm(presetDate, overrides){
   calcState = blankCalcState();
+  formSessionId++; // NEW: новий сеанс форми — попередні "фото в польоті" себе впізнають і не приліпляться сюди
   if(presetDate) calcState.date = presetDate;
   calcOriginalPhotoKeys = []; // NEW: нова порожня заявка — жодного "оригінального" фото ще нема
   // NEW: дозволяє одразу підставити тип заявки й дані абонента (з профілю
@@ -3513,6 +3551,12 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
+  formSessionId++; // NEW: те саме застереження, що й у resetCalcForm — новий сеанс форми
+  // NEW: знімок оригінальних content/sum на момент відкриття — потрібен
+  // лише для cloudImported (raw) заявок, де hasUnsavedChanges порівнює з
+  // цими значеннями, щоб побачити правки в f_rawContent/f_rawSum (див. там).
+  calcState._origContent = calcState.content || '';
+  calcState._origSum = calcState.sum || 0;
   // NEW: старі заявки мають лише одне фото в полі photo — якщо масиву photos
   // ще нема (чи він порожній), а старе фото є, переносимо його в масив, щоб
   // форма з підтримкою до 3 фото показала його як завжди.
@@ -4037,6 +4081,7 @@ function handlePhotoFile(file){
   if(!file) return;
   if(!calcState.photos) calcState.photos = [];
   if(calcState.photos.length >= 3){ showToast('Максимум 3 фото на заявку'); return; }
+  const sessionAtStart = formSessionId; // NEW: знімок сеансу форми — див. коментар біля оголошення formSessionId
   const reader = new FileReader();
   reader.onload = (e)=>{
     const img = new Image();
@@ -4063,6 +4108,12 @@ function handlePhotoFile(file){
       // localStorage завжди лишається легкою, незалежно від кількості й
       // розміру фото.
       storePhoto(dataUrl).then(key=>{
+        // NEW: поки йшов запис в IndexedDB, користувач міг скасувати заявку
+        // або відкрити іншу (formSessionId змінився) — тоді calcState вже
+        // зовсім ІНШИЙ об'єкт (не той, для якого фото знімали), і без цієї
+        // перевірки фото "приліплювалось" би до чужої заявки. У такому
+        // випадку просто видаляємо щойно записане фото з IndexedDB.
+        if(formSessionId !== sessionAtStart){ deletePhotoKey(key); return; }
         if(calcState.photos.length >= 3){ deletePhotoKey(key); return; } // могли встигнути додати ще, поки це фото записувалось
         photoCacheSet(key, dataUrl); // одразу в кеш — прев'ю показується миттєво, без походу в IndexedDB
         calcState.photos.push(key);
@@ -5142,7 +5193,7 @@ function renderReport(range){
 }
 
 /* ---- Код Apps Script (для довідки користувачу) ---- */
-const APPS_SCRIPT_CODE = `var SYNC_SECRET = '2112Av';
+const APPS_SCRIPT_CODE = `var SYNC_SECRET = 'ЗАМІНІТЬ_НА_СВІЙ_ДОВГИЙ_ВИПАДКОВИЙ_РЯДОК'; // ⚠️ встановіть тут той самий рядок, що й у полі "Секретний ключ" у Налаштуваннях застосунку — інакше синхронізація не працюватиме
  
 var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON']; // NEW: 8-й стовпець — окремо від нотаток майстра
 var SHIFT_HEADERS  = ['id','date','hours','coworker'];
