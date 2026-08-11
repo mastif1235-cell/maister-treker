@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v49 · 2026-08-09';
+const APP_VERSION = 'v50 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -859,7 +859,13 @@ function showNaryadQueue(date){
         // тільки для заявок, відновлених із хмари) — текст диспетчера
         // безслідно губився. Тепер кладемо в note — це видиме поле
         // "Примітка", яке й лишається в тексті заявки після збереження.
-        prefill.note = n.text;
+        // NEW: текст наряду йшов у note — але це поле потрапляє в текст
+        // заявки, який летить диспетчеру (копіювання/"Диспетчеру"/"Поділитися").
+        // Диспетчер сам написав цей текст — надсилати його йому назад
+        // безглуздо. Тепер кладемо в masterNote — приватну примітку
+        // ("🔒 Тільки для вас"), яка ніколи нікуди не відправляється, лишається
+        // лише в застосунку як нагадування собі.
+        prefill.masterNote = n.text;
         const phoneMatch = n.text.match(/[\d][\d\s\-()]{7,}\d/);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
         showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
@@ -994,9 +1000,11 @@ function showNaryadChecker(){
     const startFromNaryad = type=>{
       const rawText = document.getElementById('naryadInput').value.trim();
       const prefill = {};
-      // NEW: те саме виправлення, що й вище — текст наряду в note (видиме
-      // поле "Примітка"), а не в content (перезаписувався і губився).
-      if(rawText) prefill.note = rawText;
+      // NEW: те саме виправлення, що й вище — текст наряду в masterNote
+      // (приватна примітка "🔒 Тільки для вас", ніколи не летить диспетчеру),
+      // а не в note (яке потрапляє в текст заявки для диспетчера) чи в
+      // content (перезаписувався і губився).
+      if(rawText) prefill.masterNote = rawText;
       const phoneMatch = rawText.match(/[\d][\d\s\-()]{7,}\d/);
       if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
       startNewTicketFlow(type, prefill, {...addrNavState});
@@ -2641,8 +2649,8 @@ function renderTicketCard(t, opts={}){
         : `<button type="button" class="btn btn-sm goto-profile-btn" data-id="${t.id}" title="Перейти до профілю абонента">👤 В профіль</button>`}
       ${opts.workOnly ? '' : geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
-      <button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>
-      <button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>
+      ${opts.workOnly ? `<button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>` : ''}
+      ${opts.workOnly ? `<button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>` : ''}
       <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
     </div>
   </div>`;
