@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v50 · 2026-08-09';
+const APP_VERSION = 'v51 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -585,7 +585,31 @@ function phoneDigitsToMask(raw){
   return out;
 }
 function formatPhoneInput(e){
-  e.target.value = phoneDigitsToMask(e.target.value);
+  const el = e.target;
+  const prevDigits = el.dataset.prevDigitsCount === undefined ? null : Number(el.dataset.prevDigitsCount);
+  const valueShrank = el.value.length < Number(el.dataset.prevLength || 0);
+  let digits = el.value.replace(/\D/g,'').slice(0,10);
+  // NEW: коли лишається, наприклад, "(067)" і тиснеш "видалити" з кінця —
+  // стирається символ ")" (не цифра), кількість цифр не змінюється, і
+  // маска одразу домальовує ту саму дужку назад — візуально нічого не
+  // відбувається, ніби видалення "зависло" на дужці. Якщо бачимо, що поле
+  // стало коротшим, а цифр лишилось стільки ж — значить стерли символ
+  // маски, а не цифру, і тоді прибираємо ще й останню цифру теж.
+  if(valueShrank && prevDigits !== null && digits.length === prevDigits && digits.length > 0){
+    digits = digits.slice(0, -1);
+  }
+  el.value = phoneDigitsToMask(digits);
+  el.dataset.prevDigitsCount = digits.length;
+  el.dataset.prevLength = el.value.length;
+}
+// NEW: викликати після БУДЬ-ЯКОГО програмного встановлення f_phone.value
+// (завантаження заявки, відновлення попереднього значення після зміни типу
+// тощо) — щоб formatPhoneInput вище одразу знав правильну кількість цифр і
+// коректно розпізнавав видалення символу маски з першого ж натискання.
+function syncPhoneFieldMaskState(){
+  const el = document.getElementById('f_phone');
+  el.dataset.prevDigitsCount = el.value.replace(/\D/g,'').length;
+  el.dataset.prevLength = el.value.length;
 }
 function formatDate(d){ return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`; }
 function formatTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
@@ -2643,7 +2667,7 @@ function renderTicketCard(t, opts={}){
     <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${(t.photos&&t.photos.length)||t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-id="${escapeHtml(t.tgPhotoFileId||'')}">📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>` : ''}</div>
     ${(t.photos&&t.photos.length)||t.photo ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
     <div class="tc-actions">
-      <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️</button>
+      <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️ Редагувати</button>
       ${opts.workOnly
         ? `<button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>`
         : `<button type="button" class="btn btn-sm goto-profile-btn" data-id="${t.id}" title="Перейти до профілю абонента">👤 В профіль</button>`}
@@ -2651,7 +2675,7 @@ function renderTicketCard(t, opts={}){
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       ${opts.workOnly ? `<button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>` : ''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm copy-ticket-btn" data-id="${t.id}">📄 Копіювати</button>` : ''}
-      <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️</button>
+      <button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${t.id}">🗑️ Видалити</button>
     </div>
   </div>`;
 }
@@ -3665,6 +3689,7 @@ function fillFormFromState(){
   }
   document.getElementById('f_client').value = calcState.clientName || '';
   document.getElementById('f_phone').value = calcState.phone || '';
+  syncPhoneFieldMaskState(); // NEW: див. коментар біля оголошення функції
   document.getElementById('f_mac').value = calcState.macAddress || '';
   { const hint = document.getElementById('macHint'); if(hint) hint.style.display = (calcState.macAddress && !/^[0-9A-F]{12}$/.test(calcState.macAddress)) ? '' : 'none'; }
   document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
@@ -5159,21 +5184,6 @@ function openReportModal(){
   }});
 }
 
-/* Текст всіх заявок поточного дня (того, що зараз обраний у навігації по
-   датах) - для кнопок "Копіювати за день"/"Надіслати за день" одразу під
-   списком заявок. */
-function buildDayReportText(){
-  const list = ticketsForDate(currentTicketDate)
-    .slice()
-    .sort((a,b)=> (a.time||'').localeCompare(b.time||''));
-  const total = list.reduce((s,t)=>s+(Number(t.sum)||0),0);
-  let text = `ЗАЯВКИ ЗА ${currentTicketDate}\nВсього: ${list.length}, сума: ${fmtMoney(total)}\n\n`;
-  list.forEach(t=>{
-    text += `${t.time || ''} — ${t.type || 'Заявка'}\n${t.content || ''}\n\n`;
-  });
-  return text.trim();
-}
-
 function renderReport(range){
   const ref = parseDate(currentTicketDate);
   let list;
@@ -5193,7 +5203,12 @@ function renderReport(range){
   const full = document.getElementById('reportFullToggle')?.checked;
   let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${list.length}  Сума: ${fmtMoney(total)}\n\n`;
   if(full){
-    list.forEach(t=> text += `${t.date} ${t.time}\n${t.content || (t.type+' — '+fmtMoney(t.sum))}\n\n`);
+    // NEW: раніше між заявками був лише подвійний перенос рядка — коли
+    // одна заявка коротка (без чіткого візуального "блоку"), вона зливалась
+    // із сусідньою, важко було зрозуміти, де закінчується одна й починається
+    // інша. Тепер між заявками — розділювач-риска, як і в самій заявці
+    // (між обладнанням/оплатою тощо), плюс порядковий номер.
+    list.forEach((t,i)=> text += `━━━━━━━━━━━━━━━ ${i+1} ━━━━━━━━━━━━━━━\n${t.date} ${t.time}\n${t.content || (t.type+' — '+fmtMoney(t.sum))}\n\n`);
   } else {
     list.forEach(t=> text += `${t.date} ${t.time} — ${t.type} — ${fmtMoney(t.sum)}\n`);
   }
@@ -5680,18 +5695,10 @@ function bindTicketsScreen(){
   document.getElementById('naryadQueueBtn').addEventListener('click', ()=> showNaryadQueue());
   updateNaryadQueueBtn();
 
-  document.getElementById('copyDayBtn').addEventListener('click', async ()=>{
-    const text = buildDayReportText();
-    try{ await navigator.clipboard.writeText(text); showToast('Заявки за день скопійовано'); }
-    catch(e){ showToast('Не вдалося скопіювати'); }
-  });
-  document.getElementById('shareDayBtn').addEventListener('click', async ()=>{
-    const text = buildDayReportText();
-    try{
-      if(navigator.share){ await navigator.share({title:'Заявки за день', text}); }
-      else { await navigator.clipboard.writeText(text); showToast('Поділитися недоступне — текст скопійовано'); }
-    }catch(e){ if(e.name!=='AbortError') showToast('Не вдалося надіслати'); }
-  });
+  // NEW: кнопки "Копіювати за день"/"Надіслати за день" прибрано з головного
+  // екрана — той самий функціонал (і повний, з фільтрами за період) уже є
+  // в модалці "Звіти", а тут вони лише захаращували екран і майже не
+  // використовувались.
 
   let searchDebounceTimer = null;
   document.getElementById('searchInput').addEventListener('input', e=>{
@@ -5885,6 +5892,7 @@ function maybeSuggestClientFromAddress(){
     document.getElementById('useAddrClientBtn').addEventListener('click', ()=>{
       document.getElementById('f_client').value = prev.clientName || '';
       document.getElementById('f_phone').value = prev.phone || '';
+      syncPhoneFieldMaskState(); // NEW: див. коментар біля оголошення функції
       calcState.clientName = prev.clientName || '';
       calcState.phone = prev.phone || '';
       // NEW: логін/пароль/номер договору — теж дані абонента, підставляємо разом з ім'ям
