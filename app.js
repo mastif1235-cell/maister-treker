@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v51 · 2026-08-09';
+const APP_VERSION = 'v52 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1313,7 +1313,12 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   const geoEditBtnHtml = `<button type="button" class="btn btn-sm abonent-geo-edit-btn" data-ids="${geoIdsJson}" data-geo-link="${escapeHtml(geoTicket ? geoTicket.geoLink : '')}" title="${geoTicket ? 'Редагувати геолокацію' : 'Додати геолокацію'}" style="${geoTicket ? '' : 'flex:1;'}">${geoTicket ? '✏️' : '📍 Додати геолокацію'}</button>`;
   const actionBtnsHtml = `
     <div class="row" style="gap:8px; margin-top:8px;">
-      ${acctTicket && acctTicket.contractNumber ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
+      <!-- NEW: раніше кнопка "Договір" з'являлась лише за наявності номера
+           договору — але showDogovor() і так коректно показує картку/QR і
+           без нього (просто без рядка "№ ..."). Якщо номер невідомий (лише
+           логін/пароль від диспетчера, без офіційного номера) — кнопка
+           тепер теж доступна, щоб абонент міг відсканувати ті ж дані. -->
+      ${acctTicket ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
       ${geoTicket ? `<a href="${escapeHtml(geoTicket.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">📍 Перейти</a>` : ''}
       ${geoEditBtnHtml}
     </div>`;
