@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v52 · 2026-08-09';
+const APP_VERSION = 'v54 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -1165,8 +1165,14 @@ function ticketMatchesSearchQuery(t, q){
   return false;
 }
 function addrNavSearchResultsHtml(query){
+  // NEW: тут і в трьох місцях нижче раніше сортування йшло як текстове
+  // порівняння "ДД.ММ.РРРР ГГ:ХХ" (localeCompare) — через формат дати з
+  // числом дня ПЕРШИМ це фактично сортувало здебільшого за днем місяця, а
+  // не за реальною хронологією (наприклад, "01.12.2025" опинялось б ПЕРЕД
+  // "15.01.2026", хоча хронологічно все навпаки). Тепер — числовий ключ
+  // ticketSortKey (справжня дата+час у мілісекундах), як і в решті коду.
   const list = tickets.filter(t=>ticketMatchesSearchQuery(t, query))
-    .sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+    .sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
   const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено профілів:</div>`;
   if(!list.length) return `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: 0</div><div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
 
@@ -1195,7 +1201,7 @@ function addrNavSearchResultsHtml(query){
       return `${bLatest.date} ${bLatest.time}`.localeCompare(`${aLatest.date} ${aLatest.time}`);
     })
     .map(g=>{
-      const sorted = g.list.slice().sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+      const sorted = g.list.slice().sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
       const addrLabel = [g.city, g.street, g.house!=='(без номера)' ? `буд. ${g.house}` : '', g.apartment!=='(без кв.)' ? `кв. ${g.apartment}` : ''].filter(Boolean).join(', ');
       return addrProfileSummaryButtonHtml(sorted, addrLabel, `data-city="${escapeHtml(g.city)}" data-street="${escapeHtml(g.street)}" data-house="${escapeHtml(g.house)}" data-apartment="${escapeHtml(g.apartment)}"`);
     }).join('');
@@ -1520,7 +1526,7 @@ function addrNavResultsAreaHtml(){
       (t.street||'').trim()===addrNavState.street &&
       ((t.house||'').trim() || '(без номера)')===addrNavState.house &&
       ticketApartmentKey(t)===addrNavState.apartment
-    ).sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+    ).sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
     bodyHtml += list.length
       ? addrAbonentProfileHtml(list) + `<div class="ticket-list">${list.map(t=>renderTicketCard(t, {workOnly:true})).join('')}</div>`
       : `<div class="empty-state" style="padding:24px 10px;">Заявок не знайдено</div>`;
@@ -2669,7 +2675,7 @@ function renderTicketCard(t, opts={}){
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${(t.photos&&t.photos.length)||t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-id="${escapeHtml(t.tgPhotoFileId||'')}">📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>` : ''}</div>
+    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${(t.photos&&t.photos.length)||t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-ids='${escapeHtml(JSON.stringify((t.tgPhotoFileIds&&t.tgPhotoFileIds.length)?t.tgPhotoFileIds:(t.tgPhotoFileId?[t.tgPhotoFileId]:[])))}'>📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>` : ''}</div>
     ${(t.photos&&t.photos.length)||t.photo ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️ Редагувати</button>
@@ -2722,12 +2728,18 @@ function toggleTicketCardPhoto(btn, scopeEl){
   try{ keys = JSON.parse(btn.dataset.photoKeys || '[]'); }catch(err){ keys = []; }
   keys = keys.filter(Boolean);
   if(!keys.length) return;
-  const fileId = btn.dataset.tgFileId || null;
+  // NEW: раніше запасний Telegram file_id (на випадок відсутності локальної
+  // копії фото) брався лише для ПЕРШОГО фото (data-tg-file-id, одиничне
+  // поле) — для другого й третього завжди null, тож вони не могли
+  // відновитись із Telegram. Тепер читаємо масив (data-tg-file-ids) — по
+  // одному id на кожне фото, як і в профілі абонента.
+  let fileIds = [];
+  try{ fileIds = JSON.parse(btn.dataset.tgFileIds || '[]'); }catch(err){ fileIds = []; }
   btn.dataset.origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Завантаження…';
   // NEW: до 3 фото на заявку — вантажимо всі паралельно, кожне у своєму
   // мініатюрному блоці (тап по мініатюрі відкриває фото на весь екран)
-  Promise.all(keys.map((key, i)=> resolvePhotoAsync(key, i===0 ? fileId : null))).then(values=>{
+  Promise.all(keys.map((key, i)=> resolvePhotoAsync(key, fileIds[i] || null))).then(values=>{
     btn.disabled = false;
     const loadedAny = values.some(Boolean);
     if(!loadedAny){ btn.textContent = '📷 Не вдалося завантажити'; return; }
@@ -2763,13 +2775,23 @@ function deleteTicket(id){
 
 /* ---- Кошик видалених заявок: зберігає останні DELETED_TICKETS_MAX записів,
    старіші за цю межу видаляються остаточно (разом із фото в IndexedDB). ---- */
+// NEW: спільна функція для видалення ВСІХ фото заявки з IndexedDB (масив
+// photos, якщо є, інакше старе одиничне поле photo) — використовується і в
+// кошику (переповнення/остаточне видалення), і будь-де ще, де потрібно
+// прибрати фото заявки цілком. Раніше кошик прибирав лише t.photo (перше
+// фото), а друге й третє лишались "сиротами" в IndexedDB назавжди.
+function deleteAllTicketPhotos(t){
+  const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+  keys.forEach(k=> deletePhotoKey(k));
+}
+
 function moveTicketToTrash(t){
   const copy = JSON.parse(JSON.stringify(t));
   copy.deletedAt = Date.now();
   deletedTickets.unshift(copy);
   while(deletedTickets.length > DELETED_TICKETS_MAX){
     const dropped = deletedTickets.pop();
-    if(dropped.photo) deletePhotoKey(dropped.photo);
+    deleteAllTicketPhotos(dropped);
   }
   saveDeletedTickets();
 }
@@ -2808,7 +2830,7 @@ function purgeDeletedTicket(deletedAt){
   if(idx===-1) return;
   if(!confirm('Видалити заявку з кошика остаточно? Відновити після цього буде неможливо.')) return;
   const t = deletedTickets[idx];
-  if(t.photo) deletePhotoKey(t.photo);
+  deleteAllTicketPhotos(t); // NEW: усі фото (photos), не лише перше
   deletedTickets.splice(idx,1);
   saveDeletedTickets();
   renderDeletedTicketsList();
@@ -5872,7 +5894,7 @@ function findPreviousTicketAtAddress(city, street, house, apartment){
     (t.clientName || t.phone || t.login || t.password || t.contractNumber)
   );
   if(!matches.length) return null;
-  matches.sort((a,b)=> `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+  matches.sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
   return matches[0];
 }
 function maybeSuggestClientFromAddress(){
