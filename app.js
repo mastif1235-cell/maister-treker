@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v54 · 2026-08-09';
+const APP_VERSION = 'v55 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -376,7 +376,14 @@ async function resolvePhotoAsync(photoKey, tgFallbackFileId){
 async function storePhoto(dataUrl){
   const key = 'idb:' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
   photoCacheSet(key, dataUrl);
-  await photoDbPut(key, dataUrl);
+  // NEW: результат запису раніше ніяк не перевірявся — якщо photoDbPut
+  // не вдався (наприклад, немає вільного місця), функція все одно
+  // повертала ключ, ніби все добре. Поки застосунок відкритий, фото
+  // виглядає нормально (воно в photoCache, в оперативній пам'яті), але
+  // після закриття й повторного відкриття застосунку — зникає безслідно,
+  // без жодного попередження в момент, коли це ще можна було помітити.
+  const ok = await photoDbPut(key, dataUrl);
+  if(!ok) showToast('⚠️ Не вдалося зберегти фото на телефон — не закривайте застосунок, спробуйте ще раз');
   return key;
 }
 async function deletePhotoKey(key){
@@ -2488,25 +2495,32 @@ function renderSyncQueueBanner(){
   const banner = document.getElementById('syncQueueBanner');
   if(!getScriptUrl()){ banner.classList.add('hidden'); return; }
   const pending = tickets.filter(t=>!t.synced);
-  if(pending.length === 0){ banner.classList.add('hidden'); return; }
+  const pendingDeletes = deletedTickets.filter(t=>t.pendingCloudDelete); // NEW: та сама причина, що й у retrySyncQueue вище
+  const total = pending.length + pendingDeletes.length;
+  if(total === 0){ banner.classList.add('hidden'); return; }
   banner.classList.remove('hidden');
   const text = document.getElementById('syncQueueBannerText');
   text.textContent = navigator.onLine
-    ? `⏳ Не синхронізовано: ${pending.length} — спробувати ще раз?`
-    : `📴 Немає інтернету — ${pending.length} заявок надішлю, коли з'явиться зв'язок`;
+    ? `⏳ Не синхронізовано: ${total} — спробувати ще раз?`
+    : `📴 Немає інтернету — ${total} заявок надішлю, коли з'явиться зв'язок`;
 }
 
 let syncQueueBusy = false; // NEW: захист від повторного запуску, поки черга вже синхронізується
 async function retrySyncQueue(){
   if(syncQueueBusy) return; // NEW
   const pending = tickets.filter(t=>!t.synced);
-  if(pending.length === 0) return;
+  // NEW: заявки, видалені без інтернету, — синк видалення не вдався і
+  // позначений прапорцем у deleteTicket(). Вони вже не в tickets (пішли в
+  // кошик), тож обробляємо їх тут окремо, тим самим викликом (та сама
+  // кнопка "Повторити" і подія online підхоплюють обидва типи черги).
+  const pendingDeletes = deletedTickets.filter(t=>t.pendingCloudDelete);
+  if(pending.length === 0 && pendingDeletes.length === 0) return;
   if(!getScriptUrl()) return;
   syncQueueBusy = true;
   const bannerText = document.getElementById('syncQueueBannerText');
   const retryBtn = document.getElementById('syncQueueRetryBtn');
   retryBtn.disabled = true; // NEW
-  const total = pending.length;
+  const total = pending.length + pendingDeletes.length;
   let done = 0;
   // NEW: якщо щось усередині циклу кине виняток (малоймовірно, але
   // можливо) — без try/finally кнопка лишалась би заблокованою назавжди,
@@ -2520,12 +2534,19 @@ async function retrySyncQueue(){
       done++;
       saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
     }
+    for(const t of pendingDeletes){
+      bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
+      const ok = await syncPost('deleteTicket', {id: t.id});
+      if(ok) delete t.pendingCloudDelete;
+      done++;
+      saveDeletedTickets();
+    }
   } finally {
     retryBtn.disabled = false;
     syncQueueBusy = false;
   }
   renderTicketsScreen();
-  const stillPending = tickets.filter(t=>!t.synced).length;
+  const stillPending = tickets.filter(t=>!t.synced).length + deletedTickets.filter(t=>t.pendingCloudDelete).length;
   showToast(stillPending ? `Залишилось не синхронізовано: ${stillPending}` : 'Усе синхронізовано ✅');
 }
 
@@ -2761,7 +2782,20 @@ function deleteTicket(id){
   const t = tickets[idx];
   tickets.splice(idx,1);
   saveTickets();
-  syncPost('deleteTicket', {id});
+  // NEW: раніше результат цього запиту ніде не перевірявся — якщо видалення
+  // не дійшло до Google Таблиці (немає інтернету саме в цей момент), заявка
+  // все одно йшла в кошик, зникала з tickets, і retrySyncQueue (яка шукає
+  // лише tickets.filter(t=>!t.synced)) більше НІКОЛИ не намагалась
+  // повторити видалення — старий рядок так і лишався в Таблиці назавжди.
+  // Тепер, якщо видалення не вдалось одразу, позначаємо запис у кошику
+  // прапорцем pendingCloudDelete — retrySyncQueue (і кнопка "Повторити", і
+  // подія online) підхоплять його пізніше.
+  syncPost('deleteTicket', {id}).then(ok=>{
+    if(!ok){
+      const trashed = deletedTickets.find(x=>String(x.id)===String(id));
+      if(trashed){ trashed.pendingCloudDelete = true; saveDeletedTickets(); }
+    }
+  });
   // NEW: Telegram-бекап НЕ видаляється разом із заявкою навмисно — навіть якщо
   // заявку видалили в застосунку (помилково чи ні), її копія назавжди лишається
   // в групі-архіві. Це і є сенс резервної копії: вона не залежить від дій в
