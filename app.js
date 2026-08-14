@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v57 · 2026-08-09';
+const APP_VERSION = 'v58 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -2136,7 +2136,7 @@ function ticketToSyncPayload(t){
   const fullData = {
     type:t.type, city:t.city, street:t.street, house:t.house, apartment:t.apartment,
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
-    payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
+    payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
     note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones // NEW: щоб примітка й додаткові телефони теж відновлювались при завантаженні з хмари
   };
@@ -2382,7 +2382,7 @@ function blankTicketObject(){
     cables: [], // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: [],
     additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
-    payment:'', cashAmount:0, cardAmount:0, note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
+    payment:'', cashAmount:0, cardAmount:0, itemPayments:{}, note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
     abonentNote:'', extraPhones:[], // NEW: примітка про абонента й додаткові телефони — рівня профілю, як login/password
     tgBackedUp:false, tgPhotoFileId:null, tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
     tgPhotoFileIds:[], tgPhotoMsgIds:[], // NEW: file_id/message_id ВСІХ фото заявки (до 3) — tgPhotoFileId/tgPhotoMsgId лишаються як дублікат першого, для сумісності зі старим кодом
@@ -3762,9 +3762,7 @@ function fillFormFromState(){
   document.getElementById('f_callFee').value = calcState.callFee || 0;
   document.getElementById('f_tariff').value = calcState.tariff || 0;
   document.getElementById('f_payment').value = calcState.payment || '';
-  document.getElementById('f_cashAmount').value = calcState.cashAmount || '';
-  document.getElementById('f_cardAmount').value = calcState.cardAmount || '';
-  updateMixedPaymentVisibility(); // NEW: показує/ховає поля розбивки суми залежно від способу оплати
+  updateMixedPaymentVisibility(); // NEW: показує/ховає перелік розбивки суми залежно від способу оплати (і сам малює позиції з calcState.itemPayments)
   document.getElementById('f_note').value = calcState.note || '';
   document.getElementById('f_masterNote').value = calcState.masterNote || '';
   document.getElementById('f_rawContent').value = calcState.content || ''; // NEW
@@ -3938,27 +3936,70 @@ function computeTotal(){
   const presetWorkSum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
   const total = callFee + tariff + equipSum + cablesSum + workSum + presetWorkSum;
   document.getElementById('calcTotal').textContent = fmtMoney(total);
-  updateMixedPaymentHint(total); // NEW: підказка, чи зійшлась розбивка готівка+безготівка із загальною сумою
+  if(paymentEl && paymentEl.value === 'Змішана') renderMixedPaymentItems(); // NEW: перелік позицій і підсумок готівка/безготівка перераховуються при будь-якій зміні складу/цін
   return total;
 }
 
-// NEW: показує поля розбивки суми лише для "Змішана оплата" — коли частину
-// суми (наприклад, абонплату) абонент кинув на карту, а частину (наприклад,
-// роутер) віддав готівкою просто в руки. Раніше вся сума заявки могла бути
-// зарахована лише ОДНИМ способом оплати, хоча реально бувало по-різному —
-// звідси й плутанина при звірці з диспетчером.
+// NEW: замість двох порожніх полів "скільки готівкою / скільки
+// безготівкою" (які треба було рахувати вручну — саме те, для чого
+// калькулятор і існує) — список УЖЕ вибраних позицій (виклик, тариф,
+// обладнання, кабелі, роботи) з перемикачем 💵/💳 на кожну. Розбивка
+// готівка/безготівка рахується сама, завжди гарантовано збігається із
+// загальною сумою — рахувати в умі більше не треба.
+function buildMixedPaymentItems(){
+  const items = [];
+  const callFee = Number(document.getElementById('f_callFee').value)||0;
+  if(callFee>0) items.push({key:'callFee', label: callFeeLabelFor(calcState.type), amount: callFee});
+  const tariff = Number(document.getElementById('f_tariff').value)||0;
+  if(tariff>0) items.push({key:'tariff', label:'Тариф', amount: tariff});
+  calcState.equipment.filter(e=>e.checked).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount: Number(e.price)||0}));
+  (calcState.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount: m*(Number(c.pricePerMeter)||0)}); });
+  (calcState.presetWorks||[]).filter(w=>w.checked).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:(Number(w.price)||0)*(Number(w.qty)||1)}));
+  calcState.additionalWork.forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:Number(w.sum)||0}); });
+  return items;
+}
+function renderMixedPaymentItems(){
+  const wrap = document.getElementById('mixedPaymentItemsWrap');
+  if(!wrap) return;
+  const items = buildMixedPaymentItems();
+  if(!calcState.itemPayments) calcState.itemPayments = {};
+  // NEW: нову позицію (щойно додану заявку/обладнання) за замовчуванням
+  // ставимо на "готівка" — типовий випадок "усе готівкою, крім однієї-двох
+  // позицій" вимагає найменше тапів (перемкнути лише виняток на 💳)
+  items.forEach(it=>{ if(!calcState.itemPayments[it.key]) calcState.itemPayments[it.key] = 'cash'; });
+  if(!items.length){
+    wrap.innerHTML = `<div style="font-size:12.5px; color:var(--text-faint); padding:6px 0;">Спочатку додайте виклик/обладнання/роботи вище</div>`;
+  } else {
+    wrap.innerHTML = items.map(it=>{
+      const method = calcState.itemPayments[it.key];
+      return `<div class="row" style="justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border);">
+        <span style="flex:1; font-size:13.5px;">${escapeHtml(it.label)} — ${fmtMoney(it.amount)}</span>
+        <div class="row" style="gap:4px;">
+          <button type="button" class="btn btn-sm mixed-item-toggle ${method==='cash'?'btn-accent':''}" data-key="${escapeHtml(it.key)}" data-method="cash">💵</button>
+          <button type="button" class="btn btn-sm mixed-item-toggle ${method==='card'?'btn-accent':''}" data-key="${escapeHtml(it.key)}" data-method="card">💳</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  // NEW: розбивка рахується сама з призначень вище — завжди коректна,
+  // на відміну від ручного вводу двох чисел, де легко помилитись.
+  const cash = items.reduce((s,it)=> s + (calcState.itemPayments[it.key]==='cash' ? it.amount : 0), 0);
+  const card = items.reduce((s,it)=> s + (calcState.itemPayments[it.key]==='card' ? it.amount : 0), 0);
+  calcState.cashAmount = cash;
+  calcState.cardAmount = card;
+  const hint = document.getElementById('mixedPaymentHint');
+  if(hint) hint.innerHTML = `💵 Готівка: <b>${fmtMoney(cash)}</b> · 💳 Безготівка: <b>${fmtMoney(card)}</b>`;
+}
+
+// NEW: показує список позицій розбивки лише для "Змішана оплата" — коли
+// частину суми (наприклад, абонплату) абонент кинув на карту, а частину
+// (наприклад, роутер) віддав готівкою просто в руки. Раніше вся сума заявки
+// могла бути зарахована лише ОДНИМ способом оплати, хоча реально бувало
+// по-різному — звідси й плутанина при звірці з диспетчером.
 function updateMixedPaymentVisibility(){
   const isMixed = document.getElementById('f_payment').value === 'Змішана';
   document.getElementById('mixedPaymentWrap').classList.toggle('hidden', !isMixed);
-}
-function updateMixedPaymentHint(total){
-  const hint = document.getElementById('mixedPaymentHint');
-  if(!hint || document.getElementById('f_payment').value !== 'Змішана') return;
-  const cash = Number(document.getElementById('f_cashAmount').value)||0;
-  const card = Number(document.getElementById('f_cardAmount').value)||0;
-  const sum = cash + card;
-  if(sum === total){ hint.textContent = '✅ Зійшлось'; hint.style.color = 'var(--accent-ok, #4caf50)'; }
-  else { hint.textContent = `Разом ${fmtMoney(sum)} — має бути ${fmtMoney(total)} (різниця ${fmtMoney(total-sum)})`; hint.style.color = 'var(--danger, #e05a4e)'; }
+  if(isMixed) renderMixedPaymentItems();
 }
 
 /* NEW: текст поточної заявки для копіювання/надсилання. Для заявок,
@@ -4191,16 +4232,16 @@ function syncFormToState(){
   calcState.callFee = Number(document.getElementById('f_callFee').value)||0;
   calcState.tariff = Number(document.getElementById('f_tariff').value)||0;
   calcState.payment = document.getElementById('f_payment').value;
-  // NEW: розбивка суми зберігається лише для "Змішана" — для решти способів
-  // оплати обнуляємо, щоб старі значення (з попереднього разу, коли,
-  // наприклад, вибрали "Змішана", а потім передумали) не залишались "мертвим
-  // вантажем" у заявці.
-  if(calcState.payment === 'Змішана'){
-    calcState.cashAmount = Number(document.getElementById('f_cashAmount').value)||0;
-    calcState.cardAmount = Number(document.getElementById('f_cardAmount').value)||0;
-  } else {
+  // NEW: для "Змішана" cashAmount/cardAmount і так вже актуальні — їх
+  // рахує й одразу пише в calcState сам renderMixedPaymentItems() при
+  // кожному тапі на 💵/💳, вручну тут рахувати нічого не треба. Для решти
+  // способів оплати обнуляємо — щоб старі значення (з попереднього разу,
+  // коли, наприклад, вибрали "Змішана", а потім передумали) не залишались
+  // "мертвим вантажем" у заявці.
+  if(calcState.payment !== 'Змішана'){
     calcState.cashAmount = 0;
     calcState.cardAmount = 0;
+    calcState.itemPayments = {};
   }
   calcState.note = document.getElementById('f_note').value.trim();
   calcState.masterNote = document.getElementById('f_masterNote').value.trim();
@@ -6019,8 +6060,13 @@ function bindCalculatorScreen(){
   // NEW: при виборі "Безкоштовно" сума одразу обнуляється (див. computeTotal),
   // а при поверненні на "Готівка"/"Безготівка" — рахується знову як завжди.
   document.getElementById('f_payment').addEventListener('change', ()=>{ updateMixedPaymentVisibility(); computeTotal(); });
-  ['f_cashAmount','f_cardAmount'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', computeTotal); // NEW: перераховує підказку розбивки (сама сума заявки при цьому не змінюється)
+  // NEW: делегований клік по 💵/💳 в переліку розбивки суми ("Змішана" оплата)
+  document.getElementById('mixedPaymentItemsWrap').addEventListener('click', e=>{
+    const btn = e.target.closest('.mixed-item-toggle');
+    if(!btn) return;
+    if(!calcState.itemPayments) calcState.itemPayments = {};
+    calcState.itemPayments[btn.dataset.key] = btn.dataset.method;
+    renderMixedPaymentItems();
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ applyDefaultTypeTag(); toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
