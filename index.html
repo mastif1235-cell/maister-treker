@@ -264,8 +264,20 @@
               <option value="">— оберіть —</option>
               <option value="Готівка">Готівка</option>
               <option value="Безготівка">Безготівка</option>
+              <option value="Змішана">Змішана (частково готівкою)</option>
               <option value="Безкоштовно">Безкоштовно</option>
             </select>
+          </div>
+          <!-- NEW: показується лише для "Змішана" — коли частину суми (наприклад,
+               абонплату) абонент кинув на карту, а частину (наприклад, роутер)
+               віддав готівкою. Дві суми мають скластися в загальний "Всього". -->
+          <div class="field hidden" id="mixedPaymentWrap">
+            <label>Розбивка суми</label>
+            <div class="row" style="gap:8px;">
+              <input type="number" id="f_cashAmount" placeholder="Готівкою, грн" inputmode="numeric" style="flex:1;">
+              <input type="number" id="f_cardAmount" placeholder="Безготівкою, грн" inputmode="numeric" style="flex:1;">
+            </div>
+            <div id="mixedPaymentHint" style="font-size:12px; color:var(--text-dim); margin-top:4px;"></div>
           </div>
           <div class="field">
             <label>📝 Примітка майстра <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(тільки для вас, у заявку не потрапляє)</span></label>
