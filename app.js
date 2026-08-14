@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v55 · 2026-08-09';
+const APP_VERSION = 'v56 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -4672,6 +4672,7 @@ function addShift(){
   shifts.push(shift);
   saveShifts();
   syncShiftPostGet('add', shiftToSyncPayload(shift));
+  syncShiftsMonthlyTelegramMessage(); // NEW: оновлюємо/надсилаємо місячне повідомлення в Telegram (у фоні, не блокує UI)
   document.getElementById('shiftHours').value = '';
   coworkerSelection = new Set();
   statsViewDate = parseDate(currentShiftDate);
@@ -4684,6 +4685,7 @@ function deleteShift(id){
   shifts = shifts.filter(s=>String(s.id)!==String(id)); // NEW: id зміни — рядок (UUID), Number() ламав порівняння
   saveShifts();
   syncShiftPostGet('delete', {id});
+  syncShiftsMonthlyTelegramMessage(); // NEW: те саме — місячне повідомлення в Telegram лишається актуальним і після видалення
   renderShiftsScreen();
   showToast('Зміну видалено');
 }
@@ -4705,6 +4707,63 @@ function buildShiftMonthReport(){
   lines.push(`📅 Змін: ${monthShifts.length}`);
   lines.push(`⏱️ Годин: ${totalHours.toFixed(1)}`);
   return lines.join('\n');
+}
+
+// NEW: одне повідомлення в Telegram на весь поточний місяць — щодня (при
+// кожній зміні, доданій чи видаленій) редагується, а не дублюється новим.
+// 1-го числа нового місяця автоматично починається НОВЕ повідомлення. По
+// суті це живий бекап "Змін" прямо в переписці з ботом — на випадок втрати
+// телефону видно все за місяць одним поглядом, без імпорту файлів.
+function buildCurrentMonthShiftsTelegramText(){
+  const now = new Date();
+  const monthShifts = shifts.filter(s=>isSameMonth(s.date, now))
+    .sort((a,b)=> parseDate(a.date)-parseDate(b.date));
+  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
+  const lines = [];
+  lines.push(`🕒 ЗМІНИ — ${MONTH_NAMES[now.getMonth()].toUpperCase()} ${now.getFullYear()}`);
+  lines.push('------------------');
+  if(monthShifts.length===0){
+    lines.push('Змін немає');
+  } else {
+    monthShifts.forEach(s=> lines.push(`${s.date} — ${s.hours} год — ${s.coworker}`));
+  }
+  lines.push('------------------');
+  lines.push(`📅 Змін: ${monthShifts.length}`);
+  lines.push(`⏱️ Годин: ${totalHours.toFixed(1)}`);
+  lines.push('');
+  lines.push(`оновлено: ${formatDate(new Date())} ${formatTime(new Date())}`); // NEW: видно, що повідомлення живе й актуальне, а не застигле
+  return lines.join('\n');
+}
+async function syncShiftsMonthlyTelegramMessage(){
+  const token = (settings.tgBotToken||'').trim();
+  const chatId = (settings.tgMyChatId||'').trim();
+  if(!token || !chatId) return; // не налаштовано — тихо виходимо, це не обов'язкова функція
+  const monthKey = new Date().toISOString().slice(0,7);
+  const text = buildCurrentMonthShiftsTelegramText();
+  try{
+    if(settings.tgShiftsMsgId && settings.tgShiftsMsgMonth === monthKey){
+      // той самий місяць — редагуємо вже надіслане повідомлення
+      const res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({chat_id: chatId, message_id: settings.tgShiftsMsgId, text: text.slice(0,4000)})
+      });
+      const data = await res.json();
+      if(data.ok) return;
+      // NEW: якщо редагування не вдалось (наприклад, повідомлення видалили
+      // вручну з чату) — не мовчимо, а надсилаємо нове замість втраченого
+    }
+    // новий місяць або ще не надсилали цього місяця — нове повідомлення
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({chat_id: chatId, text: text.slice(0,4000)})
+    });
+    const data = await res.json();
+    if(data.ok){
+      settings.tgShiftsMsgId = data.result.message_id;
+      settings.tgShiftsMsgMonth = monthKey;
+      saveSettings();
+    }
+  }catch(e){ /* немає інтернету чи Telegram недоступний — не критично, спробуємо при наступній зміні */ }
 }
 
 async function shareMonthShifts(){
@@ -5261,8 +5320,21 @@ function renderReport(range){
   }
   list = list.sort((a,b)=> parseDate(a.date)-parseDate(b.date) || (a.time||'').localeCompare(b.time||''));
   const total = list.reduce((s,t)=>s+(Number(t.sum)||0),0);
+  // NEW: суми окремо готівкою й безготівкою — щоб не рахувати вручну, скільки
+  // саме готівки на руках, а скільки має прийти на карту/рахунок.
+  // "Безкоштовно" в жодну з двох сум не потрапляє (там і так 0 грн).
+  const cashTotal = list.filter(t=>t.payment==='Готівка').reduce((s,t)=>s+(Number(t.sum)||0),0);
+  const cardTotal = list.filter(t=>t.payment==='Безготівка').reduce((s,t)=>s+(Number(t.sum)||0),0);
   const full = document.getElementById('reportFullToggle')?.checked;
-  let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${list.length}  Сума: ${fmtMoney(total)}\n\n`;
+  let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${list.length}\n💵 Готівка: ${fmtMoney(cashTotal)}\n💳 Безготівка: ${fmtMoney(cardTotal)}\n💰 Загалом: ${fmtMoney(total)}\n`;
+  // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
+  // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
+  const materialLines = buildMonthlyEquipmentLines(list);
+  if(materialLines.length){
+    text += `\n📦 Використано:\n`;
+    materialLines.forEach(l=> text += `   • ${l}\n`);
+  }
+  text += `\n`;
   if(full){
     // NEW: раніше між заявками був лише подвійний перенос рядка — коли
     // одна заявка коротка (без чіткого візуального "блоку"), вона зливалась
