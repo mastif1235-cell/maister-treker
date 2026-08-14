@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v58 · 2026-08-09';
+const APP_VERSION = 'v59 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -3997,8 +3997,10 @@ function renderMixedPaymentItems(){
 // могла бути зарахована лише ОДНИМ способом оплати, хоча реально бувало
 // по-різному — звідси й плутанина при звірці з диспетчером.
 function updateMixedPaymentVisibility(){
+  const wrap = document.getElementById('mixedPaymentWrap');
+  if(!wrap) return; // NEW: захист від старої версії index.html без цього блока — щоб не впала вся ініціалізація
   const isMixed = document.getElementById('f_payment').value === 'Змішана';
-  document.getElementById('mixedPaymentWrap').classList.toggle('hidden', !isMixed);
+  wrap.classList.toggle('hidden', !isMixed);
   if(isMixed) renderMixedPaymentItems();
 }
 
@@ -6061,7 +6063,8 @@ function bindCalculatorScreen(){
   // а при поверненні на "Готівка"/"Безготівка" — рахується знову як завжди.
   document.getElementById('f_payment').addEventListener('change', ()=>{ updateMixedPaymentVisibility(); computeTotal(); });
   // NEW: делегований клік по 💵/💳 в переліку розбивки суми ("Змішана" оплата)
-  document.getElementById('mixedPaymentItemsWrap').addEventListener('click', e=>{
+  const mixedItemsWrapEl = document.getElementById('mixedPaymentItemsWrap');
+  if(mixedItemsWrapEl) mixedItemsWrapEl.addEventListener('click', e=>{
     const btn = e.target.closest('.mixed-item-toggle');
     if(!btn) return;
     if(!calcState.itemPayments) calcState.itemPayments = {};
