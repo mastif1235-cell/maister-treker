@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v59 · 2026-08-09';
+const APP_VERSION = 'v60 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -581,6 +581,16 @@ function normalizeMac(raw){
 // NEW: та сама логіка маски телефону (050)555-55-55, винесена в чисту
 // функцію — щоб застосовувати її не лише до <input>, а й, наприклад, до
 // номера, знайденого в сирому тексті наряду.
+// NEW: раніше regex ловив БУДЬ-ЯКУ послідовність з 8+ цифр/пробілів/дефісів/
+// дужок — через це міг випадково вихопити з тексту наряду номер договору,
+// адресу з кількома цифрами підряд чи щось інше замість реального номера
+// телефону абонента. Тепер шукаємо саме класичний український номер: "0"
+// + 9 цифр (з можливими пробілами/дефісами/дужками між ними і
+// необов'язковим +38 спереду), і перевіряємо, що це не шматок довшого числа.
+function extractPhoneFromText(text){
+  const matches = String(text||'').match(/(?<!\d)(\+?38)?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)/g);
+  return matches ? matches[0] : null;
+}
 function phoneDigitsToMask(raw){
   const digits = String(raw||'').replace(/\D/g,'').slice(0,10);
   let out = '';
@@ -897,8 +907,8 @@ function showNaryadQueue(date){
         // ("🔒 Тільки для вас"), яка ніколи нікуди не відправляється, лишається
         // лише в застосунку як нагадування собі.
         prefill.masterNote = n.text;
-        const phoneMatch = n.text.match(/[\d][\d\s\-()]{7,}\d/);
-        if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
+        const phoneMatch = extractPhoneFromText(n.text);
+        if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch);
         showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
       }
     });
@@ -1036,8 +1046,8 @@ function showNaryadChecker(){
       // а не в note (яке потрапляє в текст заявки для диспетчера) чи в
       // content (перезаписувався і губився).
       if(rawText) prefill.masterNote = rawText;
-      const phoneMatch = rawText.match(/[\d][\d\s\-()]{7,}\d/);
-      if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch[0]);
+      const phoneMatch = extractPhoneFromText(rawText);
+      if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch);
       startNewTicketFlow(type, prefill, {...addrNavState});
     };
     document.getElementById('naryadNewConnectBtn').addEventListener('click', ()=> startFromNaryad('Підключення'));
@@ -2636,7 +2646,7 @@ function buildWorkSummaryLines(t){
   (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`));
   (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
   if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
-  if(t.payment === 'Змішана') lines.push(`   (готівка: ${fmtMoney(t.cashAmount)}, безготівка: ${fmtMoney(t.cardAmount)})`);
+  if(t.payment === 'Змішана') buildMixedPaymentBreakdownLines(t).forEach(l=> lines.push(l));
   if(t.note) lines.push(`📝 ${t.note}`);
   if(t.otherNote) lines.push(t.otherNote);
   return lines;
@@ -3947,16 +3957,40 @@ function computeTotal(){
 // готівка/безготівка рахується сама, завжди гарантовано збігається із
 // загальною сумою — рахувати в умі більше не треба.
 function buildMixedPaymentItems(){
+  return buildMixedPaymentItemsFromTicket({
+    type: calcState.type,
+    callFee: Number(document.getElementById('f_callFee').value)||0,
+    tariff: Number(document.getElementById('f_tariff').value)||0,
+    equipment: calcState.equipment, cables: calcState.cables,
+    presetWorks: calcState.presetWorks, additionalWork: calcState.additionalWork
+  });
+}
+// NEW: та сама розбивка на позиції, що й для живої форми (buildMixedPaymentItems
+// вище), але працює з уже ЗБЕРЕЖЕНОЮ заявкою (без DOM-полів) — потрібна, щоб
+// показати в тексті заявки й у профілі абонента не просто дві суми, а
+// конкретно ЩО саме куплено готівкою, а що безготівкою.
+function buildMixedPaymentItemsFromTicket(t){
   const items = [];
-  const callFee = Number(document.getElementById('f_callFee').value)||0;
-  if(callFee>0) items.push({key:'callFee', label: callFeeLabelFor(calcState.type), amount: callFee});
-  const tariff = Number(document.getElementById('f_tariff').value)||0;
-  if(tariff>0) items.push({key:'tariff', label:'Тариф', amount: tariff});
-  calcState.equipment.filter(e=>e.checked).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount: Number(e.price)||0}));
-  (calcState.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount: m*(Number(c.pricePerMeter)||0)}); });
-  (calcState.presetWorks||[]).filter(w=>w.checked).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:(Number(w.price)||0)*(Number(w.qty)||1)}));
-  calcState.additionalWork.forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:Number(w.sum)||0}); });
+  if(Number(t.callFee)>0) items.push({key:'callFee', label: callFeeLabelFor(t.type), amount: Number(t.callFee)});
+  if(Number(t.tariff)>0) items.push({key:'tariff', label:'Тариф', amount: Number(t.tariff)});
+  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount: Number(e.price)||0}));
+  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount: m*(Number(c.pricePerMeter)||0)}); });
+  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:(Number(w.price)||0)*(Number(w.qty)||1)}));
+  (t.additionalWork||[]).forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:Number(w.sum)||0}); });
   return items;
+}
+// NEW: рядки "готівка: X (перелік позицій), безготівка: Y (перелік позицій)"
+// для тексту заявки/профілю — щоб диспетчер одразу бачив, ЩО саме за яку
+// оплату, а не лише дві суми без прив'язки до конкретного обладнання.
+function buildMixedPaymentBreakdownLines(t){
+  if(t.payment !== 'Змішана' || !t.itemPayments) return [`   (готівка: ${fmtMoney(t.cashAmount)}, безготівка: ${fmtMoney(t.cardAmount)})`];
+  const items = buildMixedPaymentItemsFromTicket(t);
+  const cashItems = items.filter(it=> t.itemPayments[it.key]==='cash').map(it=>it.label);
+  const cardItems = items.filter(it=> t.itemPayments[it.key]==='card').map(it=>it.label);
+  return [
+    `   💵 Готівка ${fmtMoney(t.cashAmount)}: ${cashItems.length ? cashItems.join(', ') : '—'}`,
+    `   💳 Безготівка ${fmtMoney(t.cardAmount)}: ${cardItems.length ? cardItems.join(', ') : '—'}`
+  ];
 }
 function renderMixedPaymentItems(){
   const wrap = document.getElementById('mixedPaymentItemsWrap');
@@ -4117,7 +4151,7 @@ function buildTicketContent(s, total){
   lines.push('------------------');
   if(s.payment) lines.push(`💳 Оплата: ${s.payment}`);
   // NEW: для "Змішана" — окремим рядком, скільки саме готівкою, скільки безготівкою
-  if(s.payment === 'Змішана') lines.push(`   (готівка: ${fmtMoney(s.cashAmount)}, безготівка: ${fmtMoney(s.cardAmount)})`);
+  if(s.payment === 'Змішана') buildMixedPaymentBreakdownLines(s).forEach(l=> lines.push(l));
   lines.push(`💵 ІТОГО: ${fmtMoney(total)}`);
   if(s.note) lines.push(`📝 ${s.note}`);
   return lines.join('\n');
@@ -4618,25 +4652,38 @@ async function saveTicketFromForm(e){
     saveTickets();
     showToast('Заявку оновлено');
     if(syncConfigured){
+      // NEW: раніше цей цілий блок (delete → до 3 спроб add) очікувався
+      // (await) ПЕРЕД тим, як застосунок повертав керування — тобто екран не
+      // переходив до списку заявок, доки все це не завершиться. Google Apps
+      // Script при цьому може "прокидатись" по кілька секунд, якщо довго не
+      // було запитів (відомий ефект "холодного старту") — і застосунок
+      // виглядав "зависшим" навіть на хорошому інтернеті, хоча насправді
+      // просто чекав відповіді сервера. Заявка вже надійно збережена
+      // локально до цього моменту — синхронізація з Таблицею тепер іде
+      // повністю у фоні (як і бекап у Telegram нижче), не блокуючи вихід
+      // зі спмалькулятора; статус (✅/⏳) на картці заявки оновиться сам,
+      // коли (і скільки б не) відповідь прийде.
       // у схемі синку немає updateTicket — імітуємо оновлення видаленням і повторним додаванням
-      await syncPost('deleteTicket', {id: editingTicketId});
-      // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
-      // одразу, рядок у таблиці лишиться відсутнім аж до наступного
-      // retrySyncQueue. Пробуємо ще двічі одразу (з паузами, що
-      // збільшуються), щоб звузити це вікно ризику, а не покладатись лише
-      // на майбутній фоновий retry (він все одно лишається підстраховкою,
-      // якщо й ці спроби не вдадуться — статус заявки стане "не
-      // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
-      let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
-      if(!ok){
-        await new Promise(r=>setTimeout(r, 1500));
-        ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
-      }
-      if(!ok){
-        await new Promise(r=>setTimeout(r, 3000));
-        ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
-      }
-      if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
+      (async ()=>{
+        await syncPost('deleteTicket', {id: editingTicketId});
+        // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
+        // одразу, рядок у таблиці лишиться відсутнім аж до наступного
+        // retrySyncQueue. Пробуємо ще двічі одразу (з паузами, що
+        // збільшуються), щоб звузити це вікно ризику, а не покладатись лише
+        // на майбутній фоновий retry (він все одно лишається підстраховкою,
+        // якщо й ці спроби не вдадуться — статус заявки стане "не
+        // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
+        let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+        if(!ok){
+          await new Promise(r=>setTimeout(r, 1500));
+          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+        }
+        if(!ok){
+          await new Promise(r=>setTimeout(r, 3000));
+          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+        }
+        if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
+      })();
     }
     if(idx>-1) savedTicketRef = tickets[idx];
   } else {
@@ -4646,9 +4693,12 @@ async function saveTicketFromForm(e){
     saveTickets();
     showToast('Заявку збережено');
     if(syncConfigured){
-      const ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
-      const t = tickets.find(t=>t.id===newTicket.id);
-      if(t){ t.synced = ok; saveTickets(); renderTicketsScreen(); }
+      // NEW: та сама причина, що й вище для редагування — не чекаємо (await)
+      // відповіді сервера перед виходом зі списку. Синк — у фоні.
+      syncPost('addTicket', ticketToSyncPayload(calcState)).then(ok=>{
+        const t = tickets.find(t=>t.id===newTicket.id);
+        if(t){ t.synced = ok; saveTickets(); renderTicketsScreen(); }
+      });
     }
     savedTicketRef = tickets.find(t=>t.id===newTicket.id);
   }
