@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v61 · 2026-08-09';
+const APP_VERSION = 'v62 · 2026-08-15';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -4735,6 +4735,11 @@ async function saveTicketFromForm(e){
     calcState.id = editingTicketId;
     const idx = tickets.findIndex(t=>String(t.id)===String(editingTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
+    // Знімок збереженої заявки для фонового синку. Нижче форма одразу
+    // очищується через resetCalcForm(), тому не можна читати calcState після
+    // await: інакше addTicket отримує порожню нову форму й створює в таблиці
+    // «пусту» заявку з іншим ID.
+    const ticketForCloud = idx > -1 ? JSON.parse(JSON.stringify(tickets[idx])) : JSON.parse(JSON.stringify(calcState));
     saveTickets();
     showToast('Заявку оновлено');
     if(syncConfigured){
@@ -4759,14 +4764,14 @@ async function saveTicketFromForm(e){
         // на майбутній фоновий retry (він все одно лишається підстраховкою,
         // якщо й ці спроби не вдадуться — статус заявки стане "не
         // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
-        let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+        let ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
         if(!ok){
           await new Promise(r=>setTimeout(r, 1500));
-          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+          ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
         }
         if(!ok){
           await new Promise(r=>setTimeout(r, 3000));
-          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+          ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
         }
         if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
       })();
