@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v60 · 2026-08-09';
+const APP_VERSION = 'v61 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -465,7 +465,7 @@ async function maybeRunDailyBackup(){
   // застосунку (жодна вкладка не встигала прив'язатись). Тепер збій цього
   // кроку тихо ігнорується — сам знімок в IndexedDB вже записаний рядком вище.
   try{
-    const todayKey = new Date().toISOString().slice(0,10); // YYYY-MM-DD, стабільний ключ для порівняння днів
+    const todayKey = localDateKey(new Date()); // YYYY-MM-DD, локальний час — див. коментар біля localDateKey
     const index = loadDailyBackupIndex();
     if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
     const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
@@ -524,7 +524,7 @@ async function restoreDailyBackup(dateKey){
 function maybeShowMonthlyCleanupReminder(){
   const now = new Date();
   if(now.getDate() !== 1) return; // тільки 1-го числа
-  const monthKey = now.toISOString().slice(0,7); // YYYY-MM
+  const monthKey = localMonthKey(now); // YYYY-MM, локальний час
   if(localStorage.getItem('cleanupReminderMonth') === monthKey) return; // цього місяця вже показували
   showCleanupReminderOverlay(monthKey);
 }
@@ -568,6 +568,15 @@ async function migrateLegacyPhotosToIdb(){
 }
 
 function pad2(n){ return String(n).padStart(2,'0'); }
+// NEW: toISOString() завжди повертає UTC, а не локальний час — для Києва
+// (UTC+2/+3) це означає, що приблизно з півночі до 2-3 години ранку за
+// київським часом дата за UTC ще "вчорашня". Щоденний бекап, місячний
+// Telegram-звіт і місячне повідомлення "Зміни" рахували "сьогодні"/"цей
+// місяць" саме через toISOString — у цьому вузькому вікні після півночі
+// вони могли вважати, що ще триває попередній день/місяць, хоча локально
+// вже настав новий. Ці дві функції рахують те саме, але за ЛОКАЛЬНИМ часом.
+function localDateKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function localMonthKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
 function normalizeMac(raw){
   if(!raw) return '';
   // NEW: раніше приймався будь-який буквено-цифровий символ (напр. G, Z —
@@ -592,7 +601,17 @@ function extractPhoneFromText(text){
   return matches ? matches[0] : null;
 }
 function phoneDigitsToMask(raw){
-  const digits = String(raw||'').replace(/\D/g,'').slice(0,10);
+  let digits = String(raw||'').replace(/\D/g,'');
+  // NEW: якщо номер прийшов з кодом країни (+380... чи 380...) — прибираємо
+  // "380" і підставляємо "0" замість нього. Раніше код просто брав ПЕРШІ 10
+  // цифр без цього кроку: "+380671234567" (12 цифр) ставало "3806712345" →
+  // маска "(380)671-23-45" — номер спотворювався повністю (втрачались останні
+  // цифри, "380" сприймалось як код міста). Довжину перевіряємо (11-12 цифр),
+  // щоб не чіпати звичайний локальний номер, який просто ПОЧИНАЄТЬСЯ на 380
+  // (для України такого коду оператора не існує, але про всяк випадок).
+  if(digits.startsWith('380') && digits.length>=12) digits = '0' + digits.slice(3);
+  else if(digits.startsWith('80') && digits.length>=11) digits = '0' + digits.slice(2); // на випадок, якщо перший "3" з "+380" вже десь загубився
+  digits = digits.slice(0,10);
   let out = '';
   if(digits.length>0) out = '(' + digits.substring(0,3);
   if(digits.length>=3) out += ')';
@@ -605,18 +624,19 @@ function formatPhoneInput(e){
   const el = e.target;
   const prevDigits = el.dataset.prevDigitsCount === undefined ? null : Number(el.dataset.prevDigitsCount);
   const valueShrank = el.value.length < Number(el.dataset.prevLength || 0);
-  let digits = el.value.replace(/\D/g,'').slice(0,10);
-  // NEW: коли лишається, наприклад, "(067)" і тиснеш "видалити" з кінця —
-  // стирається символ ")" (не цифра), кількість цифр не змінюється, і
-  // маска одразу домальовує ту саму дужку назад — візуально нічого не
-  // відбувається, ніби видалення "зависло" на дужці. Якщо бачимо, що поле
-  // стало коротшим, а цифр лишилось стільки ж — значить стерли символ
-  // маски, а не цифру, і тоді прибираємо ще й останню цифру теж.
+  // NEW: раніше тут одразу обрізали до 10 цифр (.slice(0,10)) — якщо
+  // вставити номер з кодом країни (+380671234567, 12 цифр), він обрізався
+  // до "3806712345" ДО того, як phoneDigitsToMask встигала прибрати "380" —
+  // нормалізація коду країни просто не встигала спрацювати. Тепер обрізку
+  // й нормалізацію робить сама phoneDigitsToMask (їй передаємо повний
+  // рядок цифр), а тут лише рахуємо їх кількість для розпізнавання
+  // видалення символу маски (нижче).
+  let digits = el.value.replace(/\D/g,'');
   if(valueShrank && prevDigits !== null && digits.length === prevDigits && digits.length > 0){
     digits = digits.slice(0, -1);
   }
   el.value = phoneDigitsToMask(digits);
-  el.dataset.prevDigitsCount = digits.length;
+  el.dataset.prevDigitsCount = el.value.replace(/\D/g,'').length; // NEW: рахуємо ПІСЛЯ нормалізації — інакше 12 "сирих" цифр не збігалися б із 10 у вже нормалізованому значенні
   el.dataset.prevLength = el.value.length;
 }
 // NEW: викликати після БУДЬ-ЯКОГО програмного встановлення f_phone.value
@@ -748,7 +768,7 @@ function findNaryadMatches(rawText){
     const aStrong = a.reasons.some(r=>r.strong) ? 1 : 0;
     const bStrong = b.reasons.some(r=>r.strong) ? 1 : 0;
     if(aStrong !== bStrong) return bStrong - aStrong;
-    return `${b.ticket.date} ${b.ticket.time}`.localeCompare(`${a.ticket.date} ${a.ticket.time}`);
+    return ticketSortKey(b.ticket) - ticketSortKey(a.ticket); // NEW: числовий ключ замість текстового порівняння дати — див. коментар в addrNavSearchResultsHtml
   });
   return results;
 }
@@ -1213,9 +1233,9 @@ function addrNavSearchResultsHtml(query){
 
   const groupsHtml = [...groups.values()]
     .sort((a,b)=>{
-      const aLatest = a.list.slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
-      const bLatest = b.list.slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
-      return `${bLatest.date} ${bLatest.time}`.localeCompare(`${aLatest.date} ${aLatest.time}`);
+      const aLatest = a.list.slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
+      const bLatest = b.list.slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
+      return ticketSortKey(bLatest) - ticketSortKey(aLatest); // NEW: числовий ключ замість текстового порівняння дати
     })
     .map(g=>{
       const sorted = g.list.slice().sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
@@ -1484,10 +1504,35 @@ function showEditAbonentProfile(profileJson){
           t.address = [[vals.street, vals.house].filter(Boolean).join(' '), vals.apartment ? `кв. ${vals.apartment}` : ''].filter(Boolean).join(', ');
           t.clientName = vals.clientName; t.phone = vals.phone; t.extraPhones = vals.extraPhones; t.abonentNote = vals.note;
           t.login = vals.login; t.password = vals.password; t.contractNumber = vals.contractNumber;
+          // NEW: раніше після масової правки профілю текст заявки (t.content)
+          // залишався СТАРИМ — диспетчеру при пересиланні/копіюванні летіло
+          // старе ім'я/адреса/телефон, хоча в самій заявці все вже виправлено.
+          // Для звичайних (не raw) заявок перебудовуємо текст з новими даними.
+          if(!t.cloudImported) t.content = buildTicketContent(t, Number(t.sum)||0);
         }
       });
       saveTickets();
       showToast('Дані абонента оновлено');
+      // NEW: тепер ще й досилаємо виправлені заявки в Google Таблицю у фоні —
+      // просте "synced=false" тут не спрацювало б: бекенд ігнорує addTicket з
+      // ID, який вже є в таблиці (не оновлює рядок), тож для кожної заявки
+      // потрібен той самий цикл видалити+додати, що й при звичайному
+      // редагуванні. Робимо послідовно (не паралельно), щоб не закидати
+      // Apps Script купою одночасних запитів, якщо адреса адрес має багато
+      // заявок — і повністю у фоні, не блокуючи інтерфейс.
+      if(getScriptUrl()){
+        (async ()=>{
+          for(const id of ids){
+            const t = tickets.find(x=>String(x.id)===String(id));
+            if(!t || t.cloudImported) continue;
+            await syncPost('deleteTicket', {id: t.id});
+            const ok = await syncPost('addTicket', ticketToSyncPayload(t));
+            t.synced = ok;
+          }
+          saveTickets();
+          renderTicketsScreen();
+        })();
+      }
       // NEW: якщо адресу виправили — навігатор слідує за заявками на їхню
       // нову адресу, а не лишається дивитись на порожнє місце
       addrNavState = {level:'tickets', city: vals.city, street: vals.street, house: vals.house || '(без номера)', apartment: vals.apartment || '(без кв.)'};
@@ -1525,9 +1570,9 @@ function addrNavResultsAreaHtml(){
     // профілів (не одразу картки), тап на профіль веде всередину до нього.
     const groups = getApartmentGroupsForHouse(addrNavState.city, addrNavState.street, addrNavState.house);
     const entries = [...groups.entries()].sort((a,b)=>{
-      const aLatest = a[1].slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
-      const bLatest = b[1].slice().sort((x,y)=>`${y.date} ${y.time}`.localeCompare(`${x.date} ${x.time}`))[0];
-      return `${bLatest.date} ${bLatest.time}`.localeCompare(`${aLatest.date} ${aLatest.time}`);
+      const aLatest = a[1].slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
+      const bLatest = b[1].slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
+      return ticketSortKey(bLatest) - ticketSortKey(aLatest); // NEW: числовий ключ замість текстового порівняння дати
     });
     bodyHtml += entries.length ? entries.map(([aptKey, aptList])=>{
       const addrLabel = aptKey!=='(без кв.)' ? `кв. ${aptKey}` : `буд. ${addrNavState.house}`;
@@ -2414,21 +2459,27 @@ function mergeEquipmentWithCatalog(saved){
     // checked (ми його свідомо не зберігаємо) — сама присутність id у списку
     // й означає "вибрано". У старому "щільному" форматі checked:false
     // збережено явно — і це так само коректно читається як "не вибрано".
-    return {id:e.id, label:e.label, price: s ? (Number(s.price)||e.price) : e.price, checked: s ? (s.checked !== false) : false};
+    // NEW: || замінено на явну перевірку на null/undefined — з || ціна "0"
+    // (майстер свідомо поставив обладнання безкоштовно, не через "Безкоштовно"
+    // оплату) вважалась falsy й підмінялась ціною з каталогу за замовчуванням.
+    const savedPrice = s ? Number(s.price) : NaN;
+    return {id:e.id, label:e.label, price: (s && !isNaN(savedPrice)) ? savedPrice : e.price, checked: s ? (s.checked !== false) : false};
   });
 }
 function mergeCablesWithCatalog(saved){
   const savedMap = new Map((saved||[]).map(c=>[c.id, c]));
   return getCableTypesConfig().map(c=>{
     const s = savedMap.get(c.id);
-    return {id:c.id, label:c.label, meters: s ? (Number(s.meters)||0) : 0, pricePerMeter: s ? (Number(s.pricePerMeter)||c.pricePerMeter) : c.pricePerMeter};
+    const savedPrice = s ? Number(s.pricePerMeter) : NaN; // NEW: та сама причина, що й вище в mergeEquipmentWithCatalog
+    return {id:c.id, label:c.label, meters: s ? (Number(s.meters)||0) : 0, pricePerMeter: (s && !isNaN(savedPrice)) ? savedPrice : c.pricePerMeter};
   });
 }
 function mergePresetWorksWithCatalog(saved){
   const savedMap = new Map((saved||[]).map(w=>[w.id, w]));
   return getWorkTypesConfig().map(w=>{
     const s = savedMap.get(w.id);
-    return {id:w.id, label:w.label, price: s ? (Number(s.price)||w.price) : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
+    const savedPrice = s ? Number(s.price) : NaN; // NEW: та сама причина, що й у mergeEquipmentWithCatalog вище — 0 більше не підмінюється ціною з каталогу
+    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
   });
 }
 
@@ -2580,13 +2631,20 @@ function renderMainTicketList(){
   const q = searchQuery.trim().toLowerCase();
 
   if(q){
+    const qDigits = q.replace(/\D/g,''); // NEW: пошук за цифрами телефону — окремо від тексту нижче
     list = tickets.filter(t =>
       (t.content||'').toLowerCase().includes(q) ||
       (t.date||'').includes(q) ||
       (t.tags||[]).some(tag=>tag.toLowerCase().includes(q)) ||
       (t.city||'').toLowerCase().includes(q) ||
       (t.address||'').toLowerCase().includes(q) ||
-      (t.clientName||'').toLowerCase().includes(q)
+      (t.clientName||'').toLowerCase().includes(q) ||
+      // NEW: раніше пошук телефону тут не спрацьовував — t.content містить
+      // номер УЖЕ ЗІ СКОБКАМИ/ДЕФІСАМИ ("(067)123-45-67"), а простий пошук
+      // цифр ("067123") не збігається як підрядок такого форматованого
+      // тексту. Порівнюємо цифри з цифрами, як і в навігаторі адрес.
+      (qDigits.length>=3 && String(t.phone||'').replace(/\D/g,'').includes(qDigits)) ||
+      (qDigits.length>=3 && (t.extraPhones||[]).some(p=>String(p||'').replace(/\D/g,'').includes(qDigits)))
     ).sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
     document.getElementById('modeSummaryText').textContent = `Знайдено: ${list.length} заявок`;
   } else if(activeFilterTags.size>0){
@@ -3100,10 +3158,21 @@ async function backupTicketToTelegram(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
   if(!token || !chatId || !t) return;
+  // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
+  // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
+  // (найімовірніше на поганому інтернеті — а це якраз умови, для яких
+  // застосунок і робився), стара копія вже видалена, нова не встигла
+  // відправитись — заявка лишалась ЗОВСІМ без бекапу в Telegram. Тепер
+  // спочатку зберігаємо id старих повідомлень окремо (не чіпаючи їх),
+  // відправляємо нову версію, і лише ПІСЛЯ підтвердженого успіху видаляємо
+  // стару — якщо новий бекап не пройшов, стара копія лишається недоторканою
+  // як резервний варіант.
+  const oldMsgIds = {
+    tgSepMsgId: t.tgSepMsgId, tgTextMsgId: t.tgTextMsgId,
+    tgPhotoMsgId: t.tgPhotoMsgId, tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
+    tgJsonMsgId: t.tgJsonMsgId
+  };
   try{
-    // спочатку прибираємо попередню версію цієї заявки в групі (якщо була) —
-    // щоб після редагування там не лишалось двох копій (старої й нової)
-    await deleteTicketTelegramMessages(t, token, chatId);
     t.tgPhotoFileId = null;
     t.tgBackedUp = false;
 
@@ -3175,6 +3244,10 @@ async function backupTicketToTelegram(t){
       const data = await res.json();
       if(data.ok) t.tgJsonMsgId = data.result.message_id;
     }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
+    // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
+    // безпечно прибрати стару копію. Якщо старої не було (перший бекап
+    // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
+    if(t.tgBackedUp) await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
   finally{
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
@@ -3329,7 +3402,7 @@ async function maybeSendMonthlyTelegramReport(){
   if(!token || !chatId) return;
   const now = new Date();
   if(now.getDate() !== 1) return;
-  const monthKey = now.toISOString().slice(0,7);
+  const monthKey = localMonthKey(now);
   if(localStorage.getItem('tgMonthlyReportMonth') === monthKey) return;
   const lastMonthRef = new Date(now.getFullYear(), now.getMonth()-1, 1);
   const text = buildMonthlyTelegramReport(lastMonthRef);
@@ -4084,11 +4157,24 @@ function assignContractNumberIfNeeded(){
 
   const dateDigits = String(calcState.date||'').replace(/\./g,'');
   if(!dateDigits) return;
-  const seq = tickets.filter(t=>
+  // NEW: раніше номер рахувався як "кількість підключень сьогодні + 1"
+  // (tickets.filter(...).length + 1) — якщо одну з сьогоднішніх заявок
+  // видалили (наприклад, помилково створена), НАСТУПНИЙ згенерований номер
+  // міг ЗБІГТИСЯ з номером заявки, що й досі існує (кількість зменшилась,
+  // а вже видані номери — ні). Тепер беремо НАЙБІЛЬШИЙ вже використаний
+  // сьогодні порядковий номер (з тексту самого contractNumber) і додаємо 1 —
+  // видалення заявок посередині дня більше не може призвести до дубля.
+  const todayConnections = tickets.filter(t=>
     t.type === 'Підключення' &&
     t.date === calcState.date &&
     String(t.id) !== String(editingTicketId||'')
-  ).length + 1;
+  );
+  let maxSeq = 0;
+  todayConnections.forEach(t=>{
+    const m = String(t.contractNumber||'').match(/-(\d+)[A-Za-zА-Яа-яЇїІіЄєҐґ]*$/);
+    if(m){ const n = Number(m[1]); if(n>maxSeq) maxSeq = n; }
+  });
+  const seq = maxSeq + 1;
   const selectedNames = new Set((calcState.connectMasters||[]).map(m=>m.name));
   const letters = (settings.masters||[])
     .filter(m=>selectedNames.has(m.name))
@@ -4868,7 +4954,7 @@ async function syncShiftsMonthlyTelegramMessage(){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgMyChatId||'').trim();
   if(!token || !chatId) return; // не налаштовано — тихо виходимо, це не обов'язкова функція
-  const monthKey = new Date().toISOString().slice(0,7);
+  const monthKey = localMonthKey(new Date());
   const text = buildCurrentMonthShiftsTelegramText();
   try{
     if(settings.tgShiftsMsgId && settings.tgShiftsMsgMonth === monthKey){
@@ -5124,7 +5210,7 @@ function exportJsonBackup(){
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `master-tracker-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.download = `master-tracker-backup-${localDateKey(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
   showToast('Файл бекапу завантажено');
