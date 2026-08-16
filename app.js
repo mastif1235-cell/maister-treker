@@ -610,65 +610,6 @@ async function migrateLegacyPhotosToIdb(){
   if(changed) saveTickets();
 }
 
-function pad2(n){ return String(n).padStart(2,'0'); }
-// NEW: toISOString() завжди повертає UTC, а не локальний час — для Києва
-// (UTC+2/+3) це означає, що приблизно з півночі до 2-3 години ранку за
-// київським часом дата за UTC ще "вчорашня". Щоденний бекап, місячний
-// Telegram-звіт і місячне повідомлення "Зміни" рахували "сьогодні"/"цей
-// місяць" саме через toISOString — у цьому вузькому вікні після півночі
-// вони могли вважати, що ще триває попередній день/місяць, хоча локально
-// вже настав новий. Ці дві функції рахують те саме, але за ЛОКАЛЬНИМ часом.
-function localDateKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-function localMonthKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
-function normalizeMac(raw){
-  if(!raw) return '';
-  // NEW: раніше приймався будь-який буквено-цифровий символ (напр. G, Z —
-  // це не валідні символи MAC-адреси), і про невалідність можна було
-  // дізнатись лише з підказки під полем. Тепер такі символи просто не
-  // потраплять у значення взагалі — лишаються тільки 0-9 та A-F.
-  return String(raw).toUpperCase().replace(/[^0-9A-F]/g,'');
-}
-
-/* Маска телефону у форматі (050)555-55-55, поки користувач вводить цифри */
-// NEW: та сама логіка маски телефону (050)555-55-55, винесена в чисту
-// функцію — щоб застосовувати її не лише до <input>, а й, наприклад, до
-// номера, знайденого в сирому тексті наряду.
-// NEW: раніше regex ловив БУДЬ-ЯКУ послідовність з 8+ цифр/пробілів/дефісів/
-// дужок — через це міг випадково вихопити з тексту наряду номер договору,
-// адресу з кількома цифрами підряд чи щось інше замість реального номера
-// телефону абонента. Тепер шукаємо саме класичний український номер: "0"
-// + 9 цифр (з можливими пробілами/дефісами/дужками між ними і
-// необов'язковим +38 спереду), і перевіряємо, що це не шматок довшого числа.
-// NEW: спільний шаблон українського номера — "0" + 9 цифр (з можливими
-// пробілами/дефісами/дужками між ними і необов'язковим +38/38 спереду).
-// Використовується і для префілу телефону з наряду (нижче), і для пошуку
-// збігів з існуючими абонентами (extractPhoneCandidatesFromText) — щоб не
-// тримати два різних regex з різною суворістю в одному застосунку.
-const UA_PHONE_REGEX = /(?<!\d)(\+?38)?[\s(\-]*0\d{2}[\s)\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)/g;
-function extractPhoneFromText(text){
-  const matches = String(text||'').match(UA_PHONE_REGEX);
-  return matches ? matches[0] : null;
-}
-function phoneDigitsToMask(raw){
-  let digits = String(raw||'').replace(/\D/g,'');
-  // NEW: якщо номер прийшов з кодом країни (+380... чи 380...) — прибираємо
-  // "380" і підставляємо "0" замість нього. Раніше код просто брав ПЕРШІ 10
-  // цифр без цього кроку: "+380671234567" (12 цифр) ставало "3806712345" →
-  // маска "(380)671-23-45" — номер спотворювався повністю (втрачались останні
-  // цифри, "380" сприймалось як код міста). Довжину перевіряємо (11-12 цифр),
-  // щоб не чіпати звичайний локальний номер, який просто ПОЧИНАЄТЬСЯ на 380
-  // (для України такого коду оператора не існує, але про всяк випадок).
-  if(digits.startsWith('380') && digits.length>=12) digits = '0' + digits.slice(3);
-  else if(digits.startsWith('80') && digits.length>=11) digits = '0' + digits.slice(2); // на випадок, якщо перший "3" з "+380" вже десь загубився
-  digits = digits.slice(0,10);
-  let out = '';
-  if(digits.length>0) out = '(' + digits.substring(0,3);
-  if(digits.length>=3) out += ')';
-  if(digits.length>3) out += digits.substring(3,6);
-  if(digits.length>6) out += '-' + digits.substring(6,8);
-  if(digits.length>8) out += '-' + digits.substring(8,10);
-  return out;
-}
 function formatPhoneInput(e){
   const el = e.target;
   const prevDigits = el.dataset.prevDigitsCount === undefined ? null : Number(el.dataset.prevDigitsCount);
@@ -697,37 +638,10 @@ function syncPhoneFieldMaskState(){
   el.dataset.prevDigitsCount = el.value.replace(/\D/g,'').length;
   el.dataset.prevLength = el.value.length;
 }
-function formatDate(d){ return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`; }
-function formatTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
-function parseDate(str){
-  if(!str) return new Date();
-  const [dd,mm,yyyy] = str.split('.').map(Number);
-  return new Date(yyyy, (mm||1)-1, dd||1);
-}
-function shiftDate(str, days){
-  const d = parseDate(str);
-  d.setDate(d.getDate()+days);
-  return formatDate(d);
-}
-/* Конвертація для нативного календаря (<input type="date"> працює лише з ISO РРРР-ММ-ДД,
-   а весь застосунок і Google-таблиця зберігають дату як ДД.ММ.РРРР — тому синхронізуємо обидва поля разом). */
-function ddmmyyyyToIso(s){
-  const m = String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
-}
 function setDateFieldValue(ddmmyyyy){
   document.getElementById('f_date').value = ddmmyyyy || '';
   document.getElementById('f_dateNative').value = ddmmyyyyToIso(ddmmyyyy);
 }
-function isSameMonth(dateStr, refDate){
-  const d = parseDate(dateStr);
-  return d.getMonth()===refDate.getMonth() && d.getFullYear()===refDate.getFullYear();
-}
-function escapeHtml(s){
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function fmtMoney(n){ return `${Math.round(n||0)} грн`; }
-
 function showToast(msg, ms=2200){
   const root = document.getElementById('toastRoot');
   const el = document.createElement('div');
