@@ -8,13 +8,6 @@
 
 function catalogTagFor(label){ return String(label||'').trim().toLowerCase(); }
 
-function normalizePhoneKey(raw){
-  if(!raw) return '';
-  const digits = String(raw).replace(/\D/g,'');
-  if(!digits) return '';
-  return digits.slice(-9);
-}
-
 const ADDRESS_STOPWORDS = new Set(['м','місто','город','вул','вулиця','ул','улица','буд','будинок','дом','кв','квартира','б','просп','проспект','с','село','селище','смт']);
 
 function extractAddressTokens(text){

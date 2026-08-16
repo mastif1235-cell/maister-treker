@@ -672,17 +672,6 @@ function openModal(title, bodyHtml, opts={}){
 // без помилок. Адресу шукаємо м'яко, простим збігом слів — тексти диспетчерів
 // дуже різношерсті ("вул. Шевченка 21", "Майська 85" без міста тощо), тому
 // адресний збіг — лише "можливий", ніколи не точний.
-function extractPhoneCandidatesFromText(text){
-  const raw = String(text||'');
-  // NEW: раніше тут був окремий жадібний regex, що ловив БУДЬ-ЯКУ
-  // послідовність з 9+ цифр/пробілів/дефісів/дужок — номер заявки, код
-  // ONU чи випадковий набір цифр у тексті наряду міг помилково зарахуватись
-  // як "сильний" (strong:true) збіг за телефоном з існуючим абонентом.
-  // Тепер той самий точний формат українського номера, що й при префілі.
-  const found = raw.match(UA_PHONE_REGEX) || [];
-  const keys = found.map(normalizePhoneKey).filter(Boolean);
-  return [...new Set(keys)];
-}
 function findNaryadMatches(rawText){
   const phoneKeys = extractPhoneCandidatesFromText(rawText);
   const naryadTokens = new Set(extractAddressTokens(rawText));
