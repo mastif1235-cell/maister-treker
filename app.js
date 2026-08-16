@@ -2429,6 +2429,13 @@ function restoreFromBackup(){
 
 async function sendAllToCloud(){
   backupLocalData();
+  // "Відправити все" повністю замінює лист "Заявки" на сервері. Порожня
+  // локальна база не є командою очистити Google Sheets: для навмисного
+  // очищення існує окремий сценарій clearAll з двома підтвердженнями.
+  if(tickets.length === 0){
+    showToast('Локальних заявок немає. Масова відправка в Google скасована, щоб випадково не очистити хмарні дані. Для навмисного очищення використовуйте окрему функцію очищення.');
+    return;
+  }
   const ticketsUrl = getScriptUrl();
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
