@@ -3207,8 +3207,10 @@ async function backupTicketToTelegram(t){
     tgJsonMsgId: t.tgJsonMsgId
   };
   try{
+    const previousPrimaryPhotoFileId = t.tgPhotoFileId;
     t.tgPhotoFileId = null;
     t.tgBackedUp = false;
+    let textOk = false;
 
     // 0) розділювач-заголовок — щоб у стрічці групи було одразу видно, де
     // закінчується одна заявка (2-3 повідомлення) і починається наступна
@@ -3230,7 +3232,7 @@ async function backupTicketToTelegram(t){
         body: JSON.stringify({chat_id: chatId, text})
       });
       const data = await res.json();
-      if(data.ok){ t.tgBackedUp = true; t.tgTextMsgId = data.result.message_id; }
+      if(data.ok){ textOk = true; t.tgTextMsgId = data.result.message_id; }
     }
     // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
     // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
@@ -3247,7 +3249,7 @@ async function backupTicketToTelegram(t){
     t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];
     let photoSendAttempts = 0; // NEW: скільки фото реально намагались відправити (є локальна копія/fallback)
     for(let pi=0; pi<photosToSend.length; pi++){
-      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? t.tgPhotoFileId : null);
+      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? previousPrimaryPhotoFileId : null);
       const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
       if(!photoData) continue;
       photoSendAttempts++;
@@ -3272,12 +3274,13 @@ async function backupTicketToTelegram(t){
     // вже видалена. Тепер видаляємо стару копію лише якщо текст пройшов І
     // (фото в заявці не було, або всі спроби відправки фото, які реально
     // відбулись, — успішні).
-    const photosOk = photoSendAttempts === 0 || t.tgPhotoMsgIds.length === photoSendAttempts;
+    const photosOk = photoSendAttempts === photosToSend.length && t.tgPhotoMsgIds.length === photosToSend.length;
     // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
     t.tgPhotoFileId = t.tgPhotoFileIds[0] || null;
     t.tgPhotoMsgId = t.tgPhotoMsgIds[0] || null;
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
+    let jsonOk = false;
     try{
       const jsonBlob = new Blob([JSON.stringify(t, null, 2)], {type:'application/json'});
       const form = new FormData();
@@ -3285,12 +3288,15 @@ async function backupTicketToTelegram(t){
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
       const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form});
       const data = await res.json();
-      if(data.ok) t.tgJsonMsgId = data.result.message_id;
+      if(data.ok){ jsonOk = true; t.tgJsonMsgId = data.result.message_id; }
     }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
     // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
-    if(t.tgBackedUp && photosOk) await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+    if(textOk && photosOk && jsonOk){
+      t.tgBackedUp = true;
+      await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+    }
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
   finally{
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
