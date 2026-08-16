@@ -486,8 +486,10 @@ async function maybeRunDailyBackup(){
     const todayKey = localDateKey(new Date()); // YYYY-MM-DD, локальний час — див. коментар біля localDateKey
     const index = loadDailyBackupIndex();
     if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
-    const {photoData} = await collectLocalPhotoData(tickets);
-    const ok = await backupDbPut(todayKey, {tickets, shifts, settings, photoData, exportedAt: new Date().toISOString()});
+    // Щоденний знімок лишається компактним: самі фото вже є у локальному
+    // IndexedDB та в Telegram-архіві за збереженими file_id. Повний архів
+    // base64-фото створюється лише за явною командою "Експорт у JSON".
+    const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
     if(!ok) return;
     index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
     const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
@@ -517,7 +519,7 @@ function renderDailyBackupList(){
 async function downloadDailyBackup(dateKey, opts={}){
   const payload = await backupDbGet(dateKey);
   if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
-  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings, photoData: payload.photoData||{}}, null, 2)], {type:'application/json;charset=utf-8'});
+  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings}, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `master-tracker-backup-${dateKey}.json`;
