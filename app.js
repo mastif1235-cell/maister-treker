@@ -4773,8 +4773,13 @@ async function saveTicketFromForm(e){
 
   let savedTicketRef = null; // NEW: посилання на щойно збережений об'єкт у tickets — для бекапу в Telegram нижче
   if(editingTicketId){
-    calcState.id = editingTicketId;
-    const idx = tickets.findIndex(t=>String(t.id)===String(editingTicketId)); // NEW: String() — те саме застереження, що й вище з фото
+    // Зберігаємо ID до виходу з форми. Після збереження resetCalcForm()
+    // обнуляє editingTicketId, а відповідь синхронізації приходить уже у фоні.
+    // Без окремої копії callback не знаходив оновлену заявку, лишав її у
+    // черзі та міг повторно відправляти оновлення при наступній синхронізації.
+    const updatedTicketId = editingTicketId;
+    calcState.id = updatedTicketId;
+    const idx = tickets.findIndex(t=>String(t.id)===String(updatedTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
     if(idx>-1 && syncConfigured) tickets[idx].syncAction = 'updateTicket';
     const updatedTicketPayload = idx>-1 ? ticketToSyncPayload(tickets[idx]) : null;
@@ -4809,7 +4814,7 @@ async function saveTicketFromForm(e){
           await new Promise(r=>setTimeout(r, 3000));
           ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
         }
-        const current = tickets.find(t=>String(t.id)===String(editingTicketId));
+        const current = tickets.find(t=>String(t.id)===String(updatedTicketId));
         if(current){ current.synced = ok; if(ok) delete current.syncAction; saveTickets(); renderTicketsScreen(); }
       })();
     }
