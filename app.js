@@ -2276,7 +2276,9 @@ async function loadFromCloud(){
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
   if(!confirm('Завантажити дані з хмари? Це замінить локальні заявки та/або зміни.')) return;
   setSyncState('syncing');
-  let ok = true;
+  let nextTickets = null;
+  let nextShifts = null;
+  const loadErrors = [];
   // NEW: у хмарі немає полів photo/tg* (там лише текст, суми, теги) — раніше
   // після "Завантажити з хмари" ці посилання просто стирались навіть якщо
   // фото фізично й досі лежить в IndexedDB, а повідомлення — в Telegram-групі.
@@ -2317,7 +2319,7 @@ async function loadFromCloud(){
       if(data.status === 'error' || !Array.isArray(data.tickets)){
         throw new Error(data.message || 'Сервер не повернув список заявок (перевірте секретний ключ)');
       }
-      tickets = (data.tickets||[]).map(t=>{
+      nextTickets = data.tickets.map(t=>{
         const blank = blankTicketObject();
         const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра (і, для старих рядків, повні дані, якщо вони туди ще потрапляли)
         // NEW: новий, чистіший шлях — окремий стовпець "повніДаніJSON" у
@@ -2361,8 +2363,9 @@ async function loadFromCloud(){
         }
         return merged;
       });
-      saveTickets();
-    }catch(err){ console.error(err); ok = false; }
+    }catch(err){ console.error(err); loadErrors.push(`заявки${err.message ? `: ${err.message}` : ''}`); }
+  } else {
+    loadErrors.push('заявки: не налаштовано URL');
   }
   if(shiftsUrl){
     try{
@@ -2373,13 +2376,24 @@ async function loadFromCloud(){
       if(data.status === 'error' || !Array.isArray(data.shifts)){
         throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
       }
-      shifts = (data.shifts||[]).map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
-      saveShifts();
-    }catch(err){ console.error(err); ok = false; }
+      nextShifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
+    }catch(err){ console.error(err); loadErrors.push(`зміни${err.message ? `: ${err.message}` : ''}`); }
+  } else {
+    loadErrors.push('зміни: не налаштовано URL');
   }
-  renderTicketsScreen(); renderShiftsScreen();
-  setSyncState(ok ? 'ok' : 'err');
-  showToast(ok ? `Завантажено: ${tickets.length} заявок, ${shifts.length} змін` : 'Не вдалося завантажити дані — перевірте секретний ключ і URL у Налаштуваннях. Локальні дані НЕ змінено.');
+  if(loadErrors.length === 0){
+    tickets = nextTickets;
+    shifts = nextShifts;
+    saveTickets();
+    saveShifts();
+    renderTicketsScreen(); renderShiftsScreen();
+    setSyncState('ok');
+    showToast(`Завантажено: ${tickets.length} заявок, ${shifts.length} змін`);
+  } else {
+    renderTicketsScreen(); renderShiftsScreen();
+    setSyncState('err');
+    showToast(`Не вдалося завантажити дані з хмари: ${loadErrors.join('; ')}. Локальні дані НЕ змінено.`);
+  }
 }
 
 const AUTOBACKUP_MAX_SLOTS = 3;
