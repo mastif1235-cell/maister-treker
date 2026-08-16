@@ -3312,7 +3312,27 @@ async function fetchWithRetry(url, opts, retries=1){
     return fetchWithRetry(url, opts, retries-1);
   } finally { clearTimeout(timeoutId); }
 }
-async function backupTicketToTelegram(t){
+// Серіалізуємо backup по stable id. Наступний запит завжди дістає заявку
+// наново з tickets уже після попереднього завершення: save/edit може замінити
+// tickets[idx] новим об'єктом, тож старе async-посилання не можна продовжувати.
+const telegramBackupQueues = new Map();
+function backupTicketToTelegram(ticket){
+  const id = ticket && ticket.id;
+  if(id === undefined || id === null) return Promise.resolve(false);
+  const key = String(id);
+  const previous = telegramBackupQueues.get(key) || Promise.resolve();
+  const job = previous.catch(()=>{}).then(()=>{
+    const current = tickets.find(x=>String(x.id)===key);
+    return current ? backupTicketToTelegramNow(current) : false;
+  });
+  let tracked;
+  tracked = job.finally(()=>{
+    if(telegramBackupQueues.get(key) === tracked) telegramBackupQueues.delete(key);
+  });
+  telegramBackupQueues.set(key, tracked);
+  return tracked;
+}
+async function backupTicketToTelegramNow(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
   if(!token || !chatId || !t) return;
