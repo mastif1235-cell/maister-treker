@@ -1572,6 +1572,7 @@ function showEditAbonentProfile(profileJson){
         const sure = confirm(`Адресу змінено — вона застосується до ${ids.length} заявок(и) за старою адресою (вони «переїдуть» на нову). Якщо це насправді інший абонент — краще скасувати й створити нову заявку з новою адресою. Продовжити?`);
         if(!sure) return;
       }
+      const profileUpdatedIds = [];
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
         if(t){
@@ -1584,25 +1585,30 @@ function showEditAbonentProfile(profileJson){
           // старе ім'я/адреса/телефон, хоча в самій заявці все вже виправлено.
           // Для звичайних (не raw) заявок перебудовуємо текст з новими даними.
           if(!t.cloudImported) t.content = buildTicketContent(t, Number(t.sum)||0);
+          // Профіль змінює вже наявну заявку, тому повтор має йти update,
+          // а не add: сервер оновлює рядок по stable id без delete-вікна.
+          if(!t.cloudImported && getScriptUrl()){
+            t.synced = false;
+            t.syncAction = 'updateTicket';
+            profileUpdatedIds.push(t.id);
+          }
         }
       });
       saveTickets();
       showToast('Дані абонента оновлено');
-      // NEW: тепер ще й досилаємо виправлені заявки в Google Таблицю у фоні —
-      // просте "synced=false" тут не спрацювало б: бекенд ігнорує addTicket з
-      // ID, який вже є в таблиці (не оновлює рядок), тож для кожної заявки
-      // потрібен той самий цикл видалити+додати, що й при звичайному
-      // редагуванні. Робимо послідовно (не паралельно), щоб не закидати
-      // Apps Script купою одночасних запитів, якщо адреса адрес має багато
-      // заявок — і повністю у фоні, не блокуючи інтерфейс.
-      if(getScriptUrl()){
+      // Надсилаємо правки послідовно; при помилці лишаємо syncAction для
+      // retrySyncQueue(), який використає той самий updateTicket.
+      if(profileUpdatedIds.length){
         (async ()=>{
-          for(const id of ids){
+          for(const id of profileUpdatedIds){
             const t = tickets.find(x=>String(x.id)===String(id));
             if(!t || t.cloudImported) continue;
-            await syncPost('deleteTicket', {id: t.id});
-            const ok = await syncPost('addTicket', ticketToSyncPayload(t));
-            t.synced = ok;
+            const ok = await syncPost('updateTicket', ticketToSyncPayload(t));
+            const current = tickets.find(x=>String(x.id)===String(id));
+            if(!current) continue;
+            current.synced = ok;
+            if(ok) delete current.syncAction;
+            else current.syncAction = 'updateTicket';
           }
           saveTickets();
           renderTicketsScreen();
