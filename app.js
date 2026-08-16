@@ -131,6 +131,10 @@ if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для вс�
 // до першого рендеру екрану заявок ще встигає бути порожній масив.
 let tickets  = [];
 let shifts   = loadJSON('shifts', []);
+// Ревізії відрізняють «стан на початку cloud load» від локальних змін,
+// зроблених користувачем, поки мережевий запит ще очікує відповідь.
+let ticketsRevision = 0;
+let shiftsRevision = 0;
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
 const DELETED_TICKETS_MAX = 30;
 // NEW: черга "сирих" нарядів від диспетчера — вставив текст як є (з Viber
@@ -253,8 +257,8 @@ async function loadTicketsFromIdb(){
   // наступний запуск замість безповоротної втрати всієї старої бази.
   if(await ticketsDbPut(tickets)) localStorage.removeItem('tickets');
 }
-function saveTickets(){ return ticketsDbPut(tickets); }
-function saveShifts(){ localStorage.setItem('shifts', JSON.stringify(shifts)); }
+function saveTickets(){ ticketsRevision++; return ticketsDbPut(tickets); }
+function saveShifts(){ shiftsRevision++; localStorage.setItem('shifts', JSON.stringify(shifts)); }
 function saveSettings(){ localStorage.setItem('settings', JSON.stringify(settings)); }
 
 /* ---- Фото зберігаються окремо в IndexedDB, а не в localStorage ----
@@ -2272,6 +2276,8 @@ async function loadFromCloud(){
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
   if(!confirm('Завантажити дані з хмари? Це замінить локальні заявки та/або зміни.')) return;
+  const loadTicketsRevision = ticketsRevision;
+  const loadShiftsRevision = shiftsRevision;
   setSyncState('syncing');
   let nextTickets = null;
   let nextShifts = null;
@@ -2379,6 +2385,15 @@ async function loadFromCloud(){
     loadErrors.push('зміни: не налаштовано URL');
   }
   if(loadErrors.length === 0){
+    // Атомарність tickets+shifts не захищає від нової локальної роботи під
+    // час await fetch. Не зливаємо два незалежні стани автоматично: краще
+    // лишити локальні дані й попросити користувача повторити завантаження.
+    if(ticketsRevision !== loadTicketsRevision || shiftsRevision !== loadShiftsRevision){
+      renderTicketsScreen(); renderShiftsScreen();
+      setSyncState('err');
+      showToast('Локальні дані змінилися під час завантаження. Дані з хмари не застосовано — повторіть завантаження.');
+      return;
+    }
     tickets = nextTickets;
     shifts = nextShifts;
     saveTickets();
