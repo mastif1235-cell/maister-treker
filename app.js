@@ -91,10 +91,6 @@ const DEFAULT_CABLE_TYPES = [
 // можна додати свій тип кабелю (наприклад, вуличний), а не лише UTP/Оптику
 function getCableTypesConfig(){ return (settings && settings.cableTypes && settings.cableTypes.length) ? settings.cableTypes : DEFAULT_CABLE_TYPES; }
 
-function loadJSON(key, fallback){
-  try{ const v = JSON.parse(localStorage.getItem(key)); return (v===null||v===undefined) ? fallback : v; }
-  catch(e){ return fallback; }
-}
 function loadSettings(){
   const s = loadJSON('settings', null);
   const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
@@ -335,12 +331,6 @@ function clearAllPhotos(){
    localStorage (dailyBackupIndex), щоб швидко малювати список у Налаштуваннях
    без походу в IndexedDB. ---- */
 const DAILY_BACKUP_MAX = 10;
-function loadDailyBackupIndex(){
-  try{ return JSON.parse(localStorage.getItem('dailyBackupIndex')) || []; }catch(e){ return []; }
-}
-function saveDailyBackupIndex(index){
-  try{ localStorage.setItem('dailyBackupIndex', JSON.stringify(index)); }catch(e){ /* сховище повне — не критично */ }
-}
 // NEW: викликається раз при старті застосунку — якщо сьогодні ще не було
 // автобекапу, робить знімок і кладе його в IndexedDB, старший за 10-й видаляє
 async function maybeRunDailyBackup(){
