@@ -6328,6 +6328,29 @@ function bindTicketsScreen(){
 }
 
 function bindCalculatorScreen(){
+  // <details> у деяких мобільних браузерах може змінювати scrollTop
+  // прокручуваного контейнера після розкриття великого блоку. Нативний
+  // toggle не потребує перерендеру, тому зберігаємо позицію до його дії та
+  // повертаємо її після layout. Це спільний захист для всіх секцій калькулятора.
+  const calcFormEl = document.getElementById('calcForm');
+  const calcScrollEl = document.querySelector('main.screens');
+  const rememberAccordionScroll = e=>{
+    const summary = e.target.closest && e.target.closest('details > summary');
+    if(!summary || !calcFormEl.contains(summary)) return;
+    summary.parentElement._scrollTopBeforeToggle = calcScrollEl.scrollTop;
+  };
+  calcFormEl.addEventListener('pointerdown', rememberAccordionScroll, true);
+  calcFormEl.addEventListener('click', rememberAccordionScroll, true);
+  calcFormEl.addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key===' ') rememberAccordionScroll(e);
+  }, true);
+  calcFormEl.querySelectorAll('details').forEach(details=>{
+    details.addEventListener('toggle', ()=>{
+      const top = details._scrollTopBeforeToggle;
+      if(!Number.isFinite(top)) return;
+      requestAnimationFrame(()=> requestAnimationFrame(()=>{ calcScrollEl.scrollTop = top; }));
+    });
+  });
   // NEW: будь-яка реальна взаємодія з полями форми (а не автопідстановка з
   // наряду/профілю) позначає форму як "торкнуту руками" — від цього залежить,
   // чи вважати її чернеткою (див. formTouchedByUser і saveDraftToLocalStorage)
