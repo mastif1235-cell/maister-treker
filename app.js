@@ -3794,7 +3794,10 @@ function saveDraftToLocalStorage(){
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       ts: Date.now(),
       editingTicketId,
-      state: calcState
+      state: calcState,
+      // Потрібно після перезапуску відрізнити фото самої збереженої заявки
+      // від фото, доданих лише до чернетки й ще не підтверджених збереженням.
+      originalPhotoKeys: calcOriginalPhotoKeys.slice()
     }));
   }catch(e){ /* сховище повне чи недоступне — пропускаємо, це не критично */ }
 }
@@ -3811,6 +3814,15 @@ function cleanupUnsavedNewPhotos(){
     if(key && String(key).startsWith('idb:') && !calcOriginalPhotoKeys.includes(key)) deletePhotoKey(key);
   });
 }
+function cleanupUnsavedDraftPhotos(draft){
+  // Старі чернетки не мають цього списку. Не видаляємо їхні фото навмання:
+  // частина з них могла належати вже збереженій заявці.
+  if(!Array.isArray(draft.originalPhotoKeys)) return;
+  const originalKeys = draft.originalPhotoKeys;
+  (draft.state.photos||[]).forEach(key=>{
+    if(key && String(key).startsWith('idb:') && !originalKeys.includes(key)) deletePhotoKey(key);
+  });
+}
 
 function restoreDraftIfAny(){
   const raw = localStorage.getItem(DRAFT_KEY);
@@ -3820,9 +3832,10 @@ function restoreDraftIfAny(){
   if(!draft || !draft.state) { clearDraft(); return; }
   const d = new Date(draft.ts);
   const ok = confirm(`Знайдено незбережену чернетку заявки від ${formatDate(d)} ${formatTime(d)}.\nВідновити її?`);
-  if(!ok){ clearDraft(); return; }
+  if(!ok){ cleanupUnsavedDraftPhotos(draft); clearDraft(); return; }
   editingTicketId = draft.editingTicketId || null;
   loadTicketIntoForm(draft.state);
+  if(Array.isArray(draft.originalPhotoKeys)) calcOriginalPhotoKeys = draft.originalPhotoKeys.slice();
   if(editingTicketId){
     document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
     document.getElementById('cancelEditBtn').classList.remove('hidden');
@@ -4144,12 +4157,12 @@ function renderPhotoPreview(){
       <img class="photo-thumb" id="photoPreview${i}" src="">
       <button type="button" class="photo-remove" data-idx="${i}">✕</button>
     </div>`).join('');
+  const fallbackFileIds = (calcState.tgPhotoFileIds && calcState.tgPhotoFileIds.length)
+    ? calcState.tgPhotoFileIds
+    : (calcState.tgPhotoFileId ? [calcState.tgPhotoFileId] : []);
   photos.forEach((p, i)=>{
     const img = document.getElementById('photoPreview'+i);
-    // NEW: резервне підтягування з Telegram (за file_id) лишається лише для
-    // першого фото — так само, як і раніше воно було лише одне на заявку;
-    // друге й третє живуть тільки в IndexedDB, без цього fallback.
-    const fallbackId = i===0 ? calcState.tgPhotoFileId : null;
+    const fallbackId = fallbackFileIds[i] || null;
     const resolved = getPhotoCached(p, (val)=>{ if(img) img.src = val; }, fallbackId);
     if(img) img.src = resolved || '';
   });
