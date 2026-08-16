@@ -5129,7 +5129,8 @@ function buildCurrentMonthShiftsTelegramText(){
   lines.push(`оновлено: ${formatDate(new Date())} ${formatTime(new Date())}`); // NEW: видно, що повідомлення живе й актуальне, а не застигле
   return lines.join('\n');
 }
-let shiftsTelegramSyncBusy = false; // NEW: захист від гонки — див. коментар у syncShiftsMonthlyTelegramMessage
+let shiftsTelegramSyncBusy = false;
+let shiftsTelegramSyncQueued = false;
 async function syncShiftsMonthlyTelegramMessage(){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgMyChatId||'').trim();
@@ -5138,11 +5139,12 @@ async function syncShiftsMonthlyTelegramMessage(){
   // напарники за один день), обидва виклики цієї функції могли стартувати
   // майже одночасно — обидва бачили, що tgShiftsMsgId ще не встановлено для
   // цього місяця, і ОБИДВА надсилали НОВЕ повідомлення в Telegram замість
-  // одного. Проста черга: якщо синк вже йде — новий виклик почекає його
-  // завершення й підхопить вже готовий tgShiftsMsgId (відредагує, а не
-  // задублює).
+  // одного. Якщо синк уже йде, не запускаємо другий паралельно: позначаємо
+  // один повтор після завершення поточного. Так останній текст включить усі
+  // швидкі зміни, незалежно від фактичної затримки Telegram.
   if(shiftsTelegramSyncBusy){
-    await new Promise(r=>setTimeout(r, 1500));
+    shiftsTelegramSyncQueued = true;
+    return;
   }
   shiftsTelegramSyncBusy = true;
   try{
@@ -5171,7 +5173,13 @@ async function syncShiftsMonthlyTelegramMessage(){
       saveSettings();
     }
   }catch(e){ /* немає інтернету чи Telegram недоступний — не критично, спробуємо при наступній зміні */ }
-  finally{ shiftsTelegramSyncBusy = false; }
+  finally{
+    shiftsTelegramSyncBusy = false;
+    if(shiftsTelegramSyncQueued){
+      shiftsTelegramSyncQueued = false;
+      syncShiftsMonthlyTelegramMessage();
+    }
+  }
 }
 
 async function shareMonthShifts(){
