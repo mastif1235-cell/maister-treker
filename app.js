@@ -6722,6 +6722,20 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
     const removeBtn = e.target.closest('.aw-remove'); if(!removeBtn) return;
     const idx = Number(removeBtn.closest('[data-awidx]').dataset.awidx);
     calcState.additionalWork.splice(idx,1);
+    // Ключі змішаної оплати для додаткових робіт залежать від індексу aw_N.
+    // Після видалення рядка зсуваємо ключі наступних робіт разом зі списком,
+    // щоб робота не успадковувала спосіб оплати видаленої сусідньої позиції.
+    if(calcState.itemPayments){
+      const updatedPayments = {};
+      Object.entries(calcState.itemPayments).forEach(([key, method])=>{
+        const match = key.match(/^aw_(\d+)$/);
+        if(!match){ updatedPayments[key] = method; return; }
+        const oldIndex = Number(match[1]);
+        if(oldIndex < idx) updatedPayments[key] = method;
+        else if(oldIndex > idx) updatedPayments[`aw_${oldIndex-1}`] = method;
+      });
+      calcState.itemPayments = updatedPayments;
+    }
     // не лишаємо список зовсім порожнім — завжди має бути хоч одне поле для вводу
     if(calcState.additionalWork.length===0) calcState.additionalWork.push({desc:'', sum:0});
     renderAdditionalWorkList(); computeTotal();
