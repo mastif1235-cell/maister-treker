@@ -3261,6 +3261,20 @@ async function backupTicketToTelegram(t){
     tgPhotoMsgId: t.tgPhotoMsgId, tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
     tgJsonMsgId: t.tgJsonMsgId
   };
+  // Поки новий текст, усі фото й JSON не підтверджені, стара повна копія
+  // лишається робочою. Тому запам'ятовуємо також file_id та статус: при
+  // частковій помилці повторна спроба не повинна втратити шлях до старих фото.
+  const previousBackupState = {
+    tgBackedUp: t.tgBackedUp,
+    tgPhotoFileId: t.tgPhotoFileId,
+    tgPhotoFileIds: (t.tgPhotoFileIds||[]).slice(),
+    tgSepMsgId: t.tgSepMsgId,
+    tgTextMsgId: t.tgTextMsgId,
+    tgPhotoMsgId: t.tgPhotoMsgId,
+    tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
+    tgJsonMsgId: t.tgJsonMsgId
+  };
+  let backupSucceeded = false;
   try{
     const previousPrimaryPhotoFileId = t.tgPhotoFileId;
     t.tgPhotoFileId = null;
@@ -3351,9 +3365,11 @@ async function backupTicketToTelegram(t){
     if(textOk && photosOk && jsonOk){
       t.tgBackedUp = true;
       await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+      backupSucceeded = true;
     }
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
   finally{
+    if(!backupSucceeded) Object.assign(t, previousBackupState);
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
     // якщо зв'язок обривався десь на середині (а повідомлення в Telegram все
     // одно доходило), локально це не зберігалось і галочка "✅" губилась
