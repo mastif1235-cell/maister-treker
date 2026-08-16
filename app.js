@@ -155,6 +155,9 @@ let activeFilterTags = new Set();
 
 let calcState = blankCalcState();
 let editingTicketId = null;
+// Наряд в черзі позначаємо виконаним лише після фактичного збереження заявки,
+// а не після самого відкриття її форми.
+let naryadPendingCompletionId = null;
 // NEW: знімок ключів фото на момент відкриття форми (нової чи існуючої
 // заявки) — потрібен, щоб при скасуванні редагування прибрати з IndexedDB
 // лише ФОТО, ЗНЯТІ В ЦЬОМУ СЕАНСІ (щойно сфотографовані, ще ніде не
@@ -921,12 +924,8 @@ function showNaryadQueue(date){
       if(createBtn){
         const n = naryadQueue.find(x=>String(x.id)===createBtn.dataset.id);
         if(!n) return;
-        // NEW: тап "➕ Заявка" одразу позначає наряд виконаним (як ти й
-        // казав — доїхав, створив заявку, галочка) — це саме той один тап
-        // замість двох; якщо роздумав чи скасував заявку — є "↩️ Повернути".
-        n.done = true;
-        saveNaryadQueue();
-        updateNaryadQueueBtn();
+        // Позначку "виконано" ставимо після збереження заявки, а не тут:
+        // форму можна закрити без збереження, і тоді наряд має лишитися в черзі.
         const prefill = {};
         // NEW: раніше текст наряду клали в prefill.content — це поле
         // перезаписувалось з нуля при збереженні заявки (buildTicketContent),
@@ -943,7 +942,7 @@ function showNaryadQueue(date){
         prefill.masterNote = n.text;
         const phoneMatch = extractPhoneFromText(n.text);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch);
-        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
+        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null, n.id), ()=> showNaryadQueue(viewDate));
       }
     });
   }});
@@ -1132,9 +1131,10 @@ function showTicketTypePicker(onPick, onCancel){
 // запам'ятовуємо, куди повернутись (як і при редагуванні з профілю), і
 // показуємо кнопку "Назад" замість "Скасувати редагування", бо це нова
 // заявка, а не редагування наявної.
-function startNewTicketFlow(type, prefill, returnState){
+function startNewTicketFlow(type, prefill, returnState, naryadIdToComplete){
   closeModal(); // на випадок, якщо запуск стався з модалки пошуку/профілю
   resetCalcForm(formatDate(new Date()), Object.assign({type}, prefill||{}));
+  naryadPendingCompletionId = naryadIdToComplete || null;
   if(returnState){
     editReturnAddrState = {...returnState};
     const cancelBtn = document.getElementById('cancelEditBtn');
@@ -3746,6 +3746,7 @@ function saveDailyMastersDefault(masters){
 }
 function resetCalcForm(presetDate, overrides){
   calcState = blankCalcState();
+  naryadPendingCompletionId = null;
   formSessionId++; // NEW: новий сеанс форми — попередні "фото в польоті" себе впізнають і не приліпляться сюди
   if(presetDate) calcState.date = presetDate;
   calcOriginalPhotoKeys = []; // NEW: нова порожня заявка — жодного "оригінального" фото ще нема
@@ -3780,6 +3781,7 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
+  naryadPendingCompletionId = null;
   formSessionId++; // NEW: те саме застереження, що й у resetCalcForm — новий сеанс форми
   // NEW: знімок оригінальних content/sum на момент відкриття — потрібен
   // лише для cloudImported (raw) заявок, де hasUnsavedChanges порівнює з
@@ -4860,6 +4862,15 @@ async function saveTicketFromForm(e){
       });
     }
     savedTicketRef = tickets.find(t=>t.id===newTicket.id);
+  }
+  if(savedTicketRef && naryadPendingCompletionId){
+    const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
+    if(naryad){
+      naryad.done = true;
+      saveNaryadQueue();
+      updateNaryadQueueBtn();
+    }
+    naryadPendingCompletionId = null;
   }
   if(savedTicketRef) backupTicketToTelegram(savedTicketRef); // NEW: фонова резервна копія тексту/фото в Telegram (не блокує збереження)
 
