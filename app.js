@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v63-rc2 · 2026-08-16';
+const APP_VERSION = 'v63-rc3 · 2026-08-16';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -607,7 +607,7 @@ function normalizeMac(raw){
 // Використовується і для префілу телефону з наряду (нижче), і для пошуку
 // збігів з існуючими абонентами (extractPhoneCandidatesFromText) — щоб не
 // тримати два різних regex з різною суворістю в одному застосунку.
-const UA_PHONE_REGEX = /(?<!\d)(\+?38)?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)/g;
+const UA_PHONE_REGEX = /(?<!\d)(\+?38)?[\s(\-]*0\d{2}[\s)\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)/g;
 function extractPhoneFromText(text){
   const matches = String(text||'').match(UA_PHONE_REGEX);
   return matches ? matches[0] : null;
@@ -867,6 +867,7 @@ function naryadQueueItemHtml(n){
       <div class="row" style="gap:6px; flex-wrap:wrap;">
         <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
         ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}
+        ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-edit-btn" data-id="${n.id}">✏️ Редагувати</button>`}
         ${hasLinkedTicket ? `<button type="button" class="btn btn-sm naryad-queue-edit-ticket-btn" data-ticket-id="${n.ticketId}">✏️ Редагувати заявку</button>` : ''}
         <button type="button" class="btn btn-sm naryad-queue-reschedule-btn" data-id="${n.id}">🔁 Перенести</button>
         <button type="button" class="btn btn-sm btn-danger naryad-queue-delete-btn" data-id="${n.id}">🗑️</button>
@@ -913,6 +914,12 @@ function showNaryadQueue(date){
         editTicket(editTicketBtn.dataset.ticketId);
         return;
       }
+      const editNaryadBtn = e.target.closest('.naryad-queue-edit-btn');
+      if(editNaryadBtn){
+        // Редагуємо саме вихідний наряд у черзі, не створюючи нового запису.
+        showAddNaryadModal(viewDate, editNaryadBtn.dataset.id);
+        return;
+      }
       const doneBtn = e.target.closest('.naryad-queue-done-btn');
       if(doneBtn){
         const n = naryadQueue.find(x=>String(x.id)===doneBtn.dataset.id);
@@ -936,20 +943,7 @@ function showNaryadQueue(date){
         if(!n) return;
         // Позначку "виконано" ставимо після збереження заявки, а не тут:
         // форму можна закрити без збереження, і тоді наряд має лишитися в черзі.
-        const prefill = {};
-        // NEW: раніше текст наряду клали в prefill.content — це поле
-        // перезаписувалось з нуля при збереженні заявки (buildTicketContent),
-        // а бачив його майстер лише в прихованому полі (воно показується
-        // тільки для заявок, відновлених із хмари) — текст диспетчера
-        // безслідно губився. Тепер кладемо в note — це видиме поле
-        // "Примітка", яке й лишається в тексті заявки після збереження.
-        // NEW: текст наряду йшов у note — але це поле потрапляє в текст
-        // заявки, який летить диспетчеру (копіювання/"Диспетчеру"/"Поділитися").
-        // Диспетчер сам написав цей текст — надсилати його йому назад
-        // безглуздо. Тепер кладемо в masterNote — приватну примітку
-        // ("🔒 Тільки для вас"), яка ніколи нікуди не відправляється, лишається
-        // лише в застосунку як нагадування собі.
-        prefill.masterNote = n.text;
+        const prefill = {masterNote: n.text};
         const phoneMatch = extractPhoneFromText(n.text);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch);
         showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null, n.id), ()=> showNaryadQueue(viewDate));
@@ -960,10 +954,16 @@ function showNaryadQueue(date){
 // NEW: окрема модалка лише для вставки тексту наряду — поле вводу займає
 // майже весь екран (замість тісного блоку поряд зі списком), плюс швидкий
 // вибір дати виконання (Сьогодні/Завтра/Післязавтра або довільна дата).
-function showAddNaryadModal(defaultDate){
+function showAddNaryadModal(defaultDate, editingNaryadId){
+  const editingNaryad = editingNaryadId
+    ? naryadQueue.find(n=>String(n.id)===String(editingNaryadId))
+    : null;
+  if(editingNaryadId && !editingNaryad) return;
   const today = formatDate(new Date());
+  const initialDate = editingNaryad ? naryadItemDate(editingNaryad) : (defaultDate || today);
+  const isEditing = !!editingNaryad;
   const bodyHtml = `
-    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px; width:calc(100% + 32px); margin-left:-16px; margin-right:-16px; border-radius:0;"></textarea>
+    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px; width:calc(100% + 32px); margin-left:-16px; margin-right:-16px; border-radius:0;">${escapeHtml(editingNaryad ? editingNaryad.text : '')}</textarea>
     <div class="row" style="gap:6px; margin-top:10px;">
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${today}" style="flex:1;">Сьогодні</button>
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${shiftDate(today,1)}" style="flex:1;">Завтра</button>
@@ -971,10 +971,10 @@ function showAddNaryadModal(defaultDate){
     </div>
     <div class="field" style="margin-top:10px;">
       <label>Дата виконання</label>
-      <input type="date" id="addNaryadDateInput" value="${ddmmyyyyToIso(defaultDate||today)}">
+      <input type="date" id="addNaryadDateInput" value="${ddmmyyyyToIso(initialDate)}">
     </div>
-    <button type="button" class="btn btn-block btn-accent" id="addNaryadSaveBtn" style="margin-top:12px;">✅ Додати в чергу</button>`;
-  openModal('Новий наряд', bodyHtml, {onClose: ()=> showNaryadQueue(defaultDate), onOpen: ()=>{
+    <button type="button" class="btn btn-block btn-accent" id="addNaryadSaveBtn" style="margin-top:12px;">${isEditing ? '✅ Зберегти зміни' : '✅ Додати в чергу'}</button>`;
+  openModal(isEditing ? 'Редагувати наряд' : 'Новий наряд', bodyHtml, {onClose: ()=> showNaryadQueue(initialDate), onOpen: ()=>{
     document.getElementById('addNaryadInput').focus();
     document.querySelectorAll('.addNaryadDateBtn').forEach(btn=>{
       btn.addEventListener('click', ()=>{ document.getElementById('addNaryadDateInput').value = ddmmyyyyToIso(btn.dataset.date); });
@@ -982,7 +982,18 @@ function showAddNaryadModal(defaultDate){
     document.getElementById('addNaryadSaveBtn').addEventListener('click', ()=>{
       const text = document.getElementById('addNaryadInput').value.trim();
       if(!text){ showToast('Встав текст наряду'); return; }
-      const chosenDate = isoToDdmmyyyy(document.getElementById('addNaryadDateInput').value) || defaultDate || formatDate(new Date());
+      const chosenDate = isoToDdmmyyyy(document.getElementById('addNaryadDateInput').value) || initialDate;
+      if(editingNaryad){
+        // Зберігаємо той самий об'єкт: ID, createdAt, done і ticketId не
+        // змінюються. Оновлюються лише поля, доступні у формі створення.
+        editingNaryad.text = text;
+        editingNaryad.date = chosenDate;
+        saveNaryadQueue();
+        updateNaryadQueueBtn();
+        showToast('Наряд оновлено');
+        showNaryadQueue(chosenDate);
+        return;
+      }
       const now = new Date();
       naryadQueue.push({id: Date.now(), text, date: chosenDate, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
       saveNaryadQueue();
