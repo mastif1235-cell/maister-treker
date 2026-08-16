@@ -376,14 +376,14 @@ async function resolvePhotoAsync(photoKey, tgFallbackFileId){
 async function storePhoto(dataUrl){
   const key = 'idb:' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
   photoCacheSet(key, dataUrl);
-  // NEW: результат запису раніше ніяк не перевірявся — якщо photoDbPut
-  // не вдався (наприклад, немає вільного місця), функція все одно
-  // повертала ключ, ніби все добре. Поки застосунок відкритий, фото
-  // виглядає нормально (воно в photoCache, в оперативній пам'яті), але
-  // після закриття й повторного відкриття застосунку — зникає безслідно,
-  // без жодного попередження в момент, коли це ще можна було помітити.
+  // Якщо IndexedDB відмовив (наприклад, закінчилось місце), ключ не можна
+  // лишати в заявці: прев'ю з пам'яткового кешу зникло б після перезапуску.
   const ok = await photoDbPut(key, dataUrl);
-  if(!ok) showToast('⚠️ Не вдалося зберегти фото на телефон — не закривайте застосунок, спробуйте ще раз');
+  if(!ok){
+    photoCache.delete(key);
+    showToast('⚠️ Не вдалося зберегти фото на телефон — не закривайте застосунок, спробуйте ще раз');
+    return null;
+  }
   return key;
 }
 async function deletePhotoKey(key){
@@ -561,8 +561,10 @@ async function migrateLegacyPhotosToIdb(){
   for(const t of tickets){
     if(t.photo && typeof t.photo==='string' && t.photo.startsWith('data:')){
       const key = await storePhoto(t.photo);
-      t.photo = key;
-      changed = true;
+      if(key){
+        t.photo = key;
+        changed = true;
+      }
     }
   }
   if(changed) saveTickets();
@@ -4470,6 +4472,7 @@ function handlePhotoFile(file){
       // localStorage завжди лишається легкою, незалежно від кількості й
       // розміру фото.
       storePhoto(dataUrl).then(key=>{
+        if(!key) return;
         // NEW: поки йшов запис в IndexedDB, користувач міг скасувати заявку
         // або відкрити іншу (formSessionId змінився) — тоді calcState вже
         // зовсім ІНШИЙ об'єкт (не той, для якого фото знімали), і без цієї
@@ -4762,7 +4765,11 @@ async function saveTicketFromForm(e){
   }
   const newPhotoKeys = [];
   for(const p of calcState.photos){
-    if(p && !String(p).startsWith('idb:')) newPhotoKeys.push(await storePhoto(p));
+    if(p && !String(p).startsWith('idb:')){
+      const key = await storePhoto(p);
+      if(!key) return;
+      newPhotoKeys.push(key);
+    }
     else if(p) newPhotoKeys.push(p);
   }
   calcState.photos = newPhotoKeys;
