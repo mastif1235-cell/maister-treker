@@ -2402,11 +2402,13 @@ async function sendAllToCloud(){
 async function loadShiftsFromCloud(){
   const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
+  if(!confirm('Завантажити зміни з хмари? Поточні локальні зміни буде замінено.')) return;
   setSyncState('syncing');
   try{
     const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
     const data = await res.json();
     if(data.status === 'error' || !Array.isArray(data.shifts)) throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
+    backupLocalData();
     shifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
     saveShifts();
     renderShiftsScreen();
