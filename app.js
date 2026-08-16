@@ -510,6 +510,7 @@ async function restoreDailyBackup(dateKey){
   const payload = await backupDbGet(dateKey);
   if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
   if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки, зміни й налаштування буде замінено.`)) return;
+  backupLocalData();
   tickets = payload.tickets || [];
   shifts = payload.shifts || [];
   if(payload.settings) settings = payload.settings; // NEW: старі бекапи (до цього виправлення) можуть не мати settings — тоді лишаємо поточні
@@ -2402,7 +2403,8 @@ async function loadShiftsFromCloud(){
   try{
     const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
     const data = await res.json();
-    shifts = (data.shifts||[]).map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
+    if(data.status === 'error' || !Array.isArray(data.shifts)) throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
+    shifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
     saveShifts();
     renderShiftsScreen();
     setSyncState('ok');
@@ -2617,8 +2619,10 @@ async function retrySyncQueue(){
     for(const t of pending){
       // NEW: живий прогрес замість одного статичного тосту — видно, що процес не завис
       bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
-      const ok = await syncPost('addTicket', ticketToSyncPayload(t));
+      const action = t.syncAction === 'updateTicket' ? 'updateTicket' : 'addTicket';
+      const ok = await syncPost(action, ticketToSyncPayload(t));
       t.synced = ok;
+      if(ok) delete t.syncAction;
       done++;
       saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
     }
@@ -4346,6 +4350,7 @@ function applyDefaultCallFee(){
   if(type === 'Підключення') def = Number(settings.defaultConnectFee) || 0;
   else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
   if(def === null) return;
+  if((calcState.equipment||[]).some(e=>e.checked && Number(e.price)>=800)) def = 0;
   document.getElementById('f_callFee').value = def;
   computeTotal();
 }
@@ -4771,6 +4776,8 @@ async function saveTicketFromForm(e){
     calcState.id = editingTicketId;
     const idx = tickets.findIndex(t=>String(t.id)===String(editingTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
+    if(idx>-1 && syncConfigured) tickets[idx].syncAction = 'updateTicket';
+    const updatedTicketPayload = idx>-1 ? ticketToSyncPayload(tickets[idx]) : null;
     saveTickets();
     showToast('Заявку оновлено');
     if(syncConfigured){
@@ -4785,9 +4792,7 @@ async function saveTicketFromForm(e){
       // повністю у фоні (як і бекап у Telegram нижче), не блокуючи вихід
       // зі спмалькулятора; статус (✅/⏳) на картці заявки оновиться сам,
       // коли (і скільки б не) відповідь прийде.
-      // у схемі синку немає updateTicket — імітуємо оновлення видаленням і повторним додаванням
       (async ()=>{
-        await syncPost('deleteTicket', {id: editingTicketId});
         // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
         // одразу, рядок у таблиці лишиться відсутнім аж до наступного
         // retrySyncQueue. Пробуємо ще двічі одразу (з паузами, що
@@ -4795,16 +4800,17 @@ async function saveTicketFromForm(e){
         // на майбутній фоновий retry (він все одно лишається підстраховкою,
         // якщо й ці спроби не вдадуться — статус заявки стане "не
         // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
-        let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+        let ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
         if(!ok){
           await new Promise(r=>setTimeout(r, 1500));
-          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+          ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
         }
         if(!ok){
           await new Promise(r=>setTimeout(r, 3000));
-          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
+          ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
         }
-        if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
+        const current = tickets.find(t=>String(t.id)===String(editingTicketId));
+        if(current){ current.synced = ok; if(ok) delete current.syncAction; saveTickets(); renderTicketsScreen(); }
       })();
     }
     if(idx>-1) savedTicketRef = tickets[idx];
@@ -4916,8 +4922,19 @@ function renderShiftHistory(){
   }).join('');
 }
 
+function roundWorkedHours(hours){
+  const value = Number(hours);
+  if(!Number.isFinite(value) || value <= 0) return 0;
+  const wholeHours = Math.floor(value);
+  const minutes = Math.round((value - wholeHours) * 60);
+  if(minutes <= 14) return wholeHours;
+  if(minutes <= 45) return wholeHours + 0.5;
+  return wholeHours + 1;
+}
+
 function addShift(){
-  const hours = Number(document.getElementById('shiftHours').value);
+  const enteredHours = Number(document.getElementById('shiftHours').value);
+  const hours = roundWorkedHours(enteredHours);
   if(!hours || hours<=0){ showToast('Вкажіть кількість годин'); return; }
   const coworker = coworkerSelection.size ? [...coworkerSelection].join(', ') : 'Сам';
   const shift = {id: Date.now(), date: currentShiftDate, hours, coworker};
@@ -4929,7 +4946,7 @@ function addShift(){
   coworkerSelection = new Set();
   statsViewDate = parseDate(currentShiftDate);
   renderShiftsScreen();
-  showToast('Зміну додано');
+  showToast(hours !== enteredHours ? `Зміну додано · округлено до ${hours} год` : 'Зміну додано');
 }
 
 function deleteShift(id){
@@ -5280,6 +5297,7 @@ async function handleJsonImportFile(file){
     if(hasShifts) parts.push(`зміни (${data.shifts.length})`);
     if(hasSettings) parts.push('налаштування (міста, боти тощо)');
     if(!confirm(`Імпортувати ${parts.join(', ')}? Це ЗАМІНИТЬ поточні локальні дані відповідного типу на цьому телефоні.`)) return;
+    backupLocalData();
 
     if(hasTickets){
       // NEW: доповнюємо кожну заявку значеннями за замовчуванням — якщо бекап
@@ -5660,6 +5678,8 @@ function doPost(e) {
   try {
     if (action === 'addTicket') {
       addTicketRow(ss, data);
+    } else if (action === 'updateTicket') {
+      updateTicketRow(ss, data);
     } else if (action === 'deleteTicket') {
       deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
     } else if (action === 'addShift') {
@@ -5674,6 +5694,8 @@ function doPost(e) {
       writeAllShifts(ss, data.shifts || []);
     } else if (action === 'clearAll') {
       syncAllData(ss, [], []);
+    } else {
+      throw new Error('Unknown action: ' + action);
     }
   } catch (err) {
     result = {status: 'error', message: String(err)};
@@ -5822,7 +5844,18 @@ function addTicketRow(ss, t) {
   if (insertRow <= last) sheet.insertRowBefore(insertRow);
   writeTicketRow(sheet, insertRow, t);
 }
- 
+
+function updateTicketRow(ss, t) {
+  var sheet = getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS);
+  var last = sheet.getLastRow();
+  if (last < 2) { addTicketRow(ss, t); return; }
+  var ids = sheet.getRange(2, 1, last - 1, 1).getValues().flat();
+  var idx = ids.findIndex(function (v) { return String(v) === String(t.id); });
+  if (idx === -1) { addTicketRow(ss, t); return; }
+  writeTicketRow(sheet, idx + 2, t);
+  sortTicketsSheet(sheet);
+}
+
 function writeTicketRow(sheet, rowIndex, t) {
   var row = [t.id, t.date, t.time, t.content, t.sum, (t.tags || []).join(', '), t.backupNote || '', t.fullDataJson || '']; // NEW: 8-й елемент
   var range = sheet.getRange(rowIndex, 1, 1, row.length);
@@ -6464,12 +6497,12 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
       const idx = Number(chk.dataset.eqidx);
       calcState.equipment[idx].checked = chk.checked;
       syncCatalogTagState(calcState.equipment[idx].label, chk.checked); // NEW: авто-тег за назвою матеріалу
-      computeTotal(); renderEquipmentList();
+      applyDefaultCallFee(); renderEquipmentList();
     }
   });
   document.getElementById('equipmentList').addEventListener('input', e=>{
     const price = e.target.closest('.eq-price');
-    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; computeTotal(); updateEquipmentSummary(); }
+    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; applyDefaultCallFee(); updateEquipmentSummary(); }
   });
 
   // NEW: обробники для динамічного списку кабелів
