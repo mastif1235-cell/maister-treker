@@ -3073,8 +3073,10 @@ async function retrySyncTicket(id){
   if(!t) return;
   if(!getScriptUrl()){ showToast('Синхронізація не налаштована'); return; }
   showToast('Повторна спроба надсилання...');
-  const ok = await syncPost('addTicket', ticketToSyncPayload(t));
+  const action = t.syncAction === 'updateTicket' ? 'updateTicket' : 'addTicket';
+  const ok = await syncPost(action, ticketToSyncPayload(t));
   t.synced = ok;
+  if(ok) delete t.syncAction;
   saveTickets();
   renderTicketsScreen();
   showToast(ok ? 'Надіслано' : 'Не вдалося — перевірте інтернет-з’єднання');
