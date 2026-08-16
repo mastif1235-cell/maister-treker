@@ -1352,7 +1352,10 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   const photoEntries = [];
   list.forEach(t=>{
     const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
-    keys.forEach((key, i)=>{ if(key) photoEntries.push({key, fileId: i===0 ? (t.tgPhotoFileId || null) : null}); });
+    const fileIds = (t.tgPhotoFileIds && t.tgPhotoFileIds.length)
+      ? t.tgPhotoFileIds
+      : (t.tgPhotoFileId ? [t.tgPhotoFileId] : []);
+    keys.forEach((key, i)=>{ if(key) photoEntries.push({key, fileId: fileIds[i] || null}); });
   });
   const wrapId = `abonentProfilePhotoWrap${keySuffix}`;
   const photoBtnHtml = photoEntries.length ? `
@@ -4705,8 +4708,11 @@ async function sharePhoto(){
     // NEW: до 3 фото — резолвимо й пакуємо всі одразу в один виклик share()
     // (Web Share API 2-го рівня підтримує кілька файлів за раз)
     const files = [];
+    const fallbackFileIds = (calcState.tgPhotoFileIds && calcState.tgPhotoFileIds.length)
+      ? calcState.tgPhotoFileIds
+      : (calcState.tgPhotoFileId ? [calcState.tgPhotoFileId] : []);
     for(let i=0;i<photos.length;i++){
-      const fallbackId = i===0 ? calcState.tgPhotoFileId : null;
+      const fallbackId = fallbackFileIds[i] || null;
       const photoData = await resolvePhotoAsync(photos[i], fallbackId);
       if(!photoData) continue;
       const res = await fetch(photoData);
