@@ -2727,8 +2727,7 @@ async function retrySyncQueue(){
     }
     for(const t of pendingDeletes){
       bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
-      const ok = await syncPost('deleteTicket', {id: t.id});
-      if(ok) delete t.pendingCloudDelete;
+      await syncPendingCloudDelete(t);
       done++;
       saveDeletedTickets();
     }
@@ -2989,19 +2988,17 @@ function deleteTicket(id){
   // Тепер, якщо видалення не вдалось одразу, позначаємо запис у кошику
   // прапорцем pendingCloudDelete — retrySyncQueue (і кнопка "Повторити", і
   // подія online) підхоплять його пізніше.
-  syncPost('deleteTicket', {id}).then(ok=>{
-    if(!ok){
-      const trashed = deletedTickets.find(x=>String(x.id)===String(id));
-      if(trashed){ trashed.pendingCloudDelete = true; saveDeletedTickets(); }
-    }
-  });
   // NEW: Telegram-бекап НЕ видаляється разом із заявкою навмисно — навіть якщо
   // заявку видалили в застосунку (помилково чи ні), її копія назавжди лишається
   // в групі-архіві. Це і є сенс резервної копії: вона не залежить від дій в
   // основному застосунку. Синхронізується з групою лише редагування (див.
   // backupTicketToTelegram), а видалення — ні.
   // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
-  moveTicketToTrash(t);
+  // Ставимо прапорець ДО мережі: якщо застосунок закриється під час await,
+  // наступний запуск усе одно знатиме, що Google-видалення треба повторити.
+  t.pendingCloudDelete = true;
+  const trashed = moveTicketToTrash(t);
+  syncPendingCloudDelete(trashed);
   renderTicketsScreen();
   showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
 }
@@ -3027,6 +3024,27 @@ function moveTicketToTrash(t){
     deleteAllTicketPhotos(dropped);
   }
   saveDeletedTickets();
+  return copy;
+}
+
+// Один delete на id одночасно. Це також дає restore можливість дочекатися
+// вже надісланого delete, а потім безпечно відновити рядок через update.
+const cloudDeleteInFlight = new Map();
+function syncPendingCloudDelete(trashed){
+  if(!trashed || !trashed.pendingCloudDelete || !deletedTickets.includes(trashed)) return Promise.resolve(false);
+  const key = String(trashed.id);
+  if(cloudDeleteInFlight.has(key)) return cloudDeleteInFlight.get(key);
+  const job = syncPost('deleteTicket', {id: trashed.id}).then(ok=>{
+    if(ok && deletedTickets.includes(trashed)){
+      delete trashed.pendingCloudDelete;
+      saveDeletedTickets();
+    }
+    return ok;
+  }).finally(()=>{
+    if(cloudDeleteInFlight.get(key) === job) cloudDeleteInFlight.delete(key);
+  });
+  cloudDeleteInFlight.set(key, job);
+  return job;
 }
 
 function saveDeletedTickets(){
@@ -3037,6 +3055,7 @@ function restoreDeletedTicket(deletedAt){
   const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
   if(idx===-1) return;
   const t = deletedTickets[idx];
+  const inFlightDelete = cloudDeleteInFlight.get(String(t.id));
   deletedTickets.splice(idx,1);
   saveDeletedTickets();
   const restored = JSON.parse(JSON.stringify(t));
@@ -3044,6 +3063,7 @@ function restoreDeletedTicket(deletedAt){
   // якщо заявка з таким id вже якимось чином існує (малоймовірно) — даємо новий id, щоб не затерти
   if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
   restored.synced = false;
+  if(getScriptUrl()) restored.syncAction = 'updateTicket';
   tickets.push(restored);
   saveTickets();
   currentTicketDate = restored.date || currentTicketDate;
@@ -3051,10 +3071,16 @@ function restoreDeletedTicket(deletedAt){
   renderDeletedTicketsList();
   showToast('Заявку відновлено');
   if(getScriptUrl()){
-    syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
+    (async ()=>{
+      // Якщо delete уже пішов, update тільки після його завершення гарантує,
+      // що відновлена заявка лишиться в Google незалежно від порядку мережі.
+      if(inFlightDelete) await inFlightDelete;
+      const current = tickets.find(x=>String(x.id)===String(restored.id));
+      if(!current) return;
+      const ok = await syncPost('updateTicket', ticketToSyncPayload(current));
       const found = tickets.find(x=>String(x.id)===String(restored.id)); // NEW: String() — той самий захист, що й в решті коду
-      if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
-    });
+      if(found){ found.synced = ok; if(ok) delete found.syncAction; else found.syncAction = 'updateTicket'; saveTickets(); renderTicketsScreen(); }
+    })();
   }
 }
 
