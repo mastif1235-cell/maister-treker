@@ -2358,6 +2358,7 @@ function restoreFromBackup(){
         const s = slots[Number(btn.dataset.slotidx)];
         const d = new Date(s.ts);
         if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nПоточні локальні дані буде замінено.`)) return;
+        backupLocalData();
         tickets = s.tickets || [];
         shifts = s.shifts || [];
         saveTickets();
