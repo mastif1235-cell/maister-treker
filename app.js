@@ -859,6 +859,7 @@ function updateNaryadQueueBtn(){
 }
 
 function naryadQueueItemHtml(n){
+  const hasLinkedTicket = !!n.ticketId && tickets.some(t=>String(t.id)===String(n.ticketId));
   return `
     <div class="card" style="margin-bottom:10px; padding:12px 14px; ${n.done ? 'opacity:.55;' : ''}">
       <div style="white-space:pre-wrap; font-size:13.5px; ${n.done ? 'text-decoration:line-through;' : ''}">${escapeHtml(n.text)}</div>
@@ -866,6 +867,7 @@ function naryadQueueItemHtml(n){
       <div class="row" style="gap:6px; flex-wrap:wrap;">
         <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
         ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}
+        ${hasLinkedTicket ? `<button type="button" class="btn btn-sm naryad-queue-edit-ticket-btn" data-ticket-id="${n.ticketId}">✏️ Редагувати заявку</button>` : ''}
         <button type="button" class="btn btn-sm naryad-queue-reschedule-btn" data-id="${n.id}">🔁 Перенести</button>
         <button type="button" class="btn btn-sm btn-danger naryad-queue-delete-btn" data-id="${n.id}">🗑️</button>
       </div>
@@ -903,6 +905,14 @@ function showNaryadQueue(date){
     // нижче), а не тісний textarea поруч зі списком
     document.getElementById('naryadQueueAddBtn').addEventListener('click', ()=> showAddNaryadModal(viewDate));
     rootEl.addEventListener('click', e=>{
+      const editTicketBtn = e.target.closest('.naryad-queue-edit-ticket-btn');
+      if(editTicketBtn){
+        // Наряд уже пов'язаний зі збереженою заявкою: відкриваємо саме її
+        // стандартним шляхом editTicket, без створення другої форми чи нового ID.
+        closeModal();
+        editTicket(editTicketBtn.dataset.ticketId);
+        return;
+      }
       const doneBtn = e.target.closest('.naryad-queue-done-btn');
       if(doneBtn){
         const n = naryadQueue.find(x=>String(x.id)===doneBtn.dataset.id);
@@ -4875,6 +4885,10 @@ async function saveTicketFromForm(e){
     const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
     if(naryad){
       naryad.done = true;
+      // Зберігаємо стабільний зв'язок із щойно створеною заявкою. До цього
+      // моменту черга містила лише сирий текст наряду, тому після перезапуску
+      // застосунку без цього поля безпечно відкрити заявку на редагування було неможливо.
+      naryad.ticketId = savedTicketRef.id;
       saveNaryadQueue();
       updateNaryadQueueBtn();
     }
