@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v62 · 2026-08-09';
+const APP_VERSION = 'v63-rc1 · 2026-08-16';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -155,6 +155,9 @@ let activeFilterTags = new Set();
 
 let calcState = blankCalcState();
 let editingTicketId = null;
+// Наряд в черзі позначаємо виконаним лише після фактичного збереження заявки,
+// а не після самого відкриття її форми.
+let naryadPendingCompletionId = null;
 // NEW: знімок ключів фото на момент відкриття форми (нової чи існуючої
 // заявки) — потрібен, щоб при скасуванні редагування прибрати з IndexedDB
 // лише ФОТО, ЗНЯТІ В ЦЬОМУ СЕАНСІ (щойно сфотографовані, ще ніде не
@@ -376,14 +379,14 @@ async function resolvePhotoAsync(photoKey, tgFallbackFileId){
 async function storePhoto(dataUrl){
   const key = 'idb:' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
   photoCacheSet(key, dataUrl);
-  // NEW: результат запису раніше ніяк не перевірявся — якщо photoDbPut
-  // не вдався (наприклад, немає вільного місця), функція все одно
-  // повертала ключ, ніби все добре. Поки застосунок відкритий, фото
-  // виглядає нормально (воно в photoCache, в оперативній пам'яті), але
-  // після закриття й повторного відкриття застосунку — зникає безслідно,
-  // без жодного попередження в момент, коли це ще можна було помітити.
+  // Якщо IndexedDB відмовив (наприклад, закінчилось місце), ключ не можна
+  // лишати в заявці: прев'ю з пам'яткового кешу зникло б після перезапуску.
   const ok = await photoDbPut(key, dataUrl);
-  if(!ok) showToast('⚠️ Не вдалося зберегти фото на телефон — не закривайте застосунок, спробуйте ще раз');
+  if(!ok){
+    photoCache.delete(key);
+    showToast('⚠️ Не вдалося зберегти фото на телефон — не закривайте застосунок, спробуйте ще раз');
+    return null;
+  }
   return key;
 }
 async function deletePhotoKey(key){
@@ -561,8 +564,10 @@ async function migrateLegacyPhotosToIdb(){
   for(const t of tickets){
     if(t.photo && typeof t.photo==='string' && t.photo.startsWith('data:')){
       const key = await storePhoto(t.photo);
-      t.photo = key;
-      changed = true;
+      if(key){
+        t.photo = key;
+        changed = true;
+      }
     }
   }
   if(changed) saveTickets();
@@ -919,12 +924,8 @@ function showNaryadQueue(date){
       if(createBtn){
         const n = naryadQueue.find(x=>String(x.id)===createBtn.dataset.id);
         if(!n) return;
-        // NEW: тап "➕ Заявка" одразу позначає наряд виконаним (як ти й
-        // казав — доїхав, створив заявку, галочка) — це саме той один тап
-        // замість двох; якщо роздумав чи скасував заявку — є "↩️ Повернути".
-        n.done = true;
-        saveNaryadQueue();
-        updateNaryadQueueBtn();
+        // Позначку "виконано" ставимо після збереження заявки, а не тут:
+        // форму можна закрити без збереження, і тоді наряд має лишитися в черзі.
         const prefill = {};
         // NEW: раніше текст наряду клали в prefill.content — це поле
         // перезаписувалось з нуля при збереженні заявки (buildTicketContent),
@@ -941,7 +942,7 @@ function showNaryadQueue(date){
         prefill.masterNote = n.text;
         const phoneMatch = extractPhoneFromText(n.text);
         if(phoneMatch) prefill.phone = phoneDigitsToMask(phoneMatch);
-        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null), ()=> showNaryadQueue(viewDate));
+        showTicketTypePicker(type=> startNewTicketFlow(type, prefill, null, n.id), ()=> showNaryadQueue(viewDate));
       }
     });
   }});
@@ -1130,9 +1131,10 @@ function showTicketTypePicker(onPick, onCancel){
 // запам'ятовуємо, куди повернутись (як і при редагуванні з профілю), і
 // показуємо кнопку "Назад" замість "Скасувати редагування", бо це нова
 // заявка, а не редагування наявної.
-function startNewTicketFlow(type, prefill, returnState){
+function startNewTicketFlow(type, prefill, returnState, naryadIdToComplete){
   closeModal(); // на випадок, якщо запуск стався з модалки пошуку/профілю
   resetCalcForm(formatDate(new Date()), Object.assign({type}, prefill||{}));
+  naryadPendingCompletionId = naryadIdToComplete || null;
   if(returnState){
     editReturnAddrState = {...returnState};
     const cancelBtn = document.getElementById('cancelEditBtn');
@@ -2356,6 +2358,7 @@ function restoreFromBackup(){
         const s = slots[Number(btn.dataset.slotidx)];
         const d = new Date(s.ts);
         if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nПоточні локальні дані буде замінено.`)) return;
+        backupLocalData();
         tickets = s.tickets || [];
         shifts = s.shifts || [];
         saveTickets();
@@ -2399,11 +2402,13 @@ async function sendAllToCloud(){
 async function loadShiftsFromCloud(){
   const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
+  if(!confirm('Завантажити зміни з хмари? Поточні локальні зміни буде замінено.')) return;
   setSyncState('syncing');
   try{
     const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
     const data = await res.json();
     if(data.status === 'error' || !Array.isArray(data.shifts)) throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
+    backupLocalData();
     shifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
     saveShifts();
     renderShiftsScreen();
@@ -3204,8 +3209,10 @@ async function backupTicketToTelegram(t){
     tgJsonMsgId: t.tgJsonMsgId
   };
   try{
+    const previousPrimaryPhotoFileId = t.tgPhotoFileId;
     t.tgPhotoFileId = null;
     t.tgBackedUp = false;
+    let textOk = false;
 
     // 0) розділювач-заголовок — щоб у стрічці групи було одразу видно, де
     // закінчується одна заявка (2-3 повідомлення) і починається наступна
@@ -3227,7 +3234,7 @@ async function backupTicketToTelegram(t){
         body: JSON.stringify({chat_id: chatId, text})
       });
       const data = await res.json();
-      if(data.ok){ t.tgBackedUp = true; t.tgTextMsgId = data.result.message_id; }
+      if(data.ok){ textOk = true; t.tgTextMsgId = data.result.message_id; }
     }
     // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
     // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
@@ -3244,7 +3251,7 @@ async function backupTicketToTelegram(t){
     t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];
     let photoSendAttempts = 0; // NEW: скільки фото реально намагались відправити (є локальна копія/fallback)
     for(let pi=0; pi<photosToSend.length; pi++){
-      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? t.tgPhotoFileId : null);
+      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? previousPrimaryPhotoFileId : null);
       const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
       if(!photoData) continue;
       photoSendAttempts++;
@@ -3269,12 +3276,13 @@ async function backupTicketToTelegram(t){
     // вже видалена. Тепер видаляємо стару копію лише якщо текст пройшов І
     // (фото в заявці не було, або всі спроби відправки фото, які реально
     // відбулись, — успішні).
-    const photosOk = photoSendAttempts === 0 || t.tgPhotoMsgIds.length === photoSendAttempts;
+    const photosOk = photoSendAttempts === photosToSend.length && t.tgPhotoMsgIds.length === photosToSend.length;
     // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
     t.tgPhotoFileId = t.tgPhotoFileIds[0] || null;
     t.tgPhotoMsgId = t.tgPhotoMsgIds[0] || null;
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
+    let jsonOk = false;
     try{
       const jsonBlob = new Blob([JSON.stringify(t, null, 2)], {type:'application/json'});
       const form = new FormData();
@@ -3282,12 +3290,15 @@ async function backupTicketToTelegram(t){
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
       const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form});
       const data = await res.json();
-      if(data.ok) t.tgJsonMsgId = data.result.message_id;
+      if(data.ok){ jsonOk = true; t.tgJsonMsgId = data.result.message_id; }
     }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
     // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
-    if(t.tgBackedUp && photosOk) await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+    if(textOk && photosOk && jsonOk){
+      t.tgBackedUp = true;
+      await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+    }
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
   finally{
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
@@ -3743,6 +3754,7 @@ function saveDailyMastersDefault(masters){
 }
 function resetCalcForm(presetDate, overrides){
   calcState = blankCalcState();
+  naryadPendingCompletionId = null;
   formSessionId++; // NEW: новий сеанс форми — попередні "фото в польоті" себе впізнають і не приліпляться сюди
   if(presetDate) calcState.date = presetDate;
   calcOriginalPhotoKeys = []; // NEW: нова порожня заявка — жодного "оригінального" фото ще нема
@@ -3777,6 +3789,7 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
+  naryadPendingCompletionId = null;
   formSessionId++; // NEW: те саме застереження, що й у resetCalcForm — новий сеанс форми
   // NEW: знімок оригінальних content/sum на момент відкриття — потрібен
   // лише для cloudImported (raw) заявок, де hasUnsavedChanges порівнює з
@@ -4470,6 +4483,7 @@ function handlePhotoFile(file){
       // localStorage завжди лишається легкою, незалежно від кількості й
       // розміру фото.
       storePhoto(dataUrl).then(key=>{
+        if(!key) return;
         // NEW: поки йшов запис в IndexedDB, користувач міг скасувати заявку
         // або відкрити іншу (formSessionId змінився) — тоді calcState вже
         // зовсім ІНШИЙ об'єкт (не той, для якого фото знімали), і без цієї
@@ -4762,7 +4776,11 @@ async function saveTicketFromForm(e){
   }
   const newPhotoKeys = [];
   for(const p of calcState.photos){
-    if(p && !String(p).startsWith('idb:')) newPhotoKeys.push(await storePhoto(p));
+    if(p && !String(p).startsWith('idb:')){
+      const key = await storePhoto(p);
+      if(!key) return;
+      newPhotoKeys.push(key);
+    }
     else if(p) newPhotoKeys.push(p);
   }
   calcState.photos = newPhotoKeys;
@@ -4852,6 +4870,15 @@ async function saveTicketFromForm(e){
       });
     }
     savedTicketRef = tickets.find(t=>t.id===newTicket.id);
+  }
+  if(savedTicketRef && naryadPendingCompletionId){
+    const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
+    if(naryad){
+      naryad.done = true;
+      saveNaryadQueue();
+      updateNaryadQueueBtn();
+    }
+    naryadPendingCompletionId = null;
   }
   if(savedTicketRef) backupTicketToTelegram(savedTicketRef); // NEW: фонова резервна копія тексту/фото в Telegram (не блокує збереження)
 
