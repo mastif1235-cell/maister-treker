@@ -233,54 +233,9 @@ function saveSettings(){ localStorage.setItem('settings', JSON.stringify(setting
    У об'єкті заявки (t.photo) тепер зберігається не сам base64, а ключ
    виду 'idb:<id>'; сирі дані лежать в IndexedDB під цим ключем.
    photoCache — пам'ятковий кеш уже завантажених фото для синхронного рендеру. */
-const PHOTO_DB_NAME = 'masterTrackerPhotos';
-const PHOTO_STORE = 'photos';
-let photoDb = null;
-const photoCache = new Map();
-const PHOTO_CACHE_MAX = 40; // NEW: обмеження пам'яткового кешу фото — без цього Map ріс необмежено за довгу сесію перегляду заявок
 // NEW: та сама Map, але зі стелею розміру (LRU — найдавніше використане
 // прибирається першим). Дані все одно завжди лежать в IndexedDB — це лише
 // кеш для швидкого синхронного доступу, тож витіснення нічого не губить.
-function photoCacheSet(key, value){
-  if(photoCache.has(key)) photoCache.delete(key); // переставляємо в кінець (найсвіжіше використання)
-  photoCache.set(key, value);
-  while(photoCache.size > PHOTO_CACHE_MAX){
-    const oldestKey = photoCache.keys().next().value; // Map зберігає порядок вставки — перший ключ і є найдавнішим
-    photoCache.delete(oldestKey);
-  }
-}
-
-function openPhotoDb(){
-  return new Promise((resolve)=>{
-    if(!window.indexedDB){ resolve(null); return; }
-    const req = indexedDB.open(PHOTO_DB_NAME, 1);
-    req.onupgradeneeded = ()=>{ req.result.createObjectStore(PHOTO_STORE); };
-    req.onsuccess = ()=> resolve(req.result);
-    req.onerror = ()=>{ console.error('IndexedDB помилка відкриття', req.error); resolve(null); };
-  });
-}
-function photoDbPut(key, dataUrl){
-  return new Promise((resolve)=>{
-    if(!photoDb){ resolve(false); return; }
-    try{
-      const tx = photoDb.transaction(PHOTO_STORE, 'readwrite');
-      tx.objectStore(PHOTO_STORE).put(dataUrl, key);
-      tx.oncomplete = ()=> resolve(true);
-      tx.onerror = ()=>{ console.error('IndexedDB помилка запису', tx.error); resolve(false); };
-    }catch(e){ console.error(e); resolve(false); }
-  });
-}
-function photoDbDelete(key){
-  return new Promise((resolve)=>{
-    if(!photoDb){ resolve(false); return; }
-    try{
-      const tx = photoDb.transaction(PHOTO_STORE, 'readwrite');
-      tx.objectStore(PHOTO_STORE).delete(key);
-      tx.oncomplete = ()=> resolve(true);
-      tx.onerror = ()=> resolve(false);
-    }catch(e){ resolve(false); }
-  });
-}
 /* NEW: якщо локальної копії фото немає (видалили, очистили дані сайту, новий
    телефон через 2 роки і т.д.), а в заявці збережено tgPhotoFileId — пробуємо
    дотягнутись до резервної копії в Telegram-групі за цим file_id. Успішний
@@ -302,17 +257,6 @@ async function fetchPhotoFromTelegram(fileId){
       reader.readAsDataURL(blob);
     });
   }catch(e){ console.error('Telegram: не вдалося підтягнути фото-бекап', e); return null; }
-}
-function photoDbGet(key){
-  return new Promise((resolve)=>{
-    if(!photoDb){ resolve(null); return; }
-    try{
-      const tx = photoDb.transaction(PHOTO_STORE, 'readonly');
-      const req = tx.objectStore(PHOTO_STORE).get(key);
-      req.onsuccess = ()=> resolve(req.result || null);
-      req.onerror = ()=> resolve(null);
-    }catch(e){ resolve(null); }
-  });
 }
 async function collectLocalPhotoData(ticketList){
   const photoData = {};
