@@ -5915,6 +5915,36 @@ function doGet(e) {
     }
     return jsonResponse({status: 'ok', exists: exists});
   }
+
+  // Read-only підтвердження стану після no-cors POST. Повертає рівно один
+  // рядок за stable id або ticket:null, тому клієнт може перевірити add,
+  // update і delete без передачі великого fullDataJson у query-параметрах.
+  if (e && e.parameter && e.parameter.action === 'getTicketById') {
+    var stateSheet = getOrCreateSheet(SpreadsheetApp.getActiveSpreadsheet(), 'Заявки', TICKET_HEADERS);
+    var stateLast = stateSheet.getLastRow();
+    var stateTicket = null;
+    var stateTz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    var requestedId = String(e.parameter.id);
+    if (stateLast > 1) {
+      var rows = stateSheet.getRange(2, 1, stateLast - 1, 8).getValues();
+      for (var ri = 0; ri < rows.length; ri++) {
+        var row = rows[ri];
+        if (String(row[0]) !== requestedId) continue;
+        stateTicket = {
+          id: safeString(row[0]),
+          date: cellToDateString(row[1], stateTz),
+          time: cellToTimeString(row[2], stateTz),
+          content: row[3] === null || row[3] === undefined ? '' : String(row[3]),
+          sum: safeNumber(row[4]),
+          tags: row[5] ? String(row[5]).split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [],
+          backupNote: safeString(row[6]),
+          fullDataJson: safeString(row[7])
+        };
+        break;
+      }
+    }
+    return jsonResponse({status: 'ok', ticket: stateTicket});
+  }
  
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
