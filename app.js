@@ -2140,28 +2140,14 @@ async function postToUrl(url, action, payload){
         signal: controller.signal
       });
     } finally { clearTimeout(timeoutId); }
-    setSyncState('ok');
-    // NEW: раніше перевірка checkTicketExists чекалась ТУТ (await) —
-    // тобто кожне збереження заявки чекало ДВА послідовні мережеві запити
-    // (POST, потім окремий GET), а не один. На слабкому/нестабільному
-    // інтернеті це роздувало збереження заявки до десятків секунд, хоча
-    // сам запис уже пішов на сервер. Тепер повертаємось одразу після POST
-    // (як і до появи цієї перевірки), а сам GET летить у фоні: якщо він
-    // таки виявить, що рядка в таблиці нема — статус конкретної заявки
-    // виправиться заднім числом, не змушуючи майстра чекати на це зараз.
-    if(action === 'addTicket' && payload && payload.id){
-      verifyTicketSyncedOnServer(url, payload.id).then(confirmed=>{
-        if(confirmed === false){
-          const t = tickets.find(x=>String(x.id)===String(payload.id));
-          if(t && t.synced){
-            t.synced = false;
-            saveTickets();
-            renderTicketsScreen();
-            setSyncState('err');
-          }
-        }
-      });
+    // no-cors не дає прочитати JSON-відповідь Apps Script. Тому успішний
+    // fetch означає лише доставку запиту, а не прийнятий сервером запис.
+    // Одиночні add/update/delete підтверджуємо read-only GET по stable id.
+    if(['addTicket','updateTicket','deleteTicket'].includes(action)){
+      const confirmed = await verifyTicketSyncedOnServer(url, action, payload);
+      if(!confirmed){ setSyncState('err'); return false; }
     }
+    setSyncState('ok');
     return true;
   }catch(err){
     console.error('Помилка синхронізації:', err);
@@ -2169,31 +2155,40 @@ async function postToUrl(url, action, payload){
     return false;
   }
 }
-// NEW: читальна перевірка (без побічних ефектів) — чи є в аркуші "Заявки"
-// рядок із таким id. Повертає true/false, коли вдалось перевірити, і null,
-// якщо перевірка сама не вдалась — тоді викликач має довіритись старій
-// оптимістичній поведінці, а не вважати це провалом синхронізації.
-async function verifyTicketSyncedOnServer(url, id){
+function ticketStateMatchesPayload(serverTicket, payload){
+  if(!serverTicket || !payload) return false;
+  const serverTags = Array.isArray(serverTicket.tags) ? serverTicket.tags : [];
+  const payloadTags = Array.isArray(payload.tags) ? payload.tags : [];
+  return String(serverTicket.id) === String(payload.id) &&
+    String(serverTicket.date||'') === String(payload.date||'') &&
+    String(serverTicket.time||'') === String(payload.time||'') &&
+    String(serverTicket.content||'') === String(payload.content||'') &&
+    Number(serverTicket.sum||0) === Number(payload.sum||0) &&
+    JSON.stringify(serverTags) === JSON.stringify(payloadTags) &&
+    String(serverTicket.backupNote||'') === String(payload.backupNote||'') &&
+    String(serverTicket.fullDataJson||'') === String(payload.fullDataJson||'');
+}
+// Read-only підтвердження після no-cors POST. Для add/update звіряємо
+// серверні дані, для delete успіх означає фактичну відсутність id.
+async function verifyTicketSyncedOnServer(url, action, payload){
   try{
     const params = new URLSearchParams();
-    params.set('action', 'checkTicketExists');
-    params.set('id', id);
+    params.set('action', 'getTicketById');
+    params.set('id', payload.id);
     params.set('secret', settings.syncSecret || '');
-    // NEW: тепер це фоновий запит (не блокує збереження заявки), але все
-    // одно варто обмежити його в часі — інакше на дуже слабкому зв'язку
-    // такі запити можуть накопичуватись без кінця.
     const controller = new AbortController();
     const timeoutId = setTimeout(()=> controller.abort(), 15000);
     let res;
     try{
       res = await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'cors', signal: controller.signal});
     } finally { clearTimeout(timeoutId); }
-    if(!res.ok) return null;
+    if(!res.ok) return false;
     const data = await res.json();
-    if(typeof data.exists !== 'boolean') return null; // стара версія скрипта — ще без цієї дії
-    return data.exists;
+    if(!data || data.status === 'error' || !Object.prototype.hasOwnProperty.call(data, 'ticket')) return false;
+    if(action === 'deleteTicket') return data.ticket === null;
+    return ticketStateMatchesPayload(data.ticket, payload);
   }catch(err){
-    return null; // не вдалось перевірити (стара версія скрипта, немає мережі, таймаут тощо) — не заважаємо основному потоку
+    return false;
   }
 }
 function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
