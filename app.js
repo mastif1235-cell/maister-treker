@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v63 · 2026-08-16';
+const APP_VERSION = 'v63.1 · 2026-08-16';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -3038,6 +3038,7 @@ function syncPendingCloudDelete(trashed){
     if(ok && deletedTickets.includes(trashed)){
       delete trashed.pendingCloudDelete;
       saveDeletedTickets();
+      renderSyncQueueBanner();
     }
     return ok;
   }).finally(()=>{

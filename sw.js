@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v63'; // Окремий кеш фінальної v63.
+const CACHE_NAME = 'maister-treker-v63.1'; // Окремий кеш hotfix v63.1.
 const CORE_ASSETS = [
   './',
   './index.html',
