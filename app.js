@@ -42,7 +42,6 @@ function getWorkTypesConfig(){ return (settings && settings.workTypes) ? setting
 // NEW: назва тегу для матеріалу/роботи з переліку — той самий текст, що й у
 // назві матеріалу/роботи, лише в нижньому регістрі (щоб виглядало як інші
 // теги на кшталт 'ремонт', 'монтаж').
-function catalogTagFor(label){ return String(label||'').trim().toLowerCase(); }
 // NEW: додає в список тегів (Налаштування → Теги) тег для КОЖНОГО матеріалу й
 // роботи з переліку, якщо такого тегу там ще нема. Викликається при
 // завантаженні налаштувань і при доданні нового матеріалу/роботи — щоб теги
@@ -666,14 +665,6 @@ function openModal(title, bodyHtml, opts={}){
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
 }
 /* ---------- Історія абонента (пошук збігів по телефону/адресі/MAC) ---------- */
-function normalizePhoneKey(raw){
-  if(!raw) return '';
-  const digits = String(raw).replace(/\D/g,'');
-  if(!digits) return '';
-  // Порівнюємо останні 9 цифр — так номери з +380, з 0 на початку чи
-  // без коду країни однаково зводяться до одного ключа.
-  return digits.slice(-9);
-}
 // NEW: розбір "сирого" тексту наряду від диспетчера (вільна форма, як у Telegram-групі) —
 // щоб перевірити, чи вже була заявка по цьому абоненту/адресі, ще ДО того, як
 // створювати нову. Телефон шукаємо жадібно (будь-які довгі числові послідовності
@@ -691,14 +682,6 @@ function extractPhoneCandidatesFromText(text){
   const found = raw.match(UA_PHONE_REGEX) || [];
   const keys = found.map(normalizePhoneKey).filter(Boolean);
   return [...new Set(keys)];
-}
-const ADDRESS_STOPWORDS = new Set(['м','місто','город','вул','вулиця','ул','улица','буд','будинок','дом','кв','квартира','б','просп','проспект','с','село','селище','смт']);
-function extractAddressTokens(text){
-  return String(text||'')
-    .toLowerCase()
-    .replace(/[.,№\/]/g,' ')
-    .split(/\s+/)
-    .filter(tok => tok && tok.length>1 && !ADDRESS_STOPWORDS.has(tok));
 }
 function findNaryadMatches(rawText){
   const phoneKeys = extractPhoneCandidatesFromText(rawText);
@@ -1116,12 +1099,6 @@ function startNewTicketFlow(type, prefill, returnState, naryadIdToComplete){
   switchTab('calculator');
 }
 
-function naturalSortStrings(arr){
-  // NEW: природне сортування рядків з числами всередині — "2, 9, 12, 12а, 20",
-  // а не "12, 12а, 2, 20", як дав би звичайний .sort()
-  return arr.slice().sort((a,b)=>a.localeCompare(b, 'uk', {numeric:true, sensitivity:'base'}));
-}
-
 function buildAddressTree(){
   const tree = new Map(); // city -> Map(street -> Set(house))
   tickets.forEach(t=>{
@@ -1139,7 +1116,6 @@ function buildAddressTree(){
 // "профіль" будується не просто на рівні будинку, а на рівні будинок+квартира.
 // Якщо квартира не вказана, всі такі заявки потрапляють в один спільний
 // "профіль" (приватний будинок без поділу на квартири).
-function ticketApartmentKey(t){ return (t.apartment||'').trim() || '(без кв.)'; }
 function getApartmentGroupsForHouse(city, street, house){
   const list = tickets.filter(t=>
     (t.city||'').trim()===city &&
@@ -2430,13 +2406,6 @@ async function loadShiftsFromCloud(){
 /* Дата з таблиці може прийти як ДД.ММ.РРРР (рядок зі скрипта) — вона вже
    в потрібному форматі, але про всяк випадок підтримуємо й конвертацію,
    якщо колись формат зміниться на РРРР-ММ-ДД. */
-function isoToDdmmyyyy(dateStr){
-  const s = String(dateStr);
-  if(s.includes('.')) return s; // вже ДД.ММ.РРРР
-  const parts = s.split('-');
-  if(parts.length<3) return s;
-  return `${parts[2]}.${parts[1]}.${parts[0]}`;
-}
 async function sendShiftsToCloud(){
   const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
@@ -2577,13 +2546,6 @@ function refreshTicketCardDom(id){
    різних дат: заявка, створена заднім чи майбутнім числом, має ставати на
    своє місце серед дат, а не вилазити нагору лише тому, що її щойно
    створили. */
-function ticketSortKey(t){
-  const d = parseDate(t.date);
-  const m = String(t.time||'').match(/^(\d{1,2}):(\d{2})/);
-  const minutes = m ? (Number(m[1])*60 + Number(m[2])) : 0;
-  return d.getTime() + minutes*60000;
-}
-
 function renderTicketsScreen(){
   document.getElementById('currentDateDisplay').textContent = currentTicketDate;
   updateNaryadQueueBtn(); // NEW: підпис кнопки залежить від поточної дати — оновлюємо разом з нею
@@ -3952,16 +3914,6 @@ function loadTicketIntoForm(t){
 /* Розбирає текст, вставлений з Viber/Telegram від диспетчера, на логін і пароль.
    Формат зазвичай — два рядки: перший логін, другий пароль. Якщо рядок один —
    пробуємо розбити по пробілу/табу; якщо нічого не вдалось — все йде в логін. */
-function parseCredentials(raw){
-  const lines = String(raw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  if(lines.length >= 2) return {login: lines[0], password: lines[1]};
-  if(lines.length === 1){
-    const parts = lines[0].split(/\s+/).filter(Boolean);
-    if(parts.length >= 2) return {login: parts[0], password: parts[1]};
-    return {login: parts[0]||'', password: ''};
-  }
-  return {login:'', password:''};
-}
 function updateCredParsedHint(){
   const hintEl = document.getElementById('credParsedHint');
   if(!hintEl) return;
@@ -4624,16 +4576,6 @@ function setGeoLink(link){
 
 /* Розпізнає координати з посилання Google Maps (формати @lat,lng / q=lat,lng / ll=lat,lng)
    або з простого тексту "lat,lng", введеного вручну */
-function parseMapsLink(text){
-  if(!text) return null;
-  const patterns = [/@(-?\d+\.\d+),(-?\d+\.\d+)/, /[?&](?:q|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/, /^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/];
-  for(const re of patterns){
-    const m = text.match(re);
-    if(m) return {lat:m[1], lng:m[2]};
-  }
-  return null;
-}
-
 /* Одна розумна кнопка 📍:
    - якщо HTTPS і GPS доступні — визначає координати автоматично
    - якщо GPS заблокований або файл відкрито локально — одразу показує модалку «вставити посилання» */
