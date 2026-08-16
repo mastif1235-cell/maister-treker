@@ -2675,34 +2675,6 @@ function renderMainTicketList(){
 // NEW: стислий опис виконаної роботи (обладнання/кабелі/роботи/нотатка) БЕЗ
 // імені, телефону, адреси — для картки під "профілем абонента", де ці дані
 // вже показані один раз вище, а не в кожній заявці окремо.
-function buildWorkSummaryLines(t){
-  // NEW: та сама розбивка платежів/робіт, що й у повному тексті заявки
-  // (buildTicketContent) — раніше тут показувалось лише обладнання, а
-  // "Вызов: 300 грн", "Підключення: 500 грн", спосіб оплати тощо губились.
-  const lines = [];
-  // NEW: якщо оплата "Безкоштовно" — так само, як і в тексті самої заявки
-  // (buildTicketContent), показуємо "0 грн" замість реальних цін. Раніше ця
-  // функція (використовується в профілі абонента) не звіряла t.payment і
-  // показувала старі ціни, тоді як у самій заявці вже стояло "0 грн" —
-  // виходила суперечність між профілем і текстом заявки.
-  const isFree = t.payment === 'Безкоштовно';
-  if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
-  if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${isFree ? '0 грн' : fmtMoney(t.callFee)}`);
-  if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(t.tariff)}`);
-  // NEW: у збереженій заявці обладнання/роботи зберігаються "розріджено" —
-  // без явного поля checked (сама присутність у масиві й означає "вибрано").
-  // checked!==false замість checked — так само коректно читає і старі
-  // заявки (де checked:false ще явно є), і нові (де поля checked просто нема).
-  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
-  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`));
-  (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
-  if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
-  if(t.payment === 'Змішана') buildMixedPaymentBreakdownLines(t).forEach(l=> lines.push(l));
-  if(t.note) lines.push(`📝 ${t.note}`);
-  if(t.otherNote) lines.push(t.otherNote);
-  return lines;
-}
 function renderTicketCard(t, opts={}){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
@@ -4141,29 +4113,9 @@ function buildMixedPaymentItems(){
 // вище), але працює з уже ЗБЕРЕЖЕНОЮ заявкою (без DOM-полів) — потрібна, щоб
 // показати в тексті заявки й у профілі абонента не просто дві суми, а
 // конкретно ЩО саме куплено готівкою, а що безготівкою.
-function buildMixedPaymentItemsFromTicket(t){
-  const items = [];
-  if(Number(t.callFee)>0) items.push({key:'callFee', label: callFeeLabelFor(t.type), amount: Number(t.callFee)});
-  if(Number(t.tariff)>0) items.push({key:'tariff', label:'Тариф', amount: Number(t.tariff)});
-  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount: Number(e.price)||0}));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount: m*(Number(c.pricePerMeter)||0)}); });
-  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:(Number(w.price)||0)*(Number(w.qty)||1)}));
-  (t.additionalWork||[]).forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:Number(w.sum)||0}); });
-  return items;
-}
 // NEW: рядки "готівка: X (перелік позицій), безготівка: Y (перелік позицій)"
 // для тексту заявки/профілю — щоб диспетчер одразу бачив, ЩО саме за яку
 // оплату, а не лише дві суми без прив'язки до конкретного обладнання.
-function buildMixedPaymentBreakdownLines(t){
-  if(t.payment !== 'Змішана' || !t.itemPayments) return [`   (готівка: ${fmtMoney(t.cashAmount)}, безготівка: ${fmtMoney(t.cardAmount)})`];
-  const items = buildMixedPaymentItemsFromTicket(t);
-  const cashItems = items.filter(it=> t.itemPayments[it.key]==='cash').map(it=>it.label);
-  const cardItems = items.filter(it=> t.itemPayments[it.key]==='card').map(it=>it.label);
-  return [
-    `   💵 Готівка ${fmtMoney(t.cashAmount)}: ${cashItems.length ? cashItems.join(', ') : '—'}`,
-    `   💳 Безготівка ${fmtMoney(t.cardAmount)}: ${cardItems.length ? cardItems.join(', ') : '—'}`
-  ];
-}
 function renderMixedPaymentItems(){
   const wrap = document.getElementById('mixedPaymentItemsWrap');
   if(!wrap) return;
@@ -4292,54 +4244,6 @@ function getCurrentTicketText(){
   assignContractNumberIfNeeded();
   const total = isOther ? 0 : computeTotal();
   return buildTicketContent(calcState, total);
-}
-
-function callFeeLabelFor(type){
-  return type === 'Ремонт' ? 'Виклик' : (type || 'Виклик');
-}
-
-function buildTicketContent(s, total){
-  if(s.type === 'Інше'){
-    const lines = [`📋 НОТАТКА`];
-    if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
-    if(s.otherNote) lines.push(s.otherNote);
-    return lines.join('\n');
-  }
-  const lines = [];
-  lines.push(`📋 ЗАЯВКА: ${(s.type||'').toUpperCase()}`);
-  if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`); // NEW: дата — видно, навіть якщо надсилаєте не в той день
-  if((s.type === 'Підключення' || s.type === 'Ремонт') && s.contractNumber) lines.push(`📄 № дог.: ${s.contractNumber}`); // коротка мітка — щоб рядок влазив в один рядок у Viber
-  if(s.city) lines.push(`🏙️ Місто: ${s.city}`);
-  if(s.address) lines.push(`📍 Адреса: ${s.address}`);
-  if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
-  if(s.phone) lines.push(`📞 Тел: ${s.phone}`);
-  if(s.macAddress) lines.push(`🔧 MAC ONU: ${s.macAddress}`);
-  lines.push('------------------');
-  // NEW: якщо оплата "Безкоштовно" — кожна позиція (виклик, тариф,
-  // обладнання, кабелі, роботи) показує "0 грн" замість реальної ціни, а не
-  // просто прибирається — так одразу видно, що саме зроблено безкоштовно,
-  // а не губиться інформація про склад заявки.
-  const isFree = s.payment === 'Безкоштовно';
-  if(s.callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${isFree ? '0 грн' : fmtMoney(s.callFee)}`);
-  if(s.tariff>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(s.tariff)}`);
-  s.equipment.filter(e=>e.checked).forEach(e=>{
-    lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`);
-  });
-  (s.cables||[]).forEach(c=>{
-    const meters = Number(c.meters)||0;
-    if(meters>0) lines.push(`🔌 ${c.label}: ${meters}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(meters*(Number(c.pricePerMeter)||0))}грн`);
-  });
-  (s.presetWorks||[]).filter(w=>w.checked).forEach(w=>{
-    lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`);
-  });
-  s.additionalWork.forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
-  lines.push('------------------');
-  if(s.payment) lines.push(`💳 Оплата: ${s.payment}`);
-  // NEW: для "Змішана" — окремим рядком, скільки саме готівкою, скільки безготівкою
-  if(s.payment === 'Змішана') buildMixedPaymentBreakdownLines(s).forEach(l=> lines.push(l));
-  lines.push(`💵 ІТОГО: ${fmtMoney(total)}`);
-  if(s.note) lines.push(`📝 ${s.note}`);
-  return lines.join('\n');
 }
 
 function getEffectiveType(){
