@@ -345,6 +345,21 @@ function photoDbGet(key){
     }catch(e){ resolve(null); }
   });
 }
+async function collectLocalPhotoData(ticketList){
+  const photoData = {};
+  const photoKeys = new Set();
+  (ticketList||[]).forEach(t=>{
+    const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    keys.forEach(key=>{ if(String(key||'').startsWith('idb:')) photoKeys.add(key); });
+  });
+  let missingPhotos = 0;
+  for(const key of photoKeys){
+    const dataUrl = await photoDbGet(key);
+    if(dataUrl) photoData[key] = dataUrl;
+    else missingPhotos++;
+  }
+  return {photoData, missingPhotos};
+}
 /* Повертає base64 фото за ключем заявки/калькулятора (синхронно, з кешу,
    або асинхронно довантажує з IndexedDB та перемальовує callback-ом).
    tgFallbackFileId — необов'язковий: якщо локально нічого не знайшлось,
@@ -471,7 +486,8 @@ async function maybeRunDailyBackup(){
     const todayKey = localDateKey(new Date()); // YYYY-MM-DD, локальний час — див. коментар біля localDateKey
     const index = loadDailyBackupIndex();
     if(index[0] && index[0].date === todayKey) return; // сьогодні вже було
-    const ok = await backupDbPut(todayKey, {tickets, shifts, settings, exportedAt: new Date().toISOString()});
+    const {photoData} = await collectLocalPhotoData(tickets);
+    const ok = await backupDbPut(todayKey, {tickets, shifts, settings, photoData, exportedAt: new Date().toISOString()});
     if(!ok) return;
     index.unshift({date: todayKey, ts: Date.now(), ticketsCount: tickets.length, shiftsCount: shifts.length});
     const overflow = index.splice(DAILY_BACKUP_MAX); // все, що вилетіло за межі 10 останніх
@@ -501,7 +517,7 @@ function renderDailyBackupList(){
 async function downloadDailyBackup(dateKey, opts={}){
   const payload = await backupDbGet(dateKey);
   if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
-  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings}, null, 2)], {type:'application/json;charset=utf-8'});
+  const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings, photoData: payload.photoData||{}}, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `master-tracker-backup-${dateKey}.json`;
@@ -514,6 +530,12 @@ async function restoreDailyBackup(dateKey){
   if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
   if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки, зміни й налаштування буде замінено.`)) return;
   backupLocalData();
+  if(payload.photoData && typeof payload.photoData === 'object'){
+    for(const [key, dataUrl] of Object.entries(payload.photoData)){
+      if(!String(key).startsWith('idb:') || typeof dataUrl!=='string' || !dataUrl.startsWith('data:')) continue;
+      if(!await photoDbPut(key, dataUrl)){ showToast('Не вдалося відновити фото з бекапу'); return; }
+    }
+  }
   tickets = payload.tickets || [];
   shifts = payload.shifts || [];
   if(payload.settings) settings = payload.settings; // NEW: старі бекапи (до цього виправлення) можуть не мати settings — тоді лишаємо поточні
@@ -5357,18 +5379,7 @@ async function exportJsonBackup(){
   // Фото фізично лежать не в tickets, а в окремій IndexedDB. Самі ключі idb:
   // без цих даних на іншому телефоні марні, тому кладемо у файл тільки ті
   // локальні файли, які реально вдалося прочитати.
-  const photoData = {};
-  const photoKeys = new Set();
-  tickets.forEach(t=>{
-    const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
-    keys.forEach(key=>{ if(String(key||'').startsWith('idb:')) photoKeys.add(key); });
-  });
-  let missingPhotos = 0;
-  for(const key of photoKeys){
-    const dataUrl = await photoDbGet(key);
-    if(dataUrl) photoData[key] = dataUrl;
-    else missingPhotos++;
-  }
+  const {photoData, missingPhotos} = await collectLocalPhotoData(tickets);
   const payload = {
     app: 'master-tracker',
     exportedAt: new Date().toISOString(),
