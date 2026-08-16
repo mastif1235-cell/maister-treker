@@ -5593,7 +5593,7 @@ function renderReport(range){
     list = [...tickets]; title = 'за весь час';
   }
   list = list.sort((a,b)=> parseDate(a.date)-parseDate(b.date) || (a.time||'').localeCompare(b.time||''));
-  const total = list.reduce((s,t)=>s+(Number(t.sum)||0),0);
+  const {count, total, cashTotal, cardTotal} = calculateTicketReportTotals(list);
   // NEW: суми окремо готівкою й безготівкою — щоб не рахувати вручну, скільки
   // саме готівки на руках, а скільки має прийти на карту/рахунок.
   // "Безкоштовно" в жодну з двох сум не потрапляє (там і так 0 грн).
@@ -5601,10 +5601,8 @@ function renderReport(range){
   // (t.cashAmount у готівку, t.cardAmount у безготівку) — інакше вся сума
   // такої заявки випадала б із обох підсумків і "загальна" сума не
   // збігалася б із сумою готівки та безготівки.
-  const cashTotal = list.reduce((s,t)=> s + (t.payment==='Готівка' ? (Number(t.sum)||0) : t.payment==='Змішана' ? (Number(t.cashAmount)||0) : 0), 0);
-  const cardTotal = list.reduce((s,t)=> s + (t.payment==='Безготівка' ? (Number(t.sum)||0) : t.payment==='Змішана' ? (Number(t.cardAmount)||0) : 0), 0);
   const full = document.getElementById('reportFullToggle')?.checked;
-  let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${list.length}\n💵 Готівка: ${fmtMoney(cashTotal)}\n💳 Безготівка: ${fmtMoney(cardTotal)}\n💰 Загалом: ${fmtMoney(total)}\n`;
+  let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${count}\n💵 Готівка: ${fmtMoney(cashTotal)}\n💳 Безготівка: ${fmtMoney(cardTotal)}\n💰 Загалом: ${fmtMoney(total)}\n`;
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
   const materialLines = buildMonthlyEquipmentLines(list);
