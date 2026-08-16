@@ -198,25 +198,6 @@ let coworkerSelection = new Set();
    це найпростіша зміна, що прибирає обидві проблеми, і НЕ вимагає переписувати
    сотні місць у коді, де tickets.find/filter/push використовуються як
    звичайний синхронний масив у пам'яті — вони лишаються без змін. */
-/* Одноразова міграція: якщо в IndexedDB заявок ще нема (перший запуск після
-   цього оновлення), а в localStorage лежить стара база — переносимо її і
-   прибираємо з localStorage (звільняючи той самий обмежений простір, заради
-   якого й робився весь перенос). Якщо в IndexedDB вже щось є — довіряємо їй
-   і localStorage більше не чіпаємо. */
-async function loadTicketsFromIdb(){
-  const stored = await ticketsDbGet();
-  if(Array.isArray(stored)){
-    tickets = stored;
-    return;
-  }
-  const legacy = loadJSON('tickets', []);
-  tickets = Array.isArray(legacy) ? legacy : [];
-  // Legacy-копію можна прибрати лише після підтвердженого запису в IndexedDB.
-  // Якщо сховище недоступне або заповнене, вона лишається страховкою на
-  // наступний запуск замість безповоротної втрати всієї старої бази.
-  if(await ticketsDbPut(tickets)) localStorage.removeItem('tickets');
-}
-function saveTickets(){ ticketsRevision++; return ticketsDbPut(tickets); }
 function saveShifts(){ shiftsRevision++; localStorage.setItem('shifts', JSON.stringify(shifts)); }
 function saveSettings(){ localStorage.setItem('settings', JSON.stringify(settings)); }
 
