@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v62 · 2026-08-15';
+const APP_VERSION = 'v62 · 2026-08-09';
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
@@ -596,8 +596,14 @@ function normalizeMac(raw){
 // телефону абонента. Тепер шукаємо саме класичний український номер: "0"
 // + 9 цифр (з можливими пробілами/дефісами/дужками між ними і
 // необов'язковим +38 спереду), і перевіряємо, що це не шматок довшого числа.
+// NEW: спільний шаблон українського номера — "0" + 9 цифр (з можливими
+// пробілами/дефісами/дужками між ними і необов'язковим +38/38 спереду).
+// Використовується і для префілу телефону з наряду (нижче), і для пошуку
+// збігів з існуючими абонентами (extractPhoneCandidatesFromText) — щоб не
+// тримати два різних regex з різною суворістю в одному застосунку.
+const UA_PHONE_REGEX = /(?<!\d)(\+?38)?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)/g;
 function extractPhoneFromText(text){
-  const matches = String(text||'').match(/(?<!\d)(\+?38)?[\s(-]*0\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)/g);
+  const matches = String(text||'').match(UA_PHONE_REGEX);
   return matches ? matches[0] : null;
 }
 function phoneDigitsToMask(raw){
@@ -720,7 +726,12 @@ function normalizePhoneKey(raw){
 // адресний збіг — лише "можливий", ніколи не точний.
 function extractPhoneCandidatesFromText(text){
   const raw = String(text||'');
-  const found = raw.match(/[\d][\d\s\-()]{7,}\d/g) || [];
+  // NEW: раніше тут був окремий жадібний regex, що ловив БУДЬ-ЯКУ
+  // послідовність з 9+ цифр/пробілів/дефісів/дужок — номер заявки, код
+  // ONU чи випадковий набір цифр у тексті наряду міг помилково зарахуватись
+  // як "сильний" (strong:true) збіг за телефоном з існуючим абонентом.
+  // Тепер той самий точний формат українського номера, що й при префілі.
+  const found = raw.match(UA_PHONE_REGEX) || [];
   const keys = found.map(normalizePhoneKey).filter(Boolean);
   return [...new Set(keys)];
 }
@@ -2237,6 +2248,17 @@ async function loadFromCloud(){
     try{
       const res = await fetch(`${ticketsUrl}${ticketsUrl.includes('?')?'&':'?'}secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
       const data = await res.json();
+      // NEW: КРИТИЧНО — раніше тут не перевірялась відповідь сервера взагалі.
+      // Якщо секретний ключ невірний (наприклад, друкарська помилка чи
+      // застарілий), справжній Apps Script повертає {status:'error',
+      // message:'forbidden'} — БЕЗ поля tickets. Код же читав
+      // (data.tickets||[]) — за відсутності поля це ставало ПОРОЖНІМ
+      // масивом, і рядком нижче (saveTickets()) ЛОКАЛЬНА БАЗА ЗАЯВОК
+      // ЗАМІНЯЛАСЬ НА ПОРОЖНЮ. Тобто неправильний секрет міг стерти всі
+      // заявки на телефоні одним натисканням "Завантажити з хмари".
+      if(data.status === 'error' || !Array.isArray(data.tickets)){
+        throw new Error(data.message || 'Сервер не повернув список заявок (перевірте секретний ключ)');
+      }
       tickets = (data.tickets||[]).map(t=>{
         const blank = blankTicketObject();
         const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра (і, для старих рядків, повні дані, якщо вони туди ще потрапляли)
@@ -2288,13 +2310,18 @@ async function loadFromCloud(){
     try{
       const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
       const data = await res.json();
+      // NEW: та сама критична перевірка, що й для заявок вище — без неї
+      // невірний секрет так само стирав би локальні "Зміни".
+      if(data.status === 'error' || !Array.isArray(data.shifts)){
+        throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
+      }
       shifts = (data.shifts||[]).map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
       saveShifts();
     }catch(err){ console.error(err); ok = false; }
   }
   renderTicketsScreen(); renderShiftsScreen();
   setSyncState(ok ? 'ok' : 'err');
-  showToast(ok ? `Завантажено: ${tickets.length} заявок, ${shifts.length} змін` : 'Частину даних завантажити не вдалося');
+  showToast(ok ? `Завантажено: ${tickets.length} заявок, ${shifts.length} змін` : 'Не вдалося завантажити дані — перевірте секретний ключ і URL у Налаштуваннях. Локальні дані НЕ змінено.');
 }
 
 const AUTOBACKUP_MAX_SLOTS = 3;
@@ -3211,10 +3238,12 @@ async function backupTicketToTelegram(t){
     // мовчки не спрацьовував би, якщо локальна копія загубилась.
     const prevTgPhotoFileIds = t.tgPhotoFileIds || [];
     t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];
+    let photoSendAttempts = 0; // NEW: скільки фото реально намагались відправити (є локальна копія/fallback)
     for(let pi=0; pi<photosToSend.length; pi++){
       const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? t.tgPhotoFileId : null);
       const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
       if(!photoData) continue;
+      photoSendAttempts++;
       const blob = await (await fetch(photoData)).blob();
       const form = new FormData();
       form.append('chat_id', chatId);
@@ -3230,6 +3259,13 @@ async function backupTicketToTelegram(t){
         t.tgPhotoMsgIds.push(data.result.message_id);
       }
     }
+    // NEW: раніше стару копію видаляли, щойно проходив ТЕКСТ (t.tgBackedUp),
+    // навіть якщо ВСІ фото не відправились (наприклад, короткий збій саме
+    // sendPhoto) — нова версія лишалась без фото, а стара (де фото ще були)
+    // вже видалена. Тепер видаляємо стару копію лише якщо текст пройшов І
+    // (фото в заявці не було, або всі спроби відправки фото, які реально
+    // відбулись, — успішні).
+    const photosOk = photoSendAttempts === 0 || t.tgPhotoMsgIds.length === photoSendAttempts;
     // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
     t.tgPhotoFileId = t.tgPhotoFileIds[0] || null;
     t.tgPhotoMsgId = t.tgPhotoMsgIds[0] || null;
@@ -3247,7 +3283,7 @@ async function backupTicketToTelegram(t){
     // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
-    if(t.tgBackedUp) await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
+    if(t.tgBackedUp && photosOk) await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
   }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
   finally{
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
@@ -4735,11 +4771,6 @@ async function saveTicketFromForm(e){
     calcState.id = editingTicketId;
     const idx = tickets.findIndex(t=>String(t.id)===String(editingTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
-    // Знімок збереженої заявки для фонового синку. Нижче форма одразу
-    // очищується через resetCalcForm(), тому не можна читати calcState після
-    // await: інакше addTicket отримує порожню нову форму й створює в таблиці
-    // «пусту» заявку з іншим ID.
-    const ticketForCloud = idx > -1 ? JSON.parse(JSON.stringify(tickets[idx])) : JSON.parse(JSON.stringify(calcState));
     saveTickets();
     showToast('Заявку оновлено');
     if(syncConfigured){
@@ -4764,14 +4795,14 @@ async function saveTicketFromForm(e){
         // на майбутній фоновий retry (він все одно лишається підстраховкою,
         // якщо й ці спроби не вдадуться — статус заявки стане "не
         // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
-        let ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
+        let ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
         if(!ok){
           await new Promise(r=>setTimeout(r, 1500));
-          ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
+          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
         }
         if(!ok){
           await new Promise(r=>setTimeout(r, 3000));
-          ok = await syncPost('addTicket', ticketToSyncPayload(ticketForCloud));
+          ok = await syncPost('addTicket', ticketToSyncPayload(calcState));
         }
         if(idx>-1){ tickets[idx].synced = ok; saveTickets(); renderTicketsScreen(); }
       })();
@@ -4955,13 +4986,25 @@ function buildCurrentMonthShiftsTelegramText(){
   lines.push(`оновлено: ${formatDate(new Date())} ${formatTime(new Date())}`); // NEW: видно, що повідомлення живе й актуальне, а не застигле
   return lines.join('\n');
 }
+let shiftsTelegramSyncBusy = false; // NEW: захист від гонки — див. коментар у syncShiftsMonthlyTelegramMessage
 async function syncShiftsMonthlyTelegramMessage(){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgMyChatId||'').trim();
   if(!token || !chatId) return; // не налаштовано — тихо виходимо, це не обов'язкова функція
-  const monthKey = localMonthKey(new Date());
-  const text = buildCurrentMonthShiftsTelegramText();
+  // NEW: якщо додати дві зміни поспіль дуже швидко (наприклад, два різних
+  // напарники за один день), обидва виклики цієї функції могли стартувати
+  // майже одночасно — обидва бачили, що tgShiftsMsgId ще не встановлено для
+  // цього місяця, і ОБИДВА надсилали НОВЕ повідомлення в Telegram замість
+  // одного. Проста черга: якщо синк вже йде — новий виклик почекає його
+  // завершення й підхопить вже готовий tgShiftsMsgId (відредагує, а не
+  // задублює).
+  if(shiftsTelegramSyncBusy){
+    await new Promise(r=>setTimeout(r, 1500));
+  }
+  shiftsTelegramSyncBusy = true;
   try{
+    const monthKey = localMonthKey(new Date());
+    const text = buildCurrentMonthShiftsTelegramText();
     if(settings.tgShiftsMsgId && settings.tgShiftsMsgMonth === monthKey){
       // той самий місяць — редагуємо вже надіслане повідомлення
       const res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
@@ -4985,6 +5028,7 @@ async function syncShiftsMonthlyTelegramMessage(){
       saveSettings();
     }
   }catch(e){ /* немає інтернету чи Telegram недоступний — не критично, спробуємо при наступній зміні */ }
+  finally{ shiftsTelegramSyncBusy = false; }
 }
 
 async function shareMonthShifts(){
