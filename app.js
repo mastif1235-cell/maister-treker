@@ -4069,29 +4069,33 @@ function renderPhotoPreview(){
 }
 
 function computeTotal(){
+  let calculation;
   if(calcState.cloudImported){ // NEW: для відновленої з хмари заявки сума вводиться вручну
-    const total = Number(document.getElementById('f_rawSum').value)||0;
-    document.getElementById('calcTotal').textContent = fmtMoney(total);
-    return total;
+    calculation = calculateTicketTotal({cloudImported:true, rawSum:Number(document.getElementById('f_rawSum').value)||0});
+    document.getElementById('calcTotal').textContent = fmtMoney(calculation.total);
+    return calculation.total;
   }
   // NEW: якщо оплату позначено як "Безкоштовно" — сума завжди 0, незалежно
   // від того, скільки обладнання/робіт/кабелів заповнено в калькуляторі
   // (раніше сума рахувалась як завжди, і "Безкоштовно" в оплаті на неї не впливало).
   const paymentEl = document.getElementById('f_payment');
   if(paymentEl && paymentEl.value === 'Безкоштовно'){
-    document.getElementById('calcTotal').textContent = fmtMoney(0);
-    return 0;
+    calculation = calculateTicketTotal({payment:'Безкоштовно'});
+    document.getElementById('calcTotal').textContent = fmtMoney(calculation.total);
+    return calculation.total;
   }
-  const callFee = Number(document.getElementById('f_callFee').value)||0;
-  const tariff  = Number(document.getElementById('f_tariff').value)||0;
-  const equipSum = calcState.equipment.reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
-  const cablesSum = (calcState.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0); // NEW
-  const workSum  = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
-  const presetWorkSum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
-  const total = callFee + tariff + equipSum + cablesSum + workSum + presetWorkSum;
-  document.getElementById('calcTotal').textContent = fmtMoney(total);
+  calculation = calculateTicketTotal({
+    payment: paymentEl ? paymentEl.value : '',
+    callFee: Number(document.getElementById('f_callFee').value)||0,
+    tariff: Number(document.getElementById('f_tariff').value)||0,
+    equipment: calcState.equipment,
+    cables: calcState.cables,
+    additionalWork: calcState.additionalWork,
+    presetWorks: calcState.presetWorks
+  });
+  document.getElementById('calcTotal').textContent = fmtMoney(calculation.total);
   if(paymentEl && paymentEl.value === 'Змішана') renderMixedPaymentItems(); // NEW: перелік позицій і підсумок готівка/безготівка перераховуються при будь-якій зміні складу/цін
-  return total;
+  return calculation.total;
 }
 
 // NEW: замість двох порожніх полів "скільки готівкою / скільки

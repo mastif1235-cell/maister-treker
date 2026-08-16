@@ -6,6 +6,19 @@
  * змінюваного стану застосунку.
  */
 
+function calculateTicketTotal(state){
+  const emptyResult = {total:0, callFee:0, tariff:0, equipmentSum:0, cablesSum:0, additionalWorkSum:0, presetWorkSum:0};
+  if(state.cloudImported) return {...emptyResult, total:Number(state.rawSum)||0};
+  if(state.payment === 'Безкоштовно') return emptyResult;
+  const callFee = Number(state.callFee)||0;
+  const tariff = Number(state.tariff)||0;
+  const equipmentSum = (state.equipment||[]).reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
+  const cablesSum = (state.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0);
+  const additionalWorkSum = (state.additionalWork||[]).reduce((s,w)=> s + (Number(w.sum)||0), 0);
+  const presetWorkSum = (state.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
+  return {total:callFee + tariff + equipmentSum + cablesSum + additionalWorkSum + presetWorkSum, callFee, tariff, equipmentSum, cablesSum, additionalWorkSum, presetWorkSum};
+}
+
 function callFeeLabelFor(type){
   return type === 'Ремонт' ? 'Виклик' : (type || 'Виклик');
 }
