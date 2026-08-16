@@ -248,8 +248,10 @@ async function loadTicketsFromIdb(){
   }
   const legacy = loadJSON('tickets', []);
   tickets = Array.isArray(legacy) ? legacy : [];
-  await ticketsDbPut(tickets);
-  localStorage.removeItem('tickets');
+  // Legacy-копію можна прибрати лише після підтвердженого запису в IndexedDB.
+  // Якщо сховище недоступне або заповнене, вона лишається страховкою на
+  // наступний запуск замість безповоротної втрати всієї старої бази.
+  if(await ticketsDbPut(tickets)) localStorage.removeItem('tickets');
 }
 function saveTickets(){ return ticketsDbPut(tickets); }
 function saveShifts(){ localStorage.setItem('shifts', JSON.stringify(shifts)); }
