@@ -3815,12 +3815,31 @@ function loadTicketIntoForm(t){
     ? calcState.additionalWork
     : [{desc:'', sum:0}];
   calcState.tags = calcState.tags || [];
+  // Теги є частиною самої заявки. Якщо старий/імпортований запис має тег,
+  // якого вже немає у загальному переліку Налаштувань, повертаємо його до
+  // переліку, щоб він не зникав з форми під час редагування.
+  let restoredTagList = false;
+  calcState.tags.forEach(tag=>{
+    if(!settings.tags.includes(tag)){
+      settings.tags.push(tag);
+      restoredTagList = true;
+    }
+  });
+  if(restoredTagList) saveSettings();
   // сумісність зі старими заявками, де майстер зберігався як одне ім'я/літера,
   // а не масив (до того, як зробили множинний вибір майстрів)
   if(!calcState.connectMasters){
     calcState.connectMasters = (calcState.masterName || calcState.masterLetter)
       ? [{name: calcState.masterName || '', letter: calcState.masterLetter || ''}]
       : [];
+  }
+  // Ранні версії під час збереження ремонту могли стерти connectMasters,
+  // але ім'я напарника лишалось у тегах. Відновлюємо такий вибір і для вже
+  // наявних заявок, щоб він знову був видимим у формі.
+  if(calcState.connectMasters.length===0){
+    calcState.connectMasters = settings.masters
+      .filter(master=>calcState.tags.includes(master.name))
+      .map(master=>({name:master.name, letter:master.letter}));
   }
   editingTicketId = t.id;
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
@@ -4344,12 +4363,14 @@ function applyDefaultTypeTag(){
   renderCalcTagChips();
 }
 function applyDefaultCallFee(){
-  if(!feeIsAutoDefault || calcState.cloudImported) return;
+  // У режимі редагування автопідстановка ціни вимкнена, але сам підсумок
+  // однаково має одразу реагувати на зміну обладнання.
+  if(!feeIsAutoDefault || calcState.cloudImported){ computeTotal(); return; }
   const type = getEffectiveType();
   let def = null;
   if(type === 'Підключення') def = Number(settings.defaultConnectFee) || 0;
   else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
-  if(def === null) return;
+  if(def === null){ computeTotal(); return; }
   if((calcState.equipment||[]).some(e=>e.checked && Number(e.price)>=800)) def = 0;
   document.getElementById('f_callFee').value = def;
   computeTotal();
@@ -4367,9 +4388,6 @@ function applyDefaultTariff(){
 function syncFormToState(){
   calcState.type = getEffectiveType();
   calcState.otherNote = document.getElementById('f_otherNote').value.trim();
-  if(calcState.type !== 'Підключення'){
-    calcState.connectMasters = [];
-  }
   // NEW: для ремонту номер договору абонента вводиться вручну (абонент вже
   // існує) — на відміну від підключення, де номер генерується автоматично
   // в assignContractNumberIfNeeded()
