@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v63-rc5'; // Окремий кеш тестової v63-rc5.
+const CACHE_NAME = 'maister-treker-v63-rc6'; // Окремий кеш тестової v63-rc6.
 const CORE_ASSETS = [
   './',
   './index.html',
