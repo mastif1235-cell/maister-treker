@@ -562,13 +562,20 @@ async function migrateLegacyPhotosToIdb(){
   if(!photoDb) return;
   let changed = false;
   for(const t of tickets){
-    if(t.photo && typeof t.photo==='string' && t.photo.startsWith('data:')){
-      const key = await storePhoto(t.photo);
-      if(key){
-        t.photo = key;
-        changed = true;
+    const sourcePhotos = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    if(!sourcePhotos.length) continue;
+    const migratedPhotos = [];
+    for(const photo of sourcePhotos){
+      if(typeof photo==='string' && photo.startsWith('data:')){
+        const key = await storePhoto(photo);
+        migratedPhotos.push(key || photo); // якщо IndexedDB недоступний, не губимо старе base64-фото
+        if(key) changed = true;
+      }else if(photo){
+        migratedPhotos.push(photo);
       }
     }
+    t.photos = migratedPhotos;
+    t.photo = migratedPhotos[0] || null;
   }
   if(changed) saveTickets();
 }
@@ -5340,13 +5347,29 @@ function applyTheme(){
 
 /* ---- Повний бекап у JSON (для перенесення на інший телефон або власне
    збереження на випадок втрати кешу/даних) ---- */
-function exportJsonBackup(){
+async function exportJsonBackup(){
+  // Фото фізично лежать не в tickets, а в окремій IndexedDB. Самі ключі idb:
+  // без цих даних на іншому телефоні марні, тому кладемо у файл тільки ті
+  // локальні файли, які реально вдалося прочитати.
+  const photoData = {};
+  const photoKeys = new Set();
+  tickets.forEach(t=>{
+    const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+    keys.forEach(key=>{ if(String(key||'').startsWith('idb:')) photoKeys.add(key); });
+  });
+  let missingPhotos = 0;
+  for(const key of photoKeys){
+    const dataUrl = await photoDbGet(key);
+    if(dataUrl) photoData[key] = dataUrl;
+    else missingPhotos++;
+  }
   const payload = {
     app: 'master-tracker',
     exportedAt: new Date().toISOString(),
     tickets,
     shifts,
-    settings
+    settings,
+    photoData
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json;charset=utf-8'});
   const a = document.createElement('a');
@@ -5354,7 +5377,7 @@ function exportJsonBackup(){
   a.download = `master-tracker-backup-${localDateKey(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
-  showToast('Файл бекапу завантажено');
+  showToast(missingPhotos ? `Бекап завантажено, але ${missingPhotos} фото локально не знайдено` : 'Файл бекапу завантажено разом із фото');
 }
 
 async function handleJsonImportFile(file){
@@ -5377,7 +5400,17 @@ async function handleJsonImportFile(file){
     if(hasTickets){
       // NEW: доповнюємо кожну заявку значеннями за замовчуванням — якщо бекап
       // зроблено старішою версією застосунку і в ньому бракує якихось полів
-      tickets = data.tickets.map(t=>Object.assign(blankTicketObject(), t));
+      const importedTickets = data.tickets.map(t=>Object.assign(blankTicketObject(), t));
+      // Нові повні бекапи несуть і файли фото. Спершу записуємо їх у IndexedDB,
+      // а вже потім підміняємо список заявок, щоб посилання idb: ніколи не
+      // з'явилися в імпортованих заявках без відповідного файла.
+      if(data.photoData && typeof data.photoData === 'object'){
+        for(const [key, dataUrl] of Object.entries(data.photoData)){
+          if(!String(key).startsWith('idb:') || typeof dataUrl!=='string' || !dataUrl.startsWith('data:')) continue;
+          if(!await photoDbPut(key, dataUrl)) throw new Error('Не вдалося записати фото з бекапу');
+        }
+      }
+      tickets = importedTickets;
       saveTickets();
       // NEW: якщо в імпортованому бекапі лишились старі фото прямо як base64
       // (t.photo, а не ключ idb:...) — переносимо їх в IndexedDB тим самим
