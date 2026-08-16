@@ -4854,11 +4854,7 @@ function renderStatsMonthLabel(){
 /* Графік годин по місяцях обраного року — щоб одразу бачити, в якому місяці скільки відпрацьовано */
 function renderYearChart(){
   const year = statsViewDate.getFullYear();
-  const hoursByMonth = Array(12).fill(0);
-  shifts.forEach(s=>{
-    const d = parseDate(s.date);
-    if(d.getFullYear()===year) hoursByMonth[d.getMonth()] += Number(s.hours)||0;
-  });
+  const hoursByMonth = calculateYearlyShiftHours(shifts, year);
   const max = Math.max(1, ...hoursByMonth);
   document.getElementById('yearChart').innerHTML = hoursByMonth.map((h,i)=>{
     const pct = Math.max(2, Math.round((h/max)*100));
@@ -4872,21 +4868,16 @@ function renderYearChart(){
 }
 
 function renderShiftStats(){
-  const monthShifts = shifts.filter(s=>isSameMonth(s.date, statsViewDate));
-  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
-  const count = monthShifts.length;
-  const avg = count ? (totalHours/count) : 0;
-  const salary = totalHours * (Number(settings.hourlyRate)||0);
+  const {count, totalHours, averageHours, salary} = calculateShiftMonthStats(shifts, statsViewDate, settings.hourlyRate);
   document.getElementById('shiftStatGrid').innerHTML = `
     <div class="stat-box"><div class="s-val tabular">${count}</div><div class="s-lbl">Змін</div></div>
     <div class="stat-box"><div class="s-val tabular">${totalHours.toFixed(1)}</div><div class="s-lbl">Годин</div></div>
-    <div class="stat-box"><div class="s-val tabular">${avg.toFixed(1)}</div><div class="s-lbl">Середнє/зміну</div></div>
+    <div class="stat-box"><div class="s-val tabular">${averageHours.toFixed(1)}</div><div class="s-lbl">Середнє/зміну</div></div>
     <div class="stat-box"><div class="s-val tabular">${fmtMoney(salary)}</div><div class="s-lbl">Зарплата</div></div>`;
 }
 
 function renderShiftHistory(){
-  const monthShifts = shifts.filter(s=>isSameMonth(s.date, statsViewDate))
-    .sort((a,b)=> parseDate(b.date) - parseDate(a.date) || b.id - a.id);
+  const monthShifts = sortShiftsByDateDesc(getShiftsForMonth(shifts, statsViewDate));
   const card = document.getElementById('shiftHistoryCard');
   if(monthShifts.length===0){
     card.innerHTML = `<div class="empty-state"><div class="es-icon">🕒</div>Змін у цьому місяці ще немає</div>`;
@@ -4896,7 +4887,7 @@ function renderShiftHistory(){
     // NEW: скільки заробив саме за цю зміну — лише для себе, в самому
     // застосунку; у текст звіту (шеринг/Telegram) це не потрапляє, бо
     // формується окремою функцією, яка цей рядок не чіпає.
-    const earned = (Number(s.hours)||0) * (Number(settings.hourlyRate)||0);
+    const earned = calculateShiftEarnings(s.hours, settings.hourlyRate);
     return `
     <div class="shift-row" data-id="${s.id}">
       <div>
@@ -4906,16 +4897,6 @@ function renderShiftHistory(){
       <button type="button" class="delete-shift-btn" data-id="${s.id}">✕</button>
     </div>`;
   }).join('');
-}
-
-function roundWorkedHours(hours){
-  const value = Number(hours);
-  if(!Number.isFinite(value) || value <= 0) return 0;
-  const wholeHours = Math.floor(value);
-  const minutes = Math.round((value - wholeHours) * 60);
-  if(minutes <= 14) return wholeHours;
-  if(minutes <= 45) return wholeHours + 0.5;
-  return wholeHours + 1;
 }
 
 function addShift(){
