@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v64.1'; // Окремий кеш release v64.1.
+const CACHE_NAME = 'maister-treker-v64.2'; // Окремий кеш release v64.1.
 const CORE_ASSETS = [
   './',
   './index.html',
