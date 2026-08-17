@@ -1900,67 +1900,6 @@ function switchTab(tab){
 }
 
 /* ---------- 4. Екран «Заявки» ---------- */
-function blankTicketObject(){
-  return {
-    id:null, date:'', time:'', content:'', sum:0, tags:[], photo:null,
-    photos:[], // NEW: до 3 фото на заявку; photo (одне) лишається як дублікат першого фото — для сумісності зі старим кодом, який ще читає лише photo
-    type:'Підключення', city:'', address:'', clientName:'', phone:'',
-    callFee:0, tariff:0,
-    // NEW: у самій заявці зберігаємо лише ВИБРАНЕ (checked / meters>0), а не
-    // весь каталог обладнання/кабелів/робіт з переважно checked:false —
-    // повний каталог для форми розгортається окремо (див. blankCalcState()
-    // і mergeEquipmentWithCatalog() / mergeCablesWithCatalog() /
-    // mergePresetWorksWithCatalog(), що використовуються в loadTicketIntoForm()).
-    equipment: [],
-    cables: [], // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
-    presetWorks: [],
-    additionalWork: [{desc:'', sum:0}], // поле для вводу видно одразу, без кліку на "+"
-    payment:'', cashAmount:0, cardAmount:0, itemPayments:{}, note:'', geoLink:'', masterNote:'', otherNote:'', macAddress:'', street:'', house:'', apartment:'', login:'', password:'', connectMasters:[], contractNumber:'', contractNumberDate:'', contractNumberMastersKey:'', synced:false,
-    abonentNote:'', extraPhones:[], // NEW: примітка про абонента й додаткові телефони — рівня профілю, як login/password
-    tgBackedUp:false, tgPhotoFileId:null, tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null, tgJsonMsgId:null, // NEW: чи відправлено та які message_id в Telegram-групі (для видалення/пересилання при редагуванні)
-    tgPhotoFileIds:[], tgPhotoMsgIds:[], // NEW: file_id/message_id ВСІХ фото заявки (до 3) — tgPhotoFileId/tgPhotoMsgId лишаються як дублікат першого, для сумісності зі старим кодом
-    cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
-  };
-}
-
-// NEW: розгортають "розріджений" (лише вибране) список заявки назад у повний
-// каталог для форми — checked/price/qty/meters підтягуються за id з того, що
-// збережено, решта каталогу лишається невибраною. Працює однаково і для
-// нового формату (лише вибране), і для старих заявок (де зберігався весь
-// каталог із checked:false) — бо в обох випадках ми просто дивимось,
-// що саме лежить під конкретним id.
-function mergeEquipmentWithCatalog(saved){
-  const savedMap = new Map((saved||[]).map(e=>[e.id, e]));
-  return getEquipmentConfig().map(e=>{
-    const s = savedMap.get(e.id);
-    // NEW: у "розрідженому" форматі збережений запис взагалі не має поля
-    // checked (ми його свідомо не зберігаємо) — сама присутність id у списку
-    // й означає "вибрано". У старому "щільному" форматі checked:false
-    // збережено явно — і це так само коректно читається як "не вибрано".
-    // NEW: || замінено на явну перевірку на null/undefined — з || ціна "0"
-    // (майстер свідомо поставив обладнання безкоштовно, не через "Безкоштовно"
-    // оплату) вважалась falsy й підмінялась ціною з каталогу за замовчуванням.
-    const savedPrice = s ? Number(s.price) : NaN;
-    return {id:e.id, label:e.label, price: (s && !isNaN(savedPrice)) ? savedPrice : e.price, checked: s ? (s.checked !== false) : false};
-  });
-}
-function mergeCablesWithCatalog(saved){
-  const savedMap = new Map((saved||[]).map(c=>[c.id, c]));
-  return getCableTypesConfig().map(c=>{
-    const s = savedMap.get(c.id);
-    const savedPrice = s ? Number(s.pricePerMeter) : NaN; // NEW: та сама причина, що й вище в mergeEquipmentWithCatalog
-    return {id:c.id, label:c.label, meters: s ? (Number(s.meters)||0) : 0, pricePerMeter: (s && !isNaN(savedPrice)) ? savedPrice : c.pricePerMeter};
-  });
-}
-function mergePresetWorksWithCatalog(saved){
-  const savedMap = new Map((saved||[]).map(w=>[w.id, w]));
-  return getWorkTypesConfig().map(w=>{
-    const s = savedMap.get(w.id);
-    const savedPrice = s ? Number(s.price) : NaN; // NEW: та сама причина, що й у mergeEquipmentWithCatalog вище — 0 більше не підмінюється ціною з каталогу
-    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
-  });
-}
-
 /* NEW: розбирає службовий стовпець "нотатки_майстра" (backupNote), який
    повертає таблиця для кожної заявки, і дістає з нього геолокацію та
    приватну примітку майстра — щоб відновити їх при завантаженні з хмари. */
@@ -2984,9 +2923,9 @@ function blankCalcState(){
   // NEW: на відміну від blankTicketObject() (порожні масиви — так зберігається
   // у самій заявці), тут, у стані ЖИВОЇ форми, одразу розгортаємо повний
   // каталог обладнання/кабелів/робіт — щоб було з чого вибирати чекбоксами.
-  t.equipment = mergeEquipmentWithCatalog([]);
-  t.cables = mergeCablesWithCatalog([]);
-  t.presetWorks = mergePresetWorksWithCatalog([]);
+  t.equipment = mergeEquipmentWithCatalog([], getEquipmentConfig());
+  t.cables = mergeCablesWithCatalog([], getCableTypesConfig());
+  t.presetWorks = mergePresetWorksWithCatalog([], getWorkTypesConfig());
   return t;
 }
 
@@ -3157,8 +3096,8 @@ function loadTicketIntoForm(t){
   // тож тут завжди розгортаємо це назад у повний каталог для форми — працює
   // однаково і для нового "розрідженого" формату, і для старих заявок, де
   // ще зберігався весь каталог із checked:false (просто нічого не зміниться).
-  calcState.equipment = mergeEquipmentWithCatalog(calcState.equipment);
-  calcState.presetWorks = mergePresetWorksWithCatalog(calcState.presetWorks);
+  calcState.equipment = mergeEquipmentWithCatalog(calcState.equipment, getEquipmentConfig());
+  calcState.presetWorks = mergePresetWorksWithCatalog(calcState.presetWorks, getWorkTypesConfig());
   if(!calcState.cables || !calcState.cables.length){
     // NEW: сумісність із зовсім старими заявками — переносимо старі окремі поля
     // UTP/Оптика (якщо були) у новий динамічний список кабелів; для заявок, де
@@ -3169,7 +3108,7 @@ function loadTicketIntoForm(t){
     const optic = calcState.cables.find(c=>c.id==='optic');
     if(optic && calcState.opticMeters) { optic.meters = Number(calcState.opticMeters)||0; optic.pricePerMeter = Number(calcState.opticPrice)||optic.pricePerMeter; }
   } else {
-    calcState.cables = mergeCablesWithCatalog(calcState.cables);
+    calcState.cables = mergeCablesWithCatalog(calcState.cables, getCableTypesConfig());
   }
   // якщо в збереженій заявці немає додаткових робіт — все одно показуємо
   // одне порожнє поле для вводу, а не порожній список з кнопкою "+"
