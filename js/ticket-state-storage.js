@@ -24,23 +24,34 @@ function savePendingTicketsFallback(){
 
 async function loadTicketsFromIdb(){
   const stored = await ticketsDbGet();
-  if(Array.isArray(stored)){
+  const pendingFallback = loadPendingTicketsFallback();
+  const hasPendingFallbackTickets = Array.isArray(pendingFallback) && pendingFallback.length > 0;
+  if(Array.isArray(stored) && stored.length > 0){
     tickets = stored;
-    if(loadPendingTicketsFallback()) showPendingTicketsFallbackWarning('⚠️ Є аварійна копія заявок, але основна база також містить дані. Автоматичне відновлення не виконано, щоб не перезаписати новіші зміни.');
+    if(hasPendingFallbackTickets) showPendingTicketsFallbackWarning('⚠️ Є аварійна копія заявок, але основна база також містить дані. Автоматичне відновлення не виконано, щоб не перезаписати новіші зміни.');
     return;
   }
-  const pendingFallback = loadPendingTicketsFallback();
+  if(Array.isArray(stored) && hasPendingFallbackTickets){
+    tickets = pendingFallback;
+    if(await ticketsDbPut(tickets)){
+      localStorage.removeItem(PENDING_TICKETS_FALLBACK_KEY);
+      pendingTicketsFallbackWarningShown = false;
+    }else{
+      showPendingTicketsFallbackWarning('⚠️ Не вдалося відновити аварійну копію в IndexedDB. Дані лишаються в пам’яті — не закривайте застосунок.');
+    }
+    return;
+  }
   const legacy = loadJSON('tickets', []);
   // Не порівнюємо legacy і fallback автоматично: заявки не мають надійної
   // позначки часу останнього редагування. Старий сценарій міграції лишається
   // пріоритетним, а аварійна копія зберігається для ручного розбору конфлікту.
-  if(pendingFallback && Array.isArray(legacy) && legacy.length){
+  if(hasPendingFallbackTickets && Array.isArray(legacy) && legacy.length){
     tickets = legacy;
     if(await ticketsDbPut(tickets)) localStorage.removeItem('tickets');
     showPendingTicketsFallbackWarning('⚠️ Є аварійна копія і legacy-база заявок. Автоматичне об’єднання не виконано, щоб не втратити новіші зміни.');
     return;
   }
-  if(pendingFallback){
+  if(hasPendingFallbackTickets){
     tickets = pendingFallback;
     if(await ticketsDbPut(tickets)){
       localStorage.removeItem(PENDING_TICKETS_FALLBACK_KEY);
