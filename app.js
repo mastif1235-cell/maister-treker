@@ -4644,6 +4644,13 @@ function bindTicketsScreen(){
   });
   document.getElementById('prevDayBtn').addEventListener('click', ()=>{ currentTicketDate = shiftDate(currentTicketDate,-1); renderTicketsScreen(); });
   document.getElementById('nextDayBtn').addEventListener('click', ()=>{ currentTicketDate = shiftDate(currentTicketDate,1); renderTicketsScreen(); });
+  document.getElementById('todayBtn').addEventListener('click', ()=>{
+    const today = new Date();
+    currentTicketDate = formatDate(today);
+    calendarViewDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    if(!document.getElementById('calendarPanel').classList.contains('hidden')) renderCalendar();
+    renderTicketsScreen();
+  });
   document.getElementById('modeResetBtn').addEventListener('click', ()=>{
     searchQuery=''; document.getElementById('searchInput').value=''; activeFilterTags.clear();
     renderTicketsScreen();
