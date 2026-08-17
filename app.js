@@ -576,70 +576,21 @@ function openAddressForTicket(id){
   addrNavState = {level:'tickets', city, street, house, apartment};
   renderAddressNav();
 }
-function naryadMatchesHtml(matches){
-  if(!matches.length){
-    return `<div class="empty-state" style="padding:20px 10px;">Збігів не знайдено — схоже, це нова заявка</div>`;
-  }
-  return matches.map(m=>{
-    const o = m.ticket;
-    const address = [o.city, o.address].filter(Boolean).join(', ') || '—';
-    const badges = m.reasons.map(r=>`<span class="chip" style="pointer-events:none; ${r.strong ? 'background:rgba(63,191,111,0.18); color:#3fbf6f;' : ''}">${escapeHtml(r.label)}</span>`).join(' ');
-    return `
-      <div class="card" style="margin-bottom:10px; padding:12px 14px;">
-        <div class="row wrap" style="gap:4px; margin-bottom:6px;">${badges}</div>
-        <div class="row between" style="margin-bottom:4px;">
-          <strong>${escapeHtml(o.date||'')} ${escapeHtml(o.time||'')}</strong>
-          <span style="font-size:12.5px; color:var(--text-dim);">${escapeHtml(o.type||'')}</span>
-        </div>
-        <div style="font-size:13.5px; margin-bottom:2px;">📍 ${escapeHtml(address)}</div>
-        ${o.clientName ? `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:2px;">👤 ${escapeHtml(o.clientName)}</div>` : ''}
-        <button type="button" class="btn btn-sm btn-block open-address-btn" data-id="${o.id}">📍 Переглянути адресу</button>
-      </div>`;
-  }).join('');
-}
 // NEW: черга "сирих" нарядів від диспетчера (окремо від "Перевірити наряд" —
 // той інструмент для одноразової перевірки збігів, а це — список того, що
 // диспетчер скинув, а ти ще не встиг доїхати й перетворити на заявку).
 // Кожен наряд прив'язаний до конкретної дати виконання (не дати додавання!)
 // — диспетчер каже "це на післязавтра", ти одразу ставиш післязавтра, і коли
 // доходить той день — наряд сам там і чекає.
-function naryadItemDate(n){
-  return n.date || (n.createdAt||'').split(' ')[0] || formatDate(new Date());
-}
 // Підпис кнопки під датою — кількість ще не виконаних нарядів САМЕ на дату,
 // яка зараз переглядається в календарі заявок (оновлюється разом з нею).
 function updateNaryadQueueBtn(){
   const btn = document.getElementById('naryadQueueBtn');
   if(!btn) return;
-  const pending = naryadQueue.filter(n=>!n.done && naryadItemDate(n)===currentTicketDate).length;
+  const pending = naryadQueue.filter(n=>!n.done && naryadItemDate(n, formatDate)===currentTicketDate).length;
   btn.textContent = pending ? `📋 Наряди на цю дату (${pending})` : '📋 Наряди від диспетчера';
 }
 
-function naryadQueueItemHtml(n){
-  const hasLinkedTicket = !!n.ticketId && tickets.some(t=>String(t.id)===String(n.ticketId));
-  return `
-    <div class="card" style="margin-bottom:10px; padding:12px 14px; ${n.done ? 'opacity:.55;' : ''}">
-      <div style="white-space:pre-wrap; font-size:13.5px; ${n.done ? 'text-decoration:line-through;' : ''}">${escapeHtml(n.text)}</div>
-      <div style="font-size:11px; color:var(--text-dim); margin:4px 0 8px;">додано ${escapeHtml(n.createdAt||'')}</div>
-      <div class="row" style="gap:6px; flex-wrap:wrap;">
-        <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
-        ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}
-        ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-edit-btn" data-id="${n.id}">✏️ Редагувати</button>`}
-        ${hasLinkedTicket ? `<button type="button" class="btn btn-sm naryad-queue-edit-ticket-btn" data-ticket-id="${n.ticketId}">✏️ Редагувати заявку</button>` : ''}
-        <button type="button" class="btn btn-sm naryad-queue-reschedule-btn" data-id="${n.id}">🔁 Перенести</button>
-        <button type="button" class="btn btn-sm btn-danger naryad-queue-delete-btn" data-id="${n.id}">🗑️</button>
-      </div>
-    </div>`;
-}
-function naryadQueueListHtml(date){
-  const forDate = naryadQueue.filter(n=>naryadItemDate(n)===date);
-  if(!forDate.length) return `<div style="font-size:12.5px; color:var(--text-faint); text-align:center; margin-top:10px;">На цю дату нарядів нема</div>`;
-  // Спочатку невиконані (новіші зверху), потім виконані (теж новіші зверху) —
-  // щоб те, що ще треба зробити, завжди було на видноті над архівом.
-  const pending = forDate.filter(n=>!n.done).sort((a,b)=>b.id-a.id);
-  const done = forDate.filter(n=>n.done).sort((a,b)=>b.id-a.id);
-  return [...pending, ...done].map(naryadQueueItemHtml).join('');
-}
 // Головний список — з навігацією по днях (як і на екрані "Заявки"), щоб
 // можна було глянути наперед чи назад, не виходячи звідси.
 function showNaryadQueue(date){
@@ -651,11 +602,11 @@ function showNaryadQueue(date){
       <button type="button" class="btn btn-icon" id="naryadQueueNextDayBtn">›</button>
     </div>
     <button type="button" class="btn btn-block" id="naryadQueueAddBtn">➕ Додати наряд</button>
-    <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml(viewDate)}</div>`;
+    <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml(naryadQueue, viewDate, tickets, formatDate, escapeHtml)}</div>`;
   openModal('Наряди від диспетчера', bodyHtml, {onOpen: (rootEl)=>{
     const refresh = ()=>{
       document.getElementById('naryadQueueDateLabel').textContent = viewDate;
-      document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml(viewDate);
+      document.getElementById('naryadQueueListArea').innerHTML = naryadQueueListHtml(naryadQueue, viewDate, tickets, formatDate, escapeHtml);
     };
     document.getElementById('naryadQueuePrevDayBtn').addEventListener('click', ()=>{ viewDate = shiftDate(viewDate,-1); refresh(); });
     document.getElementById('naryadQueueNextDayBtn').addEventListener('click', ()=>{ viewDate = shiftDate(viewDate,1); refresh(); });
@@ -717,7 +668,7 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
     : null;
   if(editingNaryadId && !editingNaryad) return;
   const today = formatDate(new Date());
-  const initialDate = editingNaryad ? naryadItemDate(editingNaryad) : (defaultDate || today);
+  const initialDate = editingNaryad ? naryadItemDate(editingNaryad, formatDate) : (defaultDate || today);
   const isEditing = !!editingNaryad;
   const bodyHtml = `
     <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px; width:calc(100% + 32px); margin-left:-16px; margin-right:-16px; border-radius:0;">${escapeHtml(editingNaryad ? editingNaryad.text : '')}</textarea>
@@ -771,7 +722,7 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
 function showNaryadMatchResultsModal(matches, continueDate){
   const bodyHtml = `
     <div style="font-size:12.5px; color:var(--text-faint); margin-bottom:10px;">Наряд уже додано в чергу. Знайдено схожі заявки — можливо, це той самий абонент:</div>
-    <div>${naryadMatchesHtml(matches)}</div>
+    <div>${naryadMatchesHtml(matches, escapeHtml)}</div>
     <button type="button" class="btn btn-block" id="naryadMatchContinueBtn" style="margin-top:10px;">➡️ До черги нарядів</button>`;
   openModal('⚠️ Знайдено збіг', bodyHtml, {onClose: ()=> showNaryadQueue(continueDate), onOpen: (rootEl)=>{
     document.getElementById('naryadMatchContinueBtn').addEventListener('click', ()=> showNaryadQueue(continueDate));
@@ -788,7 +739,7 @@ function showRescheduleNaryadModal(id){
   const n = naryadQueue.find(x=>String(x.id)===String(id));
   if(!n) return;
   const today = formatDate(new Date());
-  const curDate = naryadItemDate(n);
+  const curDate = naryadItemDate(n, formatDate);
   const preview = n.text.length>200 ? n.text.slice(0,200)+'…' : n.text;
   const bodyHtml = `
     <div style="font-size:13px; color:var(--text-dim); margin-bottom:10px; white-space:pre-wrap;">${escapeHtml(preview)}</div>
@@ -837,7 +788,7 @@ function showNaryadChecker(){
       const text = document.getElementById('naryadInput').value.trim();
       const resultsEl = document.getElementById('naryadResults');
       if(!text){ resultsEl.innerHTML = ''; return; }
-      resultsEl.innerHTML = naryadMatchesHtml(findNaryadMatches(text));
+      resultsEl.innerHTML = naryadMatchesHtml(findNaryadMatches(text), escapeHtml);
     };
     document.getElementById('naryadCheckBtn').addEventListener('click', runCheck);
     rootEl.addEventListener('click', e=>{
