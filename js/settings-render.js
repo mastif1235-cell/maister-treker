@@ -175,4 +175,3 @@ function applyTheme(){
   const meta = document.querySelector('meta[name="theme-color"]');
   if(meta) meta.setAttribute('content', settings.theme==='dark' ? '#14181C' : '#EEF1F3');
 }
-
