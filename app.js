@@ -4134,19 +4134,7 @@ function deleteShift(id){
 function buildShiftMonthReport(){
   const monthShifts = shifts.filter(s=>isSameMonth(s.date, statsViewDate))
     .sort((a,b)=> parseDate(a.date)-parseDate(b.date));
-  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
-  const lines = [];
-  lines.push(`🕒 ЗМІНИ — ${MONTH_NAMES[statsViewDate.getMonth()].toUpperCase()} ${statsViewDate.getFullYear()}`);
-  lines.push('------------------');
-  if(monthShifts.length===0){
-    lines.push('Змін немає');
-  } else {
-    monthShifts.forEach(s=> lines.push(`${s.date} — ${s.hours} год — ${s.coworker}`));
-  }
-  lines.push('------------------');
-  lines.push(`📅 Змін: ${monthShifts.length}`);
-  lines.push(`⏱️ Годин: ${totalHours.toFixed(1)}`);
-  return lines.join('\n');
+  return formatShiftMonthText(monthShifts, statsViewDate, MONTH_NAMES);
 }
 
 // NEW: одне повідомлення в Telegram на весь поточний місяць — щодня (при
@@ -4158,21 +4146,7 @@ function buildCurrentMonthShiftsTelegramText(){
   const now = new Date();
   const monthShifts = shifts.filter(s=>isSameMonth(s.date, now))
     .sort((a,b)=> parseDate(a.date)-parseDate(b.date));
-  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
-  const lines = [];
-  lines.push(`🕒 ЗМІНИ — ${MONTH_NAMES[now.getMonth()].toUpperCase()} ${now.getFullYear()}`);
-  lines.push('------------------');
-  if(monthShifts.length===0){
-    lines.push('Змін немає');
-  } else {
-    monthShifts.forEach(s=> lines.push(`${s.date} — ${s.hours} год — ${s.coworker}`));
-  }
-  lines.push('------------------');
-  lines.push(`📅 Змін: ${monthShifts.length}`);
-  lines.push(`⏱️ Годин: ${totalHours.toFixed(1)}`);
-  lines.push('');
-  lines.push(`оновлено: ${formatDate(new Date())} ${formatTime(new Date())}`); // NEW: видно, що повідомлення живе й актуальне, а не застигле
-  return lines.join('\n');
+  return formatShiftMonthText(monthShifts, now, MONTH_NAMES, `оновлено: ${formatDate(new Date())} ${formatTime(new Date())}`); // NEW: видно, що повідомлення живе й актуальне, а не застигле
 }
 let shiftsTelegramSyncBusy = false;
 let shiftsTelegramSyncQueued = false;

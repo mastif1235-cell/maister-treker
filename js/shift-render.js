@@ -13,3 +13,23 @@ function renderYearChart(){
 }
 function renderShiftStats(){ const {count,totalHours,averageHours,salary}=calculateShiftMonthStats(shifts,statsViewDate,settings.hourlyRate); document.getElementById('shiftStatGrid').innerHTML=`<div class="stat-box"><div class="s-val tabular">${count}</div><div class="s-lbl">Змін</div></div><div class="stat-box"><div class="s-val tabular">${totalHours.toFixed(1)}</div><div class="s-lbl">Годин</div></div><div class="stat-box"><div class="s-val tabular">${averageHours.toFixed(1)}</div><div class="s-lbl">Середнє/зміну</div></div><div class="stat-box"><div class="s-val tabular">${fmtMoney(salary)}</div><div class="s-lbl">Зарплата</div></div>`; }
 function renderShiftHistory(){ const monthShifts=sortShiftsByDateDesc(getShiftsForMonth(shifts,statsViewDate)),card=document.getElementById('shiftHistoryCard'); if(!monthShifts.length){card.innerHTML=`<div class="empty-state"><div class="es-icon">🕒</div>Змін у цьому місяці ще немає</div>`;return;} card.innerHTML=monthShifts.map(s=>{const earned=calculateShiftEarnings(s.hours,settings.hourlyRate);return `<div class="shift-row" data-id="${s.id}"><div><div class="sr-main">${escapeHtml(s.date)} · ${s.hours} год</div><div class="sr-sub">${escapeHtml(s.coworker)}${earned>0?` · ${fmtMoney(earned)}`:''}</div></div><button type="button" class="delete-shift-btn" data-id="${s.id}">✕</button></div>`;}).join(''); }
+
+function formatShiftMonthText(monthShifts, refDate, monthNames, updatedText){
+  const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);
+  const lines = [];
+  lines.push(`🕒 ЗМІНИ — ${monthNames[refDate.getMonth()].toUpperCase()} ${refDate.getFullYear()}`);
+  lines.push('------------------');
+  if(monthShifts.length===0){
+    lines.push('Змін немає');
+  } else {
+    monthShifts.forEach(s=> lines.push(`${s.date} — ${s.hours} год — ${s.coworker}`));
+  }
+  lines.push('------------------');
+  lines.push(`📅 Змін: ${monthShifts.length}`);
+  lines.push(`⏱️ Годин: ${totalHours.toFixed(1)}`);
+  if(updatedText){
+    lines.push('');
+    lines.push(updatedText);
+  }
+  return lines.join('\n');
+}
