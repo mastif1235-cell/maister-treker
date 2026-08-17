@@ -2831,21 +2831,6 @@ async function sendTelegramTestMessage(chatId, label){
 /* ---- Місячний звіт собі особисто (1-го числа, автоматично) ----
    Рахує зміни/години, кількість і суму заявок, та зведення встановленого
    обладнання/кабелю/робіт — усе за щойно завершений місяць. */
-function buildMonthlyEquipmentLines(list){
-  const eqCounts = {}, cableMeters = {}, workCounts = {};
-  list.forEach(t=>{
-    // NEW: та сама причина, що й у buildWorkSummaryLines — у збереженій
-    // заявці немає явного checked:false, є лише сама присутність позиції
-    (t.equipment||[]).forEach(e=>{ if(e.checked!==false) eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
-    (t.cables||[]).forEach(c=>{ const m = Number(c.meters)||0; if(m>0) cableMeters[c.label] = (cableMeters[c.label]||0) + m; });
-    (t.presetWorks||[]).forEach(w=>{ if(w.checked!==false) workCounts[w.label] = (workCounts[w.label]||0) + (Number(w.qty)||1); });
-  });
-  const lines = [];
-  Object.entries(eqCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,c])=> lines.push(`${label} — ${c} шт.`));
-  Object.entries(cableMeters).sort((a,b)=>b[1]-a[1]).forEach(([label,m])=> lines.push(`${label} — ${m} м`));
-  Object.entries(workCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,q])=> lines.push(`${label} — ${q} шт.`));
-  return lines;
-}
 function buildMonthlyTelegramReport(refDate){
   const monthTickets = tickets.filter(t=>isSameMonth(t.date, refDate));
   const monthShifts = shifts.filter(s=>isSameMonth(s.date, refDate));
@@ -3004,23 +2989,8 @@ function renderCalendar(){
   document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[calendarViewDate.getMonth()]} ${calendarViewDate.getFullYear()}`;
   const grid = document.getElementById('calGrid');
   const year = calendarViewDate.getFullYear(), month = calendarViewDate.getMonth();
-  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // понеділок=0
-  const daysInMonth = new Date(year, month+1, 0).getDate();
   const todayStr = formatDate(new Date());
-
-  const counts = {};
-  tickets.forEach(t=>{ counts[t.date] = (counts[t.date]||0)+1; });
-
-  let html = DOW_NAMES.map(d=>`<div class="cal-dow">${d}</div>`).join('');
-  for(let i=0;i<firstDow;i++) html += `<div class="cal-day empty"></div>`;
-  for(let day=1; day<=daysInMonth; day++){
-    const dateStr = formatDate(new Date(year, month, day));
-    const isToday = dateStr===todayStr;
-    const isSelected = dateStr===currentTicketDate;
-    const hasTickets = counts[dateStr] > 0;
-    html += `<div class="cal-day ${isToday?'today':''} ${isSelected?'selected':''}" data-date="${dateStr}">${day}${hasTickets?'<span class="dot"></span>':''}</div>`;
-  }
-  grid.innerHTML = html;
+  grid.innerHTML = buildCalendarGridHtml({year, month, tickets, selectedDate:currentTicketDate, todayStr, formatDateValue:formatDate});
 }
 
 /* Календар для екрана «Зміни» — той же принцип, що й у «Заявках»:
@@ -4715,25 +4685,9 @@ function renderReport(range){
   // такої заявки випадала б із обох підсумків і "загальна" сума не
   // збігалася б із сумою готівки та безготівки.
   const full = document.getElementById('reportFullToggle')?.checked;
-  let text = `ЗВІТ ${title.toUpperCase()}\nЗаявок: ${count}\n💵 Готівка: ${fmtMoney(cashTotal)}\n💳 Безготівка: ${fmtMoney(cardTotal)}\n💰 Загалом: ${fmtMoney(total)}\n`;
+  let text = buildTicketReportText({list, title, full, totals:{count, total, cashTotal, cardTotal}, formatMoney:fmtMoney});
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
-  const materialLines = buildMonthlyEquipmentLines(list);
-  if(materialLines.length){
-    text += `\n📦 Використано:\n`;
-    materialLines.forEach(l=> text += `   • ${l}\n`);
-  }
-  text += `\n`;
-  if(full){
-    // NEW: раніше між заявками був лише подвійний перенос рядка — коли
-    // одна заявка коротка (без чіткого візуального "блоку"), вона зливалась
-    // із сусідньою, важко було зрозуміти, де закінчується одна й починається
-    // інша. Тепер між заявками — розділювач-риска, як і в самій заявці
-    // (між обладнанням/оплатою тощо), плюс порядковий номер.
-    list.forEach((t,i)=> text += `━━━━━━━━━━━━━━━ ${i+1} ━━━━━━━━━━━━━━━\n${t.date} ${t.time}\n${t.content || (t.type+' — '+fmtMoney(t.sum))}\n\n`);
-  } else {
-    list.forEach(t=> text += `${t.date} ${t.time} — ${t.type} — ${fmtMoney(t.sum)}\n`);
-  }
   const out = document.getElementById('reportOutput');
   out.innerHTML = `<div class="report-text">${escapeHtml(text)}</div>
     <div class="row wrap" style="margin-top:10px;">
