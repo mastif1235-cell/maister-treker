@@ -1,10 +1,13 @@
 /* =====================================================================
-   МАЙСТЕР-ТРЕКЕР — secure contract QR transport (v65 security.3)
+   МАЙСТЕР-ТРЕКЕР — secure contract QR transport (v65 security.4)
    Прибирає логін/пароль з query string. Дані лишаються тільки у URL fragment,
    який браузер НЕ надсилає серверу, CDN, Netlify logs чи Referer.
+
+   v2: компактний payload + короткий d.html. Це помітно зменшує кількість
+   модулів QR, тому його легше сканувати старішими/слабшими камерами.
    ===================================================================== */
 
-const SECURITY_QR_RELEASE_LABEL = 'v65.0-security.3 · 2026-08-18';
+const SECURITY_QR_RELEASE_LABEL = 'v65.0-security.4 · 2026-08-18';
 
 function securityQrBase64UrlEncode(text){
   const bytes = new TextEncoder().encode(String(text));
@@ -19,19 +22,20 @@ function securityQrRewriteContractUrl(raw){
     const hasContractFields = ['a','l','p','n','d'].some(k=>input.searchParams.has(k));
     if(!hasContractFields) return raw;
 
-    const payload = {
-      v: 1,
-      a: input.searchParams.get('a') || '',
-      l: input.searchParams.get('l') || '',
-      p: input.searchParams.get('p') || '',
-      n: input.searchParams.get('n') || '',
-      d: input.searchParams.get('d') || ''
-    };
+    // Без JSON-ключів та службових пробілів: тільки 5 значень у стабільному
+    // порядку, розділених ASCII Unit Separator (майже ніколи не трапляється
+    // у звичайних адресах/логінах/паролях). Base64url лишається безпечним для URL.
+    const compact = [
+      input.searchParams.get('a') || '',
+      input.searchParams.get('l') || '',
+      input.searchParams.get('p') || '',
+      input.searchParams.get('n') || '',
+      input.searchParams.get('d') || ''
+    ].join('\x1f');
 
-    // Використовуємо власну same-origin сторінку. Секретні поля не потрапляють
-    // ні в query string, ні на зовнішній договірний хост.
-    const viewer = new URL('dogovor-secure.html', location.href);
-    viewer.hash = 'v1.' + securityQrBase64UrlEncode(JSON.stringify(payload));
+    // Коротке ім'я сторінки теж зменшує QR. Дані йдуть тільки після #.
+    const viewer = new URL('d.html', location.href);
+    viewer.hash = '2.' + securityQrBase64UrlEncode(compact);
     return viewer.href;
   }catch(e){
     return raw;
