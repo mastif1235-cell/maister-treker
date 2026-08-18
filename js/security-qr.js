@@ -1,5 +1,5 @@
 /* =====================================================================
-   МАЙСТЕР-ТРЕКЕР — secure contract QR transport (v65 security.4)
+   МАЙСТЕР-ТРЕКЕР — secure contract QR transport (v65 security.5)
    Прибирає логін/пароль з query string. Дані лишаються тільки у URL fragment,
    який браузер НЕ надсилає серверу, CDN, Netlify logs чи Referer.
 
@@ -7,7 +7,7 @@
    модулів QR, тому його легше сканувати старішими/слабшими камерами.
    ===================================================================== */
 
-const SECURITY_QR_RELEASE_LABEL = 'v65.0-security.4 · 2026-08-18';
+const SECURITY_QR_RELEASE_LABEL = 'v65.0-security.5 · 2026-08-18';
 
 function securityQrBase64UrlEncode(text){
   const bytes = new TextEncoder().encode(String(text));
