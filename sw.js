@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-16'; // Daily backups stay lightweight; photos recover from Telegram archive.
+const CACHE_NAME = 'maister-treker-v65-security-17'; // Encrypted backup envelope/KDF guard.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -40,6 +40,7 @@ const CORE_ASSETS = [
   './js/share-photo-picker-v65-12.js',
   './js/telegram-backup-reliability-v65-13.js',
   './js/photo-data-fetch-v65-14.js',
+  './js/security-backup-envelope-guard-v65-17.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -99,6 +100,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/share-photo-picker-v65-12.js')) scripts += '  <script src="js/share-photo-picker-v65-12.js"></script>\n';
     if(!html.includes('js/telegram-backup-reliability-v65-13.js')) scripts += '  <script src="js/telegram-backup-reliability-v65-13.js"></script>\n';
     if(!html.includes('js/photo-data-fetch-v65-14.js')) scripts += '  <script src="js/photo-data-fetch-v65-14.js"></script>\n';
+    if(!html.includes('js/security-backup-envelope-guard-v65-17.js')) scripts += '  <script src="js/security-backup-envelope-guard-v65-17.js"></script>\n';
     if(scripts) html = html.replace('</body>', scripts + '</body>');
 
     const headers = new Headers(response.headers);
