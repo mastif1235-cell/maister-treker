@@ -2,7 +2,7 @@
    Читає лише settings і оновлює DOM. */
 function renderSettingsScreen(){
   ensureSettingsHub();
-  document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`; // NEW
+  document.getElementById('appVersionLabel').textContent = 'Версія застосунку: v64.3 · 2026-08-18';
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
   document.getElementById('defaultTariffInput').value = settings.defaultTariff;
@@ -194,6 +194,26 @@ const SETTINGS_HUB_SECTIONS = [
   {key:'app', icon:'⚙️', title:'Застосунок', sub:'Ставка, тема та загальні параметри', match:['Параметри']},
 ];
 
+const SETTINGS_HUB_ITEM_ICONS = [
+  ['Теги','🏷️'],
+  ['Міста','🏙️'],
+  ['Вулиці','🛣️'],
+  ['Напарники','🤝'],
+  ['Майстри','👷'],
+  ['Матеріали','📦'],
+  ['Роботи з переліку','🛠️'],
+  ['Типи кабелів','🔌'],
+  ['Ціни за замовчуванням','💰'],
+  ['Параметри','⚙️'],
+  ['Захист входу','🔐'],
+  ['Візитка та договір','📇'],
+  ['Синхронізація — Заявки','☁️'],
+  ['Синхронізація — Зміни','🔄'],
+  ['Кошик','🗑️'],
+  ['Дані','💾'],
+  ['Щоденні бекапи','🗄️'],
+];
+
 function settingsHubSummaryText(detailsEl){
   const summary = detailsEl.querySelector(':scope > summary');
   return summary ? summary.textContent.replace('▾','').trim() : '';
@@ -204,6 +224,17 @@ function settingsHubSectionFor(detailsEl){
   return SETTINGS_HUB_SECTIONS.find(section => section.match.some(part => text.includes(part))) || null;
 }
 
+function decorateSettingsHubSummaries(detailsList){
+  detailsList.forEach(details=>{
+    const summary = details.querySelector(':scope > summary');
+    if(!summary || summary.dataset.hubIconized==='1') return;
+    const text = summary.textContent.replace('▾','').trim();
+    const match = SETTINGS_HUB_ITEM_ICONS.find(([part])=>text.includes(part));
+    if(match && !text.startsWith(match[1])) summary.insertAdjacentText('afterbegin', `${match[1]} `);
+    summary.dataset.hubIconized = '1';
+  });
+}
+
 function ensureSettingsHub(){
   if(settingsHubInitialized) return;
   const screen = document.getElementById('screen-settings');
@@ -212,6 +243,7 @@ function ensureSettingsHub(){
 
   const allDetails = Array.from(screen.querySelectorAll(':scope > details.card.acc-card'));
   if(!allDetails.length) return;
+  decorateSettingsHubSummaries(allDetails);
 
   const style = document.createElement('style');
   style.id = 'settingsHubStyles';
@@ -230,6 +262,8 @@ function ensureSettingsHub(){
     .settings-hub-head-title{font-size:17px;font-weight:800;line-height:1.2;}
     .settings-hub-head-sub{font-size:12px;color:var(--text-dim);margin-top:2px;}
     .settings-hub-content > .acc-card{margin-bottom:10px;}
+    #settingsHubPage{padding-bottom:calc(130px + env(safe-area-inset-bottom));}
+    .settings-hub-content{padding-bottom:24px;}
     .settings-hub-parking{display:none!important;}
   `;
   document.head.appendChild(style);
