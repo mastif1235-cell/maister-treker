@@ -33,6 +33,7 @@ const CORE_ASSETS = [
   './js/security-qr.js',
   './js/security-telegram.js',
   './js/security-backup-encryption.js',
+  './js/security-backup-vault-hub.js',
   './js/security-backup-vault.js',
   './app.js',
   './manifest.json',
@@ -70,6 +71,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/security-qr.js')) scripts += '  <script src="js/security-qr.js"></script>\n';
     if(!html.includes('js/security-telegram.js')) scripts += '  <script src="js/security-telegram.js"></script>\n';
     if(!html.includes('js/security-backup-encryption.js')) scripts += '  <script src="js/security-backup-encryption.js"></script>\n';
+    if(!html.includes('js/security-backup-vault-hub.js')) scripts += '  <script src="js/security-backup-vault-hub.js"></script>\n';
     if(!html.includes('js/security-backup-vault.js')) scripts += '  <script src="js/security-backup-vault.js"></script>\n';
     if(!scripts) return response;
 
