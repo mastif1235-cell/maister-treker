@@ -1,25 +1,29 @@
 /* Майстер-Трекер — Apps Script HMAC auth patch v65.0-security.18
-   ВСТАВИТИ В КІНЕЦЬ поточного Code.gs і створити НОВУ версію deployment.
+
+   ВАЖЛИВО: перед вставкою цього блока зробіть ДВІ точкові заміни у поточному Code.gs:
+
+     function doPost(e)  ->  function legacyDoPostV65(e)
+     function doGet(e)   ->  function legacyDoGetV65(e)
+
+   Після цього вставте ВЕСЬ цей блок у самий кінець Code.gs і створіть НОВУ
+   версію deployment. Це навмисно зроблено так, а не через "var old = doPost":
+   у JavaScript declaration function doPost() піднімається (hoisting), і простий
+   append-only wrapper міг би випадково посилатись сам на себе та піти в рекурсію.
 
    Мета:
-   - секрет більше не передається в URL;
+   - syncSecret більше не передається в URL;
    - клієнт надсилає HMAC-SHA256 підпис + timestamp + одноразовий nonce;
-   - захист від повторного відтворення запиту (replay) через CacheService;
-   - під час міграції старий secret-параметр ще підтримується, тому синхронізація
-     не ламається між оновленням Apps Script і оновленням PWA.
+   - replay-запити відсікаються через CacheService;
+   - під час міграції старий secret-параметр ще підтримується, тому стара PWA
+     не ламається між deployment Apps Script і ввімкненням security.18 у клієнті.
 
-   Після того як security.18 буде перевірено на телефоні, legacy-режим можна
-   окремо вимкнути наступним кроком.
+   ПІСЛЯ успішного тесту security.18 legacy fallback можна вимкнути окремим релізом.
 */
 
 var SECURE_AUTH_V2 = 2;
 var SECURE_AUTH_MAX_SKEW_MS = 5 * 60 * 1000;
 var SECURE_AUTH_NONCE_TTL_SEC = 600;
-
-// Зберігаємо посилання на поточні робочі обробники. Цей patch має бути
-// вставлений САМЕ В КІНЕЦЬ Code.gs, після старих doGet/doPost.
-var LEGACY_DO_POST_V65 = doPost;
-var LEGACY_DO_GET_V65 = doGet;
+var SECURE_AUTH_MAX_BODY_CHARS = 8 * 1024 * 1024;
 
 function secureAuthBase64Url_(bytes) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
@@ -70,7 +74,8 @@ function secureAuthVerifyPostEnvelope_(outer) {
   var body = String(outer.body || '');
   var sig = String(outer.sig || '');
   if (!secureAuthFreshTimestamp_(ts)) return null;
-  if (!body || body.length > 8 * 1024 * 1024) return null;
+  if (!body || body.length > SECURE_AUTH_MAX_BODY_CHARS) return null;
+  if (!/^[A-Za-z0-9_-]{40,128}$/.test(sig)) return null;
   var canonical = ts + '\n' + nonce + '\nPOST\n' + body;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return null;
   if (!secureAuthConsumeNonce_(nonce)) return null;
@@ -86,6 +91,8 @@ function secureAuthVerifyGet_(p) {
   var id = String(p.id || '');
   var sig = String(p.sig || '');
   if (!secureAuthFreshTimestamp_(ts)) return false;
+  if (action.length > 100 || id.length > 500) return false;
+  if (!/^[A-Za-z0-9_-]{40,128}$/.test(sig)) return false;
   var canonical = ts + '\n' + nonce + '\nGET\n' + action + '\n' + id;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return false;
   if (!secureAuthConsumeNonce_(nonce)) return false;
@@ -95,20 +102,25 @@ function secureAuthVerifyGet_(p) {
 function doPost(e) {
   try {
     var raw = e && e.postData ? String(e.postData.contents || '') : '';
+    if (raw.length > SECURE_AUTH_MAX_BODY_CHARS * 2) {
+      return jsonResponse({status:'error', message:'request too large'});
+    }
     var outer = JSON.parse(raw || '{}');
 
-    // security.18 HMAC envelope: перевіряємо підпис, а старій перевіреній
-    // бізнес-логіці передаємо внутрішній body з локально підставленим secret.
+    // security.18: перевіряємо HMAC envelope, а старій перевіреній бізнес-логіці
+    // передаємо внутрішній body з secret, підставленим тільки локально на сервері.
     var signedBody = secureAuthVerifyPostEnvelope_(outer);
     if (signedBody !== null) {
       var data = JSON.parse(signedBody);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        return jsonResponse({status:'error', message:'bad payload'});
+      }
       data.secret = SYNC_SECRET;
-      return LEGACY_DO_POST_V65({postData:{contents:JSON.stringify(data)}});
+      return legacyDoPostV65({postData:{contents:JSON.stringify(data)}});
     }
 
-    // Міграційна сумісність зі старою PWA. Після успішного тесту security.18
-    // цей fallback можна буде видалити окремим релізом.
-    return LEGACY_DO_POST_V65(e);
+    // Тимчасова сумісність зі старою PWA. Після перевірки security.18 прибираємо.
+    return legacyDoPostV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
   }
@@ -121,11 +133,11 @@ function doGet(e) {
       var cloned = {};
       Object.keys(p).forEach(function(k){ cloned[k] = p[k]; });
       cloned.secret = SYNC_SECRET;
-      return LEGACY_DO_GET_V65({parameter:cloned});
+      return legacyDoGetV65({parameter:cloned});
     }
 
     // Тимчасова сумісність зі старим ?secret=... на час безпечного переходу.
-    return LEGACY_DO_GET_V65(e);
+    return legacyDoGetV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
   }
