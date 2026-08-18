@@ -27,6 +27,7 @@ var SECURE_AUTH_NONCE_TTL_MS = 10 * 60 * 1000;
 var SECURE_AUTH_NONCE_LEDGER_KEY = 'MT_HMAC_NONCES_V1';
 var SECURE_AUTH_NONCE_LEDGER_MAX = 96;
 var SECURE_AUTH_MAX_BODY_CHARS = 8 * 1024 * 1024;
+var SECURE_AUTH_GET_ACTIONS = {list:true, checkTicketExists:true, getTicketById:true};
 
 function secureAuthBase64Url_(bytes) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
@@ -94,7 +95,6 @@ function secureAuthConsumeNonce_(nonce) {
         var parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) ledger = parsed;
       } catch (e) {
-        // Пошкоджений ledger не повинен переводити auth у fail-open.
         ledger = [];
       }
     }
@@ -115,7 +115,6 @@ function secureAuthConsumeNonce_(nonce) {
     props.setProperty(SECURE_AUTH_NONCE_LEDGER_KEY, JSON.stringify(ledger));
     return true;
   } catch (err) {
-    // Якщо захист replay не може надійно записати nonce — запит відхиляємо.
     return false;
   } finally {
     try { lock.releaseLock(); } catch (e) {}
@@ -131,7 +130,6 @@ function secureAuthVerifyPostEnvelope_(outer) {
   var sig = String(outer.sig || '');
   if (!secureAuthFreshTimestamp_(ts)) return null;
   if (!body || body.length > SECURE_AUTH_MAX_BODY_CHARS) return null;
-  // HMAC-SHA256 у base64url без '=' завжди рівно 43 символи.
   if (!/^[A-Za-z0-9_-]{43}$/.test(sig)) return null;
   var canonical = ts + '\n' + nonce + '\nPOST\n' + body;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return null;
@@ -148,8 +146,9 @@ function secureAuthVerifyGet_(p) {
   var action = String(p.action || 'list');
   var id = String(p.id || '');
   var sig = String(p.sig || '');
+  if (!SECURE_AUTH_GET_ACTIONS[action]) return false;
   if (!secureAuthFreshTimestamp_(ts)) return false;
-  if (action.length > 100 || id.length > 500) return false;
+  if (id.length > 500) return false;
   if (!/^[A-Za-z0-9_-]{43}$/.test(sig)) return false;
   var canonical = ts + '\n' + nonce + '\nGET\n' + action + '\n' + id;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return false;
@@ -165,8 +164,6 @@ function doPost(e) {
     }
     var outer = JSON.parse(raw || '{}');
 
-    // security.18: перевіряємо HMAC envelope, а старій перевіреній бізнес-логіці
-    // передаємо внутрішній body з secret, підставленим тільки локально на сервері.
     var signedBody = secureAuthVerifyPostEnvelope_(outer);
     if (signedBody !== null) {
       var data = JSON.parse(signedBody);
@@ -177,7 +174,6 @@ function doPost(e) {
       return legacyDoPostV65({postData:{contents:JSON.stringify(data)}});
     }
 
-    // Тимчасова сумісність зі старою PWA. Після перевірки security.18 прибираємо.
     return legacyDoPostV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
@@ -194,7 +190,6 @@ function doGet(e) {
       return legacyDoGetV65({parameter:cloned});
     }
 
-    // Тимчасова сумісність зі старим ?secret=... на час безпечного переходу.
     return legacyDoGetV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
