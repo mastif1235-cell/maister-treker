@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-10'; // Security hardening preview.
+const CACHE_NAME = 'maister-treker-v65-security-10-r2'; // Security hardening + update reliability.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -52,12 +52,26 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  e.waitUntil((async()=>{
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+    await self.clients.claim();
+
+    // A newly activated worker means application code has changed. Existing
+    // PWA windows keep executing the old JavaScript until a navigation occurs,
+    // which previously left the version label one release behind. Refresh each
+    // same-origin window once at activation so the new cache/runtime is used
+    // immediately. This runs only once per worker activation, so no reload loop.
+    const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
+    await Promise.all(clients.map(async(client)=>{
+      try{
+        const url = new URL(client.url);
+        if(url.origin === self.location.origin && typeof client.navigate === 'function'){
+          await client.navigate(client.url);
+        }
+      }catch(e){ /* some embedded webviews may not allow navigate() */ }
+    }));
+  })());
 });
 
 async function injectSecurityLayer(response){
@@ -112,8 +126,27 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
 
-  // Спочатку кеш (миттєво, незалежно від якості звʼязку), мережа —
-  // лише у фоні, щоб оновити кеш до наступного запуску.
+  // HTML/navigation: network-first when online, cache fallback offline. This
+  // prevents an old cached index from hiding a freshly deployed release.
+  if(e.request.mode === 'navigate'){
+    e.respondWith((async()=>{
+      let chosen = null;
+      try{
+        const fresh = await fetch(e.request, {cache:'no-store'});
+        if(fresh && fresh.status === 200){
+          chosen = fresh;
+          const clone = fresh.clone();
+          caches.open(CACHE_NAME).then((cache)=>cache.put(e.request, clone));
+        }
+      }catch(e){ /* offline: fallback below */ }
+      if(!chosen) chosen = await caches.match(e.request) || await caches.match('./index.html');
+      return injectSecurityLayer(chosen);
+    })());
+    return;
+  }
+
+  // Static assets stay cache-first for speed/offline use; network refreshes the
+  // cache in the background for the next load.
   e.respondWith(
     caches.match(e.request).then(async (cached) => {
       const networkFetch = fetch(e.request).then((res) => {
@@ -124,9 +157,7 @@ self.addEventListener('fetch', (e) => {
         return res;
       }).catch(() => cached);
 
-      const chosen = cached || await networkFetch;
-      if(e.request.mode === 'navigate') return injectSecurityLayer(chosen);
-      return chosen;
+      return cached || await networkFetch;
     })
   );
 });
