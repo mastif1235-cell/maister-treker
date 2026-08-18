@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v64.3'; // Окремий кеш release v64.3.
+const CACHE_NAME = 'maister-treker-v65-security-1'; // Security hardening preview.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,7 @@ const CORE_ASSETS = [
   './js/settings-catalog-bindings.js',
   './js/settings-local-lists-bindings.js',
   './js/ticket-form-domain.js',
+  './js/security-hardening.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -48,6 +49,27 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
+async function injectSecurityLayer(response){
+  if(!response) return response;
+  try{
+    const type = response.headers.get('content-type') || '';
+    if(!type.includes('text/html')) return response;
+    const html = await response.clone().text();
+    if(html.includes('js/security-hardening.js')) return response;
+    if(!html.includes('</body>')) return response;
+    const hardened = html.replace('</body>', '  <script src="js/security-hardening.js"></script>\n</body>');
+    const headers = new Headers(response.headers);
+    headers.delete('content-length');
+    return new Response(hardened, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  }catch(err){
+    return response;
+  }
+}
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
@@ -59,7 +81,7 @@ self.addEventListener('fetch', (e) => {
   // Спочатку кеш (миттєво, незалежно від якості звʼязку), мережа —
   // лише у фоні, щоб оновити кеш до наступного запуску.
   e.respondWith(
-    caches.match(e.request).then((cached) => {
+    caches.match(e.request).then(async (cached) => {
       const networkFetch = fetch(e.request).then((res) => {
         if (res && res.status === 200) {
           const clone = res.clone();
@@ -67,7 +89,12 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       }).catch(() => cached);
-      return cached || networkFetch;
+
+      const chosen = cached || await networkFetch;
+      // Security layer підключаємо лише до HTML-навігацій. Сам index.html у
+      // кеші лишається оригінальним — ін'єкція робиться на копії Response.
+      if(e.request.mode === 'navigate') return injectSecurityLayer(chosen);
+      return chosen;
     })
   );
 });
