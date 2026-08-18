@@ -9,7 +9,7 @@
    - legacy photo refs перед вставкою в <img src="...">.
 */
 
-const SECURITY_DOM_FINAL_RELEASE_LABEL = 'v65.0-security.17.1 · 2026-08-18';
+const SECURITY_DOM_FINAL_RELEASE_LABEL = 'v65.0-security.17.2 · 2026-08-18';
 const SECURITY_DOM_MAX_PHOTO_URL_CHARS = 16 * 1024 * 1024;
 const SECURITY_DOM_SAFE_DATA_IMAGE_RE = /^data:image\/(?:jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i;
 const SECURITY_DOM_SAFE_IDB_PHOTO_RE = /^idb:[A-Za-z0-9._:-]{1,220}$/;
