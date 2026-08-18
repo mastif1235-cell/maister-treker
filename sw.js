@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-10-r2'; // Security hardening + update reliability.
+const CACHE_NAME = 'maister-treker-v65-security-11'; // Security hardening + Android share fix.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -36,6 +36,7 @@ const CORE_ASSETS = [
   './js/security-backup-vault-hub.js',
   './js/security-backup-vault.js',
   './js/security-runtime-v65-9.js',
+  './js/share-fix-v65-11.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -57,11 +58,6 @@ self.addEventListener('activate', (e) => {
     await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
     await self.clients.claim();
 
-    // A newly activated worker means application code has changed. Existing
-    // PWA windows keep executing the old JavaScript until a navigation occurs,
-    // which previously left the version label one release behind. Refresh each
-    // same-origin window once at activation so the new cache/runtime is used
-    // immediately. This runs only once per worker activation, so no reload loop.
     const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
     await Promise.all(clients.map(async(client)=>{
       try{
@@ -82,9 +78,6 @@ async function injectSecurityLayer(response){
     let html = await response.clone().text();
     if(!html.includes('</body>')) return response;
 
-    // GitHub Pages ignores Netlify-style _headers files. For navigations that
-    // are already controlled by this service worker, inject CSP into the HTML
-    // before parsing so the policy applies to the whole document.
     if(!/http-equiv=["']Content-Security-Policy["']/i.test(html) && html.includes('</head>')){
       const cspMeta = `  <meta http-equiv="Content-Security-Policy" content="${SECURITY_CSP.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">\n`;
       html = html.replace('</head>', cspMeta + '</head>');
@@ -99,6 +92,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/security-backup-vault-hub.js')) scripts += '  <script src="js/security-backup-vault-hub.js"></script>\n';
     if(!html.includes('js/security-backup-vault.js')) scripts += '  <script src="js/security-backup-vault.js"></script>\n';
     if(!html.includes('js/security-runtime-v65-9.js')) scripts += '  <script src="js/security-runtime-v65-9.js"></script>\n';
+    if(!html.includes('js/share-fix-v65-11.js')) scripts += '  <script src="js/share-fix-v65-11.js"></script>\n';
     if(scripts) html = html.replace('</body>', scripts + '</body>');
 
     const headers = new Headers(response.headers);
@@ -121,13 +115,9 @@ async function injectSecurityLayer(response){
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Запити до Google Apps Script (синхронізація) НЕ кешуємо —
-  // вони завжди мають йти в мережу, щоб дані були актуальні.
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
 
-  // HTML/navigation: network-first when online, cache fallback offline. This
-  // prevents an old cached index from hiding a freshly deployed release.
   if(e.request.mode === 'navigate'){
     e.respondWith((async()=>{
       let chosen = null;
@@ -145,8 +135,6 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Static assets stay cache-first for speed/offline use; network refreshes the
-  // cache in the background for the next load.
   e.respondWith(
     caches.match(e.request).then(async (cached) => {
       const networkFetch = fetch(e.request).then((res) => {
