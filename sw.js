@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-15'; // Complete encrypted physical daily backup with photoData.
+const CACHE_NAME = 'maister-treker-v65-security-16'; // Daily backups stay lightweight; photos recover from Telegram archive.
 const CORE_ASSETS = [
   './',
   './index.html',
