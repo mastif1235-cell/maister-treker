@@ -8,6 +8,7 @@
    ===================================================================== */
 
 const SECURITY_RUNTIME_RELEASE_LABEL = 'v65.0-security.9 · 2026-08-18';
+const SECURITY_RUNTIME_PHYSICAL_BACKUP_KEY = 'securityPhysicalBackupLastDate';
 
 function securityRuntimeSafeHref(value){
   const raw=String(value||'').trim();
@@ -82,18 +83,36 @@ async function securityRuntimeBuildDailyEnvelope(dateKey,payload,saved){
   securityBackupDownloadEnvelope(envelope,`master-tracker-backup-${dateKey}-encrypted.json`);
 }
 
+async function securityRuntimeTryPhysicalDailyBackup(dateKey,payload){
+  if(localStorage.getItem(SECURITY_RUNTIME_PHYSICAL_BACKUP_KEY)===dateKey) return;
+  if(!(tickets.length||shifts.length)) return;
+  const saved=await securityBackupVaultLoad();
+  if(!saved || !saved.password) return;
+  try{
+    await securityRuntimeBuildDailyEnvelope(dateKey,payload,saved);
+    localStorage.setItem(SECURITY_RUNTIME_PHYSICAL_BACKUP_KEY,dateKey);
+  }catch(downloadErr){
+    console.warn('Automatic encrypted daily backup download was blocked/failed:',downloadErr);
+  }
+}
+
 // security.7 intentionally disabled automatic downloads. The user relies on a
 // physical file surviving browser/site-data cleanup, so security.9 restores it
 // SAFELY: only when the backup password is already stored in the local vault.
-// If browser policy blocks automatic downloads, the IndexedDB snapshot remains
-// and the user can download it manually from Settings.
+// If today's IndexedDB snapshot already exists (for example this update was
+// installed in the middle of the day), we still attempt the physical file once.
 if(typeof maybeRunDailyBackup==='function' && typeof securityBackupVaultLoad==='function'){
   maybeRunDailyBackup=async function(){
     if(!backupDb) return;
     try{
       const todayKey=localDateKey(new Date());
       const index=loadDailyBackupIndex();
-      if(index[0] && index[0].date===todayKey) return;
+      if(index[0] && index[0].date===todayKey){
+        const existing=await backupDbGet(todayKey);
+        if(existing) await securityRuntimeTryPhysicalDailyBackup(todayKey,existing);
+        return;
+      }
+
       const safeSettings=typeof securitySanitizeSettingsForBackup==='function'
         ? securitySanitizeSettingsForBackup(settings)
         : settings;
@@ -104,15 +123,7 @@ if(typeof maybeRunDailyBackup==='function' && typeof securityBackupVaultLoad==='
       const overflow=index.splice(DAILY_BACKUP_MAX);
       for(const old of overflow) await backupDbDelete(old.date);
       saveDailyBackupIndex(index);
-
-      if(!(tickets.length||shifts.length)) return;
-      const saved=await securityBackupVaultLoad();
-      if(!saved || !saved.password) return;
-      try{
-        await securityRuntimeBuildDailyEnvelope(todayKey,payload,saved);
-      }catch(downloadErr){
-        console.warn('Automatic encrypted daily backup download was blocked/failed:',downloadErr);
-      }
+      await securityRuntimeTryPhysicalDailyBackup(todayKey,payload);
     }catch(err){ console.error('Security.9 daily backup error:',err); }
   };
 }
