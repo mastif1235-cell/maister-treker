@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-14'; // Local data:image transport for share + Telegram backup.
+const CACHE_NAME = 'maister-treker-v65-security-15'; // Complete encrypted physical daily backup with photoData.
 const CORE_ASSETS = [
   './',
   './index.html',
