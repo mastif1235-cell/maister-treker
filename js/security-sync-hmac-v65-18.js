@@ -3,11 +3,17 @@
    apps-script-security-v65-18-patch.gs не вставлений і не задеплоєний.
 
    Старий клієнт передавав syncSecret у GET query (?secret=...), тому секрет
-   потрапляв у URL. Цей transport прозоро перетворює тільки запити до
-   ТОЧНО налаштованих Apps Script endpoint:
+   потрапляв у URL. Цей transport прозоро перетворює ТІЛЬКИ запити до
+   основного Apps Script заявок (settings.scriptUrl):
    - GET: secret прибирається, додаються ts/nonce/HMAC-SHA256;
    - POST: secret прибирається з JSON, payload підписується як точний body;
    - решта fetch у застосунку не змінюється.
+
+   ВАЖЛИВО: окремий shiftsScriptUrl навмисно НЕ чіпаємо цим файлом.
+   У користувача зміни працюють через інший legacy doGet-протокол
+   (?date=...&hours=...&coworker=...), тому автоматично підписувати його тим
+   самим протоколом небезпечно — можна зламати синхронізацію змін. Для нього
+   буде окремий migration patch після перевірки фактичного Code.gs змін.
 */
 
 const SECURITY_SYNC_HMAC_RELEASE_LABEL = 'v65.0-security.18 · 2026-08-18';
@@ -38,22 +44,19 @@ async function securitySyncHmac(canonical){
 function securitySyncNormalizeEndpoint(raw){
   try{
     const u=new URL(String(raw||''),location.href);
-    // Apps Script deployment endpoint має бути HTTPS. Query/hash не є частиною endpoint.
     if(u.protocol!=='https:') return '';
     u.search='';
     u.hash='';
     return u.href.replace(/\/$/,'');
   }catch(e){ return ''; }
 }
-function securitySyncConfiguredUrls(){
-  const set=new Set();
-  try{ const u=securitySyncNormalizeEndpoint(getScriptUrl()); if(u) set.add(u); }catch(e){}
-  try{ const u=securitySyncNormalizeEndpoint(getShiftsScriptUrl()); if(u) set.add(u); }catch(e){}
-  return [...set];
+function securitySyncTicketsEndpoint(){
+  try{ return securitySyncNormalizeEndpoint(getScriptUrl()); }
+  catch(e){ return ''; }
 }
 function securitySyncIsTargetUrl(raw){
-  const normalized=securitySyncNormalizeEndpoint(raw);
-  return !!normalized && securitySyncConfiguredUrls().includes(normalized);
+  const target=securitySyncTicketsEndpoint();
+  return !!target && securitySyncNormalizeEndpoint(raw)===target;
 }
 
 try{
