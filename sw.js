@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-17-1'; // DOM/photo sink hardening before HMAC migration.
+const CACHE_NAME = 'maister-treker-v65-security-17-2'; // Multi-photo share regression fix.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -38,6 +38,7 @@ const CORE_ASSETS = [
   './js/security-runtime-v65-9.js',
   './js/share-fix-v65-11.js',
   './js/share-photo-picker-v65-12.js',
+  './js/share-multi-fix-v65-17-2.js',
   './js/telegram-backup-reliability-v65-13.js',
   './js/photo-data-fetch-v65-14.js',
   './js/security-backup-envelope-guard-v65-17.js',
@@ -99,6 +100,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/security-runtime-v65-9.js')) scripts += '  <script src="js/security-runtime-v65-9.js"></script>\n';
     if(!html.includes('js/share-fix-v65-11.js')) scripts += '  <script src="js/share-fix-v65-11.js"></script>\n';
     if(!html.includes('js/share-photo-picker-v65-12.js')) scripts += '  <script src="js/share-photo-picker-v65-12.js"></script>\n';
+    if(!html.includes('js/share-multi-fix-v65-17-2.js')) scripts += '  <script src="js/share-multi-fix-v65-17-2.js"></script>\n';
     if(!html.includes('js/telegram-backup-reliability-v65-13.js')) scripts += '  <script src="js/telegram-backup-reliability-v65-13.js"></script>\n';
     if(!html.includes('js/photo-data-fetch-v65-14.js')) scripts += '  <script src="js/photo-data-fetch-v65-14.js"></script>\n';
     if(!html.includes('js/security-backup-envelope-guard-v65-17.js')) scripts += '  <script src="js/security-backup-envelope-guard-v65-17.js"></script>\n';
