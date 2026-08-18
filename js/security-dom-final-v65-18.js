@@ -1,5 +1,5 @@
-/* Майстер-Трекер — final DOM/photo sink hardening v65.0-security.18
-   Підготовлено до фінального ввімкнення security.18.
+/* Майстер-Трекер — final DOM/photo sink hardening v65.0-security.17.1
+   Окремий клієнтський регрес-фікс перед міграцією Google HMAC security.18.
 
    Закриває залишкові місця, де зовнішні/імпортовані значення могли потрапити
    в innerHTML без достатньої нормалізації:
@@ -9,7 +9,7 @@
    - legacy photo refs перед вставкою в <img src="...">.
 */
 
-const SECURITY_DOM_FINAL_RELEASE_LABEL = 'v65.0-security.18 · 2026-08-18';
+const SECURITY_DOM_FINAL_RELEASE_LABEL = 'v65.0-security.17.1 · 2026-08-18';
 const SECURITY_DOM_MAX_PHOTO_URL_CHARS = 16 * 1024 * 1024;
 const SECURITY_DOM_SAFE_DATA_IMAGE_RE = /^data:image\/(?:jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i;
 const SECURITY_DOM_SAFE_IDB_PHOTO_RE = /^idb:[A-Za-z0-9._:-]{1,220}$/;
@@ -33,8 +33,6 @@ function securityDomSafeResolvedPhoto(value){
   return null;
 }
 
-// Нормалізуємо photo/photos ще на імпорті. security.10 вже обмежує масиви,
-// тут додаємо саме whitelist допустимих посилань на фото.
 if(typeof securityRuntimeSanitizeTicket==='function'){
   const securityDomPreviousSanitizeTicket=securityRuntimeSanitizeTicket;
   securityRuntimeSanitizeTicket=function(ticket,index){
@@ -47,7 +45,6 @@ if(typeof securityRuntimeSanitizeTicket==='function'){
   };
 }
 
-// Захист і для вже наявних старих записів, які не проходять повторний import.
 if(typeof resolvePhotoAsync==='function'){
   const securityDomPreviousResolvePhotoAsync=resolvePhotoAsync;
   resolvePhotoAsync=async function(photoKey,tgFallbackFileId){
@@ -68,9 +65,6 @@ if(typeof getPhotoCached==='function'){
   };
 }
 
-// BarcodeDetector.rawValue — це зовнішні дані. Раніше raw вставлявся в
-// btn.innerHTML напряму; спеціально надрукований QR міг принести HTML-розмітку.
-// Будуємо ті самі кнопки лише через textContent.
 if(typeof startMacScan==='function'){
   startMacScan=async function(){
     const modal=document.getElementById('macScanModal');
@@ -138,8 +132,6 @@ if(typeof startMacScan==='function'){
   };
 }
 
-// geoLink показуємо через DOM API. Текст посилання більше не проходить через
-// innerHTML, навіть якщо в HTTPS-рядку були символи '<', '"' тощо.
 if(typeof renderGeoBadge==='function'){
   renderGeoBadge=function(){
     const badge=document.getElementById('geoBadge');
@@ -181,9 +173,6 @@ if(typeof renderGeoBadge==='function'){
   };
 }
 
-// ID зміни може прийти з вручну відредагованої таблиці. Не міняємо сам ID
-// (щоб delete продовжував працювати по тому самому значенню), лише безпечно
-// кодуємо його в data-* атрибутах.
 if(typeof renderShiftHistory==='function'){
   renderShiftHistory=function(){
     const monthShifts=sortShiftsByDateDesc(getShiftsForMonth(shifts,statsViewDate));
