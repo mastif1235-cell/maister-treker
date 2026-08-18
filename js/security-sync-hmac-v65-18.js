@@ -2,11 +2,14 @@
    УВАГА: цей файл підготовлений, але НЕ ПІДКЛЮЧАТИ, доки server patch
    apps-script-security-v65-18-patch.gs не вставлений і не задеплоєний.
 
-   Старий клієнт передавав syncSecret у GET query (?secret=...), тому секрет
-   потрапляв у URL. Цей transport прозоро перетворює ТІЛЬКИ запити до
-   основного Apps Script заявок (settings.scriptUrl):
-   - GET заявок: secret прибирається, додаються ts/nonce/HMAC-SHA256;
-   - POST заявок: secret прибирається з JSON, payload підписується як точний body;
+   ВАЖЛИВО: security.18 використовує ОКРЕМИЙ settings.syncHmacSecret.
+   Старий settings.syncSecret лишається для legacy sync та окремого shiftsScriptUrl,
+   тому перехід на HMAC не ламає синхронізацію змін.
+
+   Цей transport прозоро перетворює ТІЛЬКИ запити до основного Apps Script
+   заявок (settings.scriptUrl):
+   - GET заявок: legacy secret прибирається, додаються ts/nonce/HMAC-SHA256;
+   - POST заявок: legacy secret прибирається з JSON, payload підписується як точний body;
    - решта fetch у застосунку не змінюється.
 
    ВАЖЛИВО: окремий shiftsScriptUrl навмисно НЕ мігруємо цим протоколом.
@@ -29,12 +32,12 @@ function securitySyncB64Url(bytes){
 function securitySyncNonce(){
   return securitySyncB64Url(crypto.getRandomValues(new Uint8Array(18)));
 }
-function securitySyncSecret(){ return String(settings?.syncSecret || '').trim(); }
+function securitySyncSecret(){ return String(settings?.syncHmacSecret || '').trim(); }
 function securitySyncSecretStrongEnough(){ return securitySyncSecret().length >= SECURITY_SYNC_MIN_SECRET_LENGTH; }
 
 async function securitySyncHmac(canonical){
   const secret=securitySyncSecret();
-  if(secret.length < SECURITY_SYNC_MIN_SECRET_LENGTH) throw new Error('SYNC_SECRET_TOO_SHORT');
+  if(secret.length < SECURITY_SYNC_MIN_SECRET_LENGTH) throw new Error('HMAC_SECRET_TOO_SHORT');
   const key=await crypto.subtle.importKey(
     'raw', securitySyncUtf8(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']
   );
@@ -63,11 +66,28 @@ function securitySyncIsTicketGetUrl(raw){
     const url=new URL(String(raw||''),location.href);
     const action=url.searchParams.get('action') || 'list';
     if(!SECURITY_SYNC_TICKET_GET_ACTIONS.has(action)) return false;
-    // Legacy shifts protocol uses these parameters. Never reinterpret it as
-    // ticket HMAC, even if the configured endpoint is accidentally identical.
     if(url.searchParams.has('date') || url.searchParams.has('hours') || url.searchParams.has('coworker')) return false;
     return true;
   }catch(e){ return false; }
+}
+
+function securitySyncEnsureHmacField(){
+  const legacy=document.getElementById('syncSecretInput');
+  if(!legacy || document.getElementById('syncHmacSecretInput')) return;
+  const wrap=document.createElement('div');
+  wrap.className='field';
+  wrap.innerHTML='<label>HMAC-ключ security.18 <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(окремий, мінімум 32 символи)</span></label>'+
+    '<input type="password" id="syncHmacSecretInput" autocomplete="off" placeholder="новий випадковий HMAC-ключ 32+ символи">'+
+    '<div style="font-size:11px; color:var(--text-faint); margin-top:5px;">Старий ключ вище не змінюйте: він лишається для legacy/змін. Цей ключ використовується тільки security.18 для заявок.</div>';
+  legacy.closest('.field')?.insertAdjacentElement('afterend',wrap);
+  const input=document.getElementById('syncHmacSecretInput');
+  if(input){
+    input.value=String(settings?.syncHmacSecret || '');
+    input.addEventListener('input',e=>{
+      settings.syncHmacSecret=e.target.value.trim();
+      if(typeof saveSettings==='function') saveSettings();
+    });
+  }
 }
 
 try{
@@ -75,18 +95,21 @@ try{
   window.fetch=async function(input,init){
     const rawUrl=typeof input==='string' ? input : (input && input.url) || '';
     if(!securitySyncIsTargetUrl(rawUrl)) return securitySyncPreviousFetch(input,init);
-    if(!securitySyncSecret()) return securitySyncPreviousFetch(input,init);
-    if(!securitySyncSecretStrongEnough()){
-      if(typeof showToast==='function') showToast('🔐 Секрет Google Sync має бути не коротшим за 32 символи');
-      throw new Error('SYNC_SECRET_TOO_SHORT');
-    }
 
     const method=String(init?.method || (input && input.method) || 'GET').toUpperCase();
+    if(method==='GET' && !securitySyncIsTicketGetUrl(rawUrl)) return securitySyncPreviousFetch(input,init);
+
+    if(!securitySyncSecret()){
+      if(typeof showToast==='function') showToast('🔐 Вкажіть окремий HMAC-ключ security.18 у налаштуваннях');
+      throw new Error('HMAC_SECRET_MISSING');
+    }
+    if(!securitySyncSecretStrongEnough()){
+      if(typeof showToast==='function') showToast('🔐 HMAC-ключ security.18 має бути не коротшим за 32 символи');
+      throw new Error('HMAC_SECRET_TOO_SHORT');
+    }
 
     if(method==='GET'){
-      if(!securitySyncIsTicketGetUrl(rawUrl)) return securitySyncPreviousFetch(input,init);
       const url=new URL(rawUrl,location.href);
-      // Старі функції могли вже додати ?secret=. Видаляємо його ДО мережі.
       url.searchParams.delete('secret');
       const action=url.searchParams.get('action') || 'list';
       const id=url.searchParams.get('id') || '';
@@ -105,7 +128,6 @@ try{
       let data;
       try{ data=JSON.parse(init.body); }catch(e){ return securitySyncPreviousFetch(input,init); }
       if(data && typeof data==='object' && !Array.isArray(data)){
-        // Не відправляємо syncSecret у body навіть якщо старий postToUrl його додав.
         if(Object.prototype.hasOwnProperty.call(data,'secret')) delete data.secret;
         const body=JSON.stringify(data);
         const ts=String(Date.now());
@@ -128,6 +150,9 @@ if(typeof renderSettingsScreen==='function'){
   const securitySyncPreviousRenderSettings=renderSettingsScreen;
   renderSettingsScreen=function(){
     const result=securitySyncPreviousRenderSettings.apply(this,arguments);
+    securitySyncEnsureHmacField();
+    const input=document.getElementById('syncHmacSecretInput');
+    if(input && document.activeElement!==input) input.value=String(settings?.syncHmacSecret || '');
     const label=document.getElementById('appVersionLabel');
     if(label) label.textContent=`Версія застосунку: ${SECURITY_SYNC_HMAC_RELEASE_LABEL}`;
     return result;
