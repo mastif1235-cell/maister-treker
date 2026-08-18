@@ -93,9 +93,11 @@ function secureAuthConsumeNonce_(nonce) {
     if (raw) {
       try {
         var parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) ledger = parsed;
+        if (!Array.isArray(parsed)) return false;
+        ledger = parsed;
       } catch (e) {
-        ledger = [];
+        // Пошкоджений replay-ledger = auth fail-closed, а не скидання історії.
+        return false;
       }
     }
 
