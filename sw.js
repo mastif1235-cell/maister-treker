@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-17'; // Encrypted backup envelope/KDF guard.
+const CACHE_NAME = 'maister-treker-v65-security-17-1'; // DOM/photo sink hardening before HMAC migration.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -41,6 +41,7 @@ const CORE_ASSETS = [
   './js/telegram-backup-reliability-v65-13.js',
   './js/photo-data-fetch-v65-14.js',
   './js/security-backup-envelope-guard-v65-17.js',
+  './js/security-dom-final-v65-18.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -101,6 +102,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/telegram-backup-reliability-v65-13.js')) scripts += '  <script src="js/telegram-backup-reliability-v65-13.js"></script>\n';
     if(!html.includes('js/photo-data-fetch-v65-14.js')) scripts += '  <script src="js/photo-data-fetch-v65-14.js"></script>\n';
     if(!html.includes('js/security-backup-envelope-guard-v65-17.js')) scripts += '  <script src="js/security-backup-envelope-guard-v65-17.js"></script>\n';
+    if(!html.includes('js/security-dom-final-v65-18.js')) scripts += '  <script src="js/security-dom-final-v65-18.js"></script>\n';
     if(scripts) html = html.replace('</body>', scripts + '</body>');
 
     const headers = new Headers(response.headers);
@@ -148,7 +150,7 @@ self.addEventListener('fetch', (e) => {
       const networkFetch = fetch(e.request).then((res) => {
         if (res && res.status === 200) {
           const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+          caches.open(CACHE_NAME).then((cache)=>cache.put(e.request, clone));
         }
         return res;
       }).catch(() => cached);
