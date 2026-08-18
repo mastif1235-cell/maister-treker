@@ -4,9 +4,9 @@
 
 ## Чому два секрети
 
-Поточна стабільна PWA `17.3` використовує legacy `SYNC_SECRET`. Він може бути коротким і вже працює у фактичному Apps Script.
+Поточна стабільна PWA `17.3` використовує legacy `SYNC_SECRET`. Він може бути коротким і вже працює у фактичному Apps Script та окремому `shiftsScriptUrl`.
 
-Security.18 використовує окремий `SECURE_AUTH_HMAC_SECRET` довжиною щонайменше 32 символи. Завдяки цьому серверний wrapper можна задеплоїти заздалегідь, не ламаючи 17.3.
+Security.18 використовує окремий `SECURE_AUTH_HMAC_SECRET` довжиною щонайменше 32 символи. На клієнті йому відповідає окреме поле `settings.syncHmacSecret`. Завдяки цьому HMAC для заявок можна ввімкнути, не змінюючи legacy secret і не ламаючи синхронізацію змін.
 
 ## Етап A — сервер, без зміни клієнта
 
@@ -22,9 +22,10 @@ Security.18 використовує окремий `SECURE_AUTH_HMAC_SECRET` д
 
 ## Етап B — клієнт security.18
 
-1. У налаштуванні Google Sync застосунку замінити `syncSecret` на той самий новий HMAC secret.
-2. Лише після успішного Етапу A підключити `js/security-sync-hmac-v65-18.js` у Service Worker та підняти release/cache до security.18.
-3. Перезапустити PWA.
+1. Старе поле `Секретний ключ синхронізації` НЕ змінювати — воно лишається legacy secret для сумісності та синхронізації змін.
+2. Після підключення `js/security-sync-hmac-v65-18.js` у налаштуваннях з'явиться окреме поле `HMAC-ключ security.18`.
+3. У це НОВЕ поле вставити той самий `SECURE_AUTH_HMAC_SECRET`, що стоїть у Apps Script.
+4. Підняти release/cache до security.18 і перезапустити PWA.
 
 ## Smoke test
 
@@ -39,7 +40,7 @@ Security.18 використовує окремий `SECURE_AUTH_HMAC_SECRET` д
 7. фактичне зникнення рядка;
 8. перезапуск PWA та повторне читання;
 9. фото/Telegram/Viber share;
-10. зміни окремо — `shiftsScriptUrl` лишається на legacy протоколі.
+10. зміни окремо — `shiftsScriptUrl` лишається на legacy протоколі й старому `SYNC_SECRET`.
 
 ## Негативні HMAC перевірки
 
@@ -54,9 +55,9 @@ Security.18 використовує окремий `SECURE_AUTH_HMAC_SECRET` д
 
 ## Strict cutover
 
-Тільки після успішного smoke test застосувати `apps-script-security-v65-18-strict-patch.gs` і створити ще одну версію deployment. Після цього legacy `?secret=`/`secret` мережеві запити більше не приймаються.
+Тільки після успішного smoke test застосувати `apps-script-security-v65-18-strict-patch.gs` і створити ще одну версію deployment. Після цього legacy `?secret=`/`secret` мережеві запити до ОСНОВНОГО Apps Script заявок більше не приймаються.
 
-Старий `SYNC_SECRET` після strict cutover використовується лише локально всередині legacy business logic, куди wrapper підставляє його вже після успішної HMAC-перевірки; мережею він не передається.
+Старий `SYNC_SECRET` після strict cutover заявок використовується лише локально всередині legacy business logic основного Apps Script, куди wrapper підставляє його вже після успішної HMAC-перевірки; для окремого `shiftsScriptUrl` він поки лишається чинним legacy ключем.
 
 ## Відкат
 
