@@ -1,16 +1,17 @@
-/* Майстер-Трекер — photo transport + complete physical backup v65.0-security.15
-   1) CSP у security.9 навмисно не дозволяє fetch() до data: URL через connect-src.
-      Фото при цьому нормально показуються (<img> має img-src data:), але старий код
-      Telegram/share перетворював локальний data:image/... у Blob саме через fetch().
-      Цей shim обробляє data: URL локально, без мережевого запиту і без ослаблення CSP.
+/* Майстер-Трекер — photo data transport fix v65.0-security.16
+   CSP у security.9 навмисно не дозволяє fetch() до data: URL через connect-src.
+   Фото при цьому нормально показуються (<img> має img-src data:), але старий код
+   Telegram/share перетворював локальний data:image/... у Blob саме через fetch().
 
-   2) Регрес-аудит виявив важливий нюанс: автоматичний фізичний encrypted daily backup
-      містив tickets/shifts/settings, але НЕ самі байти фото (лише idb: посилання).
-      Після очищення даних браузера такий файл не міг самостійно повернути фото.
-      Тепер перед шифруванням фізичного daily-файла додаємо photoData поточних заявок.
+   Цей вузький shim обробляє data: URL локально, БЕЗ мережевого запиту і без
+   розширення CSP. Усі звичайні http/https запити й попередні security wrappers
+   проходять без змін.
+
+   Daily backup навмисно НЕ дублює байти фото щодня. Фото лишаються в Telegram-
+   архіві та можуть підтягуватись назад через збережені tgPhotoFileId/tgPhotoFileIds.
 */
 
-const PHOTO_DATA_FETCH_RELEASE_LABEL = 'v65.0-security.15 · 2026-08-18';
+const PHOTO_DATA_FETCH_RELEASE_LABEL = 'v65.0-security.16 · 2026-08-18';
 
 function photoDataUrlToResponse(dataUrl){
   const source = String(dataUrl || '');
@@ -56,69 +57,6 @@ try{
     return photoDataPreviousFetch(input, init);
   };
 }catch(e){ /* старий WebView — не втручаємось */ }
-
-/* Повний фізичний daily backup має пережити очищення браузера самостійно.
-   Не змінюємо легкий IndexedDB snapshot (щоб не множити великі фото щодня
-   всередині браузера), а додаємо photoData саме у ФІЗИЧНИЙ encrypted файл. */
-if(typeof securityRuntimeBuildDailyEnvelope === 'function' && typeof collectLocalPhotoData === 'function'){
-  securityRuntimeBuildDailyEnvelope = async function(dateKey, payload, saved){
-    const {photoData, missingPhotos} = await collectLocalPhotoData(Array.isArray(payload?.tickets) ? payload.tickets : tickets);
-    const clean = {
-      app:'master-tracker',
-      backupVersion:6,
-      encryptedSource:true,
-      physicalDailyComplete:true,
-      exportedAt:payload?.exportedAt || new Date().toISOString(),
-      tickets:Array.isArray(payload?.tickets) ? payload.tickets : [],
-      shifts:Array.isArray(payload?.shifts) ? payload.shifts : [],
-      settings:typeof securitySanitizeSettingsForBackup==='function'
-        ? securitySanitizeSettingsForBackup(payload?.settings||{})
-        : (payload?.settings||{}),
-      photoData,
-      missingPhotos:Number(missingPhotos)||0
-    };
-    const envelope = await securityBackupEncryptObject(clean, saved.password);
-    securityBackupDownloadEnvelope(envelope, `master-tracker-backup-${dateKey}-encrypted.json`);
-  };
-}
-
-/* Ручное скачивание конкретного daily snapshot тоже делаем полноценным:
-   берём снимок заявок за выбранную дату и прикладываем доступные сейчас фото
-   по тем же idb: ключам. Если старое фото уже физически отсутствует, restore
-   всё равно честно покажет отсутствие вместо притворства "полный backup". */
-if(typeof downloadDailyBackup === 'function' && typeof collectLocalPhotoData === 'function'){
-  downloadDailyBackup = async function(dateKey, opts={}){
-    const payload = await backupDbGet(dateKey);
-    if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
-    if(opts.silent) return;
-    const creds = await securityBackupGetOrCreateCredentials();
-    if(!creds) return;
-    try{
-      showToast('🔐 Готую фото та шифрую щоденний бекап…');
-      const snapshotTickets = Array.isArray(payload.tickets) ? payload.tickets : [];
-      const {photoData, missingPhotos} = await collectLocalPhotoData(snapshotTickets);
-      const clean = {
-        app:'master-tracker', backupVersion:6, encryptedSource:true, physicalDailyComplete:true,
-        exportedAt:payload.exportedAt,
-        tickets:snapshotTickets,
-        shifts:payload.shifts||[],
-        settings:typeof securitySanitizeSettingsForBackup==='function'
-          ? securitySanitizeSettingsForBackup(payload.settings||{})
-          : (payload.settings||{}),
-        photoData,
-        missingPhotos:Number(missingPhotos)||0
-      };
-      const envelope = await securityBackupEncryptObject(clean, creds.password);
-      securityBackupDownloadEnvelope(envelope, `master-tracker-backup-${dateKey}-encrypted.json`);
-      showToast(missingPhotos
-        ? `🔐 Бекап зашифровано, але ${missingPhotos} фото вже немає локально`
-        : '🔐 Повний щоденний бекап з фото зашифровано');
-    }catch(err){
-      console.error('Complete daily backup export failed:',err);
-      showToast('Не вдалося створити повний щоденний бекап');
-    }
-  };
-}
 
 if(typeof renderSettingsScreen === 'function'){
   const photoDataPreviousRenderSettings = renderSettingsScreen;
