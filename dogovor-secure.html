@@ -28,33 +28,40 @@
       <div class="row"><div class="label">Пароль</div><div class="value secret" id="pass">—</div></div>
       <div class="row"><div class="label">Номер договору</div><div class="value" id="number">—</div></div>
       <div class="row"><div class="label">Дата</div><div class="value" id="date">—</div></div>
-      <div class="warn">Не пересилайте скриншот этой сторінки стороннім: QR все одно містить дані, потрібні абоненту для входу.</div>
+      <div class="warn">Не пересилайте скриншот цієї сторінки стороннім: QR все одно містить дані, потрібні абоненту для входу.</div>
     </div>
     <div id="error" class="bad hidden">Не вдалося прочитати захищені дані з QR-коду.</div>
   </div>
 </div>
 <script>
 (function(){
+  const MAX_HASH_CHARS=8192;
+  function bounded(v,max){return String(v==null?'':v).slice(0,max)}
   function decodeBase64Url(value){
-    const normalized = String(value||'').replace(/-/g,'+').replace(/_/g,'/');
-    const padded = normalized + '='.repeat((4-normalized.length%4)%4);
-    const bin = atob(padded); const bytes = Uint8Array.from(bin,c=>c.charCodeAt(0));
+    const raw=String(value||'');
+    if(!raw || raw.length>MAX_HASH_CHARS || !/^[A-Za-z0-9_-]+$/.test(raw)) throw new Error('bad-base64url');
+    const normalized=raw.replace(/-/g,'+').replace(/_/g,'/');
+    const padded=normalized+'='.repeat((4-normalized.length%4)%4);
+    const bin=atob(padded);
+    if(bin.length>6144) throw new Error('payload-too-large');
+    const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
   }
   try{
-    const hash = location.hash.slice(1);
-    if(!hash.startsWith('v1.')) throw new Error('bad-version');
-    const data = JSON.parse(decodeBase64Url(hash.slice(3)));
-    if(!data || data.v!==1) throw new Error('bad-payload');
-    document.getElementById('addr').textContent = data.a || '—';
-    document.getElementById('login').textContent = data.l || '—';
-    document.getElementById('pass').textContent = data.p || '—';
-    document.getElementById('number').textContent = data.n || '—';
-    document.getElementById('date').textContent = data.d || '—';
+    // Знімаємо fragment з адресного рядка ОДРАЗУ. Навіть якщо payload далі
+    // виявиться пошкодженим, логін/пароль не залишаться видимими в URL/history.
+    const hash=location.hash.slice(1);
+    try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+    if(hash.length>MAX_HASH_CHARS || !hash.startsWith('v1.')) throw new Error('bad-version');
+    const data=JSON.parse(decodeBase64Url(hash.slice(3)));
+    if(!data || data.v!==1 || typeof data!=='object' || Array.isArray(data)) throw new Error('bad-payload');
+    document.getElementById('addr').textContent=bounded(data.a,1000)||'—';
+    document.getElementById('login').textContent=bounded(data.l,512)||'—';
+    document.getElementById('pass').textContent=bounded(data.p,512)||'—';
+    document.getElementById('number').textContent=bounded(data.n,256)||'—';
+    document.getElementById('date').textContent=bounded(data.d,64)||'—';
     document.getElementById('content').classList.remove('hidden');
-    // Після зчитування прибираємо fragment з адресного рядка/історії.
-    history.replaceState(null,'',location.pathname);
-  }catch(e){ document.getElementById('error').classList.remove('hidden'); }
+  }catch(e){document.getElementById('error').classList.remove('hidden')}
 })();
 </script>
 </body>
