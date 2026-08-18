@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-1'; // Security hardening preview.
+const CACHE_NAME = 'maister-treker-v65-security-2'; // Security hardening preview.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ const CORE_ASSETS = [
   './js/settings-local-lists-bindings.js',
   './js/ticket-form-domain.js',
   './js/security-hardening.js',
+  './js/security-lock.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -55,9 +56,14 @@ async function injectSecurityLayer(response){
     const type = response.headers.get('content-type') || '';
     if(!type.includes('text/html')) return response;
     const html = await response.clone().text();
-    if(html.includes('js/security-hardening.js')) return response;
     if(!html.includes('</body>')) return response;
-    const hardened = html.replace('</body>', '  <script src="js/security-hardening.js"></script>\n</body>');
+
+    let scripts = '';
+    if(!html.includes('js/security-hardening.js')) scripts += '  <script src="js/security-hardening.js"></script>\n';
+    if(!html.includes('js/security-lock.js')) scripts += '  <script src="js/security-lock.js"></script>\n';
+    if(!scripts) return response;
+
+    const hardened = html.replace('</body>', scripts + '</body>');
     const headers = new Headers(response.headers);
     headers.delete('content-length');
     return new Response(hardened, {
@@ -91,8 +97,6 @@ self.addEventListener('fetch', (e) => {
       }).catch(() => cached);
 
       const chosen = cached || await networkFetch;
-      // Security layer підключаємо лише до HTML-навігацій. Сам index.html у
-      // кеші лишається оригінальним — ін'єкція робиться на копії Response.
       if(e.request.mode === 'navigate') return injectSecurityLayer(chosen);
       return chosen;
     })
