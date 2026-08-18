@@ -6,20 +6,18 @@
      function doGet(e)   ->  function legacyDoGetV65(e)
 
    Після цього вставте ВЕСЬ цей блок у самий кінець Code.gs і створіть НОВУ
-   версію deployment. Це навмисно зроблено так, а не через "var old = doPost":
-   у JavaScript declaration function doPost() піднімається (hoisting), і простий
-   append-only wrapper міг би випадково посилатись сам на себе та піти в рекурсію.
+   версію deployment.
 
-   Мета:
-   - syncSecret більше не передається в URL;
-   - клієнт надсилає HMAC-SHA256 підпис + timestamp + одноразовий nonce;
-   - replay-запити відсікаються атомарно через ScriptProperties + ScriptLock;
-   - під час міграції старий secret-параметр ще підтримується, тому стара PWA
-     не ламається між deployment Apps Script і ввімкненням security.18 у клієнті.
+   Міграція навмисно використовує ДВА секрети:
+   - SYNC_SECRET — старий legacy secret, який уже є у робочому Code.gs;
+   - SECURE_AUTH_HMAC_SECRET — новий випадковий секрет мінімум 32 символи.
 
-   ПІСЛЯ успішного тесту security.18 legacy fallback треба вимкнути окремим релізом.
+   Це дозволяє спочатку задеплоїти HMAC wrapper, НЕ ламаючи стару PWA 17.3,
+   а вже потім перевести клієнт на новий HMAC secret. Реальний HMAC secret
+   не комітити у GitHub — вставити тільки у фактичний Apps Script.
 */
 
+var SECURE_AUTH_HMAC_SECRET = 'ВСТАВТЕ_НОВИЙ_HMAC_СЕКРЕТ_МІНІМУМ_32_СИМВОЛИ';
 var SECURE_AUTH_V2 = 2;
 var SECURE_AUTH_MIN_SECRET_LENGTH = 32;
 var SECURE_AUTH_MAX_SKEW_MS = 5 * 60 * 1000;
@@ -45,13 +43,13 @@ function secureAuthConstantTimeEqual_(a, b) {
 }
 
 function secureAuthServerReady_() {
-  return String(SYNC_SECRET || '').length >= SECURE_AUTH_MIN_SECRET_LENGTH;
+  return String(SECURE_AUTH_HMAC_SECRET || '').length >= SECURE_AUTH_MIN_SECRET_LENGTH;
 }
 
 function secureAuthExpectedSig_(canonical) {
   var raw = Utilities.computeHmacSha256Signature(
     String(canonical),
-    String(SYNC_SECRET),
+    String(SECURE_AUTH_HMAC_SECRET),
     Utilities.Charset.UTF_8
   );
   return secureAuthBase64Url_(raw);
@@ -76,11 +74,6 @@ function secureAuthConsumeNonce_(nonce) {
   nonce = String(nonce || '');
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) return false;
 
-  // CacheService не гарантує зберігання запису до TTL і може витіснити nonce
-  // раніше. Для updateTicket це теоретично дозволяло б повторити перехоплений
-  // підписаний запит у межах timestamp-вікна. Тому тримаємо невеликий стійкий
-  // ledger у ScriptProperties. Зберігається лише SHA-256 nonce, не сам nonce.
-  // ScriptLock робить перевірку + запис атомарними між паралельними запитами.
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(3000);
@@ -96,7 +89,6 @@ function secureAuthConsumeNonce_(nonce) {
         if (!Array.isArray(parsed)) return false;
         ledger = parsed;
       } catch (e) {
-        // Пошкоджений replay-ledger = auth fail-closed, а не скидання історії.
         return false;
       }
     }
@@ -172,10 +164,13 @@ function doPost(e) {
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         return jsonResponse({status:'error', message:'bad payload'});
       }
+      // Legacy business logic лишається незмінною: її старий секрет
+      // підставляємо тільки локально після успішної HMAC-перевірки.
       data.secret = SYNC_SECRET;
       return legacyDoPostV65({postData:{contents:JSON.stringify(data)}});
     }
 
+    // До strict cutover стара PWA 17.3 продовжує працювати зі старим SYNC_SECRET.
     return legacyDoPostV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
@@ -192,6 +187,7 @@ function doGet(e) {
       return legacyDoGetV65({parameter:cloned});
     }
 
+    // До strict cutover дозволяємо лише вже існуючий legacy шлях.
     return legacyDoGetV65(e);
   } catch (err) {
     return jsonResponse({status:'error', message:'auth failed'});
