@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-12'; // Android share photo picker + fresh user-gesture share.
+const CACHE_NAME = 'maister-treker-v65-security-13'; // Telegram photo backup retries + JSON continuity.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -38,6 +38,7 @@ const CORE_ASSETS = [
   './js/security-runtime-v65-9.js',
   './js/share-fix-v65-11.js',
   './js/share-photo-picker-v65-12.js',
+  './js/telegram-backup-reliability-v65-13.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -95,6 +96,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/security-runtime-v65-9.js')) scripts += '  <script src="js/security-runtime-v65-9.js"></script>\n';
     if(!html.includes('js/share-fix-v65-11.js')) scripts += '  <script src="js/share-fix-v65-11.js"></script>\n';
     if(!html.includes('js/share-photo-picker-v65-12.js')) scripts += '  <script src="js/share-photo-picker-v65-12.js"></script>\n';
+    if(!html.includes('js/telegram-backup-reliability-v65-13.js')) scripts += '  <script src="js/telegram-backup-reliability-v65-13.js"></script>\n';
     if(scripts) html = html.replace('</body>', scripts + '</body>');
 
     const headers = new Headers(response.headers);
