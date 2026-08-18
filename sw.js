@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-8'; // Security hardening preview.
+const CACHE_NAME = 'maister-treker-v65-security-9'; // Security hardening preview.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -35,11 +35,14 @@ const CORE_ASSETS = [
   './js/security-backup-encryption.js',
   './js/security-backup-vault-hub.js',
   './js/security-backup-vault.js',
+  './js/security-runtime-v65-9.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
 ];
+
+const SECURITY_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.telegram.org https://script.google.com https://script.googleusercontent.com; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests";
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -62,8 +65,16 @@ async function injectSecurityLayer(response){
   try{
     const type = response.headers.get('content-type') || '';
     if(!type.includes('text/html')) return response;
-    const html = await response.clone().text();
+    let html = await response.clone().text();
     if(!html.includes('</body>')) return response;
+
+    // GitHub Pages ignores Netlify-style _headers files. For navigations that
+    // are already controlled by this service worker, inject CSP into the HTML
+    // before parsing so the policy applies to the whole document.
+    if(!/http-equiv=["']Content-Security-Policy["']/i.test(html) && html.includes('</head>')){
+      const cspMeta = `  <meta http-equiv="Content-Security-Policy" content="${SECURITY_CSP.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">\n`;
+      html = html.replace('</head>', cspMeta + '</head>');
+    }
 
     let scripts = '';
     if(!html.includes('js/security-hardening.js')) scripts += '  <script src="js/security-hardening.js"></script>\n';
@@ -73,12 +84,17 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/security-backup-encryption.js')) scripts += '  <script src="js/security-backup-encryption.js"></script>\n';
     if(!html.includes('js/security-backup-vault-hub.js')) scripts += '  <script src="js/security-backup-vault-hub.js"></script>\n';
     if(!html.includes('js/security-backup-vault.js')) scripts += '  <script src="js/security-backup-vault.js"></script>\n';
-    if(!scripts) return response;
+    if(!html.includes('js/security-runtime-v65-9.js')) scripts += '  <script src="js/security-runtime-v65-9.js"></script>\n';
+    if(scripts) html = html.replace('</body>', scripts + '</body>');
 
-    const hardened = html.replace('</body>', scripts + '</body>');
     const headers = new Headers(response.headers);
     headers.delete('content-length');
-    return new Response(hardened, {
+    headers.set('Content-Security-Policy', SECURITY_CSP);
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('X-Frame-Options', 'DENY');
+    headers.set('Permissions-Policy', 'camera=(self), geolocation=(self), microphone=()');
+    return new Response(html, {
       status: response.status,
       statusText: response.statusText,
       headers
