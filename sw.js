@@ -1,7 +1,8 @@
-const CACHE_NAME = 'maister-treker-v65-security-2'; // Security hardening preview.
+const CACHE_NAME = 'maister-treker-v65-security-3'; // Security hardening preview.
 const CORE_ASSETS = [
   './',
   './index.html',
+  './dogovor-secure.html',
   './styles.css',
   './qrcode.js',
   './js/core-utils.js',
@@ -28,6 +29,7 @@ const CORE_ASSETS = [
   './js/ticket-form-domain.js',
   './js/security-hardening.js',
   './js/security-lock.js',
+  './js/security-qr.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -61,6 +63,7 @@ async function injectSecurityLayer(response){
     let scripts = '';
     if(!html.includes('js/security-hardening.js')) scripts += '  <script src="js/security-hardening.js"></script>\n';
     if(!html.includes('js/security-lock.js')) scripts += '  <script src="js/security-lock.js"></script>\n';
+    if(!html.includes('js/security-qr.js')) scripts += '  <script src="js/security-qr.js"></script>\n';
     if(!scripts) return response;
 
     const hardened = html.replace('</body>', scripts + '</body>');
