@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-17-2'; // Multi-photo share regression fix.
+const CACHE_NAME = 'maister-treker-v65-security-17-3'; // Encrypted physical daily backup without photo duplication.
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -43,6 +43,7 @@ const CORE_ASSETS = [
   './js/photo-data-fetch-v65-14.js',
   './js/security-backup-envelope-guard-v65-17.js',
   './js/security-dom-final-v65-18.js',
+  './js/daily-physical-backup-v65-17-3.js',
   './app.js',
   './manifest.json',
   './icon-192.png',
@@ -105,6 +106,7 @@ async function injectSecurityLayer(response){
     if(!html.includes('js/photo-data-fetch-v65-14.js')) scripts += '  <script src="js/photo-data-fetch-v65-14.js"></script>\n';
     if(!html.includes('js/security-backup-envelope-guard-v65-17.js')) scripts += '  <script src="js/security-backup-envelope-guard-v65-17.js"></script>\n';
     if(!html.includes('js/security-dom-final-v65-18.js')) scripts += '  <script src="js/security-dom-final-v65-18.js"></script>\n';
+    if(!html.includes('js/daily-physical-backup-v65-17-3.js')) scripts += '  <script src="js/daily-physical-backup-v65-17-3.js"></script>\n';
     if(scripts) html = html.replace('</body>', scripts + '</body>');
 
     const headers = new Headers(response.headers);
