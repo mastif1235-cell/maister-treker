@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-4'; // Security hardening preview.
+const CACHE_NAME = 'maister-treker-v65-security-5'; // Security hardening preview.
 const CORE_ASSETS = [
   './',
   './index.html',
