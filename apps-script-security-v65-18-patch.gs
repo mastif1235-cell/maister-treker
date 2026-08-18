@@ -13,14 +13,15 @@
    Мета:
    - syncSecret більше не передається в URL;
    - клієнт надсилає HMAC-SHA256 підпис + timestamp + одноразовий nonce;
-   - replay-запити відсікаються через CacheService;
+   - replay-запити відсікаються через CacheService + короткий ScriptLock;
    - під час міграції старий secret-параметр ще підтримується, тому стара PWA
      не ламається між deployment Apps Script і ввімкненням security.18 у клієнті.
 
-   ПІСЛЯ успішного тесту security.18 legacy fallback можна вимкнути окремим релізом.
+   ПІСЛЯ успішного тесту security.18 legacy fallback треба вимкнути окремим релізом.
 */
 
 var SECURE_AUTH_V2 = 2;
+var SECURE_AUTH_MIN_SECRET_LENGTH = 32;
 var SECURE_AUTH_MAX_SKEW_MS = 5 * 60 * 1000;
 var SECURE_AUTH_NONCE_TTL_SEC = 600;
 var SECURE_AUTH_MAX_BODY_CHARS = 8 * 1024 * 1024;
@@ -32,14 +33,16 @@ function secureAuthBase64Url_(bytes) {
 function secureAuthConstantTimeEqual_(a, b) {
   a = String(a || '');
   b = String(b || '');
-  var diff = a.length ^ b.length;
-  var max = Math.max(a.length, b.length);
-  for (var i = 0; i < max; i++) {
-    var ac = a.length ? a.charCodeAt(i % a.length) : 0;
-    var bc = b.length ? b.charCodeAt(i % b.length) : 0;
-    diff |= ac ^ bc;
+  if (a.length !== b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
+}
+
+function secureAuthServerReady_() {
+  return String(SYNC_SECRET || '').length >= SECURE_AUTH_MIN_SECRET_LENGTH;
 }
 
 function secureAuthExpectedSig_(canonical) {
@@ -60,14 +63,28 @@ function secureAuthFreshTimestamp_(ts) {
 function secureAuthConsumeNonce_(nonce) {
   nonce = String(nonce || '');
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) return false;
-  var cache = CacheService.getScriptCache();
-  var key = 'mt-hmac-nonce:' + nonce;
-  if (cache.get(key)) return false;
-  cache.put(key, '1', SECURE_AUTH_NONCE_TTL_SEC);
-  return true;
+
+  // CacheService сам по собі не має atomic "put-if-absent". Без lock два
+  // одночасні replay-запити теоретично могли обидва побачити порожній cache.
+  // Тримаємо lock лише на кілька мілісекунд навколо get+put, а не навколо
+  // всієї бізнес-операції — legacyDoPostV65 далі бере свій основний lock окремо.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(3000);
+    var cache = CacheService.getScriptCache();
+    var key = 'mt-hmac-nonce:' + nonce;
+    if (cache.get(key)) return false;
+    cache.put(key, '1', SECURE_AUTH_NONCE_TTL_SEC);
+    return true;
+  } catch (err) {
+    return false;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 function secureAuthVerifyPostEnvelope_(outer) {
+  if (!secureAuthServerReady_()) return null;
   if (!outer || Number(outer.v) !== SECURE_AUTH_V2) return null;
   var ts = String(outer.ts || '');
   var nonce = String(outer.nonce || '');
@@ -75,7 +92,8 @@ function secureAuthVerifyPostEnvelope_(outer) {
   var sig = String(outer.sig || '');
   if (!secureAuthFreshTimestamp_(ts)) return null;
   if (!body || body.length > SECURE_AUTH_MAX_BODY_CHARS) return null;
-  if (!/^[A-Za-z0-9_-]{40,128}$/.test(sig)) return null;
+  // HMAC-SHA256 у base64url без '=' завжди рівно 43 символи.
+  if (!/^[A-Za-z0-9_-]{43}$/.test(sig)) return null;
   var canonical = ts + '\n' + nonce + '\nPOST\n' + body;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return null;
   if (!secureAuthConsumeNonce_(nonce)) return null;
@@ -83,6 +101,7 @@ function secureAuthVerifyPostEnvelope_(outer) {
 }
 
 function secureAuthVerifyGet_(p) {
+  if (!secureAuthServerReady_()) return false;
   p = p || {};
   if (Number(p.v) !== SECURE_AUTH_V2) return false;
   var ts = String(p.ts || '');
@@ -92,7 +111,7 @@ function secureAuthVerifyGet_(p) {
   var sig = String(p.sig || '');
   if (!secureAuthFreshTimestamp_(ts)) return false;
   if (action.length > 100 || id.length > 500) return false;
-  if (!/^[A-Za-z0-9_-]{40,128}$/.test(sig)) return false;
+  if (!/^[A-Za-z0-9_-]{43}$/.test(sig)) return false;
   var canonical = ts + '\n' + nonce + '\nGET\n' + action + '\n' + id;
   if (!secureAuthConstantTimeEqual_(secureAuthExpectedSig_(canonical), sig)) return false;
   if (!secureAuthConsumeNonce_(nonce)) return false;
