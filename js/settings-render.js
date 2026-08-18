@@ -1,6 +1,7 @@
 /* ---- Візуальний рендеринг екрана налаштувань ----
    Читає лише settings і оновлює DOM. */
 function renderSettingsScreen(){
+  ensureSettingsHub();
   document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`; // NEW
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
@@ -174,4 +175,167 @@ function applyTheme(){
   document.documentElement.setAttribute('data-theme', settings.theme);
   const meta = document.querySelector('meta[name="theme-color"]');
   if(meta) meta.setAttribute('content', settings.theme==='dark' ? '#14181C' : '#EEF1F3');
+}
+
+/* ---- Навігаційний центр налаштувань ----
+   Перегруповує наявні <details> у тематичні блоки, не змінюючи їхні id,
+   обробники чи логіку збереження. Усі реальні поля лишаються тими самими. */
+let settingsHubInitialized = false;
+let settingsHubCurrentKey = '';
+
+const SETTINGS_HUB_SECTIONS = [
+  {key:'address', icon:'📍', title:'Адреси', sub:'Міста та вулиці', match:['Міста','Вулиці']},
+  {key:'calculator', icon:'🧮', title:'Калькулятор і ціни', sub:'Теги, матеріали, роботи, кабелі та тарифи', match:['Теги','Матеріали','Роботи з переліку','Типи кабелів','Ціни за замовчуванням']},
+  {key:'people', icon:'👷', title:'Люди і контакти', sub:'Майстри, напарники, швидкий набір, візитка й договір', match:['Напарники','Майстри','Візитка та договір','Швидкий набір']},
+  {key:'sync', icon:'☁️', title:'Синхронізація', sub:'Google для заявок і змін', match:['Синхронізація — Заявки','Синхронізація — Зміни']},
+  {key:'telegram', icon:'✈️', title:'Telegram', sub:'Диспетчери, архів і звіти', match:['Telegram-бот']},
+  {key:'security', icon:'🔐', title:'Безпека', sub:'Пароль та відбиток пальця', match:['Захист входу']},
+  {key:'data', icon:'💾', title:'Дані та резервні копії', sub:'Кошик, імпорт, експорт і бекапи', match:['Кошик','Дані','Щоденні бекапи']},
+  {key:'app', icon:'⚙️', title:'Застосунок', sub:'Ставка, тема та загальні параметри', match:['Параметри']},
+];
+
+function settingsHubSummaryText(detailsEl){
+  const summary = detailsEl.querySelector(':scope > summary');
+  return summary ? summary.textContent.replace('▾','').trim() : '';
+}
+
+function settingsHubSectionFor(detailsEl){
+  const text = settingsHubSummaryText(detailsEl);
+  return SETTINGS_HUB_SECTIONS.find(section => section.match.some(part => text.includes(part))) || null;
+}
+
+function ensureSettingsHub(){
+  if(settingsHubInitialized) return;
+  const screen = document.getElementById('screen-settings');
+  const version = document.getElementById('appVersionLabel');
+  if(!screen || !version) return;
+
+  const allDetails = Array.from(screen.querySelectorAll(':scope > details.card.acc-card'));
+  if(!allDetails.length) return;
+
+  const style = document.createElement('style');
+  style.id = 'settingsHubStyles';
+  style.textContent = `
+    .settings-hub-intro{font-size:12.5px;color:var(--text-dim);margin:2px 2px 12px;}
+    .settings-hub-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+    .settings-hub-card{width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:14px;background:var(--surface);color:var(--text);}
+    .settings-hub-card:active{transform:scale(.985);}
+    .settings-hub-icon{font-size:23px;line-height:1;width:32px;text-align:center;flex:0 0 32px;}
+    .settings-hub-copy{min-width:0;flex:1;}
+    .settings-hub-title{font-size:15px;font-weight:700;line-height:1.25;}
+    .settings-hub-sub{font-size:12px;color:var(--text-dim);margin-top:3px;line-height:1.35;}
+    .settings-hub-arrow{font-size:20px;color:var(--text-faint);}
+    .settings-hub-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+    .settings-hub-head-copy{min-width:0;flex:1;}
+    .settings-hub-head-title{font-size:17px;font-weight:800;line-height:1.2;}
+    .settings-hub-head-sub{font-size:12px;color:var(--text-dim);margin-top:2px;}
+    .settings-hub-content > .acc-card{margin-bottom:10px;}
+    .settings-hub-parking{display:none!important;}
+  `;
+  document.head.appendChild(style);
+
+  const home = document.createElement('div');
+  home.id = 'settingsHubHome';
+  home.innerHTML = `
+    <div class="settings-hub-intro">Оберіть розділ — усі звичні налаштування залишилися на місці, тільки тепер вони згруповані.</div>
+    <div class="settings-hub-grid"></div>
+  `;
+
+  const page = document.createElement('div');
+  page.id = 'settingsHubPage';
+  page.className = 'hidden';
+  page.innerHTML = `
+    <div class="card settings-hub-head">
+      <button type="button" class="btn btn-icon btn-sm" id="settingsHubBackBtn" aria-label="Назад до налаштувань">‹</button>
+      <div class="settings-hub-head-copy">
+        <div class="settings-hub-head-title" id="settingsHubPageTitle"></div>
+        <div class="settings-hub-head-sub" id="settingsHubPageSub"></div>
+      </div>
+    </div>
+    <div class="settings-hub-content" id="settingsHubContent"></div>
+  `;
+
+  const parking = document.createElement('div');
+  parking.id = 'settingsHubParking';
+  parking.className = 'settings-hub-parking';
+
+  screen.insertBefore(home, version.nextSibling);
+  screen.insertBefore(page, home.nextSibling);
+  screen.appendChild(parking);
+  allDetails.forEach(details => parking.appendChild(details));
+
+  const unmatched = allDetails.filter(details => !settingsHubSectionFor(details));
+  const sections = SETTINGS_HUB_SECTIONS.slice();
+  if(unmatched.length){
+    sections.push({key:'other', icon:'🧩', title:'Інше', sub:'Інші параметри застосунку', match:[]});
+  }
+
+  const grid = home.querySelector('.settings-hub-grid');
+  grid.innerHTML = sections.map(section => `
+    <button type="button" class="card settings-hub-card" data-settings-hub="${section.key}">
+      <span class="settings-hub-icon">${section.icon}</span>
+      <span class="settings-hub-copy">
+        <span class="settings-hub-title">${section.title}</span>
+        <span class="settings-hub-sub">${section.sub}</span>
+      </span>
+      <span class="settings-hub-arrow">›</span>
+    </button>
+  `).join('');
+
+  grid.addEventListener('click', e=>{
+    const btn = e.target.closest('[data-settings-hub]');
+    if(btn) openSettingsHubSection(btn.dataset.settingsHub);
+  });
+  page.querySelector('#settingsHubBackBtn').addEventListener('click', closeSettingsHubSection);
+
+  settingsHubInitialized = true;
+}
+
+function openSettingsHubSection(key){
+  ensureSettingsHub();
+  const home = document.getElementById('settingsHubHome');
+  const page = document.getElementById('settingsHubPage');
+  const content = document.getElementById('settingsHubContent');
+  const parking = document.getElementById('settingsHubParking');
+  if(!home || !page || !content || !parking) return;
+
+  while(content.firstChild) parking.appendChild(content.firstChild);
+
+  const section = SETTINGS_HUB_SECTIONS.find(item=>item.key===key);
+  const candidates = Array.from(parking.querySelectorAll(':scope > details.card.acc-card'));
+  const selected = key==='other'
+    ? candidates.filter(details=>!settingsHubSectionFor(details))
+    : candidates.filter(details=>settingsHubSectionFor(details)?.key===key);
+
+  selected.forEach(details=>{
+    details.open = false;
+    content.appendChild(details);
+  });
+
+  document.getElementById('settingsHubPageTitle').textContent = section ? `${section.icon} ${section.title}` : '🧩 Інше';
+  document.getElementById('settingsHubPageSub').textContent = section ? section.sub : 'Інші параметри застосунку';
+  home.classList.add('hidden');
+  document.getElementById('appVersionLabel').classList.add('hidden');
+  page.classList.remove('hidden');
+  settingsHubCurrentKey = key;
+
+  const screens = document.querySelector('main.screens');
+  if(screens) screens.scrollTop = 0;
+}
+
+function closeSettingsHubSection(){
+  const home = document.getElementById('settingsHubHome');
+  const page = document.getElementById('settingsHubPage');
+  const content = document.getElementById('settingsHubContent');
+  const parking = document.getElementById('settingsHubParking');
+  if(!home || !page || !content || !parking) return;
+
+  while(content.firstChild) parking.appendChild(content.firstChild);
+  page.classList.add('hidden');
+  home.classList.remove('hidden');
+  document.getElementById('appVersionLabel').classList.remove('hidden');
+  settingsHubCurrentKey = '';
+
+  const screens = document.querySelector('main.screens');
+  if(screens) screens.scrollTop = 0;
 }
