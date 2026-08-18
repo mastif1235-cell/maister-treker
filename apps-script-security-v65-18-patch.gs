@@ -13,7 +13,7 @@
    Мета:
    - syncSecret більше не передається в URL;
    - клієнт надсилає HMAC-SHA256 підпис + timestamp + одноразовий nonce;
-   - replay-запити відсікаються через CacheService + короткий ScriptLock;
+   - replay-запити відсікаються атомарно через ScriptProperties + ScriptLock;
    - під час міграції старий secret-параметр ще підтримується, тому стара PWA
      не ламається між deployment Apps Script і ввімкненням security.18 у клієнті.
 
@@ -23,7 +23,9 @@
 var SECURE_AUTH_V2 = 2;
 var SECURE_AUTH_MIN_SECRET_LENGTH = 32;
 var SECURE_AUTH_MAX_SKEW_MS = 5 * 60 * 1000;
-var SECURE_AUTH_NONCE_TTL_SEC = 600;
+var SECURE_AUTH_NONCE_TTL_MS = 10 * 60 * 1000;
+var SECURE_AUTH_NONCE_LEDGER_KEY = 'MT_HMAC_NONCES_V1';
+var SECURE_AUTH_NONCE_LEDGER_MAX = 96;
 var SECURE_AUTH_MAX_BODY_CHARS = 8 * 1024 * 1024;
 
 function secureAuthBase64Url_(bytes) {
@@ -60,23 +62,60 @@ function secureAuthFreshTimestamp_(ts) {
   return Math.abs(Date.now() - n) <= SECURE_AUTH_MAX_SKEW_MS;
 }
 
+function secureAuthNonceHash_(nonce) {
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(nonce),
+    Utilities.Charset.UTF_8
+  );
+  return secureAuthBase64Url_(digest);
+}
+
 function secureAuthConsumeNonce_(nonce) {
   nonce = String(nonce || '');
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) return false;
 
-  // CacheService сам по собі не має atomic "put-if-absent". Без lock два
-  // одночасні replay-запити теоретично могли обидва побачити порожній cache.
-  // Тримаємо lock лише на кілька мілісекунд навколо get+put, а не навколо
-  // всієї бізнес-операції — legacyDoPostV65 далі бере свій основний lock окремо.
+  // CacheService не гарантує зберігання запису до TTL і може витіснити nonce
+  // раніше. Для updateTicket це теоретично дозволяло б повторити перехоплений
+  // підписаний запит у межах timestamp-вікна. Тому тримаємо невеликий стійкий
+  // ledger у ScriptProperties. Зберігається лише SHA-256 nonce, не сам nonce.
+  // ScriptLock робить перевірку + запис атомарними між паралельними запитами.
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(3000);
-    var cache = CacheService.getScriptCache();
-    var key = 'mt-hmac-nonce:' + nonce;
-    if (cache.get(key)) return false;
-    cache.put(key, '1', SECURE_AUTH_NONCE_TTL_SEC);
+    var props = PropertiesService.getScriptProperties();
+    var now = Date.now();
+    var hash = secureAuthNonceHash_(nonce);
+    var ledger = [];
+    var raw = props.getProperty(SECURE_AUTH_NONCE_LEDGER_KEY);
+
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) ledger = parsed;
+      } catch (e) {
+        // Пошкоджений ledger не повинен переводити auth у fail-open.
+        ledger = [];
+      }
+    }
+
+    ledger = ledger.filter(function(entry) {
+      return entry && typeof entry.h === 'string' &&
+        Number.isFinite(Number(entry.ts)) &&
+        now - Number(entry.ts) <= SECURE_AUTH_NONCE_TTL_MS;
+    });
+
+    if (ledger.some(function(entry) { return entry.h === hash; })) return false;
+
+    ledger.push({h:hash, ts:now});
+    if (ledger.length > SECURE_AUTH_NONCE_LEDGER_MAX) {
+      ledger = ledger.slice(ledger.length - SECURE_AUTH_NONCE_LEDGER_MAX);
+    }
+
+    props.setProperty(SECURE_AUTH_NONCE_LEDGER_KEY, JSON.stringify(ledger));
     return true;
   } catch (err) {
+    // Якщо захист replay не може надійно записати nonce — запит відхиляємо.
     return false;
   } finally {
     try { lock.releaseLock(); } catch (e) {}
