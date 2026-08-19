@@ -4,7 +4,7 @@
  */
 (() => {
   'use strict';
-  const RELEASE='v65-sync-consolidated-2', MIN_SECRET=32;
+  const RELEASE='v65-sync-consolidated-3', MIN_SECRET=32;
   const GET_ACTIONS=new Set(['list','checkTicketExists','getTicketById']);
   const chains=new Map();
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -27,7 +27,6 @@
       const u=new URL(raw,location.href);u.searchParams.delete('secret');
       const action=u.searchParams.get('action')||'list',id=u.searchParams.get('id')||'';
       if(!GET_ACTIONS.has(action))throw new Error('LEGACY_SYNC_GET_BLOCKED');
-      /* Reject legacy shift/query transport rather than leaking credentials. */
       for(const k of ['date','hours','coworker'])if(u.searchParams.has(k))throw new Error('LEGACY_SYNC_GET_BLOCKED');
       const ts=String(Date.now()),n=nonce(),sig=await hmac(`${ts}\n${n}\nGET\n${action}\n${id}`);
       u.searchParams.set('v','2');u.searchParams.set('ts',ts);u.searchParams.set('nonce',n);u.searchParams.set('sig',sig);
@@ -55,25 +54,31 @@
   async function verify(action,payload){await sleep(250);for(const delay of[0,450,1100]){if(delay)await sleep(delay);if(action==='addTicket'||action==='deleteTicket'){const r=await readState('checkTicketExists',payload?.id);if(r.ok&&typeof r.data?.exists==='boolean'&&r.data.exists===(action==='addTicket'))return true;}else{const r=await readState('getTicketById',payload?.id);const matcher=typeof securitySyncVerifyStateMatches==='function'?securitySyncVerifyStateMatches:(typeof ticketStateMatchesPayload==='function'?ticketStateMatchesPayload:null);if(r.ok&&matcher&&matcher(r.data?.ticket,payload))return true;}}return false;}
   window.verifyTicketSyncedOnServer=verify;
 
-  /* Ticket writes use the legacy caller only as a UI/state adapter; network is HMAC. */
-  const basePostToUrl=postToUrl;
-  postToUrl=function(url,action,payload){if(!['addTicket','updateTicket','deleteTicket'].includes(String(action||''))||payload?.id==null)return basePostToUrl(url,action,payload);const key=String(payload.id),prev=chains.get(key)||Promise.resolve();const job=prev.catch(()=>false).then(()=>basePostToUrl(url,action,payload));const tracked=job.finally(()=>{if(chains.get(key)===tracked)chains.delete(key);});chains.set(key,tracked);return tracked;};
+  /* Ticket network owner: no call to legacy basePostToUrl. */
+  async function ticketWrite(action,payload){
+    if(!['addTicket','updateTicket','deleteTicket'].includes(String(action||''))||payload?.id==null)return false;
+    const key=String(payload.id),prev=chains.get(key)||Promise.resolve();
+    const job=prev.catch(()=>false).then(async()=>{const sent=await post(action,payload);if(!sent.ok)return false;return verify(action,payload);});
+    const tracked=job.finally(()=>{if(chains.get(key)===tracked)chains.delete(key);});chains.set(key,tracked);return tracked;
+  }
+  postToUrl=function(url,action,payload){
+    if(isTarget(url)&&['addTicket','updateTicket','deleteTicket'].includes(String(action||'')))return ticketWrite(action,payload);
+    /* Fail closed for sync-looking calls to any stale endpoint. */
+    if(['addTicket','updateTicket','deleteTicket'].includes(String(action||'')))return Promise.resolve(false);
+    return Promise.resolve(false);
+  };
+
   const hasDelete=id=>deletedTickets.some(t=>t?.pendingCloudDelete&&String(t.id)===String(id));
   const live=id=>tickets.find(t=>String(t.id)===String(id))||null;
-  syncPendingCloudDelete=function(t){if(!t?.pendingCloudDelete||!deletedTickets.includes(t))return Promise.resolve(false);const key=String(t.id);if(cloudDeleteInFlight.has(key))return cloudDeleteInFlight.get(key);const job=(async()=>{const before=await readState('checkTicketExists',t.id);if(before.ok&&before.data?.exists===false){delete t.pendingCloudDelete;saveDeletedTickets();return true;}const sent=await post('deleteTicket',{id:t.id});if(sent.ok){const confirmed=await verify('deleteTicket',{id:t.id});if(confirmed){delete t.pendingCloudDelete;saveDeletedTickets();return true;}}const after=await readState('checkTicketExists',t.id);if(after.ok&&after.data?.exists===false){delete t.pendingCloudDelete;saveDeletedTickets();return true;}return false;})().finally(()=>{if(cloudDeleteInFlight.get(key)===job)cloudDeleteInFlight.delete(key);});cloudDeleteInFlight.set(key,job);return job;};
-  retrySyncQueue=async function(){if(syncQueueBusy||!getScriptUrl())return;const dels=deletedTickets.filter(t=>t?.pendingCloudDelete),ids=new Set(dels.map(t=>String(t.id))),pending=tickets.filter(t=>!t.synced&&!ids.has(String(t.id)));if(!dels.length&&!pending.length)return;syncQueueBusy=true;try{for(const t of dels){await syncPendingCloudDelete(t);saveDeletedTickets();}for(const snap of pending){const cur=live(snap.id);if(!cur||hasDelete(snap.id))continue;const action=cur.syncAction==='updateTicket'?'updateTicket':'addTicket',sent=await post(action,ticketToSyncPayload(cur)),ok=sent.ok&&await verify(action,ticketToSyncPayload(cur)),after=live(snap.id);if(after&&!hasDelete(snap.id)){after.synced=ok;if(ok)delete after.syncAction;}saveTickets();}}finally{syncQueueBusy=false;}renderTicketsScreen();};
+  syncPendingCloudDelete=function(t){if(!t?.pendingCloudDelete||!deletedTickets.includes(t))return Promise.resolve(false);const key=String(t.id);if(cloudDeleteInFlight.has(key))return cloudDeleteInFlight.get(key);const job=(async()=>{const before=await readState('checkTicketExists',t.id);if(before.ok&&before.data?.exists===false){delete t.pendingCloudDelete;saveDeletedTickets();return true;}const ok=await ticketWrite('deleteTicket',{id:t.id});if(ok){delete t.pendingCloudDelete;saveDeletedTickets();return true;}const after=await readState('checkTicketExists',t.id);if(after.ok&&after.data?.exists===false){delete t.pendingCloudDelete;saveDeletedTickets();return true;}return false;})().finally(()=>{if(cloudDeleteInFlight.get(key)===job)cloudDeleteInFlight.delete(key);});cloudDeleteInFlight.set(key,job);return job;};
+  retrySyncQueue=async function(){if(syncQueueBusy||!getScriptUrl())return;const dels=deletedTickets.filter(t=>t?.pendingCloudDelete),ids=new Set(dels.map(t=>String(t.id))),pending=tickets.filter(t=>!t.synced&&!ids.has(String(t.id)));if(!dels.length&&!pending.length)return;syncQueueBusy=true;try{for(const t of dels){await syncPendingCloudDelete(t);saveDeletedTickets();}for(const snap of pending){const cur=live(snap.id);if(!cur||hasDelete(snap.id))continue;const action=cur.syncAction==='updateTicket'?'updateTicket':'addTicket',payload=ticketToSyncPayload(cur),ok=await ticketWrite(action,payload),after=live(snap.id);if(after&&!hasDelete(snap.id)){after.synced=ok;if(ok)delete after.syncAction;}saveTickets();}}finally{syncQueueBusy=false;}renderTicketsScreen();};
 
-  /* Shifts: POST only. The old GET query protocol is intentionally removed. */
   window.syncShiftSecure=async function(action,shift){if(!['addShift','deleteShift'].includes(action))return false;const payload=action==='deleteShift'?{id:shift?.id}:{id:shift?.id,date:shift?.date,hours:shift?.hours,coworker:shift?.coworker};return (await post(action,payload)).ok;};
-
-  /* Cloud load: signed GET list, never ?secret=. */
   window.loadCloudStateSecure=async function(){const r=await readState('list');return r.ok?r.data:null;};
+  window.syncAllSecure=async function(allTickets,allShifts){return(await post('syncAll',{tickets:allTickets||[],shifts:allShifts||[]})).ok;};
+  window.syncAllTicketsSecure=async function(list){return(await post('syncAllTickets',{tickets:list||[]})).ok;};
+  window.syncAllShiftsSecure=async function(list){return(await post('syncAllShifts',{shifts:list||[]})).ok;};
+  window.clearAllSecure=async function(){return(await post('clearAll',{})).ok;};
 
-  /* Full operations use the same authenticated POST channel. */
-  window.syncAllSecure=async function(allTickets,allShifts)=> (await post('syncAll',{tickets:allTickets||[],shifts:allShifts||[]})).ok;
-  window.syncAllTicketsSecure=async list=> (await post('syncAllTickets',{tickets:list||[]})).ok;
-  window.syncAllShiftsSecure=async list=> (await post('syncAllShifts',{shifts:list||[]})).ok;
-  window.clearAllSecure=async()=> (await post('clearAll',{})).ok;
-
-  window.MaisterSync=Object.freeze({release:RELEASE,post,readState,verify,loadCloudState:window.loadCloudStateSecure});
+  window.MaisterSync=Object.freeze({release:RELEASE,post,readState,verify,ticketWrite,loadCloudState:window.loadCloudStateSecure});
 })();
