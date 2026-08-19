@@ -23,17 +23,12 @@
   }
 
   function ensureModel(){
-    if(!window.settings) return;
+    if(typeof settings === 'undefined' || !settings) return false;
     if(typeof settings.syncHmacSecret !== 'string') settings.syncHmacSecret = '';
-
-    // Do NOT copy settings.syncSecret here. The old secret may be short and,
-    // more importantly, belongs to the legacy URL-secret protocol.
     settings.syncHmacSecret = String(settings.syncHmacSecret || '').trim();
     settings.scriptUrl = normalizeUrl(settings.scriptUrl);
-
-    // v2 has one endpoint for tickets and shifts. Keep the legacy property
-    // empty so stale code cannot silently select a second Apps Script app.
     settings.shiftsScriptUrl = '';
+    return true;
   }
 
   ensureModel();
@@ -44,11 +39,8 @@
       ensureModel();
       const legacySecret = settings.syncSecret;
       settings.syncSecret = settings.syncHmacSecret;
-      try{
-        baseRender.apply(this, arguments);
-      }finally{
-        settings.syncSecret = legacySecret;
-      }
+      try{ baseRender.apply(this, arguments); }
+      finally{ settings.syncSecret = legacySecret; }
 
       const secretInput = document.getElementById('syncSecretInput');
       if(secretInput){
@@ -60,14 +52,12 @@
         const label = field && field.querySelector('label');
         if(label) label.textContent = 'HMAC-ключ синхронізації';
       }
-
       const urlInput = document.getElementById('scriptUrlInput');
       if(urlInput){
         const field = urlInput.closest('.field');
         const label = field && field.querySelector('label');
         if(label) label.textContent = 'Єдиний URL Apps Script (заявки + зміни)';
       }
-
       const shiftsInput = document.getElementById('shiftsScriptUrlInput');
       if(shiftsInput){
         const field = shiftsInput.closest('.field');
@@ -82,8 +72,6 @@
       baseBind.apply(this, arguments);
       ensureModel();
 
-      // app.js already attached legacy listeners. Clone only the two sync
-      // inputs to remove those listeners, then bind the v2 settings owner.
       const oldSecret = document.getElementById('syncSecretInput');
       if(oldSecret){
         const input = oldSecret.cloneNode(true);
@@ -93,7 +81,6 @@
         input.autocomplete = 'new-password';
         input.addEventListener('input', e => {
           settings.syncHmacSecret = String(e.target.value || '').trim();
-          // Erase legacy plain-secret state instead of maintaining two keys.
           settings.syncSecret = '';
           saveSettings();
         });
@@ -137,8 +124,7 @@
     minSecretLength: MIN_HMAC_SECRET_LENGTH,
     normalizeUrl,
     ready(){
-      ensureModel();
-      return !!settings.scriptUrl && settings.syncHmacSecret.length >= MIN_HMAC_SECRET_LENGTH;
+      return ensureModel() && !!settings.scriptUrl && settings.syncHmacSecret.length >= MIN_HMAC_SECRET_LENGTH;
     }
   });
 })();
