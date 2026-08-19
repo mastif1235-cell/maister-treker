@@ -40,7 +40,7 @@ function mergePresetWorksWithCatalog(saved, catalog){
   return catalog.map(w=>{
     const s = savedMap.get(w.id);
     const savedPrice = s ? Number(s.price) : NaN;
-    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : e.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
+    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
   });
 }
 
