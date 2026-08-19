@@ -40,6 +40,38 @@ function mergePresetWorksWithCatalog(saved, catalog){
   return catalog.map(w=>{
     const s = savedMap.get(w.id);
     const savedPrice = s ? Number(s.price) : NaN;
-    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
+    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : e.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
   });
 }
+
+/* architecture-cleanup bootstrap.
+ * This file is immediately before app.js in index.html. A zero-delay task runs
+ * only after the current HTML parser task has finished, so app.js has already
+ * declared its legacy functions. We then load the v2 settings owner first and
+ * consolidated sync second, before the user can perform any sync action.
+ * Keeping activation here avoids a risky full-file rewrite of index.html while
+ * the architecture branch is being audited.
+ */
+(function scheduleConsolidatedSync(){
+  function loadScript(src){
+    return new Promise((resolve,reject)=>{
+      if(document.querySelector('script[data-architecture-sync="'+src+'"]')) return resolve();
+      const s=document.createElement('script');
+      s.src=src;
+      s.async=false;
+      s.dataset.architectureSync=src;
+      s.onload=resolve;
+      s.onerror=()=>reject(new Error('Failed to load '+src));
+      document.head.appendChild(s);
+    });
+  }
+  setTimeout(async()=>{
+    try{
+      await loadScript('js/sync-settings-v65.js');
+      await loadScript('js/sync-v65.js');
+      window.dispatchEvent(new CustomEvent('maister-sync-ready',{detail:{release:window.MaisterSync?.release||''}}));
+    }catch(err){
+      console.error('[sync bootstrap]',err);
+    }
+  },0);
+})();
