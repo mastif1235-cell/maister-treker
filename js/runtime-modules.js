@@ -1,7 +1,6 @@
-/* Runtime composition manifest.
- * This file is the single source of truth for optional/runtime modules.
- * index.html and sw.js migration should consume this list rather than grow
- * independent hidden lists. Keeping it data-only makes review straightforward.
+/* Runtime composition manifest — architecture-cleanup.
+ * One visible inventory for transitional runtime modules.
+ * Sync is now owned by js/sync-v65.js instead of the 18.x wrapper chain.
  */
 self.MAISTER_RUNTIME_MODULES = Object.freeze([
   'js/security-hardening.js',
@@ -20,13 +19,6 @@ self.MAISTER_RUNTIME_MODULES = Object.freeze([
   'js/security-backup-envelope-guard-v65-17.js',
   'js/security-dom-final-v65-18.js',
   'js/daily-physical-backup-v65-17-3.js',
-  'js/security-sync-hmac-v65-18.js',
-  'js/security-sync-verify-v65-18-1.js',
-  'js/security-sync-race-v65-18-3.js',
-  'js/security-sync-delete-repair-v65-18-4.js',
-  'js/security-sync-latency-v65-18-5.js',
-  'js/security-sync-verify-v65-18-6.js',
-  'js/security-sync-locksplit-v65-18-7.js',
-  'js/security-sync-fastverify-v65-18-8.js',
-  'js/security-audit-fixes-v65-18-9.js'
+  'js/security-audit-fixes-v65-18-9.js',
+  'js/sync-v65.js'
 ]);
