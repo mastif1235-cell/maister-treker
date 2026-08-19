@@ -18,7 +18,7 @@
    випадкового перехоплення security.18 transport.
 */
 
-const SECURITY_SYNC_HMAC_RELEASE_LABEL = 'v65.0-security.18 · 2026-08-18';
+const SECURITY_SYNC_HMAC_RELEASE_LABEL = 'v65.0-security.18.2 · 2026-08-19';
 const SECURITY_SYNC_MIN_SECRET_LENGTH = 32;
 const SECURITY_SYNC_TICKET_GET_ACTIONS = new Set(['list','checkTicketExists','getTicketById']);
 
@@ -77,7 +77,7 @@ function securitySyncEnsureHmacField(){
   const wrap=document.createElement('div');
   wrap.className='field';
   wrap.innerHTML='<label>HMAC-ключ security.18 <span style="font-size:11px; color:var(--text-faint); font-weight:400;">(окремий, мінімум 32 символи)</span></label>'+
-    '<input type="password" id="syncHmacSecretInput" autocomplete="off" placeholder="новий випадковий HMAC-ключ 32+ символи">'+
+    '<input type="text" id="syncHmacSecretInput" name="mt_hmac_key" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;" placeholder="новий випадковий HMAC-ключ 32+ символи">'+
     '<div style="font-size:11px; color:var(--text-faint); margin-top:5px;">Старий ключ вище не змінюйте: він лишається для legacy/змін. Цей ключ використовується тільки security.18 для заявок.</div>';
   legacy.closest('.field')?.insertAdjacentElement('afterend',wrap);
   const input=document.getElementById('syncHmacSecretInput');
