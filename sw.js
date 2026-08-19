@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v65-security-18-1'; // HMAC transport + resilient signed verification.
+const CACHE_NAME = 'maister-treker-v65-security-18-2'; // HMAC transport + add-ticket verification + password-manager suppression.
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./styles.css','./qrcode.js',
   './js/core-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
