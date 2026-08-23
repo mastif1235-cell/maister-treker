@@ -473,10 +473,11 @@ async function init(){
     fetch: window.fetch.bind(window),
     url: ()=>getScriptUrl(),
     secret: ()=>String(settings.syncHmacSecret||''),
-    responseMode: ()=>settings.syncResponseMode==='readable'?'readable':'opaque',
     random: ()=>MTSyncEngineRuntime.uuid(),
     now: ()=>Date.now(),
-    verifyTimeoutMs:1000
+    postTimeoutMs:8000,
+    verifyTimeoutMs:4000,
+    verifyDelays:[300,900]
   });
   syncEngine = await new MTSyncEngineRuntime.Engine({
     transport:syncTransport,

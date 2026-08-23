@@ -39,13 +39,12 @@ function renderTicketCard(t, opts={}){
   const hasContent = !!displayContent;
   const isOther = t.type === 'Інше';
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
-  // ✅ означає «запит надіслано без помилок мережі», а не 100%-підтверджений запис
-  // у Google Sheets — Apps Script працює в режимі «глухої відповіді» (no-cors),
-  // тож повної гарантії доставки в межах браузера отримати неможливо.
+  // ✅ означає, що canonical sync engine отримав читабельне підтвердження
+  // або відновив його через підписаний getEntityState після втраченої відповіді.
   let syncBadge = '';
   if(getScriptUrl()){
     syncBadge = isEntitySynced('ticket',t.id)
-      ? `<span class="tc-sync-badge tc-sync-ok" title="Запит надіслано без помилок мережі">✅ Таблиця</span>`
+      ? `<span class="tc-sync-badge tc-sync-ok" title="Підтверджено сервером">✅ Таблиця</span>`
       : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;
   }
   // NEW: та сама логіка для бекапу в Telegram-групу, що й вище для Google

@@ -18,6 +18,8 @@ assert.equal(allGas.includes("getProperty(SYNC_HMAC_PROPERTY)"), true, 'secret r
 assert.equal(allGas.includes('CacheService.getScriptCache()'), true, 'replay cache enabled');
 assert.equal(allGas.includes('LockService.getScriptLock()'), true, 'atomic lock enabled');
 assert.match(allGas, /existingIndex !== -1[\s\S]*writeTicketRow\(sheet, existingIndex \+ 2, t\)/, 'legacy ticket adoption uses idempotent upsert');
+assert.equal(allGas.includes('setRowHeightsAuto'), false, 'unsupported Sheet row-height API is absent');
+assert.match(allGas, /sheet\.autoResizeRows\(rowIndex, 1\)/, 'ticket row height uses supported Apps Script API');
 
 const referenceSource = fs.readFileSync(path.join(root, 'js', 'apps-script-reference.js'), 'utf8');
 const reference = vm.runInNewContext(referenceSource + '\n;APPS_SCRIPT_CODE');

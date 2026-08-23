@@ -614,7 +614,7 @@ function writeTicketRow(sheet, rowIndex, t) {
 
   range.setValues([row]);
   sheet.getRange(rowIndex, 4, 1, 1).setWrap(true);
-  sheet.setRowHeightsAuto(rowIndex, 1);
+  sheet.autoResizeRows(rowIndex, 1);
 }
 
 function writeAllTickets(ss, tickets) {

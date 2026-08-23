@@ -40,7 +40,7 @@ The implemented IndexedDB schema is database `maisterTrackerSync` version 1, obj
 | delete after any attempt | increment revision; discard unattempted update tail; enqueue delete behind immutable head |
 | send | per-entity scheduler moves one operation to syncing; no second mutation for that ID starts |
 | readable success | compare returned entity/revision/deleted state, ack exact operation, then advance tail |
-| opaque/lost response | bounded signed state verification; otherwise mark retryable without blocking UI |
+| timeout/lost readable response | bounded signed state verification; otherwise mark retryable without blocking UI |
 | retry | same requestId/body/revision, new timestamp/nonce/signature |
 | restart | load journal after storage/UI init; start one recovery loop if online, otherwise wait for online |
 
@@ -66,15 +66,17 @@ The cryptographic envelope remains byte-for-byte unchanged. The application cont
 
 These additions make exact replay and retry safe even after nonce cache and request-id idempotency records expire. HMAC canonicalization, UTF-8 encoding, base64url and the Stage 3 vectors remain unchanged.
 
-## Bounded verification policy proposal
+## Bounded verification policy after isolated GAS proof
 
-- Initial settle delay: 250 ms.
-- Up to three signed `getEntityState` reads with short backoff (250/500/1000 ms).
-- Per-read timeout: 1000 ms; total verification budget: at most 4.75 seconds.
+- The canonical mutation transport is a simple readable CORS POST with `Content-Type: text/plain;charset=utf-8`; it does not trigger preflight.
+- POST timeout: 8000 ms. Three browser mutations completed in 2925–4971 ms; the real-GAS matrix also observed a 5231 ms ticket delete.
+- After a timeout/lost response, attempt up to two signed `getEntityState` reads after 300/900 ms delays.
+- Per-read timeout: 4000 ms. Real browser verification completed in 1931–2578 ms.
+- The bounded lost-response verification budget is at most 9200 ms after the POST attempt.
 - If state is not proven, leave operation retryable and continue in the single background recovery loop.
 
-Final timings must be validated against an isolated Apps Script Web App. CORS/readable POST versus opaque `no-cors` remains `UNKNOWN` until that test deployment exists.
+An isolated Apps Script Web App proved readable CORS POST stable in three browser runs. Forced preflight failed, so JSON/custom-header POST is prohibited. Opaque `no-cors` was slower (5622–7698 ms including signed verification) and is retired from the production runtime.
 
 ## Stage 4 verification
 
-Automated suites cover create, edit, rapid edits, delete, create→edit, create→delete, create→edit→delete, attempted head with edit/delete tail, tail coalescing, lost response, timeout, duplicate retry, restart with head or head+tail, already-online and offline→online startup, durable-before-network crash points, server-apply-before-local-ack recovery, stale/same/conflicting revisions, cache-expiry retry, delayed mutations after tombstone, ticket/shift parity, and readable/opaque bounded transport. `tests/sync-runtime-static.test.js` is the owner gate: old sync functions/scripts and URL query secrets must be absent from the runtime graph.
+Automated suites cover create, edit, rapid edits, delete, create→edit, create→delete, create→edit→delete, attempted head with edit/delete tail, tail coalescing, lost response, timeout, duplicate retry, restart with head or head+tail, already-online and offline→online startup, durable-before-network crash points, server-apply-before-local-ack recovery, stale/same/conflicting revisions, cache-expiry retry, delayed mutations after tombstone, ticket/shift parity, and readable transport with bounded lost-response verification. `tests/sync-runtime-static.test.js` is the owner gate: old sync functions/scripts, opaque mutation transport and URL query secrets must be absent from the runtime graph.

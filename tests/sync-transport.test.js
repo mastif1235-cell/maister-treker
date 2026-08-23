@@ -7,22 +7,19 @@ const mutation={entity:'ticket',id:'t1',action:'addTicket',revision:1,requestId:
 (async()=>{
   const fingerprint=await transport.semanticFingerprint(mutation);
   let posts=0;
-  const readable=transport.create({url:()=>'/gas',secret:()=>secret,responseMode:()=> 'readable',random,now:()=>1787472000000,
+  const readable=transport.create({url:()=>'/gas',secret:()=>secret,random,now:()=>1787472000000,
     fetch:async(_url,opt)=>{posts++; assert.equal(opt.mode,'cors'); return {ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint}})};}});
   assert.equal((await readable.send(mutation)).ok,true); assert.equal(posts,1);
   let calls=[];
-  const opaque=transport.create({url:()=>'/gas',secret:()=>secret,responseMode:()=> 'opaque',random,now:()=>1787472000000,verifyDelays:[0],
-    fetch:async(url,opt)=>{calls.push({url,opt}); return opt.method==='POST'?{ok:false}:{ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint}})};}});
-  assert.equal((await opaque.send(mutation)).ok,true); assert.equal(calls.length,2); assert.equal(calls[0].opt.mode,'no-cors');
+  const timeoutRecovery=transport.create({url:()=>'/gas',secret:()=>secret,random,now:()=>1787472000000,verifyDelays:[0],
+    fetch:async(url,opt)=>{calls.push({url,opt});if(opt.method==='POST')throw new Error('timeout');return{ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint}})};}});
+  assert.equal((await timeoutRecovery.send(mutation)).ok,true,'timeout/lost readable response repaired by state GET');
+  assert.equal(calls.length,2); assert.equal(calls[0].opt.mode,'cors');
   assert.match(calls[1].url,/action=getEntityState/); assert.doesNotMatch(calls[1].url,/secret=/);
-  const first=JSON.parse(calls[0].opt.body); calls=[]; await opaque.send(mutation); const retry=JSON.parse(calls[0].opt.body);
+  const first=JSON.parse(calls[0].opt.body); calls=[]; await timeoutRecovery.send(mutation); const retry=JSON.parse(calls[0].opt.body);
   assert.equal(first.requestId,retry.requestId,'retry requestId stable'); assert.notEqual(first.nonce,retry.nonce,'retry nonce fresh');
-  let timeoutCalls=0;
-  const timeoutRecovery=transport.create({url:()=>'/gas',secret:()=>secret,responseMode:()=> 'readable',random,now:()=>1787472000000,verifyDelays:[0],
-    fetch:async(_url,opt)=>{timeoutCalls++;if(opt.method==='POST')throw new Error('timeout');return{ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint}})};}});
-  assert.equal((await timeoutRecovery.send(mutation)).ok,true,'timeout/lost readable response repaired by state GET');assert.equal(timeoutCalls,2);
-  const conflictVerify=transport.create({url:()=>'/gas',secret:()=>secret,responseMode:()=> 'opaque',random,now:()=>1787472000000,verifyDelays:[0],
-    fetch:async(_url,opt)=>opt.method==='POST'?{ok:false}:{ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint:'different'}})}});
+  const conflictVerify=transport.create({url:()=>'/gas',secret:()=>secret,random,now:()=>1787472000000,verifyDelays:[0],
+    fetch:async(_url,opt)=>{if(opt.method==='POST')throw new Error('timeout');return{ok:true,json:async()=>({status:'ok',state:{revision:1,tombstone:false,fingerprint:'different'}})};}});
   assert.equal((await conflictVerify.send(mutation)).ok,false,'same revision/different fingerprint never acknowledged');
-  console.log('PASS readable/opaque signed transport and lost-response verification');
+  console.log('PASS canonical readable CORS transport and lost-response verification');
 })().catch(e=>{console.error(e);process.exitCode=1;});

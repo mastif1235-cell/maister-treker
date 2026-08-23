@@ -46,16 +46,12 @@
     }
     async function send(mutation){
       const envelope=await signedEnvelope(mutation,options.secret(),random,now);
-      const mode=options.responseMode();
       try{
-        const response=await fetchTimed(fetchImpl,options.url(mutation),{method:'POST',mode:mode==='readable'?'cors':'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope)},options.postTimeoutMs||5000);
-        if(mode==='readable'){
-          const result=await response.json();
-          if(response.ok && result.status==='ok') return {ok:true,state:result.state,result};
-          return {ok:false,result};
-        }
+        const response=await fetchTimed(fetchImpl,options.url(mutation),{method:'POST',mode:'cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope)},options.postTimeoutMs||5000);
+        const result=await response.json();
+        if(response.ok && result.status==='ok') return {ok:true,state:result.state,result};
+        return {ok:false,result};
       }catch(err){ return verify(mutation); }
-      return verify(mutation);
     }
     return {send,verify};
   }
