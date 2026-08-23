@@ -28,7 +28,7 @@ Baseline and dependency rules are fixed in `APP-DECOMPOSITION-MAP.md`. Planned o
 
 1. **Pure utils/format/validation — complete.** Pure Ukrainian date formatting and legacy backup-note parsing now load from `app-format-utils.js` before `app.js`; owner and behavior tests pass with no state/schema changes.
 2. **QR/share — complete.** `qr-share-domain.js` owns vizitka/dogovor/PDF and `share-domain.js` owns clipboard/Web Share flows. Source owners were removed from `app.js`; fragment-only QR and security-adapter load order are unchanged and statically enforced.
-3. **Reports/import-export UI.** Move report generation, NotebookLM export, import/repair/dedup and bulk import orchestration while retaining canonical encrypted backup owner.
+3. **Reports/import-export UI — complete.** `reports-domain.js` owns report generation, NotebookLM export, bulk import, repair and dedup flows. Canonical encrypted backup APIs remain untouched; retired plaintext backup implementations were removed from `app.js`.
 4. **Settings.** Move settings defaults/migration, persistence, render/bind orchestration and catalog glue; preserve secret/lock sanitization boundaries.
 5. **Photos/Telegram helpers.** Move photo resolution/lifecycle and Telegram delivery/report queues without changing token architecture or fetch protections.
 6. **Shifts.** Move state/render/bind/mutations/month reports; keep unified sync engine calls unchanged.
