@@ -93,12 +93,15 @@ function getCableTypesConfig(){ return (settings && settings.cableTypes && setti
 
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncSecret:'', syncHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
     // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)
     appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:''};
   const merged = s ? Object.assign(base, s) : base;
+  // Legacy query-string sync secret is intentionally discarded. HMAC v3
+  // uses only syncHmacSecret and never includes it in URL or request body.
+  delete merged.syncSecret;
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
   if(s && !s.cableTypes && (s.utpPriceDefault!==undefined || s.opticPriceDefault!==undefined)){
@@ -241,7 +244,7 @@ async function fetchPhotoFromTelegram(fileId){
       reader.onerror = ()=> resolve(null);
       reader.readAsDataURL(blob);
     });
-  }catch(e){ console.error('Telegram: не вдалося підтягнути фото-бекап', e); return null; }
+  }catch(e){ console.error('Telegram photo backup request failed'); return null; }
 }
 async function collectLocalPhotoData(ticketList){
   const photoData = {};
@@ -2426,7 +2429,7 @@ async function backupTicketToTelegramNow(t){
       const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form});
       const data = await res.json();
       if(data.ok){ jsonOk = true; t.tgJsonMsgId = data.result.message_id; }
-    }catch(e){ console.error('Telegram: не вдалося надіслати json-бекап', e); }
+    }catch(e){ console.error('Telegram JSON backup request failed'); }
     // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
@@ -2435,7 +2438,7 @@ async function backupTicketToTelegramNow(t){
       await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
       backupSucceeded = true;
     }
-  }catch(e){ console.error('Telegram бекап: помилка відправки', e); } // тихо — це лише резервна копія, не критична дія
+  }catch(e){ console.error('Telegram backup request failed'); } // тихо — це лише резервна копія, не критична дія
   finally{
     if(!backupSucceeded) Object.assign(t, previousBackupState);
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —

@@ -77,7 +77,7 @@ try{
         }
       }
     }catch(err){
-      console.error('Telegram security sanitizer fallback:', err);
+      console.error('Telegram security sanitizer failed');
     }
     return securityTelegramNativeFetch(input, init);
   };

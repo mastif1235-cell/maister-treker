@@ -9,6 +9,12 @@ const SECURITY_BACKUP_MAX_BYTES = 120 * 1024 * 1024;
 const SECURITY_SENSITIVE_SETTING_KEYS = new Set([
   'tgBotToken',
   'syncSecret',
+  'syncHmacSecret',
+  'tgBackupChatId',
+  'tgDispatcherChatId',
+  'tgDispatchers',
+  'tgMyChatId',
+  'tgShiftsMsgId',
   'appLockPasswordHash',
   'appLockCredentialId'
 ]);

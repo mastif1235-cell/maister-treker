@@ -27,7 +27,7 @@ try{
       }
     }
 
-    console.error('Telegram sendPhoto: мережевий збій після 3 спроб', lastError);
+    console.error('Telegram sendPhoto failed after retries');
     return new Response(JSON.stringify({ok:false, description:'sendPhoto network failure after retries'}), {
       status: 599,
       headers: {'Content-Type':'application/json'}
