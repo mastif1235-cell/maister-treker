@@ -5,7 +5,7 @@ Scope: production gates after accepted candidate `025fa0e4a68483cc4b784aa5649ee5
 ## Gate disposition
 
 - **Gate 1 — PASS.** Isolated TEST GAS/Sheet passed 20/20 live contract checks. Readable simple `text/plain;charset=utf-8` CORS POST is canonical; forced JSON preflight fails; runtime `no-cors` was removed. Four readable mutations took 2925–4971 ms. Deliberately lost response was verified in 3376 ms. See `GATE-1-RESULTS.md`.
-- **Gate 2 — BLOCKED only at installed-shell boundary.** The real v62-to-v66 same-origin browser runtime path passed without clearing data, including an open stale v62 tab, cache replacement, offline reopen, IndexedDB/localStorage and journal recovery. The available browser cannot launch the operating-system installed-PWA window/icon, so that last manual confirmation is not called PASS. See `GATE-2-RESULTS.md`.
+- **Gate 2 — PASS.** The real v62-to-v66 same-origin path passed without clearing data, including installation and reopen through the desktop PWA shell, an open stale v62 window, a mutation made after v66 became available, cache replacement, preserved IndexedDB/localStorage, journal recovery and offline installed-app launch. See `GATE-2-RESULTS.md`.
 - **Gate 3 — PASS as a read-only assessment.** Production is GitHub Pages `main@9ae763a`; live responses lack CSP/anti-framing/privacy headers. No accessible Netlify linkage exists. Long-term recommendation is Netlify/equivalent, but v66 must first upgrade on the existing GitHub Pages origin to preserve browser storage. See `GATE-3-RESULTS.md`.
 
 ## Final regression
@@ -34,18 +34,20 @@ Telegram token remains only in password-type local settings and the required Tel
 - High: **0 known**.
 - Medium: **2** — client-held Telegram bot token; GitHub Pages cannot emit the checked-in response-only headers.
 - Low: **3** — escaped-template DOM maintenance surface; inactive compatibility fields/ordered Telegram adapter chain; sync badge may remain visually pending until the next render although the journal is already acknowledged.
-- Operational blocker: one installed-PWA shell reopen test remains manual.
+- Operational blockers: **none known**.
 
 ## Changes after `025fa0e`
 
 1. `5501c96a84ad6c462dce690d2348da5e5436ee31` — isolated GAS transport gate, real partial-apply fix, one readable transport.
 2. `bff424d4e27b9cf8c5f7f30336d0b9db05cdefaf` — crash-safe one-time legacy shift adoption discovered by the v62 upgrade test.
 3. `dd84a5ff951b2c43cff0be75574b77132803d207` — production host/header evidence and recommendation.
-4. Final checkpoint is the commit containing this report.
+4. `30bd123dc985c082c5c10c025128d6b7c3e327e4` — initial final pre-production checkpoint.
+5. `872d64144dfb0741836c402b52c9338bcf0fcb35` — canonical visible v66 release identity and cache revision found by the installed-shell test.
+6. Final production-candidate checkpoint is the commit containing the closed Gate 2 report.
 
 ## Required manual action before production
 
-Using desktop Chrome/Edge, serve v62 and candidate v66 successively from the **same local HTTPS/localhost origin**. Install v62 as a PWA, seed representative data, then switch that origin to v66 without clearing storage. Launch from the existing installed icon, close/reopen once, then confirm tickets, shifts, settings, backups, pending recovery and offline launch. This closes the only BLOCKED boundary without touching production.
+The installed-PWA upgrade action is complete. The remaining required action is authorization, not testing: production must remain unchanged until the user sends the exact approval `Разрешаю production deployment v66`.
 
 ## Safe future deployment order
 
