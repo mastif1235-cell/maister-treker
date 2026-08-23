@@ -5,7 +5,7 @@ const CORE_ASSETS = [
   './js/backup-storage.js','./js/ticket-storage.js','./js/photo-storage.js','./js/local-state-storage.js','./js/ticket-state-storage.js',
   './js/apps-script-reference.js','./js/settings-render.js','./js/calculator-render.js','./js/tickets-render.js','./js/address-render.js','./js/calendar-stats-render.js','./js/shift-render.js','./js/naryad-render.js','./js/settings-catalog-bindings.js','./js/settings-local-lists-bindings.js','./js/ticket-form-domain.js','./js/ticket-editor-core.js','./js/sync-contract.js','./js/sync-engine-core.js','./js/sync-journal-storage.js','./js/sync-transport.js','./js/sync-engine-runtime.js','./js/app-lock-core.js',
   './js/ui-orchestration.js','./js/storage-orchestration.js','./js/qr-share-domain.js','./js/share-domain.js','./js/reports-domain.js','./js/settings-domain.js','./js/photo-telegram-domain.js','./js/shifts-domain.js','./js/ticket-editor-domain.js','./js/tickets-domain.js','./js/tickets-bindings.js','./js/ticket-address-domain.js','./js/security-hardening.js','./js/security-lock.js','./js/security-qr.js','./js/security-telegram.js','./js/security-runtime-v65-9.js',
-  './js/share-fix-v65-11.js','./js/share-photo-picker-v65-12.js','./js/share-multi-fix-v65-17-2.js','./js/telegram-backup-reliability-v65-13.js','./js/photo-data-fetch-v65-14.js','./js/security-dom-final-v65-18.js','./js/backup-system.js','./js/security-audit-fixes-v65-18-9.js',
+  './js/telegram-backup-reliability-v65-13.js','./js/photo-data-fetch-v65-14.js','./js/security-dom-final-v65-18.js','./js/backup-system.js','./js/security-audit-fixes-v65-18-9.js',
   './app.js','./manifest.json','./icon-192.png','./icon-512.png'
 ];
 
