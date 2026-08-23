@@ -135,6 +135,16 @@ async function run(){
   assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(resurrectBody), {...entityEnvelope, action:'updateTicket', body:resurrectBody}).code, 'TOMBSTONED', 'new update cannot remove tombstone');
   assert.deepEqual(JSON.parse(JSON.stringify(context.syncPublicEntityState_(durableState))), {exists:false, revision:3, tombstone:true, fingerprint:durableState.fingerprint}, 'minimal entity state');
 
+  durableState = {entityType:'shift', entityId:'shift-1', revision:0, tombstone:false, fingerprint:'', requestId:'', rowIndex:-1};
+  context.addShiftRow = ()=>{};
+  const shiftAddBody=JSON.stringify({action:'addShift',id:'shift-1',revision:1,date:'23.08.2026',hours:8,coworker:'Сам'});
+  const shiftEnvelope={entity:'shift',id:'shift-1',action:'addShift',requestId:'shift-request-0001',body:shiftAddBody};
+  assert.equal(context.syncExecuteEntityMutation_({},JSON.parse(shiftAddBody),shiftEnvelope).outcome,'APPLIED','shift create parity');
+  const shiftUpdateBody=JSON.stringify({...JSON.parse(shiftAddBody),action:'updateShift',revision:2,hours:9});
+  assert.equal(context.syncExecuteEntityMutation_({},JSON.parse(shiftUpdateBody),{...shiftEnvelope,action:'updateShift',requestId:'shift-request-0002',body:shiftUpdateBody}).outcome,'APPLIED','shift update parity');
+  const shiftDeleteBody=JSON.stringify({action:'deleteShift',id:'shift-1',revision:3});
+  assert.equal(context.syncExecuteEntityMutation_({},JSON.parse(shiftDeleteBody),{...shiftEnvelope,action:'deleteShift',requestId:'shift-request-0003',body:shiftDeleteBody}).outcome,'APPLIED','shift delete parity');
+
   const adminResult = context.syncExecutePost_({}, {entity:'system', action:'syncAll', id:'', requestId:'admin-request-0001'});
   assert.equal(adminResult.code, 'ADMIN_RECOVERY_REQUIRED', 'full sync cannot bypass revision/tombstones');
 

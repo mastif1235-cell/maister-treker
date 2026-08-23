@@ -24,7 +24,7 @@ function renderSettingsScreen(){
   document.getElementById('tgDisp2NameInput').value = (settings.tgDispatchers && settings.tgDispatchers[1] && settings.tgDispatchers[1].name) || '';
   document.getElementById('tgDisp2ChatIdInput').value = (settings.tgDispatchers && settings.tgDispatchers[1] && settings.tgDispatchers[1].chatId) || '';
   document.getElementById('tgMyChatIdInput').value = settings.tgMyChatId || '';
-  document.getElementById('syncSecretInput').value = settings.syncSecret || '';
+  document.getElementById('syncHmacSecretInput').value = settings.syncHmacSecret || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
   document.getElementById('dogovorUrlInput').value = settings.dogovorUrl || '';

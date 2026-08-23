@@ -44,7 +44,7 @@ function renderTicketCard(t, opts={}){
   // тож повної гарантії доставки в межах браузера отримати неможливо.
   let syncBadge = '';
   if(getScriptUrl()){
-    syncBadge = t.synced
+    syncBadge = isEntitySynced('ticket',t.id)
       ? `<span class="tc-sync-badge tc-sync-ok" title="Запит надіслано без помилок мережі">✅ Таблиця</span>`
       : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;
   }

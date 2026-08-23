@@ -28,15 +28,20 @@
     const pending = current.tail || current.head;
     if(pending && isDelete(pending.action)) return state;
     const revision = pending ? pending.revision + (current.head && current.tail ? 0 : 1) : current.committedRevision + 1;
-    const hasCommittedCreate = current.committedRevision > 0;
+    const hasCommittedCreate = current.committedRevision > 0 || !!(current.head && (current.head.action==='addTicket'||current.head.action==='addShift'));
     let next = mutation(input.entity, input.id, nextAction(input.entity, hasCommittedCreate, deleting), revision, input.payload, random);
 
     if(!current.head) current.head = next;
     else if(!current.head.attempted){
       next.revision = current.head.revision;
-      if(isDelete(next.action) && !hasCommittedCreate){
+      if(isDelete(next.action) && current.committedRevision===0 && (current.head.action==='addTicket'||current.head.action==='addShift')){
         current.head = null; current.tail = null; current.tombstone = true;
-      } else current.head = next;
+      } else {
+        if(current.head.action==='addTicket'||current.head.action==='addShift'){
+          next.action=current.head.action; next.body.action=current.head.action;
+        }
+        current.head = next;
+      }
     } else {
       next.revision = current.head.revision + 1;
       if(current.tail && isDelete(current.tail.action)) return state;
@@ -57,7 +62,6 @@
     record.committedRevision = revision;
     if(isDelete(record.head.action)) record.tombstone = true;
     record.head = record.tail; record.tail = null;
-    if(!record.head && !record.tombstone) delete state.records[key(entity,id)];
     return state;
   }
   function reconcile(state, entity, id, server){

@@ -69,7 +69,10 @@ async function loadTicketsFromIdb(){
 }
 function saveTickets(){
   ticketsRevision++;
-  return ticketsDbPut(tickets).then(ok=>{
+  const before=syncTicketsSnapshot;
+  const after=JSON.parse(JSON.stringify(tickets));
+  const journalPersist=syncEngine ? syncEngine.recordDiff('ticket',before,after) : Promise.resolve();
+  return journalPersist.then(()=>{syncTicketsSnapshot=after;return ticketsDbPut(tickets);}).then(ok=>{
     if(!ok) savePendingTicketsFallback();
     else pendingTicketsFallbackWarningShown = false;
     return ok;

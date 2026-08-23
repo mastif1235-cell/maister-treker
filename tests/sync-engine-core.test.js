@@ -15,7 +15,9 @@ const immutable = JSON.stringify(core.pending(s)[0]);
 s = put(s, {content:'rapid-1'}); s = put(s, {content:'rapid-2'});
 assert.equal(JSON.stringify(core.pending(s)[0]), immutable, 'attempted head immutable');
 assert.equal(s.records['ticket:t1'].tail.body.content, 'rapid-2', 'rapid edits coalesce in tail');
+assert.equal([s.records['ticket:t1'].head,s.records['ticket:t1'].tail].filter(Boolean).length,2,'at most two pending mutations per entity');
 assert.equal(s.records['ticket:t1'].tail.revision, 2);
+assert.equal(s.records['ticket:t1'].tail.action, 'updateTicket', 'edit behind attempted create is update');
 s = put(s, {}, {delete:true});
 assert.equal(s.records['ticket:t1'].tail.action, 'deleteTicket', 'delete wins tail');
 s = put(s, {content:'ignored'});
@@ -46,5 +48,16 @@ let tomb = put(initial(), {content:'x'}); tomb = core.markAttempted(tomb,'ticket
 tomb = core.reconcile(tomb,'ticket','t1',{revision:7,tombstone:true});
 assert.equal(tomb.records['ticket:t1'].tombstone,true);
 assert.equal(core.pending(tomb).length,0);
+
+for(const entity of ['ticket','shift']){
+  const id=entity+'-parity'; const makePayload=n=>entity==='ticket'?{content:n}:{date:'23.08.2026',hours:n,coworker:'Сам'};
+  let parity=core.enqueue(initial(),{entity,id,payload:makePayload(1)},random);
+  assert.equal(parity.records[`${entity}:${id}`].head.action,entity==='ticket'?'addTicket':'addShift');
+  parity=core.markAttempted(parity,entity,id);
+  parity=core.enqueue(parity,{entity,id,payload:makePayload(2)},random);
+  parity=core.enqueue(parity,{entity,id,payload:{},delete:true},random);
+  assert.equal(parity.records[`${entity}:${id}`].tail.action,entity==='ticket'?'deleteTicket':'deleteShift');
+  core.assertInvariants(parity);
+}
 
 console.log('PASS bounded journal create/edit/delete/rapid/restart/lost-response/tombstone invariants');

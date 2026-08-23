@@ -21,19 +21,25 @@
     const controller = new AbortController(); const timer = setTimeout(()=>controller.abort(), timeoutMs);
     try{return await fetchImpl(url, Object.assign({}, options, {signal:controller.signal}));} finally{clearTimeout(timer);}
   }
+  async function semanticFingerprint(mutation){
+    const value=[mutation.entity,String(mutation.id),mutation.action,String(mutation.revision),JSON.stringify(mutation.body)].map(contract.field).join('\n');
+    const digest=await crypto.subtle.digest('SHA-256',contract.utf8Bytes(value));
+    return (function(bytes){let binary='';new Uint8Array(bytes).forEach(b=>binary+=String.fromCharCode(b));return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/g,'');})(digest);
+  }
   function create(options){
     const fetchImpl=options.fetch, random=options.random, now=options.now || Date.now;
     async function verify(mutation){
-      const delays=options.verifyDelays || [0,250,500,1000];
+      const delays=options.verifyDelays || [250,500,1000];
+      const expectedFingerprint=await semanticFingerprint(mutation);
       for(const delay of delays){
         if(delay) await new Promise(resolve=>setTimeout(resolve,delay));
         try{
-          const url=await signedStateUrl(options.url(),mutation,options.secret(),random,now);
-          const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||2500);
+          const url=await signedStateUrl(options.url(mutation),mutation,options.secret(),random,now);
+          const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||1000);
           if(!response.ok) continue;
           const data=await response.json(); const state=data && data.state;
-          if(state && Number(state.revision)>=mutation.revision) return {ok:true,state};
-          if(state && state.tombstone) return {ok:true,state};
+          if(state && Number(state.revision)>mutation.revision) return {ok:true,state};
+          if(state && Number(state.revision)===mutation.revision && state.fingerprint===expectedFingerprint) return {ok:true,state};
         }catch(_err){}
       }
       return {ok:false};
@@ -42,16 +48,16 @@
       const envelope=await signedEnvelope(mutation,options.secret(),random,now);
       const mode=options.responseMode();
       try{
-        const response=await fetchTimed(fetchImpl,options.url(),{method:'POST',mode:mode==='readable'?'cors':'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope)},options.postTimeoutMs||5000);
+        const response=await fetchTimed(fetchImpl,options.url(mutation),{method:'POST',mode:mode==='readable'?'cors':'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope)},options.postTimeoutMs||5000);
         if(mode==='readable'){
           const result=await response.json();
           if(response.ok && result.status==='ok') return {ok:true,state:result.state,result};
           return {ok:false,result};
         }
-      }catch(err){ if(mode==='readable') return {ok:false,error:err}; }
+      }catch(err){ return verify(mutation); }
       return verify(mutation);
     }
     return {send,verify};
   }
-  return {create,signedEnvelope,signedStateUrl};
+  return {create,signedEnvelope,signedStateUrl,semanticFingerprint};
 });

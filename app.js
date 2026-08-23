@@ -93,7 +93,7 @@ function getCableTypesConfig(){ return (settings && settings.cableTypes && setti
 
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncSecret:'', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncSecret:'', syncHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
     // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)
@@ -131,6 +131,9 @@ let shifts   = loadJSON('shifts', []);
 let ticketsRevision = 0;
 let shiftsRevision = 0;
 let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — останні видалені заявки, можна відновити
+let syncEngine = null;
+let syncTicketsSnapshot = [];
+let syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
 const DELETED_TICKETS_MAX = 30;
 // NEW: черга "сирих" нарядів від диспетчера — вставив текст як є (з Viber
 // тощо), поки не перетворив на заявку. Маленькі текстові записи, тож
@@ -198,7 +201,12 @@ let coworkerSelection = new Set();
    це найпростіша зміна, що прибирає обидві проблеми, і НЕ вимагає переписувати
    сотні місць у коді, де tickets.find/filter/push використовуються як
    звичайний синхронний масив у пам'яті — вони лишаються без змін. */
-function saveShifts(){ shiftsRevision++; localStorage.setItem('shifts', JSON.stringify(shifts)); }
+function saveShifts(){
+  shiftsRevision++;
+  const before=syncShiftsSnapshot; const after=JSON.parse(JSON.stringify(shifts));
+  const persist=syncEngine ? syncEngine.recordDiff('shift',before,after) : Promise.resolve();
+  return persist.then(()=>{syncShiftsSnapshot=after;localStorage.setItem('shifts',JSON.stringify(shifts));});
+}
 function saveSettings(){ localStorage.setItem('settings', JSON.stringify(settings)); }
 
 /* ---- Фото зберігаються окремо в IndexedDB, а не в localStorage ----
@@ -990,7 +998,6 @@ function showEditAbonentProfile(profileJson){
         const sure = confirm(`Адресу змінено — вона застосується до ${ids.length} заявок(и) за старою адресою (вони «переїдуть» на нову). Якщо це насправді інший абонент — краще скасувати й створити нову заявку з новою адресою. Продовжити?`);
         if(!sure) return;
       }
-      const profileUpdatedIds = [];
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
         if(t){
@@ -1005,33 +1012,10 @@ function showEditAbonentProfile(profileJson){
           if(!t.cloudImported) t.content = buildTicketContent(t, Number(t.sum)||0);
           // Профіль змінює вже наявну заявку, тому повтор має йти update,
           // а не add: сервер оновлює рядок по stable id без delete-вікна.
-          if(!t.cloudImported && getScriptUrl()){
-            t.synced = false;
-            t.syncAction = 'updateTicket';
-            profileUpdatedIds.push(t.id);
-          }
         }
       });
       saveTickets();
       showToast('Дані абонента оновлено');
-      // Надсилаємо правки послідовно; при помилці лишаємо syncAction для
-      // retrySyncQueue(), який використає той самий updateTicket.
-      if(profileUpdatedIds.length){
-        (async ()=>{
-          for(const id of profileUpdatedIds){
-            const t = tickets.find(x=>String(x.id)===String(id));
-            if(!t || t.cloudImported) continue;
-            const ok = await syncPost('updateTicket', ticketToSyncPayload(t));
-            const current = tickets.find(x=>String(x.id)===String(id));
-            if(!current) continue;
-            current.synced = ok;
-            if(ok) delete current.syncAction;
-            else current.syncAction = 'updateTicket';
-          }
-          saveTickets();
-          renderTicketsScreen();
-        })();
-      }
       // NEW: якщо адресу виправили — навігатор слідує за заявками на їхню
       // нову адресу, а не лишається дивитись на порожнє місце
       addrNavState = {level:'tickets', city: vals.city, street: vals.street, house: vals.house || '(без номера)', apartment: vals.apartment || '(без кв.)'};
@@ -1479,122 +1463,23 @@ function setSyncState(state){
   }
 }
 
-async function postToUrl(url, action, payload){
-  if(!url) return false; // синхронізація не налаштована для цього типу даних — працюємо лише локально
-  setSyncState('syncing');
-  const body = JSON.stringify(Object.assign({action, secret: settings.syncSecret || ''}, payload));
-  // ВІДКАТ: пробували спочатку звичайний (без no-cors) запит, щоб читати
-  // справжню відповідь сервера — але на практиці Apps Script блокує CORS для
-  // POST (через свій редірект), тож перша спроба щоразу падала і йшла друга
-  // (no-cors) — тобто кожне збереження виконувалось на сервері ДВІЧІ
-  // (включно з повторним пересортуванням всього листа), звідси й затримка.
-  // Повертаємось до одного надійного no-cors запиту.
-  try{
-    // NEW: раніше цей fetch не мав таймауту — на "мертвому" 2G/обірваному
-    // зв'язку await міг висіти десятки секунд чи довше (системний таймаут
-    // браузера), і весь цей час форма заявки лишалась заблокованою
-    // ("⏳ Збереження..."), майстер не міг ні почати нову заявку, ні вийти
-    // з екрана. AbortController рве запит через 20с — якщо сервер за цей
-    // час не відповів, вважаємо спробу невдалою (заявка вже надійно
-    // збережена локально до цього моменту) і повертаємо майстру керування;
-    // повторна синхронізація підхопить це пізніше (retrySyncQueue).
-    const controller = new AbortController();
-    const timeoutId = setTimeout(()=> controller.abort(), 20000);
-    try{
-      await fetch(url, {
-        method:'POST',
-        mode:'no-cors', // Apps Script + no-cors: запит «глухий», відповідь прочитати не можна
-        headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body,
-        signal: controller.signal
-      });
-    } finally { clearTimeout(timeoutId); }
-    // no-cors не дає прочитати JSON-відповідь Apps Script. Тому успішний
-    // fetch означає лише доставку запиту, а не прийнятий сервером запис.
-    // Одиночні add/update/delete підтверджуємо read-only GET по stable id.
-    if(['addTicket','updateTicket','deleteTicket'].includes(action)){
-      const confirmed = await verifyTicketSyncedOnServer(url, action, payload);
-      if(!confirmed){ setSyncState('err'); return false; }
-    }
-    setSyncState('ok');
-    return true;
-  }catch(err){
-    console.error('Помилка синхронізації:', err);
-    setSyncState('err');
-    return false;
+async function migrateLegacySyncState(){
+  const legacyTickets=tickets.filter(t=>t.synced===false);
+  const hadLegacyTicketFields=tickets.some(t=>Object.prototype.hasOwnProperty.call(t,'synced')||Object.prototype.hasOwnProperty.call(t,'syncAction'));
+  const hadLegacyDeletes=deletedTickets.some(t=>Object.prototype.hasOwnProperty.call(t,'pendingCloudDelete'));
+  if(legacyTickets.length) await syncEngine.recordDiff('ticket',[],legacyTickets);
+  for(const t of deletedTickets.filter(t=>t.pendingCloudDelete)){
+    await syncEngine.persistTransition(state=>syncEngine.core.enqueue(state,{entity:'ticket',id:String(t.id),payload:{},delete:true},MTSyncEngineRuntime.uuid));
   }
+  tickets.forEach(t=>{delete t.syncAction;delete t.synced;});
+  deletedTickets.forEach(t=>{delete t.pendingCloudDelete;});
+  if(hadLegacyTicketFields) await ticketsDbPut(tickets);
+  if(hadLegacyDeletes) saveDeletedTickets();
 }
-function ticketStateMatchesPayload(serverTicket, payload){
-  if(!serverTicket || !payload) return false;
-  const serverTags = Array.isArray(serverTicket.tags) ? serverTicket.tags : [];
-  const payloadTags = Array.isArray(payload.tags) ? payload.tags : [];
-  return String(serverTicket.id) === String(payload.id) &&
-    String(serverTicket.date||'') === String(payload.date||'') &&
-    String(serverTicket.time||'') === String(payload.time||'') &&
-    String(serverTicket.content||'') === String(payload.content||'') &&
-    Number(serverTicket.sum||0) === Number(payload.sum||0) &&
-    JSON.stringify(serverTags) === JSON.stringify(payloadTags) &&
-    String(serverTicket.backupNote||'') === String(payload.backupNote||'') &&
-    String(serverTicket.fullDataJson||'') === String(payload.fullDataJson||'');
-}
-// Read-only підтвердження після no-cors POST. Для add/update звіряємо
-// серверні дані, для delete успіх означає фактичну відсутність id.
-async function verifyTicketSyncedOnServer(url, action, payload){
-  try{
-    const params = new URLSearchParams();
-    params.set('action', 'getTicketById');
-    params.set('id', payload.id);
-    params.set('secret', settings.syncSecret || '');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(()=> controller.abort(), 15000);
-    let res;
-    try{
-      res = await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'cors', signal: controller.signal});
-    } finally { clearTimeout(timeoutId); }
-    if(!res.ok) return false;
-    const data = await res.json();
-    if(!data || data.status === 'error' || !Object.prototype.hasOwnProperty.call(data, 'ticket')) return false;
-    if(action === 'deleteTicket') return data.ticket === null;
-    return ticketStateMatchesPayload(data.ticket, payload);
-  }catch(err){
-    return false;
-  }
-}
-function syncTicketPost(action, payload){ return postToUrl(getScriptUrl(), action, payload); }
-const syncPost = syncTicketPost; // зворотна сумісність з рештою коду заявок
-
-/* ---- Адаптер для готового doGet-скрипта змін (формат GET-параметрів,
-   а не POST з JSON) ----
-   Скрипт користувача очікує:
-   - додавання:  ?date=ДД.MM.РРРР&hours=8.5&coworker=Сам&id=12345
-   - видалення:  ?action=delete&id=12345
-   - повний список: ?action=list
-   Дата передається саме в тому форматі, що вже використовується в
-   існуючому аркуші користувача (ДД.MM.РРРР), без конвертації. */
-async function syncShiftPostGet(action, payload){
-  const url = getShiftsScriptUrl();
-  if(!url){ showToast('⚠️ Синхронізація змін не налаштована — вкажіть URL у налаштуваннях'); return false; }
-  setSyncState('syncing');
-  try{
-    const params = new URLSearchParams();
-    params.set('secret', settings.syncSecret || '');
-    if(action==='delete'){
-      params.set('action','delete');
-      params.set('id', payload.id);
-    } else {
-      params.set('date', payload.date);
-      params.set('hours', payload.hours);
-      params.set('coworker', payload.coworker || 'Сам');
-      params.set('id', payload.id);
-    }
-    await fetch(`${url}?${params.toString()}`, {method:'GET', mode:'no-cors'});
-    setSyncState('ok');
-    return true;
-  }catch(err){
-    console.error('Помилка синхронізації змін:', err);
-    setSyncState('err');
-    return false;
-  }
+function isEntitySynced(entity,id){
+  if(!syncEngine) return true;
+  const record=syncEngine.state.records[MTSyncEngineCore.key(entity,id)];
+  return !record || (!record.head && !record.tail);
 }
 
 function ticketToSyncPayload(t){
@@ -1635,6 +1520,7 @@ function shiftToSyncPayload(s){
 }
 
 async function loadFromCloud(){
+  showToast('Повне відновлення з хмари вимкнено до окремого recovery protocol'); return;
   const ticketsUrl = getScriptUrl();
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
@@ -1672,7 +1558,7 @@ async function loadFromCloud(){
   });
   if(ticketsUrl){
     try{
-      const res = await fetch(`${ticketsUrl}${ticketsUrl.includes('?')?'&':'?'}secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
+      throw new Error('ADMIN_RECOVERY_REQUIRED');
       const data = await res.json();
       // NEW: КРИТИЧНО — раніше тут не перевірялась відповідь сервера взагалі.
       // Якщо секретний ключ невірний (наприклад, друкарська помилка чи
@@ -1706,7 +1592,6 @@ async function loadFromCloud(){
           masterNote: extra.masterNote, // NEW
           login: extra.login,           // NEW
           password: extra.password,     // NEW
-          synced: true,       // NEW: дані щойно прийшли з хмари — вже синхронізовані, повторно надсилати не треба
           // NEW: якщо є повні структуровані дані (заявки, збережені після
           // цього оновлення) — відновлюємо адресу/MAC/обладнання/оплату один
           // в один, і сирий режим редагування більше не потрібен. Старі
@@ -1735,7 +1620,7 @@ async function loadFromCloud(){
   }
   if(shiftsUrl){
     try{
-      const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
+      throw new Error('ADMIN_RECOVERY_REQUIRED');
       const data = await res.json();
       // NEW: та сама критична перевірка, що й для заявок вище — без неї
       // невірний секрет так само стирав би локальні "Зміни".
@@ -1817,6 +1702,7 @@ function restoreFromBackup(){
 }
 
 async function sendAllToCloud(){
+  showToast('Повна синхронізація вимкнена до окремого recovery protocol'); return;
   backupLocalData();
   // "Відправити все" повністю замінює лист "Заявки" на сервері. Порожня
   // локальна база не є командою очистити Google Sheets: для навмисного
@@ -1829,19 +1715,19 @@ async function sendAllToCloud(){
   const shiftsUrl = getShiftsScriptUrl();
   if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
   if(ticketsUrl){
-    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
+    const ok = await syncEngine.flush();
     // NEW: раніше після масової відправки статус synced НІЯК не оновлювався —
     // локально всі заявки назавжди лишались "не синхронізовано", хоча дані вже
     // потрапили в таблицю. Це не створювало дублів (Apps Script сам відкидає
     // повтори за id), але зайво ганяло мережу при кожному retry і показувало
     // невірний банер "є несинхронізовані".
-    if(ok){ tickets.forEach(t=>{ t.synced = true; }); saveTickets(); renderTicketsScreen(); }
+    if(ok) renderTicketsScreen();
   }
   if(shiftsUrl){
     // Скрипт змін користувача приймає лише по одній зміні через GET (без
     // масової синхронізації) — емулюємо "відправити все" послідовними
     // запитами додавання; дублікати за ID скрипт сам відфільтрує.
-    for(const s of shifts){ await syncShiftPostGet('add', shiftToSyncPayload(s)); }
+    await syncEngine.flush();
   }
   showToast('Дані надіслано до хмари');
 }
@@ -1851,12 +1737,13 @@ async function sendAllToCloud(){
    навіть якщо "URL Apps Script для змін" не заповнений — це явні кнопки
    саме для блоку "Синхронізація — Зміни", щоб не плутати користувача. */
 async function loadShiftsFromCloud(){
+  showToast('Повне відновлення змін вимкнено до окремого recovery protocol'); return;
   const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
   if(!confirm('Завантажити зміни з хмари? Поточні локальні зміни буде замінено.')) return;
   setSyncState('syncing');
   try{
-    const res = await fetch(`${shiftsUrl}?action=list&secret=${encodeURIComponent(settings.syncSecret||'')}`, {method:'GET'});
+    throw new Error('ADMIN_RECOVERY_REQUIRED');
     const data = await res.json();
     if(data.status === 'error' || !Array.isArray(data.shifts)) throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
     backupLocalData();
@@ -1874,10 +1761,11 @@ async function loadShiftsFromCloud(){
    в потрібному форматі, але про всяк випадок підтримуємо й конвертацію,
    якщо колись формат зміниться на РРРР-ММ-ДД. */
 async function sendShiftsToCloud(){
+  showToast('Повна синхронізація змін вимкнена до окремого recovery protocol'); return;
   const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
   if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
   showToast(`Надсилання ${shifts.length} змін...`);
-  for(const s of shifts){ await syncShiftPostGet('add', shiftToSyncPayload(s)); }
+  await syncEngine.flush();
   showToast('Зміни надіслано до хмари (дублікати за ID пропущені автоматично)');
 }
 
@@ -1965,9 +1853,7 @@ function renderTicketsScreen(){
 function renderSyncQueueBanner(){
   const banner = document.getElementById('syncQueueBanner');
   if(!getScriptUrl()){ banner.classList.add('hidden'); return; }
-  const pending = tickets.filter(t=>!t.synced);
-  const pendingDeletes = deletedTickets.filter(t=>t.pendingCloudDelete); // NEW: та сама причина, що й у retrySyncQueue вище
-  const total = pending.length + pendingDeletes.length;
+  const total = syncEngine ? syncEngine.pendingCount() : 0;
   if(total === 0){ banner.classList.add('hidden'); return; }
   banner.classList.remove('hidden');
   const text = document.getElementById('syncQueueBannerText');
@@ -1976,50 +1862,18 @@ function renderSyncQueueBanner(){
     : `📴 Немає інтернету — ${total} заявок надішлю, коли з'явиться зв'язок`;
 }
 
-let syncQueueBusy = false; // NEW: захист від повторного запуску, поки черга вже синхронізується
 async function retrySyncQueue(){
-  if(syncQueueBusy) return; // NEW
-  const pending = tickets.filter(t=>!t.synced);
-  // NEW: заявки, видалені без інтернету, — синк видалення не вдався і
-  // позначений прапорцем у deleteTicket(). Вони вже не в tickets (пішли в
-  // кошик), тож обробляємо їх тут окремо, тим самим викликом (та сама
-  // кнопка "Повторити" і подія online підхоплюють обидва типи черги).
-  const pendingDeletes = deletedTickets.filter(t=>t.pendingCloudDelete);
-  if(pending.length === 0 && pendingDeletes.length === 0) return;
-  if(!getScriptUrl()) return;
-  syncQueueBusy = true;
-  const bannerText = document.getElementById('syncQueueBannerText');
   const retryBtn = document.getElementById('syncQueueRetryBtn');
-  retryBtn.disabled = true; // NEW
-  const total = pending.length + pendingDeletes.length;
-  let done = 0;
-  // NEW: якщо щось усередині циклу кине виняток (малоймовірно, але
-  // можливо) — без try/finally кнопка лишалась би заблокованою назавжди,
-  // аж до перезапуску застосунку.
+  if(!syncEngine || !getScriptUrl()) return;
+  retryBtn.disabled = true;
+  let ok=false;
   try{
-    for(const t of pending){
-      // NEW: живий прогрес замість одного статичного тосту — видно, що процес не завис
-      bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
-      const action = t.syncAction === 'updateTicket' ? 'updateTicket' : 'addTicket';
-      const ok = await syncPost(action, ticketToSyncPayload(t));
-      t.synced = ok;
-      if(ok) delete t.syncAction;
-      done++;
-      saveTickets(); // зберігаємо прогрес одразу, щоб нічого не загубилось, якщо процес перерветься
-    }
-    for(const t of pendingDeletes){
-      bannerText.innerHTML = `<span class="mini-spinner"></span>Синхронізую ${done+1} із ${total}...`;
-      await syncPendingCloudDelete(t);
-      done++;
-      saveDeletedTickets();
-    }
+    ok=await syncEngine.flush();
   } finally {
     retryBtn.disabled = false;
-    syncQueueBusy = false;
   }
   renderTicketsScreen();
-  const stillPending = tickets.filter(t=>!t.synced).length + deletedTickets.filter(t=>t.pendingCloudDelete).length;
-  showToast(stillPending ? `Залишилось не синхронізовано: ${stillPending}` : 'Усе синхронізовано ✅');
+  showToast(ok ? 'Усе синхронізовано ✅' : `Залишилось не синхронізовано: ${syncEngine.pendingCount()}`);
 }
 
 function renderMainTicketList(){
@@ -2159,9 +2013,7 @@ function deleteTicket(id){
   // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
   // Ставимо прапорець ДО мережі: якщо застосунок закриється під час await,
   // наступний запуск усе одно знатиме, що Google-видалення треба повторити.
-  t.pendingCloudDelete = true;
-  const trashed = moveTicketToTrash(t);
-  syncPendingCloudDelete(trashed);
+  moveTicketToTrash(t);
   renderTicketsScreen();
   showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
 }
@@ -2190,27 +2042,6 @@ function moveTicketToTrash(t){
   return copy;
 }
 
-// Один delete на id одночасно. Це також дає restore можливість дочекатися
-// вже надісланого delete, а потім безпечно відновити рядок через update.
-const cloudDeleteInFlight = new Map();
-function syncPendingCloudDelete(trashed){
-  if(!trashed || !trashed.pendingCloudDelete || !deletedTickets.includes(trashed)) return Promise.resolve(false);
-  const key = String(trashed.id);
-  if(cloudDeleteInFlight.has(key)) return cloudDeleteInFlight.get(key);
-  const job = syncPost('deleteTicket', {id: trashed.id}).then(ok=>{
-    if(ok && deletedTickets.includes(trashed)){
-      delete trashed.pendingCloudDelete;
-      saveDeletedTickets();
-      renderSyncQueueBanner();
-    }
-    return ok;
-  }).finally(()=>{
-    if(cloudDeleteInFlight.get(key) === job) cloudDeleteInFlight.delete(key);
-  });
-  cloudDeleteInFlight.set(key, job);
-  return job;
-}
-
 function saveDeletedTickets(){
   try{ localStorage.setItem('deletedTickets', JSON.stringify(deletedTickets)); }catch(e){ /* сховище повне — не критично, це лише кошик */ }
 }
@@ -2219,33 +2050,21 @@ function restoreDeletedTicket(deletedAt){
   const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
   if(idx===-1) return;
   const t = deletedTickets[idx];
-  const inFlightDelete = cloudDeleteInFlight.get(String(t.id));
   deletedTickets.splice(idx,1);
   saveDeletedTickets();
   const restored = JSON.parse(JSON.stringify(t));
   delete restored.deletedAt;
-  // якщо заявка з таким id вже якимось чином існує (малоймовірно) — даємо новий id, щоб не затерти
-  if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
-  restored.synced = false;
-  if(getScriptUrl()) restored.syncAction = 'updateTicket';
+  // Tombstone старого ID необоротний: restore завжди є новим create.
+  restored.id = MTSyncEngineRuntime.uuid();
+  delete restored.synced;
+  delete restored.syncAction;
+  delete restored.pendingCloudDelete;
   tickets.push(restored);
   saveTickets();
   currentTicketDate = restored.date || currentTicketDate;
   renderTicketsScreen();
   renderDeletedTicketsList();
   showToast('Заявку відновлено');
-  if(getScriptUrl()){
-    (async ()=>{
-      // Якщо delete уже пішов, update тільки після його завершення гарантує,
-      // що відновлена заявка лишиться в Google незалежно від порядку мережі.
-      if(inFlightDelete) await inFlightDelete;
-      const current = tickets.find(x=>String(x.id)===String(restored.id));
-      if(!current) return;
-      const ok = await syncPost('updateTicket', ticketToSyncPayload(current));
-      const found = tickets.find(x=>String(x.id)===String(restored.id)); // NEW: String() — той самий захист, що й в решті коду
-      if(found){ found.synced = ok; if(ok) delete found.syncAction; else found.syncAction = 'updateTicket'; saveTickets(); renderTicketsScreen(); }
-    })();
-  }
 }
 
 function purgeDeletedTicket(deletedAt){
@@ -2295,11 +2114,7 @@ async function retrySyncTicket(id){
   if(!t) return;
   if(!getScriptUrl()){ showToast('Синхронізація не налаштована'); return; }
   showToast('Повторна спроба надсилання...');
-  const action = t.syncAction === 'updateTicket' ? 'updateTicket' : 'addTicket';
-  const ok = await syncPost(action, ticketToSyncPayload(t));
-  t.synced = ok;
-  if(ok) delete t.syncAction;
-  saveTickets();
+  const ok = await syncEngine.flush();
   renderTicketsScreen();
   showToast(ok ? 'Надіслано' : 'Не вдалося — перевірте інтернет-з’єднання');
 }
@@ -2669,21 +2484,13 @@ function restoreTicketFromTelegramJson(jsonText){
   }
   const restored = JSON.parse(JSON.stringify(parsed));
   if(restored.sum!==undefined && restored.sum!==null) restored.sum = Number(restored.sum) || 0;
-  if(!restored.id) restored.id = Date.now(); // NEW: у пошкодженому чи ручному JSON id міг бути відсутній
-  // якщо заявка з таким id вже є локально (напр. натиснули відновити двічі) — даємо новий id, щоб не затерти
-  if(tickets.some(x=>String(x.id)===String(restored.id))) restored.id = Date.now();
-  restored.synced = false; // повторно надішлемо в Google Таблицю, щоб вона теж це побачила
+  restored.id = MTSyncEngineRuntime.uuid();
+  delete restored.synced;
   tickets.push(restored);
   saveTickets();
   currentTicketDate = restored.date || currentTicketDate;
   renderTicketsScreen();
   showToast('✅ Заявку відновлено з Telegram!');
-  if(getScriptUrl()){
-    syncPost('addTicket', ticketToSyncPayload(restored)).then(ok=>{
-      const found = tickets.find(x=>String(x.id)===String(restored.id)); // NEW: String() — той самий захист, що й в решті коду
-      if(found){ found.synced = ok; saveTickets(); renderTicketsScreen(); }
-    });
-  }
   return true;
 }
 function showRestoreFromTelegramModal(){
@@ -3869,7 +3676,6 @@ async function saveTicketFromForm(e){
     if(!newPhotoKeys.includes(key)) await deletePhotoKey(key);
   }
 
-  const syncConfigured = !!getScriptUrl();
 
   // Захист від дублів: якщо за останні 3 години вже є заявка з такою ж
   // адресою (і вона не та, що зараз редагується) — попереджаємо.
@@ -3897,58 +3703,15 @@ async function saveTicketFromForm(e){
     calcState.id = updatedTicketId;
     const idx = tickets.findIndex(t=>String(t.id)===String(updatedTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
-    if(idx>-1 && syncConfigured) tickets[idx].syncAction = 'updateTicket';
-    const updatedTicketPayload = idx>-1 ? ticketToSyncPayload(tickets[idx]) : null;
     saveTickets();
     showToast('Заявку оновлено');
-    if(syncConfigured){
-      // NEW: раніше цей цілий блок (delete → до 3 спроб add) очікувався
-      // (await) ПЕРЕД тим, як застосунок повертав керування — тобто екран не
-      // переходив до списку заявок, доки все це не завершиться. Google Apps
-      // Script при цьому може "прокидатись" по кілька секунд, якщо довго не
-      // було запитів (відомий ефект "холодного старту") — і застосунок
-      // виглядав "зависшим" навіть на хорошому інтернеті, хоча насправді
-      // просто чекав відповіді сервера. Заявка вже надійно збережена
-      // локально до цього моменту — синхронізація з Таблицею тепер іде
-      // повністю у фоні (як і бекап у Telegram нижче), не блокуючи вихід
-      // зі спмалькулятора; статус (✅/⏳) на картці заявки оновиться сам,
-      // коли (і скільки б не) відповідь прийде.
-      (async ()=>{
-        // NEW: видалення вже відбулось — якщо наступний addTicket не вдасться
-        // одразу, рядок у таблиці лишиться відсутнім аж до наступного
-        // retrySyncQueue. Пробуємо ще двічі одразу (з паузами, що
-        // збільшуються), щоб звузити це вікно ризику, а не покладатись лише
-        // на майбутній фоновий retry (він все одно лишається підстраховкою,
-        // якщо й ці спроби не вдадуться — статус заявки стане "не
-        // синхронізовано", і її можна буде повторити вручну кнопкою на картці).
-        let ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
-        if(!ok){
-          await new Promise(r=>setTimeout(r, 1500));
-          ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
-        }
-        if(!ok){
-          await new Promise(r=>setTimeout(r, 3000));
-          ok = updatedTicketPayload ? await syncPost('updateTicket', updatedTicketPayload) : false;
-        }
-        const current = tickets.find(t=>String(t.id)===String(updatedTicketId));
-        if(current){ current.synced = ok; if(ok) delete current.syncAction; saveTickets(); renderTicketsScreen(); }
-      })();
-    }
     if(idx>-1) savedTicketRef = tickets[idx];
   } else {
-    calcState.id = Date.now();
+    calcState.id = MTSyncEngineRuntime.uuid();
     const newTicket = JSON.parse(JSON.stringify(calcState));
     tickets.push(newTicket);
     saveTickets();
     showToast('Заявку збережено');
-    if(syncConfigured){
-      // NEW: та сама причина, що й вище для редагування — не чекаємо (await)
-      // відповіді сервера перед виходом зі списку. Синк — у фоні.
-      syncPost('addTicket', ticketToSyncPayload(calcState)).then(ok=>{
-        const t = tickets.find(t=>t.id===newTicket.id);
-        if(t){ t.synced = ok; saveTickets(); renderTicketsScreen(); }
-      });
-    }
     savedTicketRef = tickets.find(t=>t.id===newTicket.id);
   }
   if(savedTicketRef && naryadPendingCompletionId){
@@ -3998,10 +3761,9 @@ function addShift(){
   const hours = roundWorkedHours(enteredHours);
   if(!hours || hours<=0){ showToast('Вкажіть кількість годин'); return; }
   const coworker = coworkerSelection.size ? [...coworkerSelection].join(', ') : 'Сам';
-  const shift = {id: Date.now(), date: currentShiftDate, hours, coworker};
+  const shift = {id: MTSyncEngineRuntime.uuid(), date: currentShiftDate, hours, coworker};
   shifts.push(shift);
   saveShifts();
-  syncShiftPostGet('add', shiftToSyncPayload(shift));
   syncShiftsMonthlyTelegramMessage(); // NEW: оновлюємо/надсилаємо місячне повідомлення в Telegram (у фоні, не блокує UI)
   document.getElementById('shiftHours').value = '';
   coworkerSelection = new Set();
@@ -4014,7 +3776,6 @@ function deleteShift(id){
   if(!confirm('Видалити цю зміну?')) return;
   shifts = shifts.filter(s=>String(s.id)!==String(id)); // NEW: id зміни — рядок (UUID), Number() ламав порівняння
   saveShifts();
-  syncShiftPostGet('delete', {id});
   syncShiftsMonthlyTelegramMessage(); // NEW: те саме — місячне повідомлення в Telegram лишається актуальним і після видалення
   renderShiftsScreen();
   showToast('Зміну видалено');
@@ -4308,9 +4069,7 @@ async function dedupTickets(){
   renderTicketsScreen();
   showToast(`Видалено дублікатів: ${toRemove.size}. Синхронізація з хмарою...`);
   if(getScriptUrl()){
-    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
-    tickets.forEach(t=>{ t.synced = ok; });
-    saveTickets();
+    const ok = await syncEngine.flush();
     renderTicketsScreen();
     showToast(ok ? 'Синхронізацію завершено' : 'Синхронізація не вдалась — перевірте інтернет');
   }
@@ -4392,9 +4151,7 @@ async function repairCorruptedTickets(){
   renderTicketsScreen();
   showToast(`Полагоджено: ${repaired}${unfixable ? `, не вдалось: ${unfixable}` : ''}. Синхронізація з хмарою...`);
   if(getScriptUrl()){
-    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
-    tickets.forEach(t=>{ t.synced = ok; });
-    saveTickets();
+    const ok = await syncEngine.flush();
     renderTicketsScreen();
     showToast(ok ? 'Синхронізацію завершено' : 'Синхронізація не вдалась — перевірте інтернет');
   }
@@ -4416,7 +4173,6 @@ async function runBulkImport(text){
   });
   if(current) blocks.push(current);
   let imported = 0;
-  const importedTickets = [];
   blocks.forEach(b=>{
     const content = b.lines.join('\n').trim();
     if(!content) return;
@@ -4431,7 +4187,6 @@ async function runBulkImport(text){
     t.sum = sum;
     t.type = 'Імпорт';
     tickets.push(t);
-    importedTickets.push(t);
     imported++;
   });
   saveTickets();
@@ -4441,9 +4196,7 @@ async function runBulkImport(text){
   // таблицю. Тепер після імпорту робимо один спільний синк і чесно
   // проставляємо реальний статус усім щойно доданим заявкам.
   if(imported && getScriptUrl()){
-    const ok = await syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)});
-    importedTickets.forEach(t=>{ t.synced = ok; });
-    saveTickets();
+    const ok = await syncEngine.flush();
   }
   return imported;
 }
@@ -4614,9 +4367,8 @@ function bindTicketsScreen(){
       renderTagFilterChips(); renderTicketsScreen();
       showToast('Тег видалено. Синхронізація з хмарою...');
       if(getScriptUrl()){
-        syncTicketPost('syncAllTickets', {tickets: tickets.map(ticketToSyncPayload)}).then(ok=>{
-          tickets.forEach(t=>{ t.synced = ok; });
-          saveTickets(); renderTicketsScreen();
+        syncEngine.flush().then(ok=>{
+          renderTicketsScreen();
           showToast(ok ? 'Синхронізовано' : 'Синхронізація не вдалась — перевірте інтернет');
         });
       }
@@ -5209,8 +4961,8 @@ function bindSettingsScreen(){
   document.getElementById('scriptUrlInput').addEventListener('input', e=>{
     settings.scriptUrl = e.target.value.trim(); saveSettings();
   });
-  document.getElementById('syncSecretInput').addEventListener('input', e=>{
-    settings.syncSecret = e.target.value.trim(); saveSettings();
+  document.getElementById('syncHmacSecretInput').addEventListener('input', e=>{
+    settings.syncHmacSecret = e.target.value.trim(); saveSettings();
   });
   // NEW: налаштування Telegram-бота
   document.getElementById('tgBotTokenInput').addEventListener('input', e=>{
@@ -5309,7 +5061,7 @@ function bindSettingsScreen(){
     tickets = []; shifts = [];
     saveTickets(); saveShifts();
     clearAllPhotos();
-    syncPost('clearAll', {});
+    showToast('Видалення поставлено в безпечну пооб’єктну чергу; full sync не використовується');
     renderTicketsScreen(); renderShiftsScreen();
     showToast('Базу очищено');
   });
@@ -5463,6 +5215,23 @@ async function init(){
 
   ticketsDb = await openTicketsDb();
   await loadTicketsFromIdb(); // NEW: підвантажує заявки з IndexedDB (з одноразовою міграцією зі старого localStorage, якщо потрібно) — має відбутись ДО міграції фото нижче, бо та проходиться по tickets
+  syncTicketsSnapshot = JSON.parse(JSON.stringify(tickets));
+  syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
+  const syncTransport = MTSyncTransport.create({
+    fetch: window.fetch.bind(window),
+    url: ()=>getScriptUrl(),
+    secret: ()=>String(settings.syncHmacSecret||''),
+    responseMode: ()=>settings.syncResponseMode==='readable'?'readable':'opaque',
+    random: ()=>MTSyncEngineRuntime.uuid(),
+    now: ()=>Date.now(),
+    verifyTimeoutMs:1000
+  });
+  syncEngine = await new MTSyncEngineRuntime.Engine({
+    transport:syncTransport,
+    online:()=>navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
+    onChange:()=>{ if(document.getElementById('syncQueueBanner')) renderSyncQueueBanner(); }
+  }).init();
+  await migrateLegacySyncState();
 
   photoDb = await openPhotoDb();
   await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
@@ -5484,7 +5253,7 @@ async function init(){
   document.getElementById('syncQueueRetryBtn').addEventListener('click', retrySyncQueue);
   window.addEventListener('online', ()=>{
     showToast('Інтернет з\'явився — синхронізую...');
-    retrySyncQueue();
+    syncEngine.flush();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
 }
