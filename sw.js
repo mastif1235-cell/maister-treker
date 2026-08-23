@@ -1,7 +1,7 @@
 const CACHE_NAME = 'maister-treker-v66-runtime-2';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js',
-  './js/core-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
+  './js/core-utils.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
   './js/backup-storage.js','./js/ticket-storage.js','./js/photo-storage.js','./js/local-state-storage.js','./js/ticket-state-storage.js',
   './js/apps-script-reference.js','./js/settings-render.js','./js/calculator-render.js','./js/tickets-render.js','./js/address-render.js','./js/calendar-stats-render.js','./js/shift-render.js','./js/naryad-render.js','./js/settings-catalog-bindings.js','./js/settings-local-lists-bindings.js','./js/ticket-form-domain.js','./js/sync-contract.js','./js/sync-engine-core.js','./js/sync-journal-storage.js','./js/sync-transport.js','./js/sync-engine-runtime.js','./js/app-lock-core.js',
   './js/security-hardening.js','./js/security-lock.js','./js/security-qr.js','./js/security-telegram.js','./js/security-runtime-v65-9.js',

@@ -26,7 +26,7 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 
 Baseline and dependency rules are fixed in `APP-DECOMPOSITION-MAP.md`. Planned order:
 
-1. **Pure utils/format/validation.** Move self-contained format/parse/text builders into a pre-app canonical module; no state/schema changes.
+1. **Pure utils/format/validation — complete.** Pure Ukrainian date formatting and legacy backup-note parsing now load from `app-format-utils.js` before `app.js`; owner and behavior tests pass with no state/schema changes.
 2. **QR/share.** Move vizitka/dogovor/PDF and Web Share flows; keep fragment-only QR behavior canonical.
 3. **Reports/import-export UI.** Move report generation, NotebookLM export, import/repair/dedup and bulk import orchestration while retaining canonical encrypted backup owner.
 4. **Settings.** Move settings defaults/migration, persistence, render/bind orchestration and catalog glue; preserve secret/lock sanitization boundaries.

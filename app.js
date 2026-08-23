@@ -1263,8 +1263,6 @@ const LNET_CONTACTS = {
   site: 'lnet.com.ua',
   schedule: 'Пн — Пт: 09:00 — 18:00\nСб: 09:00 — 16:00\nНд: Вихідний'
 };
-const UA_MONTHS = ['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];
-function formatUaDate(d){ return `${d.getDate()} ${UA_MONTHS[d.getMonth()]} ${d.getFullYear()} р.`; }
 
 function showDogovor(id){
   const t = tickets.find(x=>String(x.id)===String(id));
@@ -1736,27 +1734,6 @@ function switchTab(tab){
 /* NEW: розбирає службовий стовпець "нотатки_майстра" (backupNote), який
    повертає таблиця для кожної заявки, і дістає з нього геолокацію та
    приватну примітку майстра — щоб відновити їх при завантаженні з хмари. */
-function parseBackupNote(note){
-  const result = {geoLink:'', masterNote:'', login:'', password:'', fullData:null};
-  if(!note) return result;
-  String(note).split('\n').forEach(line=>{
-    const geoMatch = line.match(/^Геолокація:\s*(.+)$/);
-    const noteMatch = line.match(/^Приватна примітка майстра:\s*(.+)$/);
-    const loginMatch = line.match(/^Логін:\s*(.+)$/);
-    const passMatch = line.match(/^Пароль:\s*(.+)$/);
-    const fullDataMatch = line.match(/^ПовніДаніJSON:\s*(.+)$/); // NEW
-    if(geoMatch) result.geoLink = geoMatch[1].trim();
-    else if(noteMatch) result.masterNote = noteMatch[1].trim();
-    else if(loginMatch) result.login = loginMatch[1].trim();
-    else if(passMatch) result.password = passMatch[1].trim();
-    else if(fullDataMatch){
-      try{ result.fullData = JSON.parse(fullDataMatch[1].trim()); }
-      catch(e){ /* старий бекап без цього поля або пошкоджений рядок — просто ігноруємо, лишиться лише content */ }
-    }
-  });
-  return result;
-}
-
 function ticketsForDate(dateStr){
   return tickets.filter(t=>t.date===dateStr).sort((a,b)=> (a.time||'').localeCompare(b.time||''));
 }
