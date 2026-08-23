@@ -2,7 +2,7 @@
    Читає лише settings і оновлює DOM. */
 function renderSettingsScreen(){
   ensureSettingsHub();
-  document.getElementById('appVersionLabel').textContent = 'Версія застосунку: v64.3 · 2026-08-18';
+  document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`;
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
   document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
   document.getElementById('defaultTariffInput').value = settings.defaultTariff;
