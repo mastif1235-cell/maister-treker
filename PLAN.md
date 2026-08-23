@@ -21,3 +21,19 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 6. **Backup/restore and app-lock consolidation — complete.** `backup-system.js` is the sole export/import/daily owner and uses a validated PBKDF2-SHA256/AES-GCM envelope with bounded files, schema/prototype checks, secret exclusion and legacy plaintext/slot migration. Five backup patch owners were retired. `security-lock.js` is the sole lock owner, backed by testable PBKDF2/constant-time/throttling primitives; throttle state survives reload and legacy SHA-256 migrates after a valid unlock. The lock remains a UI access control, not encryption-at-rest.
 7. **DOM/XSS, QR and host CSP/headers — complete.** Sources/sinks and residual risk are recorded in `SECURITY-REVIEW.md`. Scanner text uses DOM/text APIs; imported/rendered values are bounded, escaped and URL/photo schemes are allowlisted. Contract QR is generated directly as same-origin `d.html#2.<base64url>` with no sensitive query stage; viewers clear the fragment before bounded `textContent` rendering. CSP is enforced by checked-in Netlify headers and page meta fallback; GitHub Pages anti-framing remains a documented Medium host limitation.
 8. **Full regression/security pass and STABLE CHECKPOINT — complete.** Twelve automated/static suites, full JavaScript syntax, bootstrap/SW asset resolution and legacy-owner searches pass. `STABLE-CHECKPOINT.md` records owners, residual severity and unexecuted production gates. No `app.js` decomposition was started.
+
+## app.js decomposition after stable checkpoint
+
+Baseline and dependency rules are fixed in `APP-DECOMPOSITION-MAP.md`. Planned order:
+
+1. **Pure utils/format/validation.** Move self-contained format/parse/text builders into a pre-app canonical module; no state/schema changes.
+2. **QR/share.** Move vizitka/dogovor/PDF and Web Share flows; keep fragment-only QR behavior canonical.
+3. **Reports/import-export UI.** Move report generation, NotebookLM export, import/repair/dedup and bulk import orchestration while retaining canonical encrypted backup owner.
+4. **Settings.** Move settings defaults/migration, persistence, render/bind orchestration and catalog glue; preserve secret/lock sanitization boundaries.
+5. **Photos/Telegram helpers.** Move photo resolution/lifecycle and Telegram delivery/report queues without changing token architecture or fetch protections.
+6. **Shifts.** Move state/render/bind/mutations/month reports; keep unified sync engine calls unchanged.
+7. **Tickets.** Move ticket list/trash, address/naryad/calculator form and mutations in small sub-blocks; preserve journal-before-storage semantics.
+8. **Storage orchestration.** Move settings/shifts/naryad/draft startup persistence facades only after domain parity; do not touch IndexedDB schemas.
+9. **UI orchestration/init.** Leave a small deterministic bootstrap with shared state construction, ordered initialization, listeners and SW registration.
+
+Each numbered block ends with targeted tests, complete syntax checks, duplicate-owner/load-order search, diff review, a logical commit and status update. Final gate repeats all stable-checkpoint regressions and records the before/after size plus a production-candidate checkpoint. Sync/security/backup/lock are changed only if an explicit dependency requires it.
