@@ -35,3 +35,7 @@ The detailed pre-implementation audit is retained in the session deliverable. Th
 ## Stage 3 evidence
 
 The branch now has one canonical test-candidate server, `Code.gs`; this does not describe the unknown production GAS deployment. Four append-only `.gs` patches were removed because they redefined entrypoints/auth helpers. The v3 server contract and future client signing helper pass independent deterministic vectors and negative tests. A protocol cutover remains intentionally deferred to the sync stage and requires an isolated GAS/Sheet deployment before any production proposal.
+
+## Stage 4 design finding
+
+The existing `synced`/`syncAction`/`pendingCloudDelete` model cannot preserve two immutable logical operations for one entity when a create/update is already attempted and a later edit/delete occurs. A bounded per-entity journal is therefore the minimum reliable persistence model. The Stage 3 HMAC envelope remains valid, but server application semantics need revision and durable tombstone state; without them, stale replay after idempotency expiry can overwrite newer data or resurrect a deletion. Implementation is paused rather than changing the v3 server contract silently.
