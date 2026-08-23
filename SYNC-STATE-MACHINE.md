@@ -26,7 +26,7 @@ head: immutable attempted operation or null
 tail: coalesced unattempted operation or null
 ```
 
-An operation contains `requestId`, `action`, `revision`, exact signed body, state (`pending|syncing|retryable`), attempts, createdAt and lastAttemptAt. `requestId` and body become immutable at the first attempt. A retry preserves requestId/body and creates a fresh timestamp, nonce and signature.
+The implemented IndexedDB schema is database `maisterTrackerSync` version 1, object store `journal`, singleton key `state-v1`. Its value is `{records}` keyed by `entity:id`. Each record stores `entity`, `id`, `committedRevision`, `tombstone`, and nullable `head`/`tail`. Each mutation stores `entity`, `id`, `action`, `revision`, stable `requestId`, exact body and `attempted`. A retry preserves requestId/body and creates a fresh timestamp, nonce and signature.
 
 ## Client transitions
 
@@ -70,7 +70,11 @@ These additions make exact replay and retry safe even after nonce cache and requ
 
 - Initial settle delay: 250 ms.
 - Up to three signed `getEntityState` reads with short backoff (250/500/1000 ms).
-- Per-read timeout: 2500 ms; total foreground budget: at most 5 seconds.
+- Per-read timeout: 1000 ms; total verification budget: at most 4.75 seconds.
 - If state is not proven, leave operation retryable and continue in the single background recovery loop.
 
 Final timings must be validated against an isolated Apps Script Web App. CORS/readable POST versus opaque `no-cors` remains `UNKNOWN` until that test deployment exists.
+
+## Stage 4 verification
+
+Automated suites cover create, edit, rapid edits, delete, create→edit, create→delete, create→edit→delete, attempted head with edit/delete tail, tail coalescing, lost response, timeout, duplicate retry, restart with head or head+tail, already-online and offline→online startup, durable-before-network crash points, server-apply-before-local-ack recovery, stale/same/conflicting revisions, cache-expiry retry, delayed mutations after tombstone, ticket/shift parity, and readable/opaque bounded transport. `tests/sync-runtime-static.test.js` is the owner gate: old sync functions/scripts and URL query secrets must be absent from the runtime graph.
