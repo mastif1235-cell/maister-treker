@@ -9,6 +9,7 @@ assert.equal(/(?:\?|&)secret=/.test(app),false,'no URL query secrets in app sync
 assert.equal(transport.includes('no-cors'),false,'opaque mutation transport is retired after isolated GAS proof');
 assert.equal(app.includes('responseMode:'),false,'runtime transport mode switch is retired');
 assert.match(app,/postTimeoutMs:8000[\s\S]*verifyTimeoutMs:4000[\s\S]*verifyDelays:\[300,900\]/,'real-GAS latency budget is wired');
+assert.match(app,/shiftsMigrationKey='mtSyncV3ShiftsMigrated'[\s\S]*syncEngine\.recordDiff\('shift',\[\],shifts\)[\s\S]*localStorage\.setItem\(shiftsMigrationKey,'1'\)/,'legacy shifts are journaled once before their migration marker');
 const ticketStorage=fs.readFileSync('js/ticket-state-storage.js','utf8');
 assert.match(ticketStorage,/syncEngine\.recordDiff\('ticket'/);assert.match(storage,/syncEngine\.recordDiff\('shift'/);
 const saveTicketsSource=ticketStorage.slice(ticketStorage.indexOf('function saveTickets()'));

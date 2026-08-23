@@ -137,13 +137,17 @@ function setSyncState(state){
 }
 
 async function migrateLegacySyncState(){
+  const shiftsMigrationKey='mtSyncV3ShiftsMigrated';
   const legacyTickets=tickets.filter(t=>t.synced===false);
   const hadLegacyTicketFields=tickets.some(t=>Object.prototype.hasOwnProperty.call(t,'synced')||Object.prototype.hasOwnProperty.call(t,'syncAction'));
   const hadLegacyDeletes=deletedTickets.some(t=>Object.prototype.hasOwnProperty.call(t,'pendingCloudDelete'));
+  const migrateLegacyShifts=localStorage.getItem(shiftsMigrationKey)!=='1';
   if(legacyTickets.length) await syncEngine.recordDiff('ticket',[],legacyTickets);
   for(const t of deletedTickets.filter(t=>t.pendingCloudDelete)){
     await syncEngine.persistTransition(state=>syncEngine.core.enqueue(state,{entity:'ticket',id:String(t.id),payload:{},delete:true},MTSyncEngineRuntime.uuid));
   }
+  if(migrateLegacyShifts && shifts.length) await syncEngine.recordDiff('shift',[],shifts);
+  if(migrateLegacyShifts) localStorage.setItem(shiftsMigrationKey,'1');
   tickets.forEach(t=>{delete t.syncAction;delete t.synced;});
   deletedTickets.forEach(t=>{delete t.pendingCloudDelete;});
   if(hadLegacyTicketFields) await ticketsDbPut(tickets);
