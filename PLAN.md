@@ -37,3 +37,5 @@ Baseline and dependency rules are fixed in `APP-DECOMPOSITION-MAP.md`. Planned o
 9. **UI orchestration/init — complete.** `ui-orchestration.js` owns safe toast/modal rendering, phone/date field adapters and tab navigation/binding. `app.js` is now the deterministic composition root for shared state, the deliberately unchanged sync application facade, ordered initialization, lifecycle listeners and Service Worker registration.
 
 Each numbered block ends with targeted tests, complete syntax checks, duplicate-owner/load-order search, diff review, a logical commit and status update. Final gate repeats all stable-checkpoint regressions and records the before/after size plus a production-candidate checkpoint. Sync/security/backup/lock are changed only if an explicit dependency requires it.
+
+**Decomposition checkpoint — complete.** `app.js` is 40,769 bytes / 537 lines versus 352,070 bytes / 5,234 lines at the accepted stable checkpoint. All 15 suites, full JavaScript syntax, asset/load-order, legacy transport and duplicate-owner checks pass. `PRODUCTION-CANDIDATE-CHECKPOINT.md` records canonical owners, residual findings and the unexecuted production gates.
