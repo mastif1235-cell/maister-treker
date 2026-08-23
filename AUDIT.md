@@ -45,3 +45,11 @@ Targeted automated tests cover ticket/shift parity, serial head/tail execution, 
 ## Stage 5 secrets/boundaries finding
 
 GAS HMAC material is sourced only from Script Properties and the browser never places `syncHmacSecret` in URL/body. Legacy `syncSecret` is discarded. Backup sanitization now excludes HMAC, Telegram token, chat/message identifiers and lock material. Direct Telegram remains a documented client-held-secret exception: Telegram requires `/bot<token>/...`, so removing the token from request URLs requires a separately approved relay. No proxy was introduced. See `SECRETS-THREAT-MODEL.md`.
+
+## Stable checkpoint reassessment
+
+Stages 6–8 consolidate backup and app-lock owners, remove five obsolete backup extensions, enforce validated PBKDF2/AES-GCM exports and persistent lock throttling, and replace query-based contract QR construction with a direct same-origin fragment flow. All twelve automated/static suites and all JavaScript syntax checks pass at the checkpoint.
+
+Current known severity is: **Critical 0, High 0, Medium 2, Low 2**. Medium findings are the deliberately client-held Telegram bot token boundary and unavailable response-header anti-framing on the proven GitHub Pages host. Low findings are remaining escaped-template DOM maintenance complexity and inactive legacy compatibility fields/code pending later domain decomposition. The app lock remains UI access control rather than encryption-at-rest.
+
+Production gates remain mandatory and unexecuted: (1) CORS/readable versus opaque verification against an isolated test GAS deployment; (2) upgrade an actually installed old PWA/Service Worker to v66 without clearing data and verify IndexedDB/localStorage, sync journal recovery and cache replacement. Production GAS, Sheets, host deployment and `main` were not changed.
