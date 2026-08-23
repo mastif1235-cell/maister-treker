@@ -80,6 +80,69 @@ const DEFAULT_CABLE_TYPES = [
 // можна додати свій тип кабелю (наприклад, вуличний), а не лише UTP/Оптику
 function getCableTypesConfig(){ return (settings && settings.cableTypes && settings.cableTypes.length) ? settings.cableTypes : DEFAULT_CABLE_TYPES; }
 
+const SYNC_V66_SETTINGS_MIGRATION_VERSION = 1;
+
+function sanitizeLegacySyncEndpoint(value){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+  try{
+    const url = new URL(raw);
+    ['secret','syncSecret','syncHmacSecret'].forEach(key=>url.searchParams.delete(key));
+    url.hash = '';
+    return url.toString();
+  }catch(e){
+    return raw;
+  }
+}
+
+function isReadyV66SyncEndpoint(value){
+  try{
+    const url = new URL(String(value || '').trim());
+    return url.protocol === 'https:' && !url.search && !url.hash;
+  }catch(e){
+    return false;
+  }
+}
+
+function migrateSyncSettingsV66(source, merged, nowIso){
+  const original = source && typeof source === 'object' ? source : {};
+  const target = merged && typeof merged === 'object' ? merged : {};
+  const previous = target.syncV66Migration;
+  const validPrevious = previous && typeof previous === 'object' &&
+    Number(previous.version) === SYNC_V66_SETTINGS_MIGRATION_VERSION;
+
+  const marker = validPrevious ? Object.assign({}, previous) : {
+    version: SYNC_V66_SETTINGS_MIGRATION_VERSION,
+    status: 'pending',
+    legacyTicketEndpoint: sanitizeLegacySyncEndpoint(original.scriptUrl),
+    legacyShiftsEndpoint: sanitizeLegacySyncEndpoint(original.shiftsScriptUrl),
+    legacySecretWasPresent: !!String(original.syncSecret || ''),
+    detectedAt: nowIso || new Date().toISOString(),
+    completedAt: '',
+    canonicalEndpoint: ''
+  };
+
+  // Keep both legacy endpoints for an explicit rollback, but remove secret
+  // query parameters. Runtime v66 still has exactly one owner and uses only
+  // scriptUrl; shiftsScriptUrl is compatibility evidence, not a transport.
+  target.scriptUrl = sanitizeLegacySyncEndpoint(target.scriptUrl);
+  target.shiftsScriptUrl = sanitizeLegacySyncEndpoint(target.shiftsScriptUrl);
+  delete target.syncSecret;
+
+  // Presence of the new HMAC value is the one-way cutover signal that cannot
+  // exist in the legacy settings. Do not rewrite either endpoint automatically.
+  if(marker.status !== 'complete' &&
+    String(target.syncHmacSecret || '').length >= 32 &&
+    isReadyV66SyncEndpoint(target.scriptUrl)){
+    marker.status = 'complete';
+    marker.canonicalEndpoint = target.scriptUrl;
+    marker.completedAt = nowIso || new Date().toISOString();
+  }
+
+  target.syncV66Migration = marker;
+  return target;
+}
+
 function loadSettings(){
   const s = loadJSON('settings', null);
   const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
@@ -87,10 +150,7 @@ function loadSettings(){
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)
     appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:''};
-  const merged = s ? Object.assign(base, s) : base;
-  // Legacy query-string sync secret is intentionally discarded. HMAC v3
-  // uses only syncHmacSecret and never includes it in URL or request body.
-  delete merged.syncSecret;
+  const merged = migrateSyncSettingsV66(s, s ? Object.assign(base, s) : base);
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
   if(s && !s.cableTypes && (s.utpPriceDefault!==undefined || s.opticPriceDefault!==undefined)){
@@ -111,5 +171,7 @@ function loadSettings(){
   return merged;
 }
 
-function saveSettings(){ localStorage.setItem('settings', JSON.stringify(settings)); }
-
+function saveSettings(){
+  settings = migrateSyncSettingsV66(settings, settings);
+  localStorage.setItem('settings', JSON.stringify(settings));
+}

@@ -15,6 +15,17 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 - **Final pre-production regression — complete.** After the installed-shell correction, all 75 JavaScript syntax checks and all 15 suites passed again; targeted legacy transport/secret/dynamic-code search was clean and `git diff --check` passed. `FINAL-PRE-PRODUCTION.md` records the severities, deployment order and rollback. All three gates are closed; production still requires separate explicit authorization.
 - The explicit runtime extensions are an intermediate split-brain fix, not the final architecture. Consolidate them domain-by-domain only after parity tests; do not remove them in bulk. Stage 4 removed only the eight sync-domain owners after their replacement passed parity tests.
 
+## Pre-production v66 data migration rehearsal
+
+- **Production remains unchanged.** The current ticket Sheet/GAS and the separate legacy shifts Sheet/GAS are read-only references until a separately approved cutover.
+- Two Drive copies dated 2026-08-23 are the only migration targets: a copy of the ticket workbook is the canonical target, and a copy of the legacy shifts workbook is the source/reference.
+- Legacy shifts contain presentation rows (month heading, repeated column heading, monthly total and blank separator) around raw records stored as `date, weekday, hours, coworker, id`. Only the raw records map to canonical `id, date, hours, coworker`; weekday and totals are derived presentation data.
+- Real-copy parity: 142 records across seven months; 142 unique IDs; 1,191.5 total hours; every monthly count/hour total matches; no unknown rows or duplicate IDs. The target copy has a new canonical `Зміни` sheet and no presentation rows.
+- A repeatable pure migration parser and tests guard the presentation/raw split, ID uniqueness and monthly parity.
+- v66 settings retain sanitized legacy ticket/shift endpoints in a durable `syncV66Migration` marker. Runtime does not use the legacy shift endpoint. The marker becomes `complete` only after a query-free HTTPS canonical endpoint and a 32+ character HMAC are saved; the obsolete legacy secret value is not retained.
+- A separate bound GAS project was created for the canonical workbook copy, canonical `Code.gs` and a test-only Script Property were saved. Live web-app deployment/runtime mutation tests remain pending Google OAuth approval in the isolated project.
+- After live test completion, prepare the exact backup/canary/rollback sequence and stop for explicit production authorization. No merge, Pages deploy, production secret change, or production Sheet/GAS write is part of this rehearsal.
+
 ## Stages
 
 1. **Production inventory and branch/checkpoint — complete.** Proven facts are recorded in `AUDIT.md`; inaccessible production systems are explicitly `UNKNOWN`.

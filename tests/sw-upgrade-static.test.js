@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),handlers={},deleted=[],added=[];let localTouches=0,idbTouches=0;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-3'/,'manual installed-PWA gate cache revision is current');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-4'/,'manual installed-PWA gate cache revision is current');
 assert.match(fs.readFileSync(path.join(root,'app.js'),'utf8'),/APP_VERSION\s*=\s*'v66 · 2026-08-23'/,'canonical release identity is v66');
 assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v66 · 2026-08-23'/,'final compatibility wrapper displays canonical v66 identity');
 const cache={addAll:async assets=>added.push(...assets),match:async()=>null,put:async()=>{}};
