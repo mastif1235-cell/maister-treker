@@ -193,6 +193,45 @@ but was not started by this checkpoint.
 
 Stop and restore the backed-up ticket workbook if parity is not exact. Do not delete or edit the legacy shifts Sheet.
 
+### Production phase 2 checkpoint — PASS (2026-08-23 17:44 EEST)
+
+The activation-based write-freeze was active for the migration and closed after
+the final parity read. No ticket or shift writes were intentionally made through
+the PWA during the window.
+
+The live legacy `Зміни` source was re-read from spreadsheet
+`1ItNSvv91klhfhfR44PBa6Xx41gDCb0dABEV2IZ37m_I`. The tested parser accepted all
+rows with these results:
+
+- 142 raw shift records and 142 unique IDs;
+- zero unknown rows, missing IDs, duplicate IDs, invalid dates, invalid hours or
+  date/month-header mismatches;
+- seven monthly stored totals matched recomputation;
+- total hours: 1,191.5.
+
+Immediately before the atomic write, the source was unchanged and the production
+ticket workbook had no sheet named `Зміни`. One `addSheet + updateCells` batch then
+created only the canonical target and its raw records:
+
+- workbook `база данных`, spreadsheet ID
+  `1fc_yXm7XihQn7medg8H25a9cxBn_HIqMhXx-rZyVD5M`;
+- canonical sheet `Зміни`, sheet ID `660823002`;
+- schema `id | date | hours | coworker`;
+- one header row plus 142 business rows.
+
+Post-write parity was exact:
+
+- source/target records: 142/142;
+- source/target unique IDs: 142/142;
+- source/target hours: 1,191.5/1,191.5;
+- missing IDs, extra IDs and duplicate target IDs: 0;
+- exact `id/date/hours/coworker` differences: 0;
+- monthly count/hour parity: exact for 2026-02 through 2026-08;
+- the legacy shifts Sheet was re-read after the write and remained unchanged.
+
+No GAS source, deployment, Script Property, endpoint, PWA setting, `main`, GitHub
+Pages asset or legacy shifts Sheet was changed. Canary and phase 3 were not run.
+
 ### 3. Prepare the canonical production GAS
 
 1. Back up the current ticket-bound GAS source.
