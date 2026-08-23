@@ -8,12 +8,14 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 - Production deploys, GAS/Sheets changes, real secret rotation, destructive migrations, and merge to `main` require explicit approval.
 - Each stage ends with targeted tests, diff review, a logical commit, and this status update.
 - No new patch/hotfix layers. One canonical owner replaces wrappers only after parity tests.
+- **Production deployment gate:** before any production release, test upgrade from the old Service Worker/installed PWA to v66 without clearing user data; verify IndexedDB/localStorage preservation, pending sync recovery, cache replacement, and deterministic reload.
+- The 25 explicit runtime extensions are an intermediate split-brain fix, not the final architecture. Consolidate them domain-by-domain only after parity tests; do not remove them in bulk.
 
 ## Stages
 
 1. **Production inventory and branch/checkpoint — complete.** Proven facts are recorded in `AUDIT.md`; inaccessible production systems are explicitly `UNKNOWN`.
 2. **Deterministic runtime bootstrap — complete.** The exact 25 extension scripts are explicitly ordered after `app.js`; SW no longer mutates HTML, injects scripts, or forces client navigation. Targeted checks: all JS syntax; 49 HTML script references exist; clean first-load loads all 49 with no console errors; server-offline reload restores all 49 and active UI from cache; SW injector/forced navigation search is empty.
-3. **Canonical GAS contract in code/test environment — in progress.** One `doGet`, one `doPost`, PropertiesService HMAC key, canonical request format, timestamp, nonce/replay protection, validation/limits, LockService, idempotency, deterministic test vectors. No production GAS deploy.
+3. **Canonical GAS contract in code/test environment — complete.** `Code.gs` is the sole GAS source with one `doGet`/`doPost`; HMAC v3 uses a Script Property, UTF-8 length-prefixed canonicalization, base64url, timestamp/nonce replay controls, generic errors, schema/size validation, ScriptLock and bounded idempotency records. Two vectors pass independently through browser-client and mocked GAS implementations; negative and lost-response cases pass. Production client transport and production GAS were not changed/deployed.
 4. **Minimal sync state machine and unified tickets/shifts engine — pending.** First specify transitions for create/edit/delete/retry/offline/restart/lost response/tombstone. Required invariants: per-entity serialization; update follows create; delete wins/no resurrection; idempotent retry; pending survives restart; startup recovers queue; lost response cannot duplicate. Prefer adapting existing persisted ticket/tombstone state; introduce an operation log only if impossibility is demonstrated. Full sync is never incremental repair.
 5. **Secrets and boundaries — pending.** Remove URL secrets. Document Telegram client-token threat model and cost/benefit before proposing any proxy.
 6. **Backup/restore and app-lock consolidation — pending.** One owner and validated encrypted pipeline; remove old wrappers only after parity tests.

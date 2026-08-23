@@ -31,3 +31,7 @@ Baseline `Code.gs` is legacy secret auth. HMAC/replay behavior lives in separate
 - LOW: 3 — versioned patch accumulation; missing deployment manifest; oversized multi-owner `app.js`.
 
 The detailed pre-implementation audit is retained in the session deliverable. This file records the implementation baseline and will be updated only when new evidence changes a finding.
+
+## Stage 3 evidence
+
+The branch now has one canonical test-candidate server, `Code.gs`; this does not describe the unknown production GAS deployment. Four append-only `.gs` patches were removed because they redefined entrypoints/auth helpers. The v3 server contract and future client signing helper pass independent deterministic vectors and negative tests. A protocol cutover remains intentionally deferred to the sync stage and requires an isolated GAS/Sheet deployment before any production proposal.

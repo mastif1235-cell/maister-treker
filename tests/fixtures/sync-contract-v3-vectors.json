@@ -1,0 +1,35 @@
+{
+  "secret": "0123456789abcdef0123456789abcdef",
+  "vectors": [
+    {
+      "name": "signed GET ticket state",
+      "request": {
+        "v": 3,
+        "method": "GET",
+        "action": "getTicketById",
+        "entity": "ticket",
+        "id": "abc-123",
+        "ts": "1760000000000",
+        "nonce": "abcdefghijklmnopQRSTUVWX",
+        "requestId": "",
+        "body": ""
+      },
+      "signature": "tfgTqrlVpdPBq45m1Q1tp0L8Cdo-3SMH5VOuIxND000"
+    },
+    {
+      "name": "signed POST with UTF-8 body",
+      "request": {
+        "v": 3,
+        "method": "POST",
+        "action": "updateTicket",
+        "entity": "ticket",
+        "id": "abc-123",
+        "ts": "1760000000000",
+        "nonce": "ZYXWVUTSrqponmlk98765432",
+        "requestId": "req-20260823-00000001",
+        "body": "{\"action\":\"updateTicket\",\"id\":\"abc-123\",\"content\":\"ремонт оптики\",\"sum\":100}"
+      },
+      "signature": "HPw5Cc6v008W4nf9rnyzP3O06SYPs_0ekhQdaSo8V3U"
+    }
+  ]
+}

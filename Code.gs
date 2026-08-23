@@ -1,184 +1,409 @@
-var SYNC_SECRET = 'ВСТАВТЕ_ВАШ_ПОТОЧНИЙ_СЕКРЕТ_СЮДИ';
-
 var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON'];
 var SHIFT_HEADERS  = ['id','date','hours','coworker'];
+
+var SYNC_PROTOCOL_VERSION = 3;
+var SYNC_HMAC_PROPERTY = 'MT_SYNC_HMAC_SECRET';
+var SYNC_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+var SYNC_NONCE_TTL_SECONDS = 10 * 60;
+var SYNC_MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+var SYNC_MAX_BODY_BYTES = 1536 * 1024;
+var SYNC_MAX_BATCH_ITEMS = 5000;
+var SYNC_IDEMPOTENCY_PREFIX = 'MT_SYNC_IDEM_';
+var SYNC_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+var SYNC_IDEMPOTENCY_MAX_ENTRIES = 256;
+
+var SYNC_POST_ACTIONS = {
+  addTicket: 'ticket',
+  updateTicket: 'ticket',
+  deleteTicket: 'ticket',
+  addShift: 'shift',
+  deleteShift: 'shift',
+  syncAll: 'system',
+  syncAllTickets: 'system',
+  syncAllShifts: 'system',
+  clearAll: 'system'
+};
+
+var SYNC_GET_ACTIONS = {
+  list: 'system',
+  checkTicketExists: 'ticket',
+  getTicketById: 'ticket'
+};
 
 
 /* ---------- Входные точки ---------- */
 
 function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-
-  if (!checkSecret(data.secret)) return forbiddenResponse();
-
-  var action = data.action;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var result = {status: 'ok'};
-
-  var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000);
-  } catch (err) {
-    return jsonResponse({status: 'error', message: 'Busy, try again'});
-  }
+    var raw = e && e.postData ? String(e.postData.contents || '') : '';
+    if (!raw || syncUtf8Length_(raw) > SYNC_MAX_REQUEST_BYTES) {
+      return syncErrorResponse_('REQUEST_TOO_LARGE');
+    }
 
-  try {
-    if (action === 'addTicket') {
-      addTicketRow(ss, data);
-    } else if (action === 'updateTicket') {
-      updateTicketRow(ss, data);
-    } else if (action === 'deleteTicket') {
-      deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
-    } else if (action === 'addShift') {
-      addShiftRow(ss, data);
-    } else if (action === 'deleteShift') {
-      deleteRowById(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.id);
-    } else if (action === 'syncAll') {
-      syncAllData(ss, data.tickets, data.shifts);
-    } else if (action === 'syncAllTickets') {
-      writeAllTickets(ss, data.tickets || []);
-    } else if (action === 'syncAllShifts') {
-      writeAllShifts(ss, data.shifts || []);
-    } else if (action === 'clearAll') {
-      syncAllData(ss, [], []);
-    } else {
-      throw new Error('Unknown action: ' + action);
+    var envelope;
+    try { envelope = JSON.parse(raw); } catch (parseError) { return syncErrorResponse_('BAD_REQUEST'); }
+    var verified = syncVerifyEnvelope_(envelope, 'POST');
+    if (!verified.ok) return syncErrorResponse_(verified.code);
+
+    var data;
+    try { data = JSON.parse(envelope.body); } catch (bodyError) { return syncErrorResponse_('INVALID_INPUT'); }
+    var validation = syncValidatePostData_(data, envelope);
+    if (!validation.ok) return syncErrorResponse_(validation.code);
+
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+    } catch (lockError) {
+      return syncErrorResponse_('BUSY');
+    }
+
+    try {
+      var fingerprint = syncIdempotencyFingerprint_(envelope);
+      var previous = syncFindIdempotentResult_(envelope.requestId, fingerprint);
+      if (previous.error) return syncErrorResponse_('SERVER_ERROR');
+      if (previous.conflict) return syncErrorResponse_('IDEMPOTENCY_CONFLICT');
+      if (previous.result) return jsonResponse(previous.result);
+      if (!syncConsumeNonce_(envelope.nonce)) return syncErrorResponse_('AUTH_FAILED');
+
+      var result = syncExecutePost_(data, envelope);
+      syncRememberIdempotentResult_(envelope.requestId, fingerprint, result);
+      return jsonResponse(result);
+    } finally {
+      lock.releaseLock();
     }
   } catch (err) {
-    result = {status: 'error', message: String(err)};
-  } finally {
-    lock.releaseLock();
+    return syncErrorResponse_('SERVER_ERROR');
   }
-
-  return jsonResponse(result);
 }
 
 function doGet(e) {
-  var secret = (e && e.parameter && e.parameter.secret) || '';
-  if (!checkSecret(secret)) return forbiddenResponse();
-
-  if (e && e.parameter && e.parameter.action === 'checkTicketExists') {
-    var checkSheet = getOrCreateSheet(
-      SpreadsheetApp.getActiveSpreadsheet(),
-      'Заявки',
-      TICKET_HEADERS
-    );
-    var checkLast = checkSheet.getLastRow();
-    var exists = false;
-
-    if (checkLast > 1) {
-      var checkIds = checkSheet
-        .getRange(2, 1, checkLast - 1, 1)
-        .getValues()
-        .flat();
-      var targetId = String(e.parameter.id);
-      exists = checkIds.some(function (v) {
-        return String(v) === targetId;
-      });
+  try {
+    var p = e && e.parameter ? e.parameter : {};
+    var envelope = {
+      v: p.v,
+      method: 'GET',
+      action: p.action || 'list',
+      entity: p.entity || (p.action === 'list' || !p.action ? 'system' : 'ticket'),
+      id: p.id || '',
+      ts: p.ts,
+      nonce: p.nonce,
+      requestId: '',
+      body: '',
+      sig: p.sig
+    };
+    var verified = syncVerifyEnvelope_(envelope, 'GET');
+    if (!verified.ok) return syncErrorResponse_(verified.code);
+    if (!SYNC_GET_ACTIONS[envelope.action] || SYNC_GET_ACTIONS[envelope.action] !== envelope.entity) {
+      return syncErrorResponse_('INVALID_INPUT');
+    }
+    if (envelope.action !== 'list' && !syncValidId_(envelope.id)) {
+      return syncErrorResponse_('INVALID_INPUT');
     }
 
-    return jsonResponse({status: 'ok', exists: exists});
-  }
-
-  // Read-only verification after a no-cors POST. Returns the actual row by
-  // stable id, or ticket:null when it is absent. No data is written here.
-  if (e && e.parameter && e.parameter.action === 'getTicketById') {
-    var stateSheet = getOrCreateSheet(
-      SpreadsheetApp.getActiveSpreadsheet(),
-      'Заявки',
-      TICKET_HEADERS
-    );
-    var stateLast = stateSheet.getLastRow();
-    var stateTicket = null;
-    var stateTz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-    var requestedId = String(e.parameter.id);
-
-    if (stateLast > 1) {
-      var rows = stateSheet.getRange(2, 1, stateLast - 1, 8).getValues();
-      for (var ri = 0; ri < rows.length; ri++) {
-        var row = rows[ri];
-        if (String(row[0]) !== requestedId) continue;
-        stateTicket = {
-          id: safeString(row[0]),
-          date: cellToDateString(row[1], stateTz),
-          time: cellToTimeString(row[2], stateTz),
-          content: row[3] === null || row[3] === undefined ? '' : String(row[3]),
-          sum: safeNumber(row[4]),
-          tags: row[5]
-            ? String(row[5]).split(',').map(function (s) {
-                return s.trim();
-              }).filter(Boolean)
-            : [],
-          backupNote: safeString(row[6]),
-          fullDataJson: safeString(row[7])
-        };
-        break;
-      }
+    var authLock = LockService.getScriptLock();
+    try {
+      authLock.waitLock(5000);
+    } catch (lockError) {
+      return syncErrorResponse_('BUSY');
+    }
+    try {
+      if (!syncConsumeNonce_(envelope.nonce)) return syncErrorResponse_('AUTH_FAILED');
+    } finally {
+      authLock.releaseLock();
     }
 
-    return jsonResponse({status: 'ok', ticket: stateTicket});
+    return syncExecuteGet_(envelope.action, envelope.id);
+  } catch (err) {
+    return syncErrorResponse_('SERVER_ERROR');
+  }
+}
+
+
+/* ---------- HMAC contract / validation / responses ---------- */
+
+function syncCanonicalRequest_(request) {
+  return [
+    'MT-SYNC-HMAC-V3',
+    syncCanonicalField_(String(Number(request.v))),
+    syncCanonicalField_(String(request.method || '').toUpperCase()),
+    syncCanonicalField_(String(request.action || '')),
+    syncCanonicalField_(String(request.entity || '')),
+    syncCanonicalField_(String(request.id || '')),
+    syncCanonicalField_(String(request.ts || '')),
+    syncCanonicalField_(String(request.nonce || '')),
+    syncCanonicalField_(String(request.requestId || '')),
+    syncCanonicalField_(String(request.body || ''))
+  ].join('\n');
+}
+
+function syncCanonicalField_(value) {
+  value = String(value == null ? '' : value);
+  return syncUtf8Length_(value) + ':' + value;
+}
+
+function syncUtf8Length_(value) {
+  return Utilities.newBlob(String(value == null ? '' : value)).getBytes().length;
+}
+
+function syncBase64Url_(bytes) {
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
+}
+
+function syncSha256Base64Url_(value) {
+  return syncBase64Url_(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(value),
+    Utilities.Charset.UTF_8
+  ));
+}
+
+function syncHmacSecret_() {
+  return String(PropertiesService.getScriptProperties().getProperty(SYNC_HMAC_PROPERTY) || '');
+}
+
+function syncExpectedSignature_(canonical) {
+  var secret = syncHmacSecret_();
+  if (syncUtf8Length_(secret) < 32) return '';
+  return syncBase64Url_(Utilities.computeHmacSha256Signature(
+    String(canonical),
+    secret,
+    Utilities.Charset.UTF_8
+  ));
+}
+
+function syncConstantTimeEqual_(a, b) {
+  a = String(a || '');
+  b = String(b || '');
+  var max = Math.max(a.length, b.length);
+  var diff = a.length ^ b.length;
+  for (var i = 0; i < max; i++) {
+    diff |= (i < a.length ? a.charCodeAt(i) : 0) ^ (i < b.length ? b.charCodeAt(i) : 0);
+  }
+  return diff === 0;
+}
+
+function syncVerifyEnvelope_(envelope, expectedMethod) {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return {ok:false, code:'BAD_REQUEST'};
+  if (Number(envelope.v) !== SYNC_PROTOCOL_VERSION) return {ok:false, code:'AUTH_FAILED'};
+  if (String(envelope.method || '').toUpperCase() !== expectedMethod) return {ok:false, code:'AUTH_FAILED'};
+  if (!/^[A-Za-z][A-Za-z0-9]{0,39}$/.test(String(envelope.action || ''))) return {ok:false, code:'AUTH_FAILED'};
+  if (!/^(ticket|shift|system)$/.test(String(envelope.entity || ''))) return {ok:false, code:'AUTH_FAILED'};
+  if (!/^\d{13}$/.test(String(envelope.ts || ''))) return {ok:false, code:'AUTH_FAILED'};
+  if (Math.abs(Date.now() - Number(envelope.ts)) > SYNC_MAX_CLOCK_SKEW_MS) return {ok:false, code:'AUTH_FAILED'};
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(envelope.nonce || ''))) return {ok:false, code:'AUTH_FAILED'};
+  if (expectedMethod === 'POST' && !/^[A-Za-z0-9._:-]{16,128}$/.test(String(envelope.requestId || ''))) {
+    return {ok:false, code:'AUTH_FAILED'};
+  }
+  if (expectedMethod === 'GET' && String(envelope.requestId || '') !== '') return {ok:false, code:'AUTH_FAILED'};
+  if (syncUtf8Length_(String(envelope.body || '')) > SYNC_MAX_BODY_BYTES) return {ok:false, code:'REQUEST_TOO_LARGE'};
+  if (!/^[A-Za-z0-9_-]{43}$/.test(String(envelope.sig || ''))) return {ok:false, code:'AUTH_FAILED'};
+  var expected = syncExpectedSignature_(syncCanonicalRequest_(envelope));
+  if (!expected || !syncConstantTimeEqual_(expected, envelope.sig)) return {ok:false, code:'AUTH_FAILED'};
+  return {ok:true};
+}
+
+function syncConsumeNonce_(nonce) {
+  var cache = CacheService.getScriptCache();
+  var key = 'mt-sync-nonce-' + syncSha256Base64Url_(nonce);
+  if (cache.get(key)) return false;
+  cache.put(key, '1', SYNC_NONCE_TTL_SECONDS);
+  return true;
+}
+
+function syncValidatePostData_(data, envelope) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {ok:false, code:'INVALID_INPUT'};
+  if (syncHasUnsafeKeys_(data, 0)) return {ok:false, code:'INVALID_INPUT'};
+  if (!SYNC_POST_ACTIONS[envelope.action] || SYNC_POST_ACTIONS[envelope.action] !== envelope.entity) return {ok:false, code:'INVALID_INPUT'};
+  if (data.action !== envelope.action) return {ok:false, code:'INVALID_INPUT'};
+  if (envelope.entity !== 'system') {
+    if (!syncValidId_(envelope.id) || String(data.id || '') !== String(envelope.id)) return {ok:false, code:'INVALID_INPUT'};
+  } else if (String(envelope.id || '') !== '') {
+    return {ok:false, code:'INVALID_INPUT'};
   }
 
+  if (/Ticket$/.test(envelope.action) && envelope.action !== 'deleteTicket' && !syncValidTicket_(data)) return {ok:false, code:'INVALID_INPUT'};
+  if (envelope.action === 'addShift' && !syncValidShift_(data)) return {ok:false, code:'INVALID_INPUT'};
+  if (envelope.action === 'syncAll' || envelope.action === 'syncAllTickets') {
+    if (!syncValidTicketArray_(data.tickets || [])) return {ok:false, code:'INVALID_INPUT'};
+  }
+  if (envelope.action === 'syncAll' || envelope.action === 'syncAllShifts') {
+    if (!syncValidShiftArray_(data.shifts || [])) return {ok:false, code:'INVALID_INPUT'};
+  }
+  return {ok:true};
+}
+
+function syncValidId_(value) {
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(String(value || ''));
+}
+
+function syncBoundedString_(value, max) {
+  return value === null || value === undefined || (typeof value === 'string' && syncUtf8Length_(value) <= max);
+}
+
+function syncValidTicket_(t) {
+  if (!syncValidId_(t.id)) return false;
+  if (!syncValidDate_(t.date) || !syncValidTime_(t.time)) return false;
+  if (!syncBoundedString_(t.content, 50000) || !syncBoundedString_(t.backupNote, 20000)) return false;
+  if (!syncBoundedString_(t.fullDataJson, 300000)) return false;
+  if (!Number.isFinite(Number(t.sum)) || Math.abs(Number(t.sum)) > 100000000) return false;
+  if (t.tags !== undefined && (!Array.isArray(t.tags) || t.tags.length > 50)) return false;
+  if (Array.isArray(t.tags) && t.tags.some(function(tag){ return typeof tag !== 'string' || syncUtf8Length_(tag) > 200; })) return false;
+  return true;
+}
+
+function syncValidShift_(s) {
+  return syncValidId_(s.id) && syncValidDate_(s.date) &&
+    Number.isFinite(Number(s.hours)) && Number(s.hours) >= 0 && Number(s.hours) <= 48 &&
+    syncBoundedString_(s.coworker, 500);
+}
+
+function syncValidDate_(value) {
+  var match = String(value || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!match) return false;
+  var parsed = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  return parsed.getFullYear() === Number(match[3]) && parsed.getMonth() === Number(match[2]) - 1 && parsed.getDate() === Number(match[1]);
+}
+
+function syncValidTime_(value) {
+  var match = String(value || '').match(/^(\d{2}):(\d{2})$/);
+  return !!match && Number(match[1]) <= 23 && Number(match[2]) <= 59;
+}
+
+function syncHasUnsafeKeys_(value, depth) {
+  if (depth > 8) return true;
+  if (!value || typeof value !== 'object') return false;
+  var keys = Object.keys(value);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i] === '__proto__' || keys[i] === 'prototype' || keys[i] === 'constructor') return true;
+    if (syncHasUnsafeKeys_(value[keys[i]], depth + 1)) return true;
+  }
+  return false;
+}
+
+function syncValidTicketArray_(items) {
+  return Array.isArray(items) && items.length <= SYNC_MAX_BATCH_ITEMS && items.every(syncValidTicket_);
+}
+
+function syncValidShiftArray_(items) {
+  return Array.isArray(items) && items.length <= SYNC_MAX_BATCH_ITEMS && items.every(syncValidShift_);
+}
+
+function syncExecutePost_(data, envelope) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var action = envelope.action;
+  if (action === 'addTicket') addTicketRow(ss, data);
+  else if (action === 'updateTicket') updateTicketRow(ss, data);
+  else if (action === 'deleteTicket') deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
+  else if (action === 'addShift') addShiftRow(ss, data);
+  else if (action === 'deleteShift') deleteRowById(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.id);
+  else if (action === 'syncAll') syncAllData(ss, data.tickets, data.shifts);
+  else if (action === 'syncAllTickets') writeAllTickets(ss, data.tickets || []);
+  else if (action === 'syncAllShifts') writeAllShifts(ss, data.shifts || []);
+  else if (action === 'clearAll') syncAllData(ss, [], []);
+  return {status:'ok', action:action, id:envelope.id || '', requestId:envelope.requestId};
+}
+
+function syncExecuteGet_(action, id) {
+  if (action === 'checkTicketExists') return jsonResponse({status:'ok', exists:syncTicketExists_(id)});
+  if (action === 'getTicketById') return jsonResponse({status:'ok', ticket:syncReadTicketById_(id)});
+  return jsonResponse(syncReadAll_());
+}
+
+function syncTicketExists_(id) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Заявки');
+  if (!sheet || sheet.getLastRow() <= 1) return false;
+  var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+  return ids.some(function(row){ return String(row[0]) === String(id); });
+}
+
+function syncReadTicketById_(id) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Заявки');
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+  var rowIndex = -1;
+  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) { rowIndex = i + 2; break; }
+  if (rowIndex < 0) return null;
+  var row = sheet.getRange(rowIndex, 1, 1, 8).getValues()[0];
+  return syncTicketFromRow_(row, ss.getSpreadsheetTimeZone());
+}
+
+function syncReadAll_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
   var tSheet = ss.getSheetByName('Заявки');
   var sSheet = ss.getSheetByName('Зміни');
   var tickets = [];
   var shifts = [];
-
   if (tSheet && tSheet.getLastRow() > 1) {
-    tSheet
-      .getRange(2, 1, tSheet.getLastRow() - 1, 8)
-      .getValues()
-      .forEach(function (r) {
-        if (!r[0] && !r[1]) return;
-
-        tickets.push({
-          id: safeString(r[0]),
-          date: cellToDateString(r[1], tz),
-          time: cellToTimeString(r[2], tz),
-          content: r[3] === null || r[3] === undefined ? '' : String(r[3]),
-          sum: safeNumber(r[4]),
-          tags: r[5]
-            ? String(r[5]).split(',').map(function (s) {
-                return s.trim();
-              }).filter(Boolean)
-            : [],
-          backupNote: safeString(r[6]),
-          fullDataJson: safeString(r[7]),
-          photo: null
-        });
-      });
+    tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 8).getValues().forEach(function(row){
+      if (row[0] || row[1]) tickets.push(syncTicketFromRow_(row, tz));
+    });
   }
-
   if (sSheet && sSheet.getLastRow() > 1) {
-    sSheet
-      .getRange(2, 1, sSheet.getLastRow() - 1, 4)
-      .getValues()
-      .forEach(function (r) {
-        if (!r[0] && !r[1]) return;
-
-        shifts.push({
-          id: safeString(r[0]),
-          date: cellToDateString(r[1], tz),
-          hours: safeNumber(r[2]),
-          coworker: safeString(r[3])
-        });
-      });
+    sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 4).getValues().forEach(function(row){
+      if (row[0] || row[1]) shifts.push({id:safeString(row[0]), date:cellToDateString(row[1], tz), hours:safeNumber(row[2]), coworker:safeString(row[3])});
+    });
   }
-
-  return jsonResponse({tickets: tickets, shifts: shifts});
+  return {status:'ok', tickets:tickets, shifts:shifts};
 }
 
-
-/* ---------- Авторизация / ответы ---------- */
-
-function checkSecret(value) {
-  return String(value || '') === SYNC_SECRET;
+function syncTicketFromRow_(row, tz) {
+  return {
+    id:safeString(row[0]), date:cellToDateString(row[1], tz), time:cellToTimeString(row[2], tz),
+    content:row[3] == null ? '' : String(row[3]), sum:safeNumber(row[4]),
+    tags:row[5] ? String(row[5]).split(',').map(function(value){ return value.trim(); }).filter(Boolean) : [],
+    backupNote:safeString(row[6]), fullDataJson:safeString(row[7]), photo:null
+  };
 }
 
-function forbiddenResponse() {
-  return jsonResponse({status: 'error', message: 'forbidden'});
+function syncFindIdempotentResult_(requestId, fingerprint) {
+  var raw = PropertiesService.getScriptProperties().getProperty(syncIdempotencyKey_(requestId));
+  if (!raw) return {};
+  var entry;
+  try { entry = JSON.parse(raw); } catch (err) { return {error:true}; }
+  if (!entry || entry.id !== requestId || !entry.result || Number(entry.at) < Date.now() - SYNC_IDEMPOTENCY_TTL_MS) return {};
+  if (entry.fingerprint !== fingerprint) return {conflict:true};
+  return {result:entry.result};
+}
+
+function syncIdempotencyFingerprint_(envelope) {
+  return syncSha256Base64Url_([
+    String(envelope.v), String(envelope.method), String(envelope.action),
+    String(envelope.entity), String(envelope.id || ''), String(envelope.body || '')
+  ].map(syncCanonicalField_).join('\n'));
+}
+
+function syncRememberIdempotentResult_(requestId, fingerprint, result) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty(syncIdempotencyKey_(requestId), JSON.stringify({
+    id:requestId, fingerprint:fingerprint, at:Date.now(), result:result
+  }));
+  syncCleanupIdempotency_(props);
+}
+
+function syncIdempotencyKey_(requestId) {
+  return SYNC_IDEMPOTENCY_PREFIX + syncSha256Base64Url_(requestId);
+}
+
+function syncCleanupIdempotency_(props) {
+  var all = props.getProperties();
+  var entries = [];
+  var cutoff = Date.now() - SYNC_IDEMPOTENCY_TTL_MS;
+  Object.keys(all).forEach(function(key){
+    if (key.indexOf(SYNC_IDEMPOTENCY_PREFIX) !== 0) return;
+    var entry;
+    try { entry = JSON.parse(all[key]); } catch (err) { props.deleteProperty(key); return; }
+    if (!entry || Number(entry.at) < cutoff) { props.deleteProperty(key); return; }
+    entries.push({key:key, at:Number(entry.at)});
+  });
+  entries.sort(function(a, b){ return b.at - a.at; });
+  entries.slice(SYNC_IDEMPOTENCY_MAX_ENTRIES).forEach(function(entry){ props.deleteProperty(entry.key); });
+}
+
+function syncErrorResponse_(code) {
+  var publicCode = /^(AUTH_FAILED|BAD_REQUEST|REQUEST_TOO_LARGE|INVALID_INPUT|BUSY|IDEMPOTENCY_CONFLICT|SERVER_ERROR)$/.test(String(code)) ? String(code) : 'SERVER_ERROR';
+  return jsonResponse({status:'error', code:publicCode});
 }
 
 function jsonResponse(obj) {
@@ -420,6 +645,16 @@ function addShiftRow(ss, s) {
   var newDate = parseDdMmYyyy(s.date);
   var last = sheet.getLastRow();
   var insertRow = last + 1;
+
+  if (last > 1) {
+    var ids = sheet.getRange(2, 1, last - 1, 1).getDisplayValues();
+    for (var existingIndex = 0; existingIndex < ids.length; existingIndex++) {
+      if (String(ids[existingIndex][0]) === String(s.id)) {
+        writeShiftRow(sheet, existingIndex + 2, s);
+        return;
+      }
+    }
+  }
 
   if (newDate && last > 1) {
     var dates = sheet.getRange(2, 2, last - 1, 1).getValues();
