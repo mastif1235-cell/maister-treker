@@ -523,9 +523,10 @@ function addTicketRow(ss, t) {
       .getValues()
       .flat();
 
-    if (ids.some(function (v) {
-      return String(v) === String(t.id);
-    })) {
+    var existingIndex = ids.findIndex(function (v) { return String(v) === String(t.id); });
+    if (existingIndex !== -1) {
+      writeTicketRow(sheet, existingIndex + 2, t);
+      sortTicketsSheet(sheet);
       return;
     }
   }

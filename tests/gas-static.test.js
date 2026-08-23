@@ -17,6 +17,7 @@ assert.equal(/var\s+(?:SYNC_SECRET|SECURE_AUTH_HMAC_SECRET)\s*=/.test(allGas), f
 assert.equal(allGas.includes("getProperty(SYNC_HMAC_PROPERTY)"), true, 'secret read from Script Properties');
 assert.equal(allGas.includes('CacheService.getScriptCache()'), true, 'replay cache enabled');
 assert.equal(allGas.includes('LockService.getScriptLock()'), true, 'atomic lock enabled');
+assert.match(allGas, /existingIndex !== -1[\s\S]*writeTicketRow\(sheet, existingIndex \+ 2, t\)/, 'legacy ticket adoption uses idempotent upsert');
 
 const referenceSource = fs.readFileSync(path.join(root, 'js', 'apps-script-reference.js'), 'utf8');
 const reference = vm.runInNewContext(referenceSource + '\n;APPS_SCRIPT_CODE');
