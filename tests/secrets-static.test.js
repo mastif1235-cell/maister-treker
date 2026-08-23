@@ -1,11 +1,11 @@
 'use strict';
 const assert=require('node:assert/strict');const fs=require('node:fs');
-const app=fs.readFileSync('app.js','utf8');const gas=fs.readFileSync('Code.gs','utf8');const hardening=fs.readFileSync('js/security-hardening.js','utf8');const html=fs.readFileSync('index.html','utf8');
-assert.equal(/(?:\?|&)secret=/.test(app),false,'no query-string secrets');
+const app=fs.readFileSync('app.js','utf8');const settingsCore=fs.readFileSync('js/settings-core.js','utf8');const runtime=app+'\n'+settingsCore;const gas=fs.readFileSync('Code.gs','utf8');const hardening=fs.readFileSync('js/security-hardening.js','utf8');const html=fs.readFileSync('index.html','utf8');
+assert.equal(/(?:\?|&)secret=/.test(runtime),false,'no query-string secrets');
 assert.equal(/\b(?:SYNC_SECRET|HMAC_SECRET)\s*=\s*['"][^'"]+/.test(gas),false,'no hardcoded GAS secret');
 assert.match(gas,/PropertiesService\.getScriptProperties\(\)\.getProperty\(SYNC_HMAC_PROPERTY\)/);
-assert.match(app,/delete merged\.syncSecret/,'legacy query secret discarded');
+assert.match(runtime,/delete merged\.syncSecret/,'legacy query secret discarded');
 for(const key of ['tgBotToken','syncSecret','syncHmacSecret','tgBackupChatId','tgDispatcherChatId','tgDispatchers','tgMyChatId','tgShiftsMsgId']) assert.match(hardening,new RegExp(`'${key}'`),`backup excludes ${key}`);
 assert.match(html,/id="tgBotTokenInput"[^>]*type="password"|type="password"[^>]*id="tgBotTokenInput"/);
-assert.equal(/console\.(?:log|warn|error|debug)\([^\n]*(?:tgBotToken|syncHmacSecret|\btoken\b)/.test(app),false,'no direct secret logging');
+assert.equal(/console\.(?:log|warn|error|debug)\([^\n]*(?:tgBotToken|syncHmacSecret|\btoken\b)/.test(runtime),false,'no direct secret logging');
 console.log('PASS secret inventory/properties/backup exclusion/logging boundaries');
