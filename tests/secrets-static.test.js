@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');const fs=require('node:fs');
-const app=fs.readFileSync('app.js','utf8');const settingsCore=fs.readFileSync('js/settings-core.js','utf8');const runtime=app+'\n'+settingsCore;const gas=fs.readFileSync('Code.gs','utf8');const hardening=fs.readFileSync('js/security-hardening.js','utf8');const html=fs.readFileSync('index.html','utf8');
+const app=fs.readFileSync('app.js','utf8');const runtime=app+'\n'+fs.readdirSync('js').filter(f=>f.endsWith('.js')).map(f=>fs.readFileSync('js/'+f,'utf8')).join('\n');const gas=fs.readFileSync('Code.gs','utf8');const hardening=fs.readFileSync('js/security-hardening.js','utf8');const html=fs.readFileSync('index.html','utf8');
 assert.equal(/(?:\?|&)secret=/.test(runtime),false,'no query-string secrets');
 assert.equal(/\b(?:SYNC_SECRET|HMAC_SECRET)\s*=\s*['"][^'"]+/.test(gas),false,'no hardcoded GAS secret');
 assert.match(gas,/PropertiesService\.getScriptProperties\(\)\.getProperty\(SYNC_HMAC_PROPERTY\)/);
