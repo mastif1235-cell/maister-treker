@@ -31,7 +31,7 @@ Baseline and dependency rules are fixed in `APP-DECOMPOSITION-MAP.md`. Planned o
 3. **Reports/import-export UI — complete.** `reports-domain.js` owns report generation, NotebookLM export, bulk import, repair and dedup flows. Canonical encrypted backup APIs remain untouched; retired plaintext backup implementations were removed from `app.js`.
 4. **Settings — complete.** `settings-core.js` owns defaults, migrations and persistence before app-state construction; `settings-domain.js` owns settings/catalog UI and binding. Secret/lock sanitization order is preserved, and retired base lock implementations were removed without touching the canonical lock owner.
 5. **Photos/Telegram helpers — complete.** `photo-telegram-domain.js` owns local photo resolution/migration and direct Telegram delivery, backup/report queues. Token architecture, URLs, storage keys and later security fetch/photo adapters are unchanged; their load order is tested.
-6. **Shifts.** Move state/render/bind/mutations/month reports; keep unified sync engine calls unchanged.
+6. **Shifts — complete.** `shifts-domain.js` owns calendar/render/bind, mutations, monthly reporting and Telegram message maintenance. Shared date/selection state and `saveShifts` remain unchanged; unified sync journal calls are untouched.
 7. **Tickets.** Move ticket list/trash, address/naryad/calculator form and mutations in small sub-blocks; preserve journal-before-storage semantics.
 8. **Storage orchestration.** Move settings/shifts/naryad/draft startup persistence facades only after domain parity; do not touch IndexedDB schemas.
 9. **UI orchestration/init.** Leave a small deterministic bootstrap with shared state construction, ordered initialization, listeners and SW registration.
