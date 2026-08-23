@@ -325,7 +325,7 @@ function clearAllPhotos(){
 const DAILY_BACKUP_MAX = 10;
 // NEW: викликається раз при старті застосунку — якщо сьогодні ще не було
 // автобекапу, робить знімок і кладе його в IndexedDB, старший за 10-й видаляє
-async function maybeRunDailyBackup(){
+async function legacyMaybeRunDailyBackupDisabled(){
   if(!backupDb) return;
   // NEW: усе тіло в try/catch — якщо автозавантаження файлу впаде (напр.
   // браузер заблокував програмний download, бо це не пряма дія користувача),
@@ -366,7 +366,7 @@ function renderDailyBackupList(){
     </div>`;
   }).join('') : '<span style="color:var(--text-faint); font-size:13px;">Бекапів ще немає — перший з\'явиться після сьогоднішнього відкриття застосунку</span>';
 }
-async function downloadDailyBackup(dateKey, opts={}){
+async function legacyDownloadDailyBackupDisabled(dateKey, opts={}){
   const payload = await backupDbGet(dateKey);
   if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
   const blob = new Blob([JSON.stringify({app:'master-tracker', exportedAt: payload.exportedAt, tickets: payload.tickets, shifts: payload.shifts, settings: payload.settings}, null, 2)], {type:'application/json;charset=utf-8'});
@@ -377,7 +377,7 @@ async function downloadDailyBackup(dateKey, opts={}){
   URL.revokeObjectURL(a.href);
   showToast(opts.silent ? `📅 Щоденний бекап (${dateKey}) збережено у Завантаження` : 'Файл бекапу завантажено');
 }
-async function restoreDailyBackup(dateKey){
+async function legacyRestoreDailyBackupDisabled(dateKey){
   const payload = await backupDbGet(dateKey);
   if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
   if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки, зміни й налаштування буде замінено.`)) return;
@@ -1659,49 +1659,13 @@ async function loadFromCloud(){
   }
 }
 
-const AUTOBACKUP_MAX_SLOTS = 3;
 function backupLocalData(){
-  try{
-    let slots;
-    try{ slots = JSON.parse(localStorage.getItem('autoBackupSlots')) || []; }catch(e){ slots = []; }
-    slots.unshift({ts: Date.now(), tickets, shifts});
-    slots = slots.slice(0, AUTOBACKUP_MAX_SLOTS); // тримаємо лише 3 останніх, щоб не займати зайве місце
-    localStorage.setItem('autoBackupSlots', JSON.stringify(slots));
-  }catch(e){ /* сховище повне чи недоступне — бекап просто пропускаємо, не заважаємо основній дії */ }
+  if(typeof maybeRunDailyBackup === 'function') void maybeRunDailyBackup();
 }
 
 function restoreFromBackup(){
-  let slots;
-  try{ slots = JSON.parse(localStorage.getItem('autoBackupSlots')) || []; }catch(e){ slots = []; }
-  if(slots.length===0){ showToast('Бекапів ще немає'); return; }
-  const rows = slots.map((s,i)=>{
-    const d = new Date(s.ts);
-    return `<div class="settings-row">
-      <div><div class="sr-title">${formatDate(d)} ${formatTime(d)}</div><div style="font-size:12px; color:var(--text-dim);">Заявок: ${(s.tickets||[]).length}, змін: ${(s.shifts||[]).length}</div></div>
-      <button type="button" class="btn btn-sm restore-slot-btn" data-slotidx="${i}">Відновити</button>
-    </div>`;
-  }).join('');
-  openModal('Відновлення з автобекапу', `
-    <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Останні ${slots.length} автозбереження (робляться перед масовими діями). Поточні локальні дані буде замінено обраним.</div>
-    ${rows}
-  `, {onOpen:()=>{
-    document.querySelectorAll('.restore-slot-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const s = slots[Number(btn.dataset.slotidx)];
-        const d = new Date(s.ts);
-        if(!confirm(`Відновити дані з автобекапу від ${formatDate(d)} ${formatTime(d)}?\nПоточні локальні дані буде замінено.`)) return;
-        backupLocalData();
-        tickets = s.tickets || [];
-        shifts = s.shifts || [];
-        saveTickets();
-        saveShifts();
-        renderTicketsScreen();
-        renderShiftsScreen();
-        closeModal();
-        showToast('Дані відновлено з бекапу');
-      });
-    });
-  }});
+  showToast('Відновлення доступне у списку щоденних бекапів нижче');
+  document.getElementById('dailyBackupList')?.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 async function sendAllToCloud(){
@@ -3898,7 +3862,7 @@ function backfillAddressDictionariesFromTickets(){
 }
 /* ---- Повний бекап у JSON (для перенесення на інший телефон або власне
    збереження на випадок втрати кешу/даних) ---- */
-async function exportJsonBackup(){
+async function legacyExportJsonBackupDisabled(){
   // Фото фізично лежать не в tickets, а в окремій IndexedDB. Самі ключі idb:
   // без цих даних на іншому телефоні марні, тому кладемо у файл тільки ті
   // локальні файли, які реально вдалося прочитати.
@@ -3920,7 +3884,7 @@ async function exportJsonBackup(){
   showToast(missingPhotos ? `Бекап завантажено, але ${missingPhotos} фото локально не знайдено` : 'Файл бекапу завантажено разом із фото');
 }
 
-async function handleJsonImportFile(file){
+async function legacyHandleJsonImportFileDisabled(file){
   if(!file) return;
   try{
     const text = await file.text();
@@ -4943,6 +4907,10 @@ function bindSettingsScreen(){
       if(!confirm('Вимкнути захист входу? Пароль і відбиток буде видалено.')){ e.target.checked = true; return; }
       settings.appLockEnabled = false;
       settings.appLockPasswordHash = '';
+      settings.appLockPasswordKdf = '';
+      settings.appLockPasswordSalt = '';
+      settings.appLockPasswordIterations = 0;
+      settings.appLockPasswordVerifier = '';
       settings.appLockBiometricEnabled = false;
       settings.appLockCredentialId = '';
       saveSettings();
@@ -5081,7 +5049,7 @@ function bindSettingsScreen(){
    був видний людині, яка просто відкриє налаштування чи експортований
    бекап. */
 // NEW: встановлення чи зміна пароля захисту входу
-function openSetPasswordModal(isFirstSetup){
+function legacyOpenSetPasswordModalDisabled(isFirstSetup){
   openModal(isFirstSetup ? '🔒 Встановити пароль' : 'Змінити пароль', `
     <div class="field"><label>Новий пароль</label><input type="password" id="newAppLockPw" autocomplete="off"></div>
     <div class="field" style="margin-top:10px;"><label>Повторіть пароль</label><input type="password" id="newAppLockPwConfirm" autocomplete="off"></div>
@@ -5112,14 +5080,14 @@ async function sha256Hex(text){
 // NEW: чекає розблокування (якщо захист увімкнено) перш ніж застосунок
 // продовжить ініціалізацію — жодні дані абонентів не підвантажуються і не
 // малюються до успішного вводу пароля/відбитка.
-function ensureAppUnlocked(){
+function legacyEnsureAppUnlockedDisabled(){
   return new Promise(resolve=>{
     if(!settings.appLockEnabled || !settings.appLockPasswordHash){ resolve(); return; }
     showLockScreen(resolve);
   });
 }
 
-function showLockScreen(onUnlock){
+function legacyShowLockScreenDisabled(onUnlock){
   const screen = document.getElementById('lockScreen');
   const bioBtn = document.getElementById('lockBiometricBtn');
   const pwInput = document.getElementById('lockPasswordInput');

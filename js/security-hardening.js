@@ -16,11 +16,19 @@ const SECURITY_SENSITIVE_SETTING_KEYS = new Set([
   'tgMyChatId',
   'tgShiftsMsgId',
   'appLockPasswordHash',
+  'appLockPasswordKdf',
+  'appLockPasswordSalt',
+  'appLockPasswordIterations',
+  'appLockPasswordVerifier',
   'appLockCredentialId'
 ]);
 const SECURITY_LOCK_SETTING_KEYS = new Set([
   'appLockEnabled',
   'appLockPasswordHash',
+  'appLockPasswordKdf',
+  'appLockPasswordSalt',
+  'appLockPasswordIterations',
+  'appLockPasswordVerifier',
   'appLockBiometricEnabled',
   'appLockCredentialId'
 ]);
@@ -48,6 +56,10 @@ function securitySanitizeSettingsForBackup(source){
   clean.appLockEnabled = false;
   clean.appLockBiometricEnabled = false;
   clean.appLockPasswordHash = '';
+  clean.appLockPasswordKdf = '';
+  clean.appLockPasswordSalt = '';
+  clean.appLockPasswordIterations = 0;
+  clean.appLockPasswordVerifier = '';
   clean.appLockCredentialId = '';
   return clean;
 }
@@ -130,8 +142,8 @@ if(typeof renderSettingsScreen === 'function'){
 
 // Повний JSON-бекап: заявки/зміни/фото лишаються повними, але секрети
 // Telegram/Google і локальний lock у файл більше НЕ потрапляють.
-if(typeof exportJsonBackup === 'function'){
-  exportJsonBackup = async function(){
+if(false && typeof legacyExportJsonBackupDisabled === 'function'){
+  legacyExportJsonBackupDisabled = async function(){
     const {photoData, missingPhotos} = await collectLocalPhotoData(tickets);
     const payload = {
       app: 'master-tracker',
@@ -156,8 +168,8 @@ if(typeof exportJsonBackup === 'function'){
 }
 
 // Щоденний локальний знімок також більше не зберігає токен/секрет/lock hash.
-if(typeof maybeRunDailyBackup === 'function'){
-  maybeRunDailyBackup = async function(){
+if(false && typeof legacyMaybeRunDailyBackupDisabled === 'function'){
+  legacyMaybeRunDailyBackupDisabled = async function(){
     if(!backupDb) return;
     try{
       const todayKey = localDateKey(new Date());
@@ -177,8 +189,8 @@ if(typeof maybeRunDailyBackup === 'function'){
 
 // Навіть старий локальний daily-backup, створений ДО v65, при завантаженні
 // на диск очищається від секретів на льоту.
-if(typeof downloadDailyBackup === 'function'){
-  downloadDailyBackup = async function(dateKey, opts={}){
+if(false && typeof legacyDownloadDailyBackupDisabled === 'function'){
+  legacyDownloadDailyBackupDisabled = async function(dateKey, opts={}){
     const payload = await backupDbGet(dateKey);
     if(!payload){ if(!opts.silent) showToast('Не вдалося знайти цей бекап'); return; }
     const cleanPayload = {
@@ -202,8 +214,8 @@ if(typeof downloadDailyBackup === 'function'){
 
 // Відновлення daily-backup: локальні Telegram/Google секрети і lock
 // залишаються поточними навіть якщо старий backup містив їх у відкритому вигляді.
-if(typeof restoreDailyBackup === 'function'){
-  restoreDailyBackup = async function(dateKey){
+if(false && typeof legacyRestoreDailyBackupDisabled === 'function'){
+  legacyRestoreDailyBackupDisabled = async function(dateKey){
     const payload = await backupDbGet(dateKey);
     if(!payload){ showToast('Не вдалося знайти цей бекап'); return; }
     if(!confirm(`Відновити дані станом на ${dateKey}?\nПоточні локальні заявки, зміни й налаштування буде замінено.\nСекрети Telegram/Google та захист входу залишаться поточними.`)) return;
@@ -225,8 +237,8 @@ if(typeof restoreDailyBackup === 'function'){
 
 // Імпорт JSON: обмеження розміру + базова схема + whitelist settings.
 // Старі бекапи сумісні, але їхні tgBotToken/syncSecret/appLock* ігноруються.
-if(typeof handleJsonImportFile === 'function'){
-  handleJsonImportFile = async function(file){
+if(false && typeof legacyHandleJsonImportFileDisabled === 'function'){
+  legacyHandleJsonImportFileDisabled = async function(file){
     if(!file) return;
     if(file.size > SECURITY_BACKUP_MAX_BYTES){
       showToast('🔒 Файл бекапу завеликий для безпечного імпорту на телефоні');

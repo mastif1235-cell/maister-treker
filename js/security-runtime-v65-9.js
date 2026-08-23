@@ -82,7 +82,7 @@ function securityRuntimeHasPrototypeKeys(value,depth=0,seen=new Set()){
   return false;
 }
 
-if(typeof securityValidateBackupEnvelope==='function'){
+if(false && typeof securityValidateBackupEnvelope==='function'){
   const securityRuntimePreviousBackupValidator=securityValidateBackupEnvelope;
   securityValidateBackupEnvelope=function(data){
     if(!securityRuntimePreviousBackupValidator(data)) return false;
@@ -161,7 +161,7 @@ if(typeof securityMergeImportedSettings==='function'){
 
 // Encrypted restore path: sanitize the decrypted payload before the original
 // restore function creates application objects from it.
-if(typeof securityBackupRestorePayload==='function'){
+if(false && typeof securityBackupRestorePayload==='function'){
   const securityRuntimePreviousEncryptedRestore=securityBackupRestorePayload;
   securityBackupRestorePayload=async function(data){
     const clean=Object.assign({},data||{});
@@ -173,9 +173,9 @@ if(typeof securityBackupRestorePayload==='function'){
 
 // Legacy/plain JSON import path: rebuild a sanitized Blob, then let the
 // existing import handler perform its normal confirmations/photo migration.
-if(typeof handleJsonImportFile==='function'){
-  const securityRuntimePreviousJsonImport=handleJsonImportFile;
-  handleJsonImportFile=async function(file){
+if(false && typeof legacyHandleJsonImportFileDisabled==='function'){
+  const securityRuntimePreviousJsonImport=legacyHandleJsonImportFileDisabled;
+  legacyHandleJsonImportFileDisabled=async function(file){
     if(!file) return;
     try{
       const parsed=JSON.parse(await file.text());
@@ -228,8 +228,8 @@ async function securityRuntimeTryPhysicalDailyBackup(dateKey,payload){
 // SAFELY: only when the backup password is already stored in the local vault.
 // If today's IndexedDB snapshot already exists (for example this update was
 // installed in the middle of the day), we still attempt the physical file once.
-if(typeof maybeRunDailyBackup==='function' && typeof securityBackupVaultLoad==='function'){
-  maybeRunDailyBackup=async function(){
+if(false && typeof legacyMaybeRunDailyBackupDisabled==='function' && typeof securityBackupVaultLoad==='function'){
+  legacyMaybeRunDailyBackupDisabled=async function(){
     if(!backupDb) return;
     try{
       const todayKey=localDateKey(new Date());

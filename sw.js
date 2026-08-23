@@ -3,9 +3,9 @@ const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./styles.css','./qrcode.js',
   './js/core-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
   './js/backup-storage.js','./js/ticket-storage.js','./js/photo-storage.js','./js/local-state-storage.js','./js/ticket-state-storage.js',
-  './js/apps-script-reference.js','./js/settings-render.js','./js/calculator-render.js','./js/tickets-render.js','./js/address-render.js','./js/calendar-stats-render.js','./js/shift-render.js','./js/naryad-render.js','./js/settings-catalog-bindings.js','./js/settings-local-lists-bindings.js','./js/ticket-form-domain.js','./js/sync-contract.js','./js/sync-engine-core.js','./js/sync-journal-storage.js','./js/sync-transport.js','./js/sync-engine-runtime.js',
-  './js/security-hardening.js','./js/security-lock.js','./js/security-qr.js','./js/security-telegram.js','./js/security-backup-encryption.js','./js/security-backup-vault-hub.js','./js/security-backup-vault.js','./js/security-runtime-v65-9.js',
-  './js/share-fix-v65-11.js','./js/share-photo-picker-v65-12.js','./js/share-multi-fix-v65-17-2.js','./js/telegram-backup-reliability-v65-13.js','./js/photo-data-fetch-v65-14.js','./js/security-backup-envelope-guard-v65-17.js','./js/security-dom-final-v65-18.js','./js/daily-physical-backup-v65-17-3.js','./js/security-audit-fixes-v65-18-9.js',
+  './js/apps-script-reference.js','./js/settings-render.js','./js/calculator-render.js','./js/tickets-render.js','./js/address-render.js','./js/calendar-stats-render.js','./js/shift-render.js','./js/naryad-render.js','./js/settings-catalog-bindings.js','./js/settings-local-lists-bindings.js','./js/ticket-form-domain.js','./js/sync-contract.js','./js/sync-engine-core.js','./js/sync-journal-storage.js','./js/sync-transport.js','./js/sync-engine-runtime.js','./js/app-lock-core.js',
+  './js/security-hardening.js','./js/security-lock.js','./js/security-qr.js','./js/security-telegram.js','./js/security-runtime-v65-9.js',
+  './js/share-fix-v65-11.js','./js/share-photo-picker-v65-12.js','./js/share-multi-fix-v65-17-2.js','./js/telegram-backup-reliability-v65-13.js','./js/photo-data-fetch-v65-14.js','./js/security-dom-final-v65-18.js','./js/backup-system.js','./js/security-audit-fixes-v65-18-9.js',
   './app.js','./manifest.json','./icon-192.png','./icon-512.png'
 ];
 

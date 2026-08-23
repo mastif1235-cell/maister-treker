@@ -6,42 +6,27 @@
 const SECURITY_LOCK_RELEASE_LABEL = 'v65.0-security.2 · 2026-08-18';
 const SECURITY_PBKDF2_ITERATIONS = 210000;
 const SECURITY_PBKDF2_MIN_LENGTH = 6;
+const SECURITY_LOCK_THROTTLE_KEY = 'appLockThrottleV1';
 
 function securityBytesToBase64(bytes){
-  let s = '';
-  bytes.forEach(b=>{ s += String.fromCharCode(b); });
-  return btoa(s);
+  return MTAppLockCore.bytesToBase64(bytes);
 }
 
 function securityBase64ToBytes(value){
-  return Uint8Array.from(atob(String(value || '')), c=>c.charCodeAt(0));
+  return MTAppLockCore.base64ToBytes(value);
 }
 
 function securityConstantTimeEqual(a, b){
-  const x = String(a || '');
-  const y = String(b || '');
-  let diff = x.length ^ y.length;
-  const max = Math.max(x.length, y.length);
-  for(let i=0;i<max;i++) diff |= (x.charCodeAt(i % Math.max(x.length,1)) || 0) ^ (y.charCodeAt(i % Math.max(y.length,1)) || 0);
-  return diff === 0;
+  return MTAppLockCore.constantTimeEqual(a,b);
 }
 
 async function securityPbkdf2Verifier(password, saltB64, iterations){
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(String(password)),
-    {name:'PBKDF2'},
-    false,
-    ['deriveBits']
-  );
-  const bits = await crypto.subtle.deriveBits({
-    name:'PBKDF2',
-    hash:'SHA-256',
-    salt:securityBase64ToBytes(saltB64),
-    iterations:Number(iterations) || SECURITY_PBKDF2_ITERATIONS
-  }, keyMaterial, 256);
-  return securityBytesToBase64(new Uint8Array(bits));
+  return MTAppLockCore.verifier(password,saltB64,iterations);
 }
+
+function securityLoadThrottle(){try{return JSON.parse(localStorage.getItem(SECURITY_LOCK_THROTTLE_KEY))||{};}catch(_e){return{};}}
+function securitySaveThrottle(state){localStorage.setItem(SECURITY_LOCK_THROTTLE_KEY,JSON.stringify(state));}
+function securityResetThrottle(){localStorage.removeItem(SECURITY_LOCK_THROTTLE_KEY);}
 
 async function securitySetPbkdf2Password(password){
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -113,7 +98,6 @@ openSetPasswordModal = function(isFirstSetup){
     });
   }});
 };
-
 ensureAppUnlocked = function(){
   return new Promise(resolve=>{
     const hasPassword = !!(settings.appLockPasswordVerifier || settings.appLockPasswordHash);
@@ -143,13 +127,16 @@ showLockScreen = function(onUnlock){
   const tryPassword = async ()=>{
     const val = pwInput.value;
     if(!val){ errMsg.textContent = 'Введіть пароль'; return; }
+    const waitMs=MTAppLockCore.remainingMs(securityLoadThrottle());
+    if(waitMs){errMsg.textContent=`Забагато спроб. Зачекайте ${Math.ceil(waitMs/1000)} с`;return;}
     unlockBtn.disabled = true;
     errMsg.textContent = 'Перевіряю…';
     const ok = await securityVerifyPassword(val);
     unlockBtn.disabled = false;
-    if(ok){ finishUnlock(); }
+    if(ok){ securityResetThrottle();finishUnlock(); }
     else{
-      errMsg.textContent = '❌ Невірний пароль';
+      const state=MTAppLockCore.recordFailure(securityLoadThrottle());securitySaveThrottle(state);
+      const delay=MTAppLockCore.remainingMs(state);errMsg.textContent=delay?`❌ Невірний пароль. Пауза ${Math.ceil(delay/1000)} с`:'❌ Невірний пароль';
       pwInput.value = '';
       pwInput.focus();
     }
@@ -181,62 +168,3 @@ showLockScreen = function(onUnlock){
   }
 };
 
-// Коли користувач вимикає lock старим обробником app.js, дочищаємо і нові PBKDF2-поля.
-if(typeof bindSettingsScreen === 'function'){
-  const securityLockOriginalBindSettings = bindSettingsScreen;
-  bindSettingsScreen = function(){
-    const result = securityLockOriginalBindSettings.apply(this, arguments);
-    const toggle = document.getElementById('appLockToggle');
-    if(toggle && toggle.dataset.pbkdf2CleanupBound !== '1'){
-      toggle.dataset.pbkdf2CleanupBound = '1';
-      toggle.addEventListener('change', ()=>{
-        if(settings.appLockEnabled) return;
-        settings.appLockPasswordKdf = '';
-        settings.appLockPasswordSalt = '';
-        settings.appLockPasswordIterations = 0;
-        settings.appLockPasswordVerifier = '';
-        saveSettings();
-      });
-    }
-    return result;
-  };
-}
-
-// Розширюємо захист бекапів новими полями PBKDF2.
-if(typeof securitySanitizeSettingsForBackup === 'function'){
-  const securityLockOriginalSanitize = securitySanitizeSettingsForBackup;
-  securitySanitizeSettingsForBackup = function(source){
-    const clean = securityLockOriginalSanitize(source);
-    clean.appLockPasswordKdf = '';
-    clean.appLockPasswordSalt = '';
-    clean.appLockPasswordIterations = 0;
-    clean.appLockPasswordVerifier = '';
-    return clean;
-  };
-}
-
-if(typeof securityMergeImportedSettings === 'function'){
-  const securityLockOriginalMerge = securityMergeImportedSettings;
-  securityMergeImportedSettings = function(imported, current){
-    const preserved = {
-      appLockPasswordKdf:current?.appLockPasswordKdf || '',
-      appLockPasswordSalt:current?.appLockPasswordSalt || '',
-      appLockPasswordIterations:current?.appLockPasswordIterations || 0,
-      appLockPasswordVerifier:current?.appLockPasswordVerifier || ''
-    };
-    const merged = securityLockOriginalMerge(imported, current);
-    Object.assign(merged, preserved);
-    return merged;
-  };
-}
-
-// Остання обгортка версії — security.2 має пріоритет над security.1.
-if(typeof renderSettingsScreen === 'function'){
-  const securityLockOriginalRenderSettings = renderSettingsScreen;
-  renderSettingsScreen = function(){
-    const result = securityLockOriginalRenderSettings.apply(this, arguments);
-    const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${SECURITY_LOCK_RELEASE_LABEL}`;
-    return result;
-  };
-}
