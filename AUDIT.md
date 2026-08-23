@@ -8,8 +8,8 @@ Audit baseline: GitHub `mastif1235-cell/maister-treker`, `main`, `9ae763a7a262a5
 |---|---|
 | GitHub source | `mastif1235-cell/maister-treker`, default `main`, baseline `9ae763a` |
 | Public deployment | GitHub Pages reports successful deployment of `9ae763a` at `https://mastif1235-cell.github.io/maister-treker/` |
-| Netlify main PWA | `UNKNOWN`: no `.netlify` linkage, `netlify.toml`, GitHub deployment, or accessible account metadata found |
-| Netlify auxiliary app | `https://on-b6a966.netlify.app` is a default `vizitkaUrl`; repository ownership/branch/deploy SHA are `UNKNOWN` |
+| Netlify main PWA | No accessible linkage: no `.netlify` state, CLI/account token, config, GitHub hook or Netlify deployment. Account-wide site inventory remains `UNKNOWN` without Netlify authorization. |
+| Netlify auxiliary app | `https://on-b6a966.netlify.app` is a default `vizitkaUrl`, but its live root returns Netlify 404; ownership/branch/deploy SHA remain `UNKNOWN` and it is not evidence of a usable project host. |
 | GAS endpoint | `UNKNOWN`: repository default endpoint is empty and runtime URLs are device-local settings |
 | Deployed GAS source/version | `UNKNOWN`: no read-only Apps Script project access available |
 | Google Sheet | `UNKNOWN`: repository uses `SpreadsheetApp.getActiveSpreadsheet()` and contains no Sheet ID |
@@ -40,7 +40,7 @@ The branch now has one canonical test-candidate server, `Code.gs`; this does not
 
 The former `synced`/`syncAction`/`pendingCloudDelete` model could not preserve two immutable logical operations for one entity when an attempted create and a later edit/delete coexisted. It has been replaced by the bounded journal documented in `SYNC-STATE-MACHINE.md`. IndexedDB is the only persisted client owner; GAS `_SyncState` is the durable server owner. Legacy scalar fields are read once for migration and removed from stored ticket/trash objects. The obsolete sync wrapper files are deleted and no longer appear in `index.html` or the Service Worker asset list.
 
-Targeted automated tests cover ticket/shift parity, serial head/tail execution, offline/startup recovery, lost responses, timeouts, duplicate retry, revisions, conflicts and permanent tombstones. Runtime CORS behavior is still `UNKNOWN` because production was not touched and no isolated Apps Script deployment endpoint is available. The client supports explicit readable and opaque modes; opaque mode uses bounded signed `getEntityState` verification.
+Targeted automated tests cover ticket/shift parity, serial head/tail execution, offline/startup recovery, lost responses, timeouts, duplicate retry, revisions, conflicts and permanent tombstones. Gate 1 subsequently proved against an isolated Apps Script/Sheet that readable `text/plain` CORS responses work, while forced JSON preflight fails. The candidate now has one readable mutation transport; signed `getEntityState` remains only bounded lost-response verification. See `GATE-1-RESULTS.md`.
 
 ## Stage 5 secrets/boundaries finding
 
@@ -52,4 +52,4 @@ Stages 6–8 consolidate backup and app-lock owners, remove five obsolete backup
 
 Current known severity is: **Critical 0, High 0, Medium 2, Low 2**. Medium findings are the deliberately client-held Telegram bot token boundary and unavailable response-header anti-framing on the proven GitHub Pages host. Low findings are remaining escaped-template DOM maintenance complexity and inactive legacy compatibility fields/code pending later domain decomposition. The app lock remains UI access control rather than encryption-at-rest.
 
-Production gates remain mandatory and unexecuted: (1) CORS/readable versus opaque verification against an isolated test GAS deployment; (2) upgrade an actually installed old PWA/Service Worker to v66 without clearing data and verify IndexedDB/localStorage, sync journal recovery and cache replacement. Production GAS, Sheets, host deployment and `main` were not changed.
+Gate 1 passed against an isolated TEST GAS/Sheet. Gate 2 passed the real same-origin browser Service Worker/cache/storage path from v62 to v66; the unavailable operating-system installed-PWA shell still requires one manual reopen confirmation. Gate 3 proved production is GitHub Pages and recommends an explicitly approved Netlify migration because Pages does not emit the checked-in CSP/anti-framing/privacy headers. Production GAS, Sheets, host deployment and `main` were not changed.
