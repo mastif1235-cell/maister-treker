@@ -27,14 +27,17 @@ GitHub Pages ignores the repository `_headers` file. The checked-in HTML meta CS
 
 ## Decision
 
-Choose **B: move the production client to Netlify (or an equivalent header-capable static host)**. This is justified by the client-held Telegram token boundary: defense in depth at the document boundary is valuable, and GitHub Pages cannot activate the already-reviewed `_headers` policy. This is not a Critical/High emergency because DOM/URL boundaries and meta CSP are hardened; it remains the known Medium host limitation.
+Choose **B: move the production client to Netlify (or an equivalent header-capable static host) as a separate later migration**. This is justified by the client-held Telegram token boundary: defense in depth at the document boundary is valuable, and GitHub Pages cannot activate the already-reviewed `_headers` policy. This is not a Critical/High emergency because DOM/URL boundaries and meta CSP are hardened; it remains the known Medium host limitation.
+
+The immediate v66 upgrade must stay on the existing GitHub Pages origin. A direct switch from `mastif1235-cell.github.io` to `*.netlify.app` changes origin and cannot transparently carry the installed PWA's localStorage or IndexedDB. Treating that switch as the v66 upgrade would invalidate Gate 2. Host migration therefore requires a later, explicitly approved per-device encrypted export/restore and PWA reinstall procedure (or a separately designed migration bridge).
 
 A safe migration proposal is:
 
 1. obtain explicit authorization and identify/create a dedicated Netlify site linked to this repository;
 2. deploy the candidate to a non-production preview only;
 3. verify every `_headers` directive with real responses and set explicit revalidation for `/`, HTML and `/sw.js` (do not mark unversioned assets immutable);
-4. rerun PWA install, v62-to-v66 upgrade, offline reload, QR/viewers, Telegram and GAS CORS on the preview origin;
-5. only after approval, cut the public client URL while keeping GitHub Pages intact as rollback.
+4. rerun PWA install, offline reload, QR/viewers, Telegram and GAS CORS on the preview origin;
+5. define and test the cross-origin user-data transfer procedure; the minimum current option is encrypted backup export on GitHub Pages, restore on Netlify, validation, then reinstall;
+6. only after per-device transfer validation and approval, adopt the new public client URL while keeping GitHub Pages intact as rollback.
 
 Official platform references: GitHub Pages HTTPS configuration (`https://docs.github.com/en/pages/getting-started-with-github-pages/securing-your-github-pages-site-with-https`) and Netlify custom headers (`https://docs.netlify.com/manage/routing/headers/`).
