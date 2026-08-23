@@ -135,6 +135,54 @@ Stop if any ID or active endpoint differs from the approved inventory.
 
 Stop if either copy or count verification fails.
 
+### Production phase 0-1 checkpoint — PASS (2026-08-23 17:24 EEST)
+
+No production Sheet cells, GAS source, Script Properties, deployments, PWA settings,
+GitHub Pages assets or `main` were changed during this checkpoint.
+
+Installed production PWA endpoints were confirmed by the user and match the active
+deployment inventory:
+
+- tickets: `https://script.google.com/macros/s/AKfycbzlWV_bNluAcrZwG6Xv8IFpcY0OofAUxKPJwrlBd5WJ4LewNAWkUwY8ANyZuD94XE3mkQ/exec`;
+- shifts: `https://script.google.com/macros/s/AKfycbxpwMgHe2YB8apDSIY4zv14sAiaIYQO8AvyZo4RjWyF-wf0oVqmDh90VBxbI4qNMlyY/exec`.
+
+The earlier user-supplied ticket and shifts URLs are therefore legacy/non-runtime
+inventory, not the endpoints currently owned by the installed PWA.
+
+Recorded production inventory:
+
+- tickets Sheet `1fc_yXm7XihQn7medg8H25a9cxBn_HIqMhXx-rZyVD5M`;
+- tickets bound GAS `1w5yrdY1uKQyJJ9Eg5jWRLKU4cs0DV_D0FSWQ6S3AIMASIFAc0eIt0FfS`;
+- tickets active deployment `AKfycbzlWV_bNluAcrZwG6Xv8IFpcY0OofAUxKPJwrlBd5WJ4LewNAWkUwY8ANyZuD94XE3mkQ`, pinned version 55;
+- shifts Sheet `1ItNSvv91klhfhfR44PBa6Xx41gDCb0dABEV2IZ37m_I`;
+- shifts bound GAS `174sBA1lGvaiUBpGEY1-H_j3bPsxNLlI-Gnufrdm80BHrCY4xgQCpCCEc`;
+- shifts runtime deployment `AKfycbxpwMgHe2YB8apDSIY4zv14sAiaIYQO8AvyZo4RjWyF-wf0oVqmDh90VBxbI4qNMlyY`, pinned version 6;
+- shifts also has an unexpected second active deployment
+  `AKfycbxoNFIkKWJ28IUIATnu2_gaFoJvcF7BA0oQk3XP-OJ_9SEewEn8arVSsMD0hEw1mCr5`,
+  description `111`, pinned version 1. It is not the endpoint saved in the installed PWA.
+
+Timestamped Drive backups were created in the same Drive location as the sources.
+Copying the container-bound spreadsheets preserves their bound GAS source; the
+immutable deployed versions above provide the deployed-source reference:
+
+- tickets backup `1oiiL6-dNKlazb62UOk7HcVPvwub1IxAiRsi4GUWQZ2k` —
+  `https://docs.google.com/spreadsheets/d/1oiiL6-dNKlazb62UOk7HcVPvwub1IxAiRsi4GUWQZ2k/edit`;
+- shifts backup `1SdUOKx8l8Zb_RWT5YcNDlXm_32d4iwxotx5RtSgDme4` —
+  `https://docs.google.com/spreadsheets/d/1SdUOKx8l8Zb_RWT5YcNDlXm_32d4iwxotx5RtSgDme4/edit`.
+
+Both copies opened successfully. Parity checks:
+
+- tickets `Заявки`: 339 non-empty rows in production and backup;
+- tickets `Заявки старые`: 246 non-empty rows in production and backup;
+- shifts `Зміни`: 163 non-empty rows in production and backup, with the last
+  non-empty row at 169 in both; sheet/grid metadata also matches.
+
+The selected production write-freeze is a 20-minute activation-based window. It
+begins only after explicit phase-2 authorization and an operator confirmation that
+the window has started. No ticket or shift create/edit/delete is allowed until the
+phase-2 parity check and canary stop condition complete. The window was selected
+but was not started by this checkpoint.
+
 ### 2. Migrate production shifts into the canonical workbook
 
 1. Re-read the live legacy shifts sheet after the write freeze; do not assume it still contains 142 records.
@@ -193,7 +241,8 @@ Stop if the journal remains pending or any operation reaches a legacy endpoint.
 
 ## Remaining risks / gates
 
-- The actual currently configured production ticket endpoint must be resolved before cutover; two different URLs were observed during inventory.
+- The endpoint discrepancy is resolved: the installed PWA uses the version-55 tickets deployment recorded in the phase 0-1 checkpoint. The earlier supplied URL is legacy inventory.
+- The shifts GAS project has two active deployments. The installed PWA uses version 6; the unexplained version-1 deployment must remain untouched in the current authorization scope and be explicitly accounted for before later decommissioning.
 - Production CORS must be repeated from the actual production origin, even though localhost PREPROD passed.
 - The HMAC is client-held and therefore protects request integrity/replay, not a compromised browser/device or successful XSS.
 - The legacy monthly Sheet layout is not carried into the canonical raw tab. If a Sheet-native report is operationally required, add a separate derived report tab later; never mix it with canonical records.
