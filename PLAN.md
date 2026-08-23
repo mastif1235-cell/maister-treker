@@ -23,8 +23,9 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 - Real-copy parity: 142 records across seven months; 142 unique IDs; 1,191.5 total hours; every monthly count/hour total matches; no unknown rows or duplicate IDs. The target copy has a new canonical `Зміни` sheet and no presentation rows.
 - A repeatable pure migration parser and tests guard the presentation/raw split, ID uniqueness and monthly parity.
 - v66 settings retain sanitized legacy ticket/shift endpoints in a durable `syncV66Migration` marker. Runtime does not use the legacy shift endpoint. The marker becomes `complete` only after a query-free HTTPS canonical endpoint and a 32+ character HMAC are saved; the obsolete legacy secret value is not retained.
-- A separate bound GAS project was created for the canonical workbook copy, canonical `Code.gs` and a test-only Script Property were saved. Live web-app deployment/runtime mutation tests remain pending Google OAuth approval in the isolated project.
-- After live test completion, prepare the exact backup/canary/rollback sequence and stop for explicit production authorization. No merge, Pages deploy, production secret change, or production Sheet/GAS write is part of this rehearsal.
+- **Isolated live migration rehearsal — PASS.** A separate bound GAS project and versioned web-app deployment target only the canonical workbook copy. The real v66 browser transport passed 16/16 signed ticket/shift lifecycle checks, including create, update, duplicate retry, stale revision, equal-revision fingerprints, delete and delayed mutation after tombstone. UI canaries also passed and were removed. Readable `text/plain` CORS worked from localhost; no legacy endpoint was used.
+- **Post-canary parity — PASS.** After all test rows were deleted, the canonical `Зміни` tab again contains exactly 142/142 source records, 142 unique IDs, 1,191.5 hours and zero record-level differences. Four expected test tombstones remain only in the isolated `_SyncState` sheet.
+- `PREPROD-MIGRATION-RESULTS.md` contains the exact production backup, migration, canary, cutover and rollback/roll-forward sequence. Stop for a new explicit production authorization. No merge, Pages deploy, production secret change, or production Sheet/GAS write is part of this rehearsal.
 
 ## Stages
 
