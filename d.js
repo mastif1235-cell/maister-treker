@@ -1,0 +1,8 @@
+(function(){
+  'use strict';
+  const MAX_HASH_CHARS=8192;
+  function bounded(v,max){return String(v==null?'':v).slice(0,max);}
+  function dec(v){const raw=String(v||'');if(!raw||raw.length>MAX_HASH_CHARS||!/^[A-Za-z0-9_-]+$/.test(raw))throw new Error('bad');const n=raw.replace(/-/g,'+').replace(/_/g,'/'),p=n+'='.repeat((4-n.length%4)%4),bin=atob(p);if(bin.length>6144)throw new Error('large');return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0)));}
+  function prettyDate(raw){const m=String(raw||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(!m)return bounded(raw,64)||'—';const months=['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];const mi=Number(m[2])-1;return mi<0||mi>=months.length?(bounded(raw,64)||'—'):`${Number(m[1])} ${months[mi]} ${m[3]} р.`;}
+  try{const h=location.hash.slice(1);history.replaceState(null,'',location.pathname);if(h.length>MAX_HASH_CHARS||!h.startsWith('2.'))throw new Error('bad');const a=dec(h.slice(2)).split('\x1f');if(a.length!==5)throw new Error('bad');const values=[bounded(a[0],1000),bounded(a[1],512),bounded(a[2],512),bounded(a[3],256),bounded(a[4],64)];document.getElementById('addr').textContent=values[0]||'—';document.getElementById('login').textContent=values[1]||'—';document.getElementById('pass').textContent=values[2]||'—';document.getElementById('account').textContent=values[1]||'—';document.getElementById('number').textContent=values[3]?`№ ${values[3]}`:'—';document.getElementById('date').textContent=prettyDate(values[4]);document.getElementById('content').classList.remove('hidden');}catch(_e){document.getElementById('error').classList.remove('hidden');}
+})();

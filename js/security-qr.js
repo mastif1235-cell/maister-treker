@@ -16,45 +16,11 @@ function securityQrBase64UrlEncode(text){
   return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-function securityQrRewriteContractUrl(raw){
-  try{
-    const input = new URL(String(raw), location.href);
-    const hasContractFields = ['a','l','p','n','d'].some(k=>input.searchParams.has(k));
-    if(!hasContractFields) return raw;
-
-    // Без JSON-ключів та службових пробілів: тільки 5 значень у стабільному
-    // порядку, розділених ASCII Unit Separator (майже ніколи не трапляється
-    // у звичайних адресах/логінах/паролях). Base64url лишається безпечним для URL.
-    const compact = [
-      input.searchParams.get('a') || '',
-      input.searchParams.get('l') || '',
-      input.searchParams.get('p') || '',
-      input.searchParams.get('n') || '',
-      input.searchParams.get('d') || ''
-    ].join('\x1f');
-
-    // Коротке ім'я сторінки теж зменшує QR. Дані йдуть тільки після #.
-    const viewer = new URL('d.html', location.href);
-    viewer.hash = '2.' + securityQrBase64UrlEncode(compact);
-    return viewer.href;
-  }catch(e){
-    return raw;
-  }
-}
-
-// Не переписуємо великий showDogovor(): перехоплюємо тільки дані, які він
-// передає QR-генератору. Інші QR (візитка тощо) лишаються без змін.
-if(typeof qrcode === 'function'){
-  const securityQrOriginalFactory = qrcode;
-  qrcode = function(){
-    const qr = securityQrOriginalFactory.apply(this, arguments);
-    if(!qr || typeof qr.addData !== 'function') return qr;
-    const originalAddData = qr.addData.bind(qr);
-    qr.addData = function(data){
-      return originalAddData(securityQrRewriteContractUrl(data));
-    };
-    return qr;
-  };
+function securityQrBuildContractUrl(data){
+  const compact=[data?.address||'',data?.login||'',data?.password||'',data?.number||'',data?.date||''].map(v=>String(v).slice(0,1000)).join('\x1f');
+  const viewer=new URL('d.html',location.href);
+  viewer.search='';viewer.hash='2.'+securityQrBase64UrlEncode(compact);
+  return viewer.href;
 }
 
 if(typeof renderSettingsScreen === 'function'){

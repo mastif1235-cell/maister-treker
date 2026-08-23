@@ -1281,27 +1281,7 @@ function showDogovor(id){
   let qrDataUrl = '';
   try{
     const qr = qrcode(0, 'M');
-    const dogovorUrl = (settings.dogovorUrl || '').trim();
-    if(dogovorUrl){
-      // Кодуємо QR ПОСИЛАННЯМ на власну сторінку (dogovor-view.html), а не
-      // сирим текстом — тоді будь-який сканер (Google Lens, камера, Viber)
-      // одразу пропонує "відкрити посилання", замість незрозумілого
-      // "шукати по штрихкоду". Так само влаштована й візитка.
-      const params = new URLSearchParams();
-      if(rawAddress) params.set('a', rawAddress);
-      if(t.login) params.set('l', t.login);
-      if(t.password) params.set('p', t.password);
-      if(contractNumber) params.set('n', contractNumber);
-      if(t.date) params.set('d', t.date);
-      const sep = dogovorUrl.includes('?') ? '&' : '?';
-      qr.addData(dogovorUrl + sep + params.toString());
-    } else {
-      // URL сторінки договору ще не налаштований у Налаштуваннях — кодуємо
-      // стислим текстом напряму (без графіка й контактів, щоб QR лишався
-      // невеликим). Працює, але деякі сканери можуть показати його не так
-      // зручно, як посилання.
-      qr.addData(buildDogovorQrText(address, login, password, contractNumber));
-    }
+    qr.addData(securityQrBuildContractUrl({address:rawAddress,login:t.login,password:t.password,number:contractNumber,date:t.date}));
     qr.make();
     qrDataUrl = qr.createDataURL(8); // margin не задаємо — тоді бере безпечний за замовчуванням (4 модулі)
   }catch(e){ /* якщо раптом все одно завелико — картку показуємо і без коду */ }
@@ -1337,9 +1317,7 @@ function showDogovor(id){
       ${qrDataUrl ? `
       <div class="qr-wrap" style="margin-top:14px;">
         <img src="${qrDataUrl}" alt="QR договору" style="width:220px; height:220px;">
-        <div class="qr-hint">${(settings.dogovorUrl||'').trim()
-          ? 'QR веде на сторінку з даними абонента — сканер одразу запропонує її відкрити'
-          : 'QR-код з логіном, паролем і адресою — залишається на картці, навіть якщо її зберегти як фото чи роздрукувати. Порада: додайте URL сторінки договору в Налаштуваннях — тоді QR працюватиме як посилання і розпізнаватиметься надійніше.'}</div>
+        <div class="qr-hint">QR веде на локальну viewer-сторінку; дані абонента містяться тільки після # і не надсилаються хосту.</div>
       </div>` : ''}
     </div>
     <div class="row wrap" style="margin-top:14px;">

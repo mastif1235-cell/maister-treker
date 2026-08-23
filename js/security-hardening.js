@@ -116,18 +116,6 @@ if(typeof showVizitka === 'function'){
   };
 }
 
-if(typeof showDogovor === 'function'){
-  const securityOriginalShowDogovor = showDogovor;
-  showDogovor = function(id){
-    const url = String(settings.dogovorUrl || '').trim();
-    if(url && !securityIsSafeHttpsUrl(url)){
-      showToast('🔒 Договір: дозволено лише HTTPS-посилання');
-      return;
-    }
-    return securityOriginalShowDogovor(id);
-  };
-}
-
 // Показуємо реальний security-реліз, не торкаючись старої APP_VERSION у
 // великому app.js. Це тимчасово до наступного планового розбиття app.js.
 if(typeof renderSettingsScreen === 'function'){

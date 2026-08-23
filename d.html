@@ -1,99 +1,11 @@
 <!DOCTYPE html>
-<html lang="uk">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow,noarchive">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<html lang="uk"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <title>LNET — дані абонента</title>
 <style>
-:root{color-scheme:dark;background:#15191d;color:#f2f4f6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-*{box-sizing:border-box}
-body{margin:0;background:#15191d;min-height:100vh;padding:10px 10px 18px}
-.wrap{max-width:560px;margin:0 auto}
-.card{background:#20262b;border:1px solid #343d44;border-radius:18px;padding:14px 14px 12px;box-shadow:0 8px 24px rgba(0,0,0,.16)}
-.brand{text-align:center;color:#ff8a42;font-size:21px;font-weight:850;line-height:1.05}
-.date{text-align:center;color:#aeb7bf;font-size:14px;margin-top:4px}
-.contract{text-align:center;color:#ff8a42;font-size:18px;font-weight:800;margin-top:4px}
-.site{text-align:center;color:#ff8a42;font-size:16px;font-weight:800;margin-top:3px}
-.sep{height:1px;background:#384148;margin:10px 0}
-.label{font-size:12px;letter-spacing:.045em;color:#aeb7bf;text-transform:uppercase;margin-bottom:3px}
-.value{font-size:18px;font-weight:800;line-height:1.12;overflow-wrap:anywhere}
-.credentials{background:#293138;border-radius:14px;padding:10px 12px;margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.cred+.cred{margin-top:0}
-.account-label{text-align:center;margin-top:10px;color:#aeb7bf;font-size:13px;letter-spacing:.04em}
-.account{border:2px solid #ff8a42;border-radius:14px;text-align:center;color:#ff8a42;font-size:27px;font-weight:900;padding:8px;margin-top:4px}
-.info{font-size:15px;line-height:1.3}
-.hours{background:#293138;border-radius:14px;padding:10px 12px;margin-top:10px;font-size:14px;line-height:1.32}
-.hours b{display:block;font-size:16px;margin-bottom:2px}
-.security{margin-top:10px;padding:8px 10px;background:#293138;border-radius:12px;color:#aeb7bf;font-size:11px;line-height:1.3}
-.bad{color:#ff8585;font-size:16px}.hidden{display:none}
-.details-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
-.details-grid .sep{display:none}
-.site-block{min-width:0}
-@media(max-width:380px){body{padding:7px 7px 12px}.card{padding:11px 11px 10px}.brand{font-size:19px}.value{font-size:16px}.info{font-size:14px}.hours{font-size:13px}.account{font-size:24px}.credentials{gap:8px;padding:9px}.details-grid{gap:8px}}
-@media(min-height:900px){body{padding:14px 12px 22px}.card{padding:18px}.brand{font-size:23px}.date{font-size:15px}.contract{font-size:19px}.value{font-size:19px}.credentials{padding:13px}.account{padding:10px}.hours{padding:12px}.security{padding:10px 12px}}
-</style>
-</head>
-<body>
-<div class="wrap"><div class="card">
-  <div id="content" class="hidden">
-    <div class="brand">LNET — інтернет-провайдер</div>
-    <div class="date" id="date">—</div>
-    <div class="contract" id="number">—</div>
-    <div class="site">lnet.com.ua</div>
-    <div class="sep"></div>
-    <div class="label">Адреса підключення:</div><div class="value" id="addr">—</div>
-    <div class="credentials">
-      <div class="cred"><div class="label">Логін:</div><div class="value" id="login">—</div></div>
-      <div class="cred"><div class="label">Пароль:</div><div class="value" id="pass">—</div></div>
-    </div>
-    <div class="account-label">ОСОБИСТИЙ РАХУНОК:</div><div class="account" id="account">—</div>
-    <div class="sep"></div>
-    <div class="details-grid">
-      <div class="site-block"><div class="label">Сайт:</div><div class="value">lnet.com.ua</div></div>
-      <div class="info"><b>Контакти:</b><br>+380 (67) 568-20-22<br>+380 (73) 568-20-22 (Viber)</div>
-    </div>
-    <div class="hours"><b>Графік роботи:</b>Пн — Пт: 09:00 – 18:00 &nbsp;·&nbsp; Сб: 09:00 – 16:00 &nbsp;·&nbsp; Нд: Вихідний</div>
-    <div class="security">🔐 Дані абонента прочитані з QR-коду. Логін і пароль не передаються серверу через URL-параметри.</div>
-  </div>
-  <div id="error" class="bad hidden">Не вдалося прочитати дані з QR-коду.</div>
-</div></div>
-<script>
-(function(){
-  const MAX_HASH_CHARS=8192;
-  function bounded(v,max){return String(v==null?'':v).slice(0,max)}
-  function dec(v){
-    const raw=String(v||'');
-    if(!raw||raw.length>MAX_HASH_CHARS||!/^[A-Za-z0-9_-]+$/.test(raw))throw new Error('bad');
-    const n=raw.replace(/-/g,'+').replace(/_/g,'/');
-    const p=n+'='.repeat((4-n.length%4)%4);
-    const bin=atob(p);if(bin.length>6144)throw new Error('large');
-    const b=Uint8Array.from(bin,c=>c.charCodeAt(0));return new TextDecoder().decode(b);
-  }
-  function prettyDate(raw){
-    const m=String(raw||'').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(!m)return bounded(raw,64)||'—';
-    const months=['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];
-    const mi=Number(m[2])-1;if(mi<0||mi>=months.length)return bounded(raw,64)||'—';
-    return `${Number(m[1])} ${months[mi]} ${m[3]} р.`;
-  }
-  try{
-    // Fragment ніколи не відправляється серверу, але прибираємо його з UI/history
-    // до декодування — навіть пошкоджений QR не залишить секрети в адресному рядку.
-    const h=location.hash.slice(1);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
-    if(h.length>MAX_HASH_CHARS||!h.startsWith('2.'))throw new Error('bad');
-    const a=dec(h.slice(2)).split('\x1f');if(a.length!==5)throw new Error('bad');
-    const addr=bounded(a[0],1000),login=bounded(a[1],512),pass=bounded(a[2],512),number=bounded(a[3],256),date=bounded(a[4],64);
-    document.getElementById('addr').textContent=addr||'—';
-    document.getElementById('login').textContent=login||'—';
-    document.getElementById('pass').textContent=pass||'—';
-    document.getElementById('account').textContent=login||'—';
-    document.getElementById('number').textContent=number?`№ ${number}`:'—';
-    document.getElementById('date').textContent=prettyDate(date);
-    document.getElementById('content').classList.remove('hidden');
-  }catch(e){document.getElementById('error').classList.remove('hidden')}
-})();
-</script>
-</body>
-</html>
+:root{color-scheme:dark;background:#15191d;color:#f2f4f6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:10px;background:#15191d}.wrap{max-width:560px;margin:auto}.card{background:#20262b;border:1px solid #343d44;border-radius:18px;padding:16px}.brand,.contract,.site,.account{text-align:center;color:#ff8a42;font-weight:850}.brand{font-size:21px}.date,.account-label,.label,.security{color:#aeb7bf}.date,.contract,.site{text-align:center;margin-top:4px}.sep{height:1px;background:#384148;margin:10px 0}.label{font-size:12px;text-transform:uppercase;margin-bottom:3px}.value{font-size:18px;font-weight:800;overflow-wrap:anywhere}.credentials{background:#293138;border-radius:14px;padding:10px 12px;margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px}.account-label{text-align:center;margin-top:10px;font-size:13px}.account{border:2px solid #ff8a42;border-radius:14px;font-size:27px;padding:8px;margin-top:4px}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.hours,.security{background:#293138;border-radius:12px;padding:10px;margin-top:10px;line-height:1.35}.security{font-size:11px}.bad{color:#ff8585}.hidden{display:none}
+</style></head><body><div class="wrap"><div class="card">
+<div id="content" class="hidden"><div class="brand">LNET — інтернет-провайдер</div><div class="date" id="date">—</div><div class="contract" id="number">—</div><div class="site">lnet.com.ua</div><div class="sep"></div><div class="label">Адреса підключення:</div><div class="value" id="addr">—</div><div class="credentials"><div><div class="label">Логін:</div><div class="value" id="login">—</div></div><div><div class="label">Пароль:</div><div class="value" id="pass">—</div></div></div><div class="account-label">ОСОБИСТИЙ РАХУНОК:</div><div class="account" id="account">—</div><div class="details"><div><div class="label">Сайт:</div><div class="value">lnet.com.ua</div></div><div><b>Контакти:</b><br>+380 (67) 568-20-22<br>+380 (73) 568-20-22 (Viber)</div></div><div class="hours"><b>Графік роботи:</b><br>Пн — Пт: 09:00 – 18:00 · Сб: 09:00 – 16:00 · Нд: Вихідний</div><div class="security">🔐 Дані прочитані з fragment QR і не передаються серверу через URL-параметри.</div></div>
+<div id="error" class="bad hidden">Не вдалося прочитати дані з QR-коду.</div></div></div><script src="d.js"></script></body></html>

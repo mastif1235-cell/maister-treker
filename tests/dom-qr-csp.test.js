@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const root=path.join(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
+const context={location:{href:'https://example.test/maister/index.html'},URL,TextEncoder,btoa};vm.createContext(context);vm.runInContext(read('js/security-qr.js'),context);
+const url=new URL(context.securityQrBuildContractUrl({address:'вул. X?&',login:'user+1',password:'p&a#ss',number:'42',date:'23.08.2026'}));
+assert.equal(url.origin,'https://example.test');assert.equal(url.pathname,'/maister/d.html');assert.equal(url.search,'');assert.ok(url.hash.startsWith('#2.'));
+const encoded=url.hash.slice(3).replace(/-/g,'+').replace(/_/g,'/'),decoded=Buffer.from(encoded+'='.repeat((4-encoded.length%4)%4),'base64').toString('utf8').split('\x1f');assert.deepEqual(decoded,['вул. X?&','user+1','p&a#ss','42','23.08.2026']);
+const app=read('app.js');assert.equal(app.slice(app.indexOf('function showDogovor'),app.indexOf('function printDogovorAsPdf')).includes('URLSearchParams'),false);
+for(const page of ['index.html','d.html','dogovor-secure.html'])assert.ok(read(page).includes('Content-Security-Policy'));
+assert.ok(read('d.html').includes('<script src="d.js"></script>'));assert.ok(read('dogovor-secure.html').includes('<script src="dogovor-secure.js"></script>'));
+const source=[app,...fs.readdirSync(path.join(root,'js')).filter(x=>x.endsWith('.js')).map(x=>read(`js/${x}`))].join('\n');assert.equal(/\beval\s*\(|new\s+Function\s*\(/.test(source),false);
+assert.ok(read('_headers').includes("script-src 'self'"));assert.ok(read('_headers').includes("frame-ancestors 'none'"));
+console.log('PASS fragment-only QR/viewers, CSP, and dynamic-code inventory');
