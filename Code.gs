@@ -1,5 +1,7 @@
 var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON'];
 var SHIFT_HEADERS  = ['id','date','hours','coworker'];
+var SYNC_STATE_SHEET = '_SyncState';
+var SYNC_STATE_HEADERS = ['entityType','entityId','revision','tombstone','fingerprint','requestId','updatedAt'];
 
 var SYNC_PROTOCOL_VERSION = 3;
 var SYNC_HMAC_PROPERTY = 'MT_SYNC_HMAC_SECRET';
@@ -17,6 +19,7 @@ var SYNC_POST_ACTIONS = {
   updateTicket: 'ticket',
   deleteTicket: 'ticket',
   addShift: 'shift',
+  updateShift: 'shift',
   deleteShift: 'shift',
   syncAll: 'system',
   syncAllTickets: 'system',
@@ -25,9 +28,10 @@ var SYNC_POST_ACTIONS = {
 };
 
 var SYNC_GET_ACTIONS = {
-  list: 'system',
-  checkTicketExists: 'ticket',
-  getTicketById: 'ticket'
+  list: true,
+  checkTicketExists: true,
+  getTicketById: true,
+  getEntityState: true
 };
 
 
@@ -93,9 +97,11 @@ function doGet(e) {
     };
     var verified = syncVerifyEnvelope_(envelope, 'GET');
     if (!verified.ok) return syncErrorResponse_(verified.code);
-    if (!SYNC_GET_ACTIONS[envelope.action] || SYNC_GET_ACTIONS[envelope.action] !== envelope.entity) {
+    if (!SYNC_GET_ACTIONS[envelope.action]) {
       return syncErrorResponse_('INVALID_INPUT');
     }
+    if (envelope.action === 'list' && envelope.entity !== 'system') return syncErrorResponse_('INVALID_INPUT');
+    if ((envelope.action === 'checkTicketExists' || envelope.action === 'getTicketById') && envelope.entity !== 'ticket') return syncErrorResponse_('INVALID_INPUT');
     if (envelope.action !== 'list' && !syncValidId_(envelope.id)) {
       return syncErrorResponse_('INVALID_INPUT');
     }
@@ -112,7 +118,7 @@ function doGet(e) {
       authLock.releaseLock();
     }
 
-    return syncExecuteGet_(envelope.action, envelope.id);
+    return syncExecuteGet_(envelope.action, envelope.entity, envelope.id);
   } catch (err) {
     return syncErrorResponse_('SERVER_ERROR');
   }
@@ -217,12 +223,13 @@ function syncValidatePostData_(data, envelope) {
   if (data.action !== envelope.action) return {ok:false, code:'INVALID_INPUT'};
   if (envelope.entity !== 'system') {
     if (!syncValidId_(envelope.id) || String(data.id || '') !== String(envelope.id)) return {ok:false, code:'INVALID_INPUT'};
+    if (!Number.isSafeInteger(Number(data.revision)) || Number(data.revision) < 1) return {ok:false, code:'INVALID_INPUT'};
   } else if (String(envelope.id || '') !== '') {
     return {ok:false, code:'INVALID_INPUT'};
   }
 
   if (/Ticket$/.test(envelope.action) && envelope.action !== 'deleteTicket' && !syncValidTicket_(data)) return {ok:false, code:'INVALID_INPUT'};
-  if (envelope.action === 'addShift' && !syncValidShift_(data)) return {ok:false, code:'INVALID_INPUT'};
+  if ((envelope.action === 'addShift' || envelope.action === 'updateShift') && !syncValidShift_(data)) return {ok:false, code:'INVALID_INPUT'};
   if (envelope.action === 'syncAll' || envelope.action === 'syncAllTickets') {
     if (!syncValidTicketArray_(data.tickets || [])) return {ok:false, code:'INVALID_INPUT'};
   }
@@ -289,24 +296,92 @@ function syncValidShiftArray_(items) {
 }
 
 function syncExecutePost_(data, envelope) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var action = envelope.action;
-  if (action === 'addTicket') addTicketRow(ss, data);
-  else if (action === 'updateTicket') updateTicketRow(ss, data);
-  else if (action === 'deleteTicket') deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
-  else if (action === 'addShift') addShiftRow(ss, data);
-  else if (action === 'deleteShift') deleteRowById(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.id);
-  else if (action === 'syncAll') syncAllData(ss, data.tickets, data.shifts);
-  else if (action === 'syncAllTickets') writeAllTickets(ss, data.tickets || []);
-  else if (action === 'syncAllShifts') writeAllShifts(ss, data.shifts || []);
-  else if (action === 'clearAll') syncAllData(ss, [], []);
-  return {status:'ok', action:action, id:envelope.id || '', requestId:envelope.requestId};
+  if (envelope.entity !== 'system') return syncExecuteEntityMutation_(SpreadsheetApp.getActiveSpreadsheet(), data, envelope);
+  // Full replacement needs an explicit recovery protocol that preserves
+  // revisions and tombstones. Incremental sync must not wait for it.
+  return {status:'error', code:'ADMIN_RECOVERY_REQUIRED'};
 }
 
-function syncExecuteGet_(action, id) {
+function syncExecuteGet_(action, entity, id) {
+  if (action === 'getEntityState') return jsonResponse({status:'ok', state:syncReadEntityState_(SpreadsheetApp.getActiveSpreadsheet(), entity, id)});
   if (action === 'checkTicketExists') return jsonResponse({status:'ok', exists:syncTicketExists_(id)});
   if (action === 'getTicketById') return jsonResponse({status:'ok', ticket:syncReadTicketById_(id)});
   return jsonResponse(syncReadAll_());
+}
+
+function syncExecuteEntityMutation_(ss, data, envelope) {
+  var revision = Number(data.revision);
+  var fingerprint = syncSemanticFingerprint_(envelope.entity, envelope.id, envelope.action, revision, envelope.body);
+  var current = syncReadEntityState_(ss, envelope.entity, envelope.id);
+
+  if (revision < current.revision) return syncMutationResult_(envelope, 'STALE', current);
+  if (revision === current.revision) {
+    if (current.fingerprint === fingerprint) return syncMutationResult_(envelope, 'IDEMPOTENT_SUCCESS', current);
+    return {status:'error', code:'CONFLICT', state:current};
+  }
+  if (revision !== current.revision + 1) return {status:'error', code:'REVISION_GAP', state:current};
+  if (current.tombstone && envelope.action !== 'deleteTicket' && envelope.action !== 'deleteShift') {
+    return {status:'error', code:'TOMBSTONED', state:current};
+  }
+
+  if (envelope.action === 'addTicket') addTicketRow(ss, data);
+  else if (envelope.action === 'updateTicket') updateTicketRow(ss, data);
+  else if (envelope.action === 'deleteTicket') deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
+  else if (envelope.action === 'addShift' || envelope.action === 'updateShift') addShiftRow(ss, data);
+  else if (envelope.action === 'deleteShift') deleteRowById(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.id);
+
+  var next = {
+    entityType:envelope.entity,
+    entityId:String(envelope.id),
+    revision:revision,
+    tombstone:envelope.action === 'deleteTicket' || envelope.action === 'deleteShift',
+    fingerprint:fingerprint,
+    requestId:String(envelope.requestId),
+    updatedAt:new Date().toISOString()
+  };
+  syncWriteEntityState_(ss, next, current.rowIndex);
+  return syncMutationResult_(envelope, 'APPLIED', next);
+}
+
+function syncSemanticFingerprint_(entity, id, action, revision, body) {
+  return syncSha256Base64Url_([entity, id, action, String(revision), body].map(syncCanonicalField_).join('\n'));
+}
+
+function syncMutationResult_(envelope, outcome, state) {
+  return {status:'ok', outcome:outcome, action:envelope.action, id:String(envelope.id), requestId:envelope.requestId, state:syncPublicEntityState_(state)};
+}
+
+function syncPublicEntityState_(state) {
+  return {exists:state.revision > 0 && !state.tombstone, revision:Number(state.revision) || 0, tombstone:!!state.tombstone, fingerprint:String(state.fingerprint || '')};
+}
+
+function syncGetStateSheet_(ss, create) {
+  var sheet = ss.getSheetByName(SYNC_STATE_SHEET);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(SYNC_STATE_SHEET);
+    sheet.appendRow(SYNC_STATE_HEADERS);
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+function syncReadEntityState_(ss, entityType, entityId) {
+  var empty = {entityType:entityType, entityId:String(entityId), revision:0, tombstone:false, fingerprint:'', requestId:'', updatedAt:'', rowIndex:-1};
+  var sheet = syncGetStateSheet_(ss, false);
+  if (!sheet || sheet.getLastRow() <= 1) return empty;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, SYNC_STATE_HEADERS.length).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) !== String(entityType) || String(rows[i][1]) !== String(entityId)) continue;
+    return {entityType:String(rows[i][0]), entityId:String(rows[i][1]), revision:Number(rows[i][2]) || 0, tombstone:rows[i][3] === true || String(rows[i][3]).toLowerCase() === 'true', fingerprint:String(rows[i][4] || ''), requestId:String(rows[i][5] || ''), updatedAt:String(rows[i][6] || ''), rowIndex:i + 2};
+  }
+  return empty;
+}
+
+function syncWriteEntityState_(ss, state, rowIndex) {
+  var sheet = syncGetStateSheet_(ss, true);
+  var row = [state.entityType, state.entityId, state.revision, state.tombstone, state.fingerprint, state.requestId, state.updatedAt];
+  if (rowIndex > 1) sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  else sheet.appendRow(row);
 }
 
 function syncTicketExists_(id) {
@@ -402,7 +477,7 @@ function syncCleanupIdempotency_(props) {
 }
 
 function syncErrorResponse_(code) {
-  var publicCode = /^(AUTH_FAILED|BAD_REQUEST|REQUEST_TOO_LARGE|INVALID_INPUT|BUSY|IDEMPOTENCY_CONFLICT|SERVER_ERROR)$/.test(String(code)) ? String(code) : 'SERVER_ERROR';
+  var publicCode = /^(AUTH_FAILED|BAD_REQUEST|REQUEST_TOO_LARGE|INVALID_INPUT|BUSY|IDEMPOTENCY_CONFLICT|CONFLICT|REVISION_GAP|TOMBSTONED|ADMIN_RECOVERY_REQUIRED|SERVER_ERROR)$/.test(String(code)) ? String(code) : 'SERVER_ERROR';
   return jsonResponse({status:'error', code:publicCode});
 }
 

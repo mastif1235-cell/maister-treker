@@ -49,8 +49,10 @@ This length-prefixing removes separator ambiguity and makes Unicode byte handlin
 - Request limit: 2 MiB; signed body limit: 1.5 MiB; batch limit: 5000 entities.
 - Errors expose only stable generic codes.
 - A repeated mutation with the same request ID and same semantic payload returns its previous result without executing again, including an exact replay after a lost response. Reusing a request ID with different action/entity/id/body is rejected.
+- Every entity mutation carries a positive integer `revision`. Gaps are rejected. The durable `_SyncState` sheet makes same-revision/same-fingerprint retries safe after caches expire; different fingerprints conflict, and tombstones permanently reject add/update for the old ID.
 - Ticket add/update/delete and shift add/delete are idempotent by stable entity ID. `addShift` updates an existing matching ID instead of duplicating it.
-- `syncAll*` remains an explicit bulk/admin action. It is not an incremental repair mechanism.
+- Signed `getEntityState` returns only `exists`, `revision`, `tombstone` and the semantic fingerprint for tickets and shifts.
+- `syncAll*`/`clearAll` return `ADMIN_RECOVERY_REQUIRED` until a separate recovery protocol can preserve revisions and tombstones. They are never incremental repair mechanisms.
 
 ## Tests
 

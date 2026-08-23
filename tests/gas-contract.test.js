@@ -63,7 +63,7 @@ async function run(){
   const base = {
     v:3, method:'POST', action:'updateTicket', entity:'ticket', id:'abc-123',
     ts:String(now), nonce:'nonce-abcdefghijklmnop', requestId:'request-abcdefghijkl',
-    body:JSON.stringify({action:'updateTicket', id:'abc-123', date:'23.08.2026', time:'10:00', content:'ok', sum:100, tags:[]})
+    body:JSON.stringify({action:'updateTicket', id:'abc-123', revision:1, date:'23.08.2026', time:'10:00', content:'ok', sum:100, tags:[]})
   };
   const valid = await signed(base);
   assert.equal(context.syncVerifyEnvelope_(valid, 'POST').ok, true, 'valid signature');
@@ -91,6 +91,7 @@ async function run(){
   for(const key of [...properties.keys()]) if(key.startsWith('MT_SYNC_IDEM_')) properties.delete(key);
   cache.clear();
   let executions = 0;
+  const realSyncExecutePost = context.syncExecutePost_;
   context.syncExecutePost_ = function(_data, envelope){ executions++; return {status:'ok', requestId:envelope.requestId}; };
   const first = await signed({...base, nonce:'nonce-first-abcdefghijkl'});
   const exactRetry = {...first};
@@ -106,10 +107,40 @@ async function run(){
   const collisionBody = JSON.stringify({...JSON.parse(base.body), content:'changed'});
   const collision = await signed({...base, ts:String(Date.now()), nonce:'nonce-conflict-abcdefgh', body:collisionBody});
   assert.equal(JSON.parse(context.doPost({postData:{contents:JSON.stringify(collision)}}).text).code, 'IDEMPOTENCY_CONFLICT', 'requestId collision rejected');
+  context.syncExecutePost_ = realSyncExecutePost;
+
+  let durableState = {entityType:'ticket', entityId:'state-1', revision:0, tombstone:false, fingerprint:'', requestId:'', rowIndex:-1};
+  context.syncReadEntityState_ = ()=>({...durableState});
+  context.syncWriteEntityState_ = (_ss, state)=>{ durableState = {...state, rowIndex:2}; };
+  context.addTicketRow = ()=>{};
+  context.updateTicketRow = ()=>{};
+  context.deleteRowById = ()=>{};
+  context.getOrCreateSheet = ()=>({});
+  const entityEnvelope = {v:3, method:'POST', action:'addTicket', entity:'ticket', id:'state-1', requestId:'state-request-0001'};
+  const entityBody = JSON.stringify({action:'addTicket', id:'state-1', revision:1, date:'23.08.2026', time:'10:00', content:'create', sum:1, tags:[]});
+  entityEnvelope.body = entityBody;
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(entityBody), entityEnvelope).outcome, 'APPLIED', 'revision 1 applied');
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(entityBody), entityEnvelope).outcome, 'IDEMPOTENT_SUCCESS', 'same revision/fingerprint after cache expiry');
+  const differentBody = JSON.stringify({...JSON.parse(entityBody), content:'different'});
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(differentBody), {...entityEnvelope, body:differentBody}).code, 'CONFLICT', 'same revision/different fingerprint');
+  const gapBody = JSON.stringify({...JSON.parse(entityBody), action:'updateTicket', revision:3});
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(gapBody), {...entityEnvelope, action:'updateTicket', body:gapBody}).code, 'REVISION_GAP', 'revision gaps rejected');
+  const updateBody = JSON.stringify({...JSON.parse(entityBody), action:'updateTicket', revision:2, content:'latest'});
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(updateBody), {...entityEnvelope, action:'updateTicket', requestId:'state-request-0002', body:updateBody}).outcome, 'APPLIED', 'next revision applied');
+  const deleteBody = JSON.stringify({action:'deleteTicket', id:'state-1', revision:3});
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(deleteBody), {...entityEnvelope, action:'deleteTicket', requestId:'state-request-0003', body:deleteBody}).outcome, 'APPLIED', 'delete tombstone applied');
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(updateBody), {...entityEnvelope, action:'updateTicket', body:updateBody}).outcome, 'STALE', 'delayed old update is stale');
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(entityBody), entityEnvelope).outcome, 'STALE', 'delayed old create is stale');
+  const resurrectBody = JSON.stringify({...JSON.parse(entityBody), action:'updateTicket', revision:4});
+  assert.equal(context.syncExecuteEntityMutation_({}, JSON.parse(resurrectBody), {...entityEnvelope, action:'updateTicket', body:resurrectBody}).code, 'TOMBSTONED', 'new update cannot remove tombstone');
+  assert.deepEqual(JSON.parse(JSON.stringify(context.syncPublicEntityState_(durableState))), {exists:false, revision:3, tombstone:true, fingerprint:durableState.fingerprint}, 'minimal entity state');
+
+  const adminResult = context.syncExecutePost_({}, {entity:'system', action:'syncAll', id:'', requestId:'admin-request-0001'});
+  assert.equal(adminResult.code, 'ADMIN_RECOVERY_REQUIRED', 'full sync cannot bypass revision/tombstones');
 
   console.log(`PASS ${fixture.vectors.length} client vectors`);
   console.log(`PASS ${fixture.vectors.length} server vectors`);
-  console.log('PASS malformed/expired/replay/modified/wrong-key/oversized/idempotency cases');
+  console.log('PASS auth/idempotency/revision/tombstone/full-sync safety cases');
 }
 
 run().catch((error)=>{ console.error(error); process.exitCode = 1; });
