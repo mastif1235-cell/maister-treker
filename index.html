@@ -679,18 +679,15 @@
 
 
       <details class="card acc-card">
-        <summary>Синхронізація — Зміни (окремий файл) <span class="acc-chevron">▾</span></summary>
+        <summary>Синхронізація — Зміни <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
         <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">
-          Необов'язково. Якщо залишити порожнім — зміни будуть синхронізуватися в ту саму таблицю, що й заявки.
-          <br><br>
-          ℹ️ "Відправити всі зміни" надсилає кожну зміну окремим запитом
-          (дублікати за ID скрипт пропустить сам) — масової синхронізації за
-          один запит цей скрипт не підтримує, але працює надійно.
+          Зміни й заявки тепер використовують один canonical GAS URL і один durable sync engine.
+          Окремий старий URL показано лише для сумісності налаштувань і більше не використовується транспортом.
         </div>
         <div class="field">
-          <label>URL Apps Script для змін (Google Drive / окремий Excel-файл)</label>
-          <input type="text" id="shiftsScriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+          <label>Legacy URL Apps Script для змін (не використовується)</label>
+          <input type="text" id="shiftsScriptUrlInput" disabled>
         </div>
         <div class="row wrap">
           <button class="btn" id="loadShiftsCloudBtn">☁️ Завантажити зміни з хмари</button>
