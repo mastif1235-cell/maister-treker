@@ -774,5 +774,32 @@
 <script src="js/settings-local-lists-bindings.js"></script>
 <script src="js/ticket-form-domain.js"></script>
 <script src="app.js"></script>
+<!-- Canonical runtime extensions. Keep this order explicit: later files adapt
+     APIs established by app.js and the preceding security modules. -->
+<script src="js/security-hardening.js"></script>
+<script src="js/security-lock.js"></script>
+<script src="js/security-qr.js"></script>
+<script src="js/security-telegram.js"></script>
+<script src="js/security-backup-encryption.js"></script>
+<script src="js/security-backup-vault-hub.js"></script>
+<script src="js/security-backup-vault.js"></script>
+<script src="js/security-runtime-v65-9.js"></script>
+<script src="js/share-fix-v65-11.js"></script>
+<script src="js/share-photo-picker-v65-12.js"></script>
+<script src="js/share-multi-fix-v65-17-2.js"></script>
+<script src="js/telegram-backup-reliability-v65-13.js"></script>
+<script src="js/photo-data-fetch-v65-14.js"></script>
+<script src="js/security-backup-envelope-guard-v65-17.js"></script>
+<script src="js/security-dom-final-v65-18.js"></script>
+<script src="js/daily-physical-backup-v65-17-3.js"></script>
+<script src="js/security-sync-hmac-v65-18.js"></script>
+<script src="js/security-sync-verify-v65-18-1.js"></script>
+<script src="js/security-sync-race-v65-18-3.js"></script>
+<script src="js/security-sync-delete-repair-v65-18-4.js"></script>
+<script src="js/security-sync-latency-v65-18-5.js"></script>
+<script src="js/security-sync-verify-v65-18-6.js"></script>
+<script src="js/security-sync-locksplit-v65-18-7.js"></script>
+<script src="js/security-sync-fastverify-v65-18-8.js"></script>
+<script src="js/security-audit-fixes-v65-18-9.js"></script>
 </body>
 </html>
