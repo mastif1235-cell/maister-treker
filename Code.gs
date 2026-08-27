@@ -5,6 +5,7 @@ var SYNC_STATE_HEADERS = ['entityType','entityId','revision','tombstone','finger
 
 var SYNC_PROTOCOL_VERSION = 3;
 var SYNC_HMAC_PROPERTY = 'MT_SYNC_HMAC_SECRET';
+var SYNC_SHIFTS_SPREADSHEET_PROPERTY = 'MT_SHIFTS_SPREADSHEET_ID';
 var SYNC_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 var SYNC_NONCE_TTL_SECONDS = 10 * 60;
 var SYNC_MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -102,6 +103,7 @@ function doGet(e) {
     }
     if (envelope.action === 'list' && envelope.entity !== 'system') return syncErrorResponse_('INVALID_INPUT');
     if ((envelope.action === 'checkTicketExists' || envelope.action === 'getTicketById') && envelope.entity !== 'ticket') return syncErrorResponse_('INVALID_INPUT');
+    if (envelope.action === 'getEntityState' && envelope.entity !== 'ticket' && envelope.entity !== 'shift') return syncErrorResponse_('INVALID_INPUT');
     if (envelope.action !== 'list' && !syncValidId_(envelope.id)) {
       return syncErrorResponse_('INVALID_INPUT');
     }
@@ -296,17 +298,39 @@ function syncValidShiftArray_(items) {
 }
 
 function syncExecutePost_(data, envelope) {
-  if (envelope.entity !== 'system') return syncExecuteEntityMutation_(SpreadsheetApp.getActiveSpreadsheet(), data, envelope);
+  if (envelope.entity !== 'system') return syncExecuteEntityMutation_(syncSpreadsheetForEntity_(envelope.entity), data, envelope);
   // Full replacement needs an explicit recovery protocol that preserves
   // revisions and tombstones. Incremental sync must not wait for it.
   return {status:'error', code:'ADMIN_RECOVERY_REQUIRED'};
 }
 
 function syncExecuteGet_(action, entity, id) {
-  if (action === 'getEntityState') return jsonResponse({status:'ok', state:syncReadEntityState_(SpreadsheetApp.getActiveSpreadsheet(), entity, id)});
+  if (action === 'getEntityState') return jsonResponse({status:'ok', state:syncReadEntityState_(syncSpreadsheetForEntity_(entity), entity, id)});
   if (action === 'checkTicketExists') return jsonResponse({status:'ok', exists:syncTicketExists_(id)});
   if (action === 'getTicketById') return jsonResponse({status:'ok', ticket:syncReadTicketById_(id)});
   return jsonResponse(syncReadAll_());
+}
+
+function syncTicketSpreadsheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('Ticket workbook is unavailable');
+  return ss;
+}
+
+function syncShiftSpreadsheet_() {
+  var id = String(PropertiesService.getScriptProperties().getProperty(SYNC_SHIFTS_SPREADSHEET_PROPERTY) || '').trim();
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(id)) throw new Error('Shift workbook is not configured');
+  var ticketSs = syncTicketSpreadsheet_();
+  if (typeof ticketSs.getId === 'function' && String(ticketSs.getId()) === id) throw new Error('Shift workbook must be separate');
+  var shiftSs = SpreadsheetApp.openById(id);
+  if (!shiftSs) throw new Error('Shift workbook is unavailable');
+  return shiftSs;
+}
+
+function syncSpreadsheetForEntity_(entity) {
+  if (entity === 'ticket') return syncTicketSpreadsheet_();
+  if (entity === 'shift') return syncShiftSpreadsheet_();
+  throw new Error('Unsupported entity workbook');
 }
 
 function syncExecuteEntityMutation_(ss, data, envelope) {
@@ -385,14 +409,14 @@ function syncWriteEntityState_(ss, state, rowIndex) {
 }
 
 function syncTicketExists_(id) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Заявки');
+  var sheet = syncTicketSpreadsheet_().getSheetByName('Заявки');
   if (!sheet || sheet.getLastRow() <= 1) return false;
   var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
   return ids.some(function(row){ return String(row[0]) === String(id); });
 }
 
 function syncReadTicketById_(id) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = syncTicketSpreadsheet_();
   var sheet = ss.getSheetByName('Заявки');
   if (!sheet || sheet.getLastRow() <= 1) return null;
   var ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
@@ -404,20 +428,22 @@ function syncReadTicketById_(id) {
 }
 
 function syncReadAll_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var tz = ss.getSpreadsheetTimeZone();
-  var tSheet = ss.getSheetByName('Заявки');
-  var sSheet = ss.getSheetByName('Зміни');
+  var ticketSs = syncTicketSpreadsheet_();
+  var shiftSs = syncShiftSpreadsheet_();
+  var ticketTz = ticketSs.getSpreadsheetTimeZone();
+  var shiftTz = shiftSs.getSpreadsheetTimeZone();
+  var tSheet = ticketSs.getSheetByName('Заявки');
+  var sSheet = shiftSs.getSheetByName('Зміни');
   var tickets = [];
   var shifts = [];
   if (tSheet && tSheet.getLastRow() > 1) {
     tSheet.getRange(2, 1, tSheet.getLastRow() - 1, 8).getValues().forEach(function(row){
-      if (row[0] || row[1]) tickets.push(syncTicketFromRow_(row, tz));
+      if (row[0] || row[1]) tickets.push(syncTicketFromRow_(row, ticketTz));
     });
   }
   if (sSheet && sSheet.getLastRow() > 1) {
     sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 4).getValues().forEach(function(row){
-      if (row[0] || row[1]) shifts.push({id:safeString(row[0]), date:cellToDateString(row[1], tz), hours:safeNumber(row[2]), coworker:safeString(row[3])});
+      if (row[0] || row[1]) shifts.push({id:safeString(row[0]), date:cellToDateString(row[1], shiftTz), hours:safeNumber(row[2]), coworker:safeString(row[3])});
     });
   }
   return {status:'ok', tickets:tickets, shifts:shifts};

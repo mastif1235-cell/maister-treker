@@ -27,6 +27,12 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 - **Post-canary parity — PASS.** After all test rows were deleted, the canonical `Зміни` tab again contains exactly 142/142 source records, 142 unique IDs, 1,191.5 hours and zero record-level differences. Four expected test tombstones remain only in the isolated `_SyncState` sheet.
 - `PREPROD-MIGRATION-RESULTS.md` contains the exact production backup, migration, canary, cutover and rollback/roll-forward sequence. Stop for a new explicit production authorization. No merge, Pages deploy, production secret change, or production Sheet/GAS write is part of this rehearsal.
 
+## Separate-workbook storage router
+
+- **Local implementation complete; PREPROD validation pending.** Ticket mutations, ticket reads and ticket `_SyncState` use only the bound ticket workbook. Shift mutations, shift reads and shift `_SyncState` use only the separate workbook named by Script Property `MT_SHIFTS_SPREADSHEET_ID`.
+- Routing fails closed when the shifts property is missing, malformed, inaccessible or points back to the ticket workbook. `list` composes ticket rows from the ticket workbook and shift rows from the shifts workbook; it does not copy or dual-write either entity.
+- Local router isolation/static/contract suites and the complete regression set pass. Production source, deployment v56, properties, Sheets, PWA, `main` and GitHub Pages remain unchanged. PREPROD must prove lifecycle/idempotency/tombstone parity plus before/after workbook isolation before this block is complete.
+
 ## Stages
 
 1. **Production inventory and branch/checkpoint — complete.** Proven facts are recorded in `AUDIT.md`; inaccessible production systems are explicitly `UNKNOWN`.

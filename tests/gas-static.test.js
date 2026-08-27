@@ -15,6 +15,10 @@ assert.equal((allGas.match(/\bfunction\s+doGet\s*\(/g) || []).length, 1, 'exactl
 assert.equal((allGas.match(/\bfunction\s+doPost\s*\(/g) || []).length, 1, 'exactly one doPost');
 assert.equal(/var\s+(?:SYNC_SECRET|SECURE_AUTH_HMAC_SECRET)\s*=/.test(allGas), false, 'no source secret variable');
 assert.equal(allGas.includes("getProperty(SYNC_HMAC_PROPERTY)"), true, 'secret read from Script Properties');
+assert.equal(allGas.includes("getProperty(SYNC_SHIFTS_SPREADSHEET_PROPERTY)"), true, 'shift workbook read from Script Properties');
+assert.match(allGas, /syncExecuteEntityMutation_\(syncSpreadsheetForEntity_\(envelope\.entity\)/, 'mutations use entity storage router');
+assert.match(allGas, /var shiftSs = syncShiftSpreadsheet_\(\)/, 'list uses separate shift workbook');
+assert.equal(/getSheetByName\('Зміни'\)/.test(allGas.match(/function syncTicketSpreadsheet_\([\s\S]*?function syncShiftSpreadsheet_/)[0]), false, 'ticket owner does not select shifts sheet');
 assert.equal(allGas.includes('CacheService.getScriptCache()'), true, 'replay cache enabled');
 assert.equal(allGas.includes('LockService.getScriptLock()'), true, 'atomic lock enabled');
 assert.match(allGas, /existingIndex !== -1[\s\S]*writeTicketRow\(sheet, existingIndex \+ 2, t\)/, 'legacy ticket adoption uses idempotent upsert');
