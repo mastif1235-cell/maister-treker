@@ -29,9 +29,9 @@ Branch: `agent/security-stability-v66`. Baseline checkpoint: `9ae763a7a262a56d99
 
 ## Separate-workbook storage router
 
-- **Local implementation complete; PREPROD validation pending.** Ticket mutations, ticket reads and ticket `_SyncState` use only the bound ticket workbook. Shift mutations, shift reads and shift `_SyncState` use only the separate workbook named by Script Property `MT_SHIFTS_SPREADSHEET_ID`.
+- **Local implementation and PREPROD validation complete.** Ticket mutations, ticket reads and ticket `_SyncState` use only the bound ticket workbook. Shift mutations, shift reads and shift `_SyncState` use only the separate workbook named by Script Property `MT_SHIFTS_SPREADSHEET_ID`.
 - Routing fails closed when the shifts property is missing, malformed, inaccessible or points back to the ticket workbook. `list` composes ticket rows from the ticket workbook and shift rows from the shifts workbook; it does not copy or dual-write either entity.
-- Local router isolation/static/contract suites and the complete regression set pass. Production source, deployment v56, properties, Sheets, PWA, `main` and GitHub Pages remain unchanged. PREPROD must prove lifecycle/idempotency/tombstone parity plus before/after workbook isolation before this block is complete.
+- Local router isolation/static/contract suites and the complete regression set pass. PREPROD version 4 passed ticket and shift create/update/duplicate retry/getEntityState/delete/tombstone. All four visible business-data snapshots returned exactly to their pre-test row counts and hashes after cleanup. The ticket tombstone exists only in the ticket workbook; the shift tombstone exists only in the separate shifts workbook. The temporary runner was removed and PREPROD source was read back equal to canonical source after CRLF normalization. Production source, deployment v56, properties, Sheets, PWA, `main` and GitHub Pages remain unchanged.
 
 ## Stages
 
