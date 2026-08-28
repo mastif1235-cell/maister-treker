@@ -137,6 +137,8 @@ async function run(){
 
   durableState = {entityType:'shift', entityId:'shift-1', revision:0, tombstone:false, fingerprint:'', requestId:'', rowIndex:-1};
   context.addShiftRow = ()=>{};
+  context.syncGetCanonicalShiftSheet_ = ()=>({});
+  context.refreshShiftReport_ = ()=>{};
   const shiftAddBody=JSON.stringify({action:'addShift',id:'shift-1',revision:1,date:'23.08.2026',hours:8,coworker:'Сам'});
   const shiftEnvelope={entity:'shift',id:'shift-1',action:'addShift',requestId:'shift-request-0001',body:shiftAddBody};
   assert.equal(context.syncExecuteEntityMutation_({},JSON.parse(shiftAddBody),shiftEnvelope).outcome,'APPLIED','shift create parity');

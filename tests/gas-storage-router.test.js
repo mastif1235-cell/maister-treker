@@ -12,10 +12,16 @@ const properties = new Map([
   ['MT_SHIFTS_SPREADSHEET_ID', shiftsId]
 ]);
 
-function dataSheet(rows) {
+function dataSheet(rows, headers) {
   return {
     getLastRow(){ return rows.length + 1; },
+    getLastColumn(){ return headers.length; },
     getRange(row, column, count, width){
+      if (row === 1) {
+        return {
+          getDisplayValues(){ return [headers.slice(column - 1, column - 1 + width)]; }
+        };
+      }
       assert.equal(row, 2);
       return {
         getValues(){ return rows.slice(0, count).map((item)=>item.slice(column - 1, column - 1 + width)); },
@@ -25,8 +31,8 @@ function dataSheet(rows) {
   };
 }
 
-const ticketSheet = dataSheet([['ticket-existing', '23.08.2026', '10:00', 'ticket', 1, '', '', '']]);
-const shiftSheet = dataSheet([['shift-existing', '23.08.2026', 8, 'Сам']]);
+const ticketSheet = dataSheet([['ticket-existing', '23.08.2026', '10:00', 'ticket', 1, '', '', '']], ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON']);
+const shiftSheet = dataSheet([['shift-existing', '23.08.2026', 8, 'Сам']], ['id','date','hours','coworker']);
 const workbookReads = [];
 const ticketWorkbook = {
   name:'ticket',
@@ -45,7 +51,7 @@ const shiftWorkbook = {
   getSpreadsheetTimeZone(){ return 'Europe/Kiev'; },
   getSheetByName(name){
     workbookReads.push(`shift:${name}`);
-    if (name === 'Зміни') return shiftSheet;
+    if (name === '_ShiftsData') return shiftSheet;
     if (name === '_SyncState') return null;
     throw new Error(`shift workbook must not read ${name}`);
   }
@@ -114,10 +120,30 @@ assert.equal(list.tickets.length, 1);
 assert.equal(list.tickets[0].id, 'ticket-existing');
 assert.equal(list.shifts.length, 1);
 assert.equal(list.shifts[0].id, 'shift-existing');
-assert.deepEqual(workbookReads.filter((entry)=>entry.includes('Заявки') || entry.includes('Зміни')), [
+assert.deepEqual(workbookReads.filter((entry)=>entry.includes('Заявки') || entry.includes('_ShiftsData')), [
   'ticket:Заявки',
-  'shift:Зміни'
+  'shift:_ShiftsData'
 ], 'list never reads an entity from the other workbook');
+
+assert.equal(context.syncGetCanonicalShiftSheet_(shiftWorkbook), shiftSheet, 'canonical shift sheet passes exact header gate');
+const badShiftSheet = dataSheet([], ['date','weekday','hours','coworker','id']);
+assert.throws(()=>context.syncGetCanonicalShiftSheet_({getSheetByName(){ return badShiftSheet; }}), /schema mismatch/, 'legacy report schema fails closed');
+assert.throws(()=>context.syncGetCanonicalShiftSheet_({getSheetByName(){ return null; }}), /storage is missing/, 'missing canonical storage fails closed');
+
+assert.deepEqual(JSON.parse(JSON.stringify(context.buildShiftReportRows_([
+  {id:'s2', date:'01.08.2026', hours:8.5, coworker:'Женя'},
+  {id:'s1', date:'31.07.2026', hours:7, coworker:'Сам'}
+]))), [
+  ['📅 МІСЯЦЬ: 2026-08','','','',''],
+  ['Дата','День','Години','Напарник',''],
+  ['01.08.2026','сб',8.5,'Женя','s2'],
+  ['📊 РАЗОМ ЗА МІСЯЦЬ:','',8.5,'1 упряжок',''],
+  ['','','','',''],
+  ['📅 МІСЯЦЬ: 2026-07','','','',''],
+  ['Дата','День','Години','Напарник',''],
+  ['31.07.2026','пт',7,'Сам','s1'],
+  ['📊 РАЗОМ ЗА МІСЯЦЬ:','',7,'1 упряжок','']
+], 'accountant report is a deterministic projection of canonical storage');
 
 properties.delete('MT_SHIFTS_SPREADSHEET_ID');
 assert.throws(()=>context.syncShiftSpreadsheet_(), /not configured/, 'missing shift property fails closed');

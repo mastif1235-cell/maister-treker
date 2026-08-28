@@ -1,5 +1,7 @@
 var TICKET_HEADERS = ['id','date','time','content','sum','tags','нотатки_майстра','повніДаніJSON'];
 var SHIFT_HEADERS  = ['id','date','hours','coworker'];
+var SHIFT_STORAGE_SHEET = '_ShiftsData';
+var SHIFT_REPORT_SHEET = 'Зміни';
 var SYNC_STATE_SHEET = '_SyncState';
 var SYNC_STATE_HEADERS = ['entityType','entityId','revision','tombstone','fingerprint','requestId','updatedAt'];
 
@@ -351,8 +353,14 @@ function syncExecuteEntityMutation_(ss, data, envelope) {
   if (envelope.action === 'addTicket') addTicketRow(ss, data);
   else if (envelope.action === 'updateTicket') updateTicketRow(ss, data);
   else if (envelope.action === 'deleteTicket') deleteRowById(getOrCreateSheet(ss, 'Заявки', TICKET_HEADERS), data.id);
-  else if (envelope.action === 'addShift' || envelope.action === 'updateShift') addShiftRow(ss, data);
-  else if (envelope.action === 'deleteShift') deleteRowById(getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS), data.id);
+  else if (envelope.action === 'addShift' || envelope.action === 'updateShift') {
+    addShiftRow(ss, data);
+    refreshShiftReport_(ss);
+  }
+  else if (envelope.action === 'deleteShift') {
+    deleteRowById(syncGetCanonicalShiftSheet_(ss), data.id);
+    refreshShiftReport_(ss);
+  }
 
   var next = {
     entityType:envelope.entity,
@@ -433,7 +441,7 @@ function syncReadAll_() {
   var ticketTz = ticketSs.getSpreadsheetTimeZone();
   var shiftTz = shiftSs.getSpreadsheetTimeZone();
   var tSheet = ticketSs.getSheetByName('Заявки');
-  var sSheet = shiftSs.getSheetByName('Зміни');
+  var sSheet = syncGetCanonicalShiftSheet_(shiftSs);
   var tickets = [];
   var shifts = [];
   if (tSheet && tSheet.getLastRow() > 1) {
@@ -742,8 +750,26 @@ function sortExistingTicketsNow() {
 
 /* ---------- Смены ---------- */
 
+function syncGetCanonicalShiftSheet_(ss) {
+  var sheet = ss.getSheetByName(SHIFT_STORAGE_SHEET);
+  if (!sheet) throw new Error('Canonical shift storage is missing');
+
+  var lastColumn = typeof sheet.getLastColumn === 'function' ? sheet.getLastColumn() : SHIFT_HEADERS.length;
+  var width = Math.max(SHIFT_HEADERS.length, lastColumn);
+  var header = sheet.getRange(1, 1, 1, width).getDisplayValues()[0];
+
+  for (var i = 0; i < SHIFT_HEADERS.length; i++) {
+    if (String(header[i] || '').trim() !== SHIFT_HEADERS[i]) throw new Error('Canonical shift storage schema mismatch');
+  }
+  for (var extra = SHIFT_HEADERS.length; extra < header.length; extra++) {
+    if (String(header[extra] || '').trim()) throw new Error('Canonical shift storage schema mismatch');
+  }
+
+  return sheet;
+}
+
 function addShiftRow(ss, s) {
-  var sheet = getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS);
+  var sheet = syncGetCanonicalShiftSheet_(ss);
   var newDate = parseDdMmYyyy(s.date);
   var last = sheet.getLastRow();
   var insertRow = last + 1;
@@ -789,7 +815,7 @@ function writeShiftRow(sheet, rowIndex, s) {
 
 function writeAllShifts(ss, shifts) {
   var list = shifts || [];
-  var tempSheet = ss.insertSheet('_Зміни_tmp_' + Date.now());
+  var tempSheet = ss.insertSheet(SHIFT_STORAGE_SHEET + '_tmp_' + Date.now());
 
   try {
     tempSheet.appendRow(SHIFT_HEADERS);
@@ -806,12 +832,78 @@ function writeAllShifts(ss, shifts) {
       tempSheet.getRange(2, 1, rows.length, 4).setValues(rows);
     }
 
-    swapInPlace(ss, tempSheet, 'Зміни');
-    getOrCreateSheet(ss, 'Зміни', SHIFT_HEADERS);
+    swapInPlace(ss, tempSheet, SHIFT_STORAGE_SHEET);
+    syncGetCanonicalShiftSheet_(ss);
+    refreshShiftReport_(ss);
   } catch (err) {
     ss.deleteSheet(tempSheet);
     throw err;
   }
+}
+
+function refreshShiftReport_(ss) {
+  var storage = syncGetCanonicalShiftSheet_(ss);
+  var tz = ss.getSpreadsheetTimeZone();
+  var shifts = [];
+
+  if (storage.getLastRow() > 1) {
+    storage.getRange(2, 1, storage.getLastRow() - 1, SHIFT_HEADERS.length).getValues().forEach(function (row) {
+      if (!row[0] && !row[1]) return;
+      shifts.push({
+        id:safeString(row[0]),
+        date:cellToDateString(row[1], tz),
+        hours:safeNumber(row[2]),
+        coworker:safeString(row[3])
+      });
+    });
+  }
+
+  var rows = buildShiftReportRows_(shifts);
+  var report = ss.getSheetByName(SHIFT_REPORT_SHEET) || ss.insertSheet(SHIFT_REPORT_SHEET);
+  var clearRows = Math.max(report.getLastRow(), rows.length, 1);
+  var reportRange = report.getRange(1, 1, clearRows, 5);
+  if (typeof reportRange.breakApart === 'function') reportRange.breakApart();
+  reportRange.clearContent();
+
+  if (rows.length) {
+    report.getRange(1, 1, rows.length, 5).setValues(rows);
+    report.getRange(1, 1, rows.length, 2).setNumberFormat('@');
+    report.getRange(1, 3, rows.length, 1).setNumberFormat('0.##');
+    report.getRange(1, 4, rows.length, 2).setNumberFormat('@');
+  }
+}
+
+function buildShiftReportRows_(shifts) {
+  var weekdays = ['нд','пн','вт','ср','чт','пт','сб'];
+  var groups = {};
+
+  (shifts || []).forEach(function (shift) {
+    var date = parseDdMmYyyy(shift.date);
+    if (!date) throw new Error('Canonical shift storage contains invalid date');
+    var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({shift:shift, date:date});
+  });
+
+  var rows = [];
+  Object.keys(groups).sort().reverse().forEach(function (key, groupIndex) {
+    if (groupIndex) rows.push(['','','','','']);
+    rows.push(['📅 МІСЯЦЬ: ' + key,'','','','']);
+    rows.push(['Дата','День','Години','Напарник','']);
+
+    var hours = 0;
+    groups[key].sort(function (a, b) {
+      return a.date.getTime() - b.date.getTime() || String(a.shift.id).localeCompare(String(b.shift.id));
+    }).forEach(function (entry) {
+      var shiftHours = safeNumber(entry.shift.hours);
+      hours += shiftHours;
+      rows.push([entry.shift.date, weekdays[entry.date.getDay()], shiftHours, safeString(entry.shift.coworker), safeString(entry.shift.id)]);
+    });
+
+    rows.push(['📊 РАЗОМ ЗА МІСЯЦЬ:','',hours,groups[key].length + ' упряжок','']);
+  });
+
+  return rows;
 }
 
 

@@ -18,6 +18,12 @@ assert.equal(allGas.includes("getProperty(SYNC_HMAC_PROPERTY)"), true, 'secret r
 assert.equal(allGas.includes("getProperty(SYNC_SHIFTS_SPREADSHEET_PROPERTY)"), true, 'shift workbook read from Script Properties');
 assert.match(allGas, /syncExecuteEntityMutation_\(syncSpreadsheetForEntity_\(envelope\.entity\)/, 'mutations use entity storage router');
 assert.match(allGas, /var shiftSs = syncShiftSpreadsheet_\(\)/, 'list uses separate shift workbook');
+assert.match(allGas, /var SHIFT_STORAGE_SHEET = '_ShiftsData'/, 'shifts have a dedicated canonical storage sheet');
+assert.match(allGas, /var SHIFT_REPORT_SHEET = 'Зміни'/, 'accountant report has a separate sheet owner');
+assert.match(allGas, /var sSheet = syncGetCanonicalShiftSheet_\(shiftSs\)/, 'list reads only canonical shift storage');
+assert.doesNotMatch(allGas, /getOrCreateSheet\(ss, 'Зміни', SHIFT_HEADERS\)/, 'legacy report is never a shift storage fallback');
+assert.match(allGas, /addShiftRow\(ss, data\);\s*refreshShiftReport_\(ss\)/, 'shift upserts refresh the derived report');
+assert.match(allGas, /deleteRowById\(syncGetCanonicalShiftSheet_\(ss\), data\.id\);\s*refreshShiftReport_\(ss\)/, 'shift deletes refresh the derived report');
 assert.equal(/getSheetByName\('Зміни'\)/.test(allGas.match(/function syncTicketSpreadsheet_\([\s\S]*?function syncShiftSpreadsheet_/)[0]), false, 'ticket owner does not select shifts sheet');
 assert.equal(allGas.includes('CacheService.getScriptCache()'), true, 'replay cache enabled');
 assert.equal(allGas.includes('LockService.getScriptLock()'), true, 'atomic lock enabled');
