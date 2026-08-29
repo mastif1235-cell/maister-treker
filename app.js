@@ -515,6 +515,7 @@ async function init(){
   window.addEventListener('online', ()=>{
     showToast('Інтернет з\'явився — синхронізую...');
     syncEngine.flush();
+    retryPendingTelegramBackups();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
 }

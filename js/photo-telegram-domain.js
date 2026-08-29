@@ -275,13 +275,15 @@ async function fetchWithRetry(url, opts, retries=1){
 // наново з tickets уже після попереднього завершення: save/edit може замінити
 // tickets[idx] новим об'єктом, тож старе async-посилання не можна продовжувати.
 const telegramBackupQueues = new Map();
-function backupTicketToTelegram(ticket){
+function backupTicketToTelegram(ticket, options){
   const id = ticket && ticket.id;
   if(id === undefined || id === null) return Promise.resolve(false);
   const key = String(id);
+  const pendingOnly = !!(options && options.pendingOnly);
   const previous = telegramBackupQueues.get(key) || Promise.resolve();
   const job = previous.catch(()=>{}).then(()=>{
     const current = tickets.find(x=>String(x.id)===key);
+    if(pendingOnly && (!current || current.tgBackupPending !== true)) return false;
     return current ? backupTicketToTelegramNow(current) : false;
   });
   let tracked;
@@ -291,10 +293,24 @@ function backupTicketToTelegram(ticket){
   telegramBackupQueues.set(key, tracked);
   return tracked;
 }
+async function retryPendingTelegramBackups(){
+  if(!navigator.onLine) return;
+  const pendingIds = tickets
+    .filter(t=>t && t.tgBackupPending === true && t.content)
+    .map(t=>String(t.id));
+  for(const id of pendingIds){
+    if(!navigator.onLine) break;
+    const current = tickets.find(t=>String(t.id)===id);
+    if(!current || current.tgBackupPending !== true) continue;
+    try{ await backupTicketToTelegram(current, {pendingOnly:true}); }catch(_e){}
+  }
+}
 async function backupTicketToTelegramNow(t){
   const token = (settings.tgBotToken||'').trim();
   const chatId = (settings.tgBackupChatId||'').trim();
-  if(!token || !chatId || !t) return;
+  if(!token || !chatId || !t) return false;
+  t.tgBackupPending = true;
+  await saveTickets();
   // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
   // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
   // (найімовірніше на поганому інтернеті — а це якраз умови, для яких
@@ -399,7 +415,9 @@ async function backupTicketToTelegramNow(t){
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
     let jsonOk = false;
     try{
-      const jsonBlob = new Blob([JSON.stringify(t, null, 2)], {type:'application/json'});
+      const jsonTicket = {...t};
+      delete jsonTicket.tgBackupPending;
+      const jsonBlob = new Blob([JSON.stringify(jsonTicket, null, 2)], {type:'application/json'});
       const form = new FormData();
       form.append('chat_id', chatId);
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
@@ -414,6 +432,7 @@ async function backupTicketToTelegramNow(t){
       t.tgBackedUp = true;
       await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
       backupSucceeded = true;
+      t.tgBackupPending = false;
     }
   }catch(e){ console.error('Telegram backup request failed'); } // тихо — це лише резервна копія, не критична дія
   finally{
@@ -423,9 +442,10 @@ async function backupTicketToTelegramNow(t){
     // одно доходило), локально це не зберігалось і галочка "✅" губилась
     // назавжди, навіть після перезаходу в застосунок. Тепер зберігаємо й
     // перемальовуємо картку в будь-якому разі, незалежно від результату.
-    saveTickets();
+    await saveTickets();
     refreshTicketCardDom(t.id);
   }
+  return backupSucceeded;
 }
 // NEW: тестове повідомлення в Налаштуваннях — перевірити, що токен і chat_id правильні.
 // Приймає chatId ззовні, щоб однією функцією перевіряти всі три призначення.
@@ -631,4 +651,3 @@ async function resyncAllTicketsToTelegram(){
 
 /* Поділитися заявкою (текст + фото, якщо є) — відкриває системне меню «Поділитися»,
    де серед застосунків буде Viber, якщо він встановлений на телефоні. */
-
