@@ -39,5 +39,31 @@ const payload=id=>({id,date:'23.08.2026',time:'10:00',content:'x',sum:1,tags:[]}
     assert.equal(rejected.recovered,false,'recovery rejects every non-exact server state');
     assert.deepEqual(rejected.state,exactGapState,'rejected recovery leaves the journal unchanged');
   }
+
+  let transportOk=false,backoffSends=0,timerId=0;const timers=[];
+  const backoffDb=storage();
+  const backoffEngine=new Engine({core,storage:backoffDb,payload:(_entity,item)=>item,online:()=>true,retryDelays:[2000,5000,15000,30000],setTimeout:(fn,delay)=>{const timer={id:++timerId,fn,delay,cancelled:false};timers.push(timer);return timer.id;},clearTimeout:id=>{const timer=timers.find(item=>item.id===id);if(timer)timer.cancelled=true;},transport:{send:async m=>{backoffSends++;return transportOk?{ok:true,state:{revision:m.revision,tombstone:false}}:{ok:false,result:{status:'error',code:'NETWORK'}};}}});
+  await backoffEngine.init();await backoffEngine.recordDiff('ticket',[],[payload('backoff')]);await backoffEngine.loop;
+  assert.equal(backoffSends,1,'transport failure performs only one immediate request');
+  assert.equal(timers.length,1,'transport failure schedules one retry timer');
+  assert.equal(timers[0].delay,2000,'automatic retry starts with two-second backoff');
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(backoffSends,1,'microtasks do not create a request storm');
+  for(const expectedDelay of [5000,15000,30000,30000]){
+    timers[timers.length-1].fn();await backoffEngine.loop;
+    assert.equal(timers[timers.length-1].delay,expectedDelay,'automatic retries advance and cap the backoff');
+  }
+  transportOk=true;timers[timers.length-1].fn();await backoffEngine.loop;
+  assert.equal(backoffSends,6,'transport performs exactly one successful send after recovery');
+  assert.equal(backoffEngine.pendingCount(),0,'successful delayed retry clears pending');
+
+  transportOk=false;const manualTimers=[];let manualSends=0;
+  const manualEngine=new Engine({core,storage:storage(),payload:(_entity,item)=>item,online:()=>true,retryDelays:[2000,5000,15000,30000],setTimeout:(fn,delay)=>{const timer={id:manualTimers.length+1,fn,delay,cancelled:false};manualTimers.push(timer);return timer.id;},clearTimeout:id=>{const timer=manualTimers.find(item=>item.id===id);if(timer)timer.cancelled=true;},transport:{send:async m=>{manualSends++;return transportOk?{ok:true,state:{revision:m.revision,tombstone:false}}:{ok:false,result:{status:'error',code:'NETWORK'}};}}});
+  await manualEngine.init();await manualEngine.recordDiff('ticket',[],[payload('manual')]);await manualEngine.loop;
+  assert.equal(manualSends,1,'manual scenario begins with one failed request');
+  transportOk=true;await manualEngine.flush();
+  assert.equal(manualSends,2,'manual flush retries immediately without waiting for timer');
+  assert.equal(manualTimers[0].cancelled,true,'manual flush cancels scheduled automatic retry');
+  assert.equal(manualEngine.pendingCount(),0,'manual retry clears pending after success');
   console.log('PASS durable-before-send/offline-online/single-loop/startup head/head+tail recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -9,7 +9,7 @@
   function uuid(){return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;}
   function entityPayload(entity,item){return entity==='ticket' ? root.ticketToSyncPayload(item) : root.shiftToSyncPayload(item);}
   class Engine{
-    constructor(options){this.core=options.core||root.MTSyncEngineCore;this.storage=options.storage||root.MTSyncJournalStorage;this.transport=options.transport;this.payload=options.payload||entityPayload;this.state={records:{}};this.write=Promise.resolve();this.loop=null;this.online=options.online;this.onChange=options.onChange||function(){};}
+    constructor(options){this.core=options.core||root.MTSyncEngineCore;this.storage=options.storage||root.MTSyncJournalStorage;this.transport=options.transport;this.payload=options.payload||entityPayload;this.state={records:{}};this.write=Promise.resolve();this.loop=null;this.online=options.online;this.onChange=options.onChange||function(){};this.retryDelays=options.retryDelays||[2000,5000,15000,30000];this.retryStep=0;this.retryTimer=null;this.setTimer=options.setTimeout||setTimeout;this.clearTimer=options.clearTimeout||clearTimeout;}
     async init(){this.state=await this.storage.load();this.core.assertInvariants(this.state);if(this.online())this.flush();return this;}
     persistTransition(change){
       this.write=this.write.catch(()=>{}).then(async()=>{const next=change(this.state);this.core.assertInvariants(next);await this.storage.save(next);this.state=next;this.onChange(this.pendingCount());return this.state;});
@@ -22,7 +22,10 @@
       return this.persistTransition(state=>jobs.reduce((s,job)=>this.core.enqueue(s,job,uuid),state)).then(()=>{if(this.online())this.flush();});
     }
     pendingCount(){return this.core.pending(this.state).length;}
-    flush(){if(this.loop)return this.loop;if(!this.online())return Promise.resolve(false);
+    cancelRetryTimer(){if(this.retryTimer!==null){this.clearTimer(this.retryTimer);this.retryTimer=null;}}
+    resetBackoff(){this.cancelRetryTimer();this.retryStep=0;}
+    scheduleRetry(){if(this.retryTimer!==null||!this.online()||!this.pendingCount())return;const delay=this.retryDelays[Math.min(this.retryStep,this.retryDelays.length-1)];this.retryStep=Math.min(this.retryStep+1,this.retryDelays.length-1);this.retryTimer=this.setTimer(()=>{this.retryTimer=null;this.flush();},delay);}
+    flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())return Promise.resolve(false);let failed=false;
       this.loop=(async()=>{await this.write;while(this.online()){
         const item=this.core.pending(this.state)[0];if(!item)break;
         await this.persistTransition(s=>this.core.markAttempted(s,item.entity,item.id));
@@ -34,10 +37,12 @@
             await this.persistTransition(s=>{const repair=this.core.recoverUncommittedAddTicketGap(s,item,error.state,uuid);recovered=repair.recovered;return repair.state;});
             if(recovered)continue;
           }
+          failed=true;
           break;
         }
         await this.persistTransition(s=>result.state?this.core.reconcile(s,item.entity,item.id,result.state):this.core.acknowledge(s,item.entity,item.id,item.revision));
-      }return this.pendingCount()===0;})().finally(()=>{this.loop=null;if(this.online()&&this.pendingCount())queueMicrotask(()=>this.flush());});return this.loop;
+        this.resetBackoff();
+      }return this.pendingCount()===0;})().finally(()=>{this.loop=null;if(failed)this.scheduleRetry();});return this.loop;
     }
   }
   return {Engine,clone,uuid};
