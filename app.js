@@ -486,7 +486,11 @@ async function init(){
   syncEngine = await new MTSyncEngineRuntime.Engine({
     transport:syncTransport,
     online:()=>navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
-    onChange:()=>{ if(document.getElementById('syncQueueBanner')) renderSyncQueueBanner(); }
+    onChange:()=>{
+      if(document.getElementById('syncQueueBanner')) renderSyncQueueBanner();
+      if(document.getElementById('screen-tickets')?.classList.contains('active')) renderTicketsScreen();
+      if(document.getElementById('screen-shifts')?.classList.contains('active')) renderShiftsScreen();
+    }
   }).init();
   await migrateLegacySyncState();
 
