@@ -75,11 +75,14 @@
   }
   function recoverUncommittedAddTicketGap(state, item, server, random){
     state = copy(state);
-    if(!item || item.entity !== 'ticket' || item.action !== 'addTicket' || item.revision !== 2) return {recovered:false,state};
+    if(!item || item.entity !== 'ticket' || item.action !== 'addTicket') return {recovered:false,state};
     if(!server || Number(server.revision) !== 0 || Number(server.rowIndex) !== -1 || server.tombstone !== false) return {recovered:false,state};
     const record = state.records && state.records[key('ticket', item.id)];
-    if(!record || record.committedRevision !== 1 || record.tombstone || record.tail) return {recovered:false,state};
-    if(!record.head || record.head.action !== 'addTicket' || record.head.revision !== 2 || record.head.requestId !== item.requestId) return {recovered:false,state};
+    if(!record || record.tombstone || record.tail || !record.head || record.head.requestId !== item.requestId) return {recovered:false,state};
+    const originalGap = item.revision === 2 && record.committedRevision === 1 && record.head.action === 'addTicket' && record.head.revision === 2;
+    const malformedRebase = item.revision === 1 && record.committedRevision === 0 && record.head.action === 'addTicket' && record.head.revision === 1 &&
+      record.head.body && record.head.body.action === 'addTicket' && String(record.head.body.id) === String(item.id) && Number(record.head.body.revision) === 2;
+    if(!originalGap && !malformedRebase) return {recovered:false,state};
     record.committedRevision = 0;
     record.head = mutation('ticket', item.id, 'addTicket', 1, item.body, random);
     return {recovered:true,state};

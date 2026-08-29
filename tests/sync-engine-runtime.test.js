@@ -33,6 +33,29 @@ const payload=id=>({id,date:'23.08.2026',time:'10:00',content:'x',sum:1,tags:[]}
   assert.deepEqual(recoveredSends,[{action:'addTicket',revision:2,id:'production-gap'},{action:'addTicket',revision:1,id:'production-gap'}],'only exact missing-row addTicket gap is rebased once');
   assert.equal(recoveryEngine.pendingCount(),0,'recovered ticket is acknowledged normally');
   assert.equal(stuckDb.value().records['ticket:production-gap'].committedRevision,1,'recovered ticket commits revision one');
+
+  const malformedItem={entity:'ticket',id:'malformed-rebase',action:'addTicket',revision:1,requestId:'malformed_request_abcdefghijkl',body:{...payload('malformed-rebase'),action:'addTicket',revision:2},attempted:true};
+  const malformedDb=storage({records:{'ticket:malformed-rebase':{entity:'ticket',id:'malformed-rebase',committedRevision:0,tombstone:false,head:malformedItem,tail:null}}});
+  const malformedSends=[];
+  const malformedEngine=new Engine({core,storage:malformedDb,payload:(_entity,item)=>item,online:()=>true,transport:{send:async m=>{
+    malformedSends.push({revision:m.revision,bodyRevision:m.body.revision,bodyAction:m.body.action,bodyId:m.body.id});
+    if(m.body.revision===2)return{ok:false,result:{status:'error',code:'REVISION_GAP',state:{revision:0,rowIndex:-1,tombstone:false}}};
+    return{ok:true,state:{revision:1,tombstone:false}};
+  }}});
+  await malformedEngine.init();await malformedEngine.loop;
+  assert.deepEqual(malformedSends,[
+    {revision:1,bodyRevision:2,bodyAction:'addTicket',bodyId:'malformed-rebase'},
+    {revision:1,bodyRevision:1,bodyAction:'addTicket',bodyId:'malformed-rebase'}
+  ],'exact malformed revision-one rebase is rebuilt with a canonical revision-one body');
+  assert.equal(malformedEngine.pendingCount(),0,'malformed recovered ticket is acknowledged normally');
+  const malformedHead=core.recoverUncommittedAddTicketGap(
+    {records:{'ticket:malformed-rebase':{entity:'ticket',id:'malformed-rebase',committedRevision:0,tombstone:false,head:malformedItem,tail:null}}},
+    malformedItem,{revision:0,rowIndex:-1,tombstone:false},()=> 'fresh_request_abcdefghijkl'
+  ).state.records['ticket:malformed-rebase'].head;
+  assert.equal(malformedHead.revision,1,'malformed recovery preserves head revision one');
+  assert.equal(malformedHead.body.revision,1,'malformed recovery rewrites body revision to one');
+  assert.equal(malformedHead.body.action,'addTicket','malformed recovery preserves addTicket action');
+  assert.equal(malformedHead.body.id,'malformed-rebase','malformed recovery preserves the entity id');
   const exactGapState={records:{'ticket:production-gap':{entity:'ticket',id:'production-gap',committedRevision:1,tombstone:false,head:stuckItem,tail:null}}};
   for(const server of [{revision:1,rowIndex:-1,tombstone:false},{revision:0,rowIndex:2,tombstone:false},{revision:0,rowIndex:-1,tombstone:true}]){
     const rejected=core.recoverUncommittedAddTicketGap(exactGapState,stuckItem,server,()=> 'unused_request_abcdefghijkl');
