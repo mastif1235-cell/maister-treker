@@ -73,6 +73,17 @@
     }
     return state;
   }
+  function recoverUncommittedAddTicketGap(state, item, server, random){
+    state = copy(state);
+    if(!item || item.entity !== 'ticket' || item.action !== 'addTicket' || item.revision !== 2) return {recovered:false,state};
+    if(!server || Number(server.revision) !== 0 || Number(server.rowIndex) !== -1 || server.tombstone !== false) return {recovered:false,state};
+    const record = state.records && state.records[key('ticket', item.id)];
+    if(!record || record.committedRevision !== 1 || record.tombstone || record.tail) return {recovered:false,state};
+    if(!record.head || record.head.action !== 'addTicket' || record.head.revision !== 2 || record.head.requestId !== item.requestId) return {recovered:false,state};
+    record.committedRevision = 0;
+    record.head = mutation('ticket', item.id, 'addTicket', 1, item.body, random);
+    return {recovered:true,state};
+  }
   function pending(state){
     return Object.keys((state && state.records) || {}).sort().map(k=>state.records[k]).filter(r=>r.head).map(r=>copy(r.head));
   }
@@ -86,5 +97,5 @@
     });
     return true;
   }
-  return {key, enqueue, markAttempted, acknowledge, reconcile, pending, assertInvariants};
+  return {key, enqueue, markAttempted, acknowledge, reconcile, recoverUncommittedAddTicketGap, pending, assertInvariants};
 });

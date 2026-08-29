@@ -78,3 +78,10 @@ function saveTickets(){
     return ok;
   });
 }
+function saveTicketsLocalOnly(){
+  return ticketsDbPut(tickets).then(ok=>{
+    if(!ok) savePendingTicketsFallback();
+    else pendingTicketsFallbackWarningShown = false;
+    return ok;
+  });
+}

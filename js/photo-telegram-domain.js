@@ -310,7 +310,7 @@ async function backupTicketToTelegramNow(t){
   const chatId = (settings.tgBackupChatId||'').trim();
   if(!token || !chatId || !t) return false;
   t.tgBackupPending = true;
-  await saveTickets();
+  await saveTicketsLocalOnly();
   // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
   // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
   // (найімовірніше на поганому інтернеті — а це якраз умови, для яких
@@ -442,7 +442,7 @@ async function backupTicketToTelegramNow(t){
     // одно доходило), локально це не зберігалось і галочка "✅" губилась
     // назавжди, навіть після перезаходу в застосунок. Тепер зберігаємо й
     // перемальовуємо картку в будь-якому разі, незалежно від результату.
-    await saveTickets();
+    await saveTicketsLocalOnly();
     refreshTicketCardDom(t.id);
   }
   return backupSucceeded;

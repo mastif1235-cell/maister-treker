@@ -27,7 +27,15 @@
         const item=this.core.pending(this.state)[0];if(!item)break;
         await this.persistTransition(s=>this.core.markAttempted(s,item.entity,item.id));
         const result=await this.transport.send(item);
-        if(!result.ok)break;
+        if(!result.ok){
+          const error=result.result;
+          if(error && error.code==='REVISION_GAP' && this.core.recoverUncommittedAddTicketGap){
+            let recovered=false;
+            await this.persistTransition(s=>{const repair=this.core.recoverUncommittedAddTicketGap(s,item,error.state,uuid);recovered=repair.recovered;return repair.state;});
+            if(recovered)continue;
+          }
+          break;
+        }
         await this.persistTransition(s=>result.state?this.core.reconcile(s,item.entity,item.id,result.state):this.core.acknowledge(s,item.entity,item.id,item.revision));
       }return this.pendingCount()===0;})().finally(()=>{this.loop=null;if(this.online()&&this.pendingCount())queueMicrotask(()=>this.flush());});return this.loop;
     }

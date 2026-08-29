@@ -20,5 +20,24 @@ const payload=id=>({id,date:'23.08.2026',time:'10:00',content:'x',sum:1,tags:[]}
   let tail=core.enqueue({records:{}},{entity:'ticket',id:'tail',payload:payload('tail')},()=> 'head_request_abcdefghijkl');tail=core.markAttempted(tail,'ticket','tail');tail=core.enqueue(tail,{entity:'ticket',id:'tail',payload:{...payload('tail'),content:'edit'}},()=> 'tail_request_abcdefghijkl');
   const tailDb=storage(tail);let order=[];const tailEngine=new Engine({core,storage:tailDb,payload:(_entity,item)=>item,online:()=>true,transport:{send:async m=>{order.push(m.action);return{ok:true,state:{revision:m.revision,tombstone:false}};}}});
   await tailEngine.init();await tailEngine.loop;assert.deepEqual(order,['addTicket','updateTicket'],'restart recovers head then tail serially');
+
+  const stuckItem={entity:'ticket',id:'production-gap',action:'addTicket',revision:2,requestId:'stuck_request_abcdefghijkl',body:{...payload('production-gap'),action:'addTicket',revision:2}};
+  const stuckDb=storage({records:{'ticket:production-gap':{entity:'ticket',id:'production-gap',committedRevision:1,tombstone:false,head:stuckItem,tail:null}}});
+  const recoveredSends=[];
+  const recoveryEngine=new Engine({core,storage:stuckDb,payload:(_entity,item)=>item,online:()=>true,transport:{send:async m=>{
+    recoveredSends.push({action:m.action,revision:m.revision,id:m.id});
+    if(m.revision===2)return{ok:false,result:{status:'error',code:'REVISION_GAP',state:{revision:0,rowIndex:-1,tombstone:false}}};
+    return{ok:true,state:{revision:1,tombstone:false}};
+  }}});
+  await recoveryEngine.init();await recoveryEngine.loop;
+  assert.deepEqual(recoveredSends,[{action:'addTicket',revision:2,id:'production-gap'},{action:'addTicket',revision:1,id:'production-gap'}],'only exact missing-row addTicket gap is rebased once');
+  assert.equal(recoveryEngine.pendingCount(),0,'recovered ticket is acknowledged normally');
+  assert.equal(stuckDb.value().records['ticket:production-gap'].committedRevision,1,'recovered ticket commits revision one');
+  const exactGapState={records:{'ticket:production-gap':{entity:'ticket',id:'production-gap',committedRevision:1,tombstone:false,head:stuckItem,tail:null}}};
+  for(const server of [{revision:1,rowIndex:-1,tombstone:false},{revision:0,rowIndex:2,tombstone:false},{revision:0,rowIndex:-1,tombstone:true}]){
+    const rejected=core.recoverUncommittedAddTicketGap(exactGapState,stuckItem,server,()=> 'unused_request_abcdefghijkl');
+    assert.equal(rejected.recovered,false,'recovery rejects every non-exact server state');
+    assert.deepEqual(rejected.state,exactGapState,'rejected recovery leaves the journal unchanged');
+  }
   console.log('PASS durable-before-send/offline-online/single-loop/startup head/head+tail recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});
