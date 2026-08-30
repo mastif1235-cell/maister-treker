@@ -21,12 +21,29 @@ const editor=fs.readFileSync(path.join(root,'js','ticket-editor-domain.js'),'utf
 assert.match(editor,/onuSignalInputState\(calcState\.signal\)/,'editing restores the saved signal');
 assert.match(editor,/calcState\.signal\s*=\s*resolveOnuSignalInput/,'form save stores signal separately');
 assert.match(fs.readFileSync(path.join(root,'js','tickets-domain.js'),'utf8'),/ticketSignalMatchesQuery\(t,q\)/,'ticket search includes signal');
-assert.match(fs.readFileSync(path.join(root,'js','tickets-render.js'),'utf8'),/formatOnuSignal\(t\.signal\)/,'ticket card renders signal');
+const ticketRenderer=fs.readFileSync(path.join(root,'js','tickets-render.js'),'utf8');
+assert.match(ticketRenderer,/formatOnuSignal\(t\.signal\)/,'ticket details format the saved signal');
+const cardHead=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-head">'),ticketRenderer.indexOf('<div class="tc-details'));
+assert.doesNotMatch(cardHead,/signalText|Сигнал ONU/,'collapsed ticket card header does not show ONU signal');
+const cardDetails=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-details'));
+const macPosition=cardDetails.indexOf('MAC:');
+const signalPosition=cardDetails.indexOf('📶 Сигнал ONU:');
+assert.ok(macPosition>=0 && signalPosition>macPosition,'expanded technical details show ONU signal immediately after MAC');
+assert.match(cardDetails,/signalText \? `<div>📶 Сигнал ONU:/,'missing signal produces no empty technical row');
 
 const restored=Object.assign(context.blankTicketObject(),JSON.parse(JSON.stringify({id:'1',signal:'-31.5'})));
 assert.equal(restored.signal,'-31.5','backup restore merge retains signal');
 const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 assert.match(app,/signal:t\.signal/,'ticket sync fullDataJson payload retains signal');
+
+const telegramContext={console};
+vm.createContext(telegramContext);
+const telegramSource=fs.readFileSync(path.join(root,'js','photo-telegram-domain.js'),'utf8');
+vm.runInContext(telegramSource,telegramContext);
+const dispatcherText=telegramContext.dispatcherTicketText('Заявка\nMAC: AA:BB\n📶 Сигнал ONU: -23 dBm\nsignal: -23\nonuSignal: -23\nРоботи виконано');
+assert.equal(dispatcherText,'Заявка\nMAC: AA:BB\nРоботи виконано','dispatcher text excludes all ONU signal representations');
+assert.match(telegramSource,/sendToTelegramChat\(id2, dispatcherTicketText\(t\.content\)/,'saved-ticket dispatcher path sanitizes text');
+assert.match(telegramSource,/const text = dispatcherTicketText\(getCurrentTicketText\(\)\)/,'current-form dispatcher path sanitizes text');
 
 const tickets=[{id:'one',content:'unchanged'}],before=JSON.stringify(tickets);
 assert.equal(context.appendTicketReportComment('Звіт',' Текст користувача '),'Звіт\n\nКомментарий:\nТекст користувача','non-empty report comment is appended');
@@ -35,6 +52,10 @@ assert.equal(JSON.stringify(tickets),before,'comment formatting does not mutate 
 
 const reports=fs.readFileSync(path.join(root,'js','reports-domain.js'),'utf8');
 const renderReportSource=reports.slice(reports.indexOf('function renderReport('));
+const commentPosition=reports.indexOf('id="reportCommentInput"');
+const copyPosition=reports.indexOf('id="copyReportBtn"');
+const sharePosition=reports.indexOf('id="shareReportBtn"');
+assert.ok(commentPosition>=0 && copyPosition>commentPosition && sharePosition>copyPosition,'report comment is directly before copy/share actions');
 assert.match(renderReportSource,/appendTicketReportComment/,'report UI uses the pure comment formatter');
 assert.match(renderReportSource,/escapeHtml\(text\)/,'report output escapes the combined user text');
 assert.doesNotMatch(renderReportSource,/saveTickets\s*\(|recordDiff\s*\(|syncEngine\./,'report rendering creates no ticket or sync mutation');

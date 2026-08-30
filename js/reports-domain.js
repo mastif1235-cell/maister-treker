@@ -210,6 +210,10 @@ function openReportModal(){
       <label for="reportCommentInput">Комментарий к отчёту</label>
       <textarea id="reportCommentInput" rows="4" placeholder="Необов’язковий коментар"></textarea>
     </div>
+    <div class="row wrap" style="margin-top:10px;">
+      <button class="btn btn-accent" id="copyReportBtn" style="flex:1 1 45%;">📄 Копіювати</button>
+      <button class="btn" id="shareReportBtn" style="flex:1 1 45%;">📤 Надіслати</button>
+    </div>
   `, {onOpen:(body)=>{
     let currentRange = 'day';
     body.querySelectorAll('[data-rep]').forEach(btn=>{
@@ -250,11 +254,7 @@ function renderReport(range){
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
   const out = document.getElementById('reportOutput');
-  out.innerHTML = `<div class="report-text">${escapeHtml(text)}</div>
-    <div class="row wrap" style="margin-top:10px;">
-      <button class="btn btn-accent" id="copyReportBtn" style="flex:1 1 45%;">📄 Копіювати</button>
-      <button class="btn" id="shareReportBtn" style="flex:1 1 45%;">📤 Надіслати</button>
-    </div>`;
+  out.innerHTML = `<div class="report-text">${escapeHtml(text)}</div>`;
   document.getElementById('copyReportBtn').onclick = async ()=>{
     try{ await navigator.clipboard.writeText(text); showToast('Звіт скопійовано'); }
     catch(e){ showToast('Не вдалося скопіювати'); }

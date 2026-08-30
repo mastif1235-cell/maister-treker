@@ -36,7 +36,9 @@ function renderTicketCard(t, opts={}){
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
   // замість повного тексту заявки (де є ім'я/телефон/адреса) показуємо лише
   // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.
-  const displayContent = opts.workOnly ? buildWorkSummaryLines(t).join('\n') : t.content;
+  const displayContent = opts.workOnly
+    ? buildWorkSummaryLines(t).join('\n')
+    : String(t.content||'').split('\n').filter(line=>!/^\s*🔧\s*MAC ONU\s*:/i.test(line) && !/^\s*📶\s*(?:Сигнал ONU\s*:)?\s*[-+]?\d+(?:[.,]\d+)?\s*dBm\s*$/i.test(line)).join('\n');
   const hasContent = !!displayContent;
   const isOther = t.type === 'Інше';
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
@@ -66,7 +68,6 @@ function renderTicketCard(t, opts={}){
       <div style="flex:1; min-width:0;">
         <div class="tc-type">${dayNum ? `<span class="tc-num">${dayNum}</span>` : ''}${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
-        ${signalText ? `<div class="tc-sub">${escapeHtml(signalText)}</div>` : ''}
       </div>
       <div style="text-align:right; flex-shrink:0;">
         <div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div>
@@ -77,6 +78,10 @@ function renderTicketCard(t, opts={}){
     ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
+      ${((t.macAddress || signalText) && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
+        ${t.macAddress ? `<div>MAC: <span style="font-family:var(--mono);">${escapeHtml(t.macAddress)}</span></div>` : ''}
+        ${signalText ? `<div>📶 Сигнал ONU: ${escapeHtml(normalizeOnuSignal(t.signal))} dBm</div>` : ''}
+      </div>` : ''}
       ${((t.login || t.password) && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}

@@ -188,12 +188,17 @@ function chooseDispatcherAndSend(sendFn){
     document.getElementById('dispatcherChoiceAllBtn').addEventListener('click', ()=>{ closeModal(); sendFn(list.map(d=>d.chatId)); });
   }});
 }
+function dispatcherTicketText(text){
+  return String(text||'').split('\n').filter(line=>{
+    return !/(?:\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU)/i.test(line);
+  }).join('\n').trim();
+}
 async function sendTicketToDispatcher(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
   chooseDispatcherAndSend(async (chatIds)=>{
     showToast('Надсилаю диспетчеру…');
     // NEW: диспетчеру шлемо лише текст, без фото — воно й так є в бекап-групі
-    const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, t.content, null, null)));
+    const results = await Promise.all(chatIds.map(id2 => sendToTelegramChat(id2, dispatcherTicketText(t.content), null, null)));
     const okCount = results.filter(r=>r.ok).length;
     showToast(okCount===chatIds.length ? '✅ Надіслано диспетчеру!' : `Надіслано ${okCount} з ${chatIds.length}: ${results.find(r=>!r.ok)?.reason||''}`);
   });
@@ -201,7 +206,7 @@ async function sendTicketToDispatcher(id){
 async function sendCurrentTicketToDispatcher(){
   // працює навіть якщо заявку ще не збережено — рахуємо текст прямо з форми
   syncFormToState();
-  const text = getCurrentTicketText();
+  const text = dispatcherTicketText(getCurrentTicketText());
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
   chooseDispatcherAndSend(async (chatIds)=>{
     showToast('Надсилаю диспетчеру…');
