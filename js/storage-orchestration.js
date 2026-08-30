@@ -48,7 +48,7 @@ function showCleanupReminderOverlay(monthKey){
       <div style="font-size:20px; font-weight:800;">Перше число — час почистити бекапи!</div>
       <div style="font-size:14.5px; color:var(--text-dim); max-width:380px; line-height:1.5;">
         Кожен день сюди в «Завантаження» на телефоні складається новий файл
-        <span style="font-family:var(--mono); font-size:12.5px;">master-tracker-backup-...json</span>.
+        <span style="font-family:var(--mono); font-size:12.5px;">master-tracker-daily-YYYY-MM-DD-encrypted.json</span>.
         Відкрий Файли / Завантаження і видали зайві старі — досить лишити останні кілька.
       </div>
       <button type="button" class="btn btn-accent btn-block" id="cleanupReminderDoneBtn" style="max-width:320px; margin-top:10px;">✅ Гаразд, я почистив(-ла)</button>
