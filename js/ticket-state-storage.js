@@ -17,8 +17,10 @@ function savePendingTicketsFallback(){
   try{
     localStorage.setItem(PENDING_TICKETS_FALLBACK_KEY, JSON.stringify(tickets));
     showPendingTicketsFallbackWarning('⚠️ Локальна база не записалася в IndexedDB. Дані тимчасово збережено в аварійній копії.');
+    return true;
   }catch(e){
     showPendingTicketsFallbackWarning('⚠️ Локальна база не записалася в IndexedDB, а аварійну копію теж не вдалося зберегти. Не закривайте застосунок.');
+    return false;
   }
 }
 
@@ -74,16 +76,18 @@ function saveTickets(){
   const after=JSON.parse(JSON.stringify(tickets));
   const journalPersist=syncEngine ? syncEngine.recordDiff('ticket',before,after) : Promise.resolve();
   return journalPersist.then(()=>{syncTicketsSnapshot=after;return ticketsDbPut(tickets);}).then(ok=>{
-    if(!ok) savePendingTicketsFallback();
-    else pendingTicketsFallbackWarningShown = false;
-    return ok;
+    if(!ok) return savePendingTicketsFallback();
+    localStorage.removeItem(PENDING_TICKETS_FALLBACK_KEY);
+    pendingTicketsFallbackWarningShown = false;
+    return true;
   });
 }
 function saveTicketsLocalOnly(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   return ticketsDbPut(tickets).then(ok=>{
-    if(!ok) savePendingTicketsFallback();
-    else pendingTicketsFallbackWarningShown = false;
-    return ok;
+    if(!ok) return savePendingTicketsFallback();
+    localStorage.removeItem(PENDING_TICKETS_FALLBACK_KEY);
+    pendingTicketsFallbackWarningShown = false;
+    return true;
   });
 }

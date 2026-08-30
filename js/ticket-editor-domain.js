@@ -930,6 +930,7 @@ async function saveTicketFromForm(e){
   }
 
   let savedTicketRef = null; // NEW: посилання на щойно збережений об'єкт у tickets — для бекапу в Telegram нижче
+  let successMessage = '';
   if(editingTicketId){
     // Зберігаємо ID до виходу з форми. Після збереження resetCalcForm()
     // обнуляє editingTicketId, а відповідь синхронізації приходить уже у фоні.
@@ -939,17 +940,32 @@ async function saveTicketFromForm(e){
     calcState.id = updatedTicketId;
     const idx = tickets.findIndex(t=>String(t.id)===String(updatedTicketId)); // NEW: String() — те саме застереження, що й вище з фото
     if(idx>-1) tickets[idx] = JSON.parse(JSON.stringify(calcState));
-    saveTickets();
-    showToast('Заявку оновлено');
     if(idx>-1) savedTicketRef = tickets[idx];
+    successMessage = 'Заявку оновлено';
   } else {
     calcState.id = MTSyncEngineRuntime.uuid();
     const newTicket = JSON.parse(JSON.stringify(calcState));
     tickets.push(newTicket);
-    saveTickets();
-    showToast('Заявку збережено');
     savedTicketRef = tickets.find(t=>t.id===newTicket.id);
+    // Якщо локальне сховище тимчасово недоступне, повторне натискання має
+    // дописувати ту саму заявку, а не створювати дублікат з новим id.
+    editingTicketId = newTicket.id;
+    successMessage = 'Заявку збережено';
   }
+  let localSaved = false;
+  try{
+    // Чекаємо лише durable local path: sync-journal + IndexedDB або аварійний
+    // localStorage fallback. Google flush запускається recordDiff у фоні.
+    localSaved = await saveTickets();
+  }catch(e){
+    console.error('Local ticket persistence failed');
+  }
+  if(!localSaved){
+    showToast('⚠️ Заявку не вдалося надійно зберегти. Форма й чернетка залишені — спробуйте ще раз.');
+    document.getElementById('saveTicketBtn').textContent = editingTicketId ? 'Оновити заявку' : saveBtnOriginalText;
+    return;
+  }
+  showToast(successMessage);
   if(savedTicketRef && naryadPendingCompletionId){
     const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
     if(naryad){

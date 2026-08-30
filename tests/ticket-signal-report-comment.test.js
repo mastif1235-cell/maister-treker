@@ -4,6 +4,8 @@ const root=path.join(__dirname,'..');
 const context={console};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root,'js','ticket-form-domain.js'),'utf8'),context);
+context.fmtMoney=value=>`${value} грн`;
+vm.runInContext(fs.readFileSync(path.join(root,'js','finance-utils.js'),'utf8'),context);
 vm.runInContext(fs.readFileSync(path.join(root,'js','report-utils.js'),'utf8'),context);
 
 const legacy=context.blankTicketObject();
@@ -13,6 +15,13 @@ assert.equal(context.resolveOnuSignalInput('other','-31.5'),'-31.5','manual deci
 assert.deepEqual(JSON.parse(JSON.stringify(context.onuSignalInputState('-31.5'))),{preset:'other',custom:'-31.5'},'manual signal is restored into edit controls');
 assert.equal(context.formatOnuSignal('-23'),'📶 -23 dBm','signal has compact display text');
 assert.equal(context.ticketSignalMatchesQuery({signal:'-23'},'-23'),true,'search matches signal value');
+
+const contentBase={type:'Ремонт',date:'30.08.2026',time:'10:00',contractNumber:'',city:'Київ',address:'Тестова 1',clientName:'Тест',phone:'0500000000',macAddress:'AA:BB:CC',signal:'-20',payment:'Готівка',callFee:0,tariff:0,equipment:[],cables:[],presetWorks:[],additionalWork:[],note:''};
+const contentWithSignal=context.buildTicketContent(contentBase,0);
+assert.match(contentWithSignal,/🔧 MAC ONU: AA:BB:CC\n📶 Сигнал ONU: -20 dBm\n------------------/,'content places ONU signal immediately after MAC');
+assert.equal((contentWithSignal.match(/Сигнал ONU:/g)||[]).length,1,'content contains one ONU signal row');
+assert.doesNotMatch(context.buildTicketContent({...contentBase,signal:''},0),/Сигнал ONU|dBm/,'empty signal adds no row');
+assert.match(context.buildTicketContent({...contentBase,macAddress:'',signal:'-20.5'},0),/📞 Тел: 0500000000\n📶 Сигнал ONU: -20.5 dBm\n------------------/,'signal without MAC remains in the client technical block');
 
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 for(let signal=-15;signal>=-30;signal--) assert.match(html,new RegExp(`<option value="${signal}">${signal}<\\/option>`),`preset ${signal} is available`);
@@ -55,6 +64,7 @@ const telegramSource=fs.readFileSync(path.join(root,'js','photo-telegram-domain.
 vm.runInContext(telegramSource,telegramContext);
 const dispatcherText=telegramContext.dispatcherTicketText('Заявка\nMAC: AA:BB\n📶 Сигнал ONU: -23 dBm\nsignal: -23\nonuSignal: -23\nРоботи виконано');
 assert.equal(dispatcherText,'Заявка\nMAC: AA:BB\nРоботи виконано','dispatcher text excludes all ONU signal representations');
+assert.match(telegramContext.buildTelegramBackupText({content:contentWithSignal}),/📶 Сигнал ONU: -20 dBm/,'personal Telegram backup text includes ONU signal through content');
 assert.match(telegramSource,/sendToTelegramChat\(id2, dispatcherTicketText\(t\.content\)/,'saved-ticket dispatcher path sanitizes text');
 assert.match(telegramSource,/const text = dispatcherTicketText\(getCurrentTicketText\(\)\)/,'current-form dispatcher path sanitizes text');
 

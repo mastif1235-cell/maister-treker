@@ -81,6 +81,8 @@ function buildTicketContent(s, total){
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
   if(s.phone) lines.push(`📞 Тел: ${s.phone}`);
   if(s.macAddress) lines.push(`🔧 MAC ONU: ${s.macAddress}`);
+  const onuSignal=normalizeOnuSignal(s.signal);
+  if(onuSignal) lines.push(`📶 Сигнал ONU: ${onuSignal} dBm`);
   lines.push('------------------');
   const isFree = s.payment === 'Безкоштовно';
   if(s.callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${isFree ? '0 грн' : fmtMoney(s.callFee)}`);
