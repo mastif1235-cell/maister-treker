@@ -23,12 +23,25 @@ assert.match(editor,/calcState\.signal\s*=\s*resolveOnuSignalInput/,'form save s
 assert.match(fs.readFileSync(path.join(root,'js','tickets-domain.js'),'utf8'),/ticketSignalMatchesQuery\(t,q\)/,'ticket search includes signal');
 const ticketRenderer=fs.readFileSync(path.join(root,'js','tickets-render.js'),'utf8');
 assert.match(ticketRenderer,/formatOnuSignal\(t\.signal\)/,'ticket details format the saved signal');
+const rendererContext={console};
+vm.createContext(rendererContext);
+vm.runInContext(ticketRenderer,rendererContext);
+const splitDetails=rendererContext.splitTicketContentForTechnicalDetails([
+  '📋 ЗАЯВКА: РЕМОНТ','📅 30.08.2026 10:00','🏙️ Місто: Київ','📍 Адреса: Тестова 1',
+  '👤 Клієнт: Тест','📞 Тел: 0500000000','🔧 MAC ONU: AA:BB:CC','📶 Сигнал ONU: -20 dBm',
+  '------------------','💎 Виклик: 100 грн'
+].join('\n'));
+assert.equal(splitDetails.before.split('\n').at(-1),'📞 Тел: 0500000000','subscriber block ends with the client phone');
+assert.equal(splitDetails.after.split('\n')[0],'------------------','remaining ticket data starts with the separator');
+assert.doesNotMatch(splitDetails.before+splitDetails.after,/MAC ONU|Сигнал ONU|dBm/,'technical rows are removed from general text to prevent duplication');
 const cardHead=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-head">'),ticketRenderer.indexOf('<div class="tc-details'));
-assert.doesNotMatch(cardHead,/signalText|Сигнал ONU/,'collapsed ticket card header does not show ONU signal');
+assert.doesNotMatch(cardHead,/signalText|Сигнал ONU|MAC:/,'collapsed ticket card header does not show MAC or ONU signal');
 const cardDetails=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-details'));
+const beforePosition=cardDetails.indexOf('detailContent.before');
 const macPosition=cardDetails.indexOf('MAC:');
 const signalPosition=cardDetails.indexOf('📶 Сигнал ONU:');
-assert.ok(macPosition>=0 && signalPosition>macPosition,'expanded technical details show ONU signal immediately after MAC');
+const afterPosition=cardDetails.indexOf('detailContent.after');
+assert.ok(beforePosition>=0 && macPosition>beforePosition && signalPosition>macPosition && afterPosition>signalPosition,'expanded technical details place MAC and ONU signal between subscriber phone and remaining data');
 assert.match(cardDetails,/signalText \? `<div>📶 Сигнал ONU:/,'missing signal produces no empty technical row');
 
 const restored=Object.assign(context.blankTicketObject(),JSON.parse(JSON.stringify({id:'1',signal:'-31.5'})));
