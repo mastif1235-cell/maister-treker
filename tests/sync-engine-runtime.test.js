@@ -17,6 +17,25 @@ const payload=id=>({id,date:'23.08.2026',time:'10:00',content:'x',sum:1,tags:[]}
   const restarted=new Engine({core,storage:restartDb,payload:(_entity,item)=>item,online:()=>true,transport:{send:async m=>{restartSends++;return{ok:true,state:{revision:m.revision,tombstone:false}};}}});
   await restarted.init();await restarted.loop;assert.equal(restartSends,1,'already-online startup recovers head');
 
+  const offlineRestartPending=core.markAttempted(core.enqueue({records:{}},{entity:'ticket',id:'offline-restart',payload:payload('offline-restart')},()=> 'offline_restart_request_abcdefghijkl'),'ticket','offline-restart');
+  const offlineRestartDb=storage(offlineRestartPending);let restartOnline=false,restartTransportOk=false,restartOnlineSends=0;const browserTimers=[];
+  const nativeSetTimeout=globalThis.setTimeout,nativeClearTimeout=globalThis.clearTimeout;
+  try{
+    globalThis.setTimeout=function(fn,delay){assert.equal(this,globalThis,'browser timer keeps its Window/global receiver');const timer={id:browserTimers.length+1,fn,delay,cancelled:false};browserTimers.push(timer);return timer.id;};
+    globalThis.clearTimeout=function(id){assert.equal(this,globalThis,'browser clearTimer keeps its Window/global receiver');const timer=browserTimers.find(item=>item.id===id);if(timer)timer.cancelled=true;};
+    const offlineRestarted=new Engine({core,storage:offlineRestartDb,payload:(_entity,item)=>item,online:()=>restartOnline,transport:{send:async m=>{restartOnlineSends++;return restartTransportOk?{ok:true,state:{revision:m.revision,tombstone:false}}:{ok:false,result:{status:'error',code:'NETWORK'}};}}});
+    await offlineRestarted.init();assert.equal(restartOnlineSends,0,'offline cold start restores pending without sending');
+    restartOnline=true;await offlineRestarted.flush();
+    assert.equal(restartOnlineSends,1,'online event path starts one immediate Google send');
+    assert.equal(browserTimers.length,1,'temporary online failure schedules browser backoff without Illegal invocation');
+    assert.equal(browserTimers[0].delay,2000,'online recovery starts with two-second backoff');
+    restartTransportOk=true;browserTimers[0].fn();await offlineRestarted.loop;
+    assert.equal(restartOnlineSends,2,'restored transport sends pending exactly once after backoff');
+    assert.equal(offlineRestarted.pendingCount(),0,'offline restart pending reaches zero automatically');
+  } finally {
+    globalThis.setTimeout=nativeSetTimeout;globalThis.clearTimeout=nativeClearTimeout;
+  }
+
   let tail=core.enqueue({records:{}},{entity:'ticket',id:'tail',payload:payload('tail')},()=> 'head_request_abcdefghijkl');tail=core.markAttempted(tail,'ticket','tail');tail=core.enqueue(tail,{entity:'ticket',id:'tail',payload:{...payload('tail'),content:'edit'}},()=> 'tail_request_abcdefghijkl');
   const tailDb=storage(tail);let order=[];const tailEngine=new Engine({core,storage:tailDb,payload:(_entity,item)=>item,online:()=>true,transport:{send:async m=>{order.push(m.action);return{ok:true,state:{revision:m.revision,tombstone:false}};}}});
   await tailEngine.init();await tailEngine.loop;assert.deepEqual(order,['addTicket','updateTicket'],'restart recovers head then tail serially');
