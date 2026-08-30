@@ -11,11 +11,14 @@
       body:JSON.stringify(mutation.body)};
     envelope.sig = await contract.sign(envelope, secret); return envelope;
   }
-  async function signedStateUrl(url, mutation, secret, random, now){
-    const envelope = {v:contract.VERSION, method:'GET', action:'getEntityState', entity:mutation.entity,
-      id:String(mutation.id), ts:String(now()), nonce:token(random), requestId:'', body:''};
+  async function signedGetUrl(url, action, entity, id, secret, random, now){
+    const envelope = {v:contract.VERSION, method:'GET', action, entity,
+      id:String(id), ts:String(now()), nonce:token(random), requestId:'', body:''};
     envelope.sig = await contract.sign(envelope, secret);
     return url + (url.includes('?')?'&':'?') + new URLSearchParams(envelope).toString();
+  }
+  async function signedStateUrl(url, mutation, secret, random, now){
+    return signedGetUrl(url,'getEntityState',mutation.entity,mutation.id,secret,random,now);
   }
   async function fetchTimed(fetchImpl, url, options, timeoutMs){
     const controller = new AbortController(); const timer = setTimeout(()=>controller.abort(), timeoutMs);
@@ -39,7 +42,10 @@
           if(!response.ok) continue;
           const data=await response.json(); const state=data && data.state;
           if(state && Number(state.revision)>mutation.revision) return {ok:true,state};
-          if(state && Number(state.revision)===mutation.revision && state.fingerprint===expectedFingerprint) return {ok:true,state};
+          if(state && Number(state.revision)===mutation.revision){
+            if(state.fingerprint===expectedFingerprint) return {ok:true,state};
+            return {ok:false,result:{status:'error',code:'CONFLICT',state}};
+          }
         }catch(_err){}
       }
       return {ok:false};
@@ -53,7 +59,15 @@
         return {ok:false,result};
       }catch(err){ return verify(mutation); }
     }
-    return {send,verify};
+    async function get(action,entity,id){
+      try{
+        const url=await signedGetUrl(options.url({entity,id}),action,entity,id,options.secret(),random,now);
+        const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||4000);
+        const result=await response.json();
+        return response.ok && result.status==='ok' ? {ok:true,result} : {ok:false,result};
+      }catch(_err){return {ok:false,result:{status:'error',code:'NETWORK'}};}
+    }
+    return {send,verify,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id)};
   }
-  return {create,signedEnvelope,signedStateUrl,semanticFingerprint};
+  return {create,signedEnvelope,signedGetUrl,signedStateUrl,semanticFingerprint};
 });

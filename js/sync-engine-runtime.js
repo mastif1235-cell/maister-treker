@@ -22,16 +22,23 @@
       return this.persistTransition(state=>jobs.reduce((s,job)=>this.core.enqueue(s,job,uuid),state)).then(()=>{if(this.online())this.flush();});
     }
     pendingCount(){return this.core.pending(this.state).length;}
+    conflictFor(entity,id){return this.core.conflictFor(this.state,entity,id);}
+    acceptServerConflict(entity,id,server){return this.persistTransition(s=>this.core.acceptServerConflict(s,entity,id,server));}
+    keepLocalConflict(entity,id,server,payload){return this.persistTransition(s=>this.core.keepLocalConflict(s,entity,id,server,payload,uuid)).then(()=>this.flush());}
     cancelRetryTimer(){if(this.retryTimer!==null){this.clearTimer(this.retryTimer);this.retryTimer=null;}}
     resetBackoff(){this.cancelRetryTimer();this.retryStep=0;}
     scheduleRetry(){if(this.retryTimer!==null||!this.online()||!this.pendingCount())return;const delay=this.retryDelays[Math.min(this.retryStep,this.retryDelays.length-1)];this.retryStep=Math.min(this.retryStep+1,this.retryDelays.length-1);this.retryTimer=this.setTimer(()=>{this.retryTimer=null;this.flush();},delay);}
     flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())return Promise.resolve(false);let failed=false;
       this.loop=(async()=>{await this.write;const failedEntities=new Set();while(this.online()){
-        const item=this.core.pending(this.state).find(candidate=>!failedEntities.has(`${candidate.entity}:${candidate.id}`));if(!item)break;
+        const item=this.core.pending(this.state).find(candidate=>!candidate.conflict&&!failedEntities.has(`${candidate.entity}:${candidate.id}`));if(!item)break;
         await this.persistTransition(s=>this.core.markAttempted(s,item.entity,item.id));
         const result=await this.transport.send(item);
         if(!result.ok){
           const error=result.result;
+          if(error && error.code==='CONFLICT'){
+            await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));
+            failedEntities.add(`${item.entity}:${item.id}`);continue;
+          }
           if(error && error.code==='REVISION_GAP' && this.core.recoverUncommittedAddTicketGap){
             let recovered=false;
             await this.persistTransition(s=>{const repair=this.core.recoverUncommittedAddTicketGap(s,item,error.state,uuid);recovered=repair.recovered;return repair.state;});

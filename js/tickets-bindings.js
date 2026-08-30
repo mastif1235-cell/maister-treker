@@ -104,6 +104,7 @@ function bindTicketsScreen(){
     const dgBtn    = e.target.closest('.contract-ticket-btn');
     const expBtn   = e.target.closest('.tc-expand-btn');
     const retryBtn = e.target.closest('.retry-sync-btn');
+    const conflictBtn = e.target.closest('.resolve-sync-conflict-btn');
     const retryTgBtn = e.target.closest('.retry-tg-btn');
     const gotoProfileBtn = e.target.closest('.goto-profile-btn'); // NEW: замінила "На дату" на звичайних картках
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
@@ -125,6 +126,7 @@ function bindTicketsScreen(){
     if(copyBtn)  copyTicketCardText(copyBtn.dataset.id);
     if(dgBtn)    showDogovor(dgBtn.dataset.id);
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
+    if(conflictBtn) showTicketConflictResolution(conflictBtn.dataset.id);
     if(retryTgBtn) retryTelegramBackup(retryTgBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;

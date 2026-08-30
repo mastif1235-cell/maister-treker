@@ -55,14 +55,13 @@ vm.runInContext(source, context);
   assert.equal(ticket.tgBackedUp, false, 'failed backup is not acknowledged');
 
   online = true;
-  context.fetchWithRetry = async()=>{
+  context.fetchWithRetry = async url=>{
+    if(/sendDocument$/.test(String(url))){
+      documentPosts++;
+      return {status:200,headers:{get:()=>null},json:async()=>({ok:true, result:{message_id:200 + documentPosts}})};
+    }
     messagePosts++;
-    return {json:async()=>({ok:true, result:{message_id:100 + messagePosts}})};
-  };
-  context.fetch = async url=>{
-    assert.match(String(url), /sendDocument$/);
-    documentPosts++;
-    return {json:async()=>({ok:true, result:{message_id:200 + documentPosts}})};
+    return {status:200,headers:{get:()=>null},json:async()=>({ok:true, result:{message_id:100 + messagePosts}})};
   };
 
   await Promise.all([

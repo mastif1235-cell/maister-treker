@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v77 · 2026-08-30';
+const APP_VERSION = 'v78 · 2026-08-30';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -157,6 +157,9 @@ function isEntitySynced(entity,id){
   if(!syncEngine) return true;
   const record=syncEngine.state.records[MTSyncEngineCore.key(entity,id)];
   return !record || (!record.head && !record.tail);
+}
+function getEntityConflict(entity,id){
+  return syncEngine && typeof syncEngine.conflictFor==='function' ? syncEngine.conflictFor(entity,id) : null;
 }
 
 function ticketToSyncPayload(t){

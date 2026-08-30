@@ -60,6 +60,7 @@
     state = copy(state); const record = state.records[key(entity,id)];
     if(!record || !record.head || record.head.revision !== revision) return state;
     record.committedRevision = revision;
+    record.conflict = null;
     if(isDelete(record.head.action)) record.tombstone = true;
     record.head = record.tail; record.tail = null;
     return state;
@@ -67,10 +68,41 @@
   function reconcile(state, entity, id, server){
     state = copy(state); const record = state.records[key(entity,id)];
     if(!record) return state;
-    if(server.tombstone){ record.tombstone = true; record.committedRevision = server.revision; record.head = null; record.tail = null; return state; }
+    if(server.tombstone){ record.tombstone = true; record.committedRevision = server.revision; record.head = null; record.tail = null; record.conflict = null; return state; }
     while(state.records[key(entity,id)] && state.records[key(entity,id)].head && state.records[key(entity,id)].head.revision <= server.revision) {
       state = acknowledge(state, entity, id, state.records[key(entity,id)].head.revision);
     }
+    return state;
+  }
+  function markConflict(state, entity, id, server){
+    state = copy(state); const record = state.records[key(entity,id)];
+    if(!record || !record.head) return state;
+    record.conflict = {code:'CONFLICT', requestId:record.head.requestId, server:copy(server||{})};
+    return state;
+  }
+  function conflictFor(state, entity, id){
+    const record = state && state.records && state.records[key(entity,id)];
+    return record && record.conflict ? copy(record.conflict) : null;
+  }
+  function acceptServerConflict(state, entity, id, server){
+    state = copy(state); const record = state.records[key(entity,id)];
+    if(!record || !record.conflict) throw new Error('NO_CONFLICT');
+    record.committedRevision = Number(server && server.revision) || 0;
+    record.tombstone = !!(server && server.tombstone);
+    record.head = null; record.tail = null; record.conflict = null;
+    return state;
+  }
+  function keepLocalConflict(state, entity, id, server, payload, random){
+    state = copy(state); const record = state.records[key(entity,id)];
+    if(!record || !record.conflict) throw new Error('NO_CONFLICT');
+    if(server && server.tombstone) throw new Error('TOMBSTONED');
+    const serverRevision = Number(server && server.revision) || 0;
+    const deleting = isDelete((record.tail || record.head).action);
+    const action = nextAction(entity, serverRevision > 0, deleting);
+    record.committedRevision = serverRevision;
+    record.tombstone = false;
+    record.head = mutation(entity, id, action, serverRevision + 1, payload, random);
+    record.tail = null; record.conflict = null;
     return state;
   }
   function recoverUncommittedAddTicketGap(state, item, server, random){
@@ -88,7 +120,9 @@
     return {recovered:true,state};
   }
   function pending(state){
-    return Object.keys((state && state.records) || {}).sort().map(k=>state.records[k]).filter(r=>r.head).map(r=>copy(r.head));
+    return Object.keys((state && state.records) || {}).sort().map(k=>state.records[k]).filter(r=>r.head).map(r=>{
+      const item=copy(r.head); if(r.conflict) item.conflict=copy(r.conflict); return item;
+    });
   }
   function assertInvariants(state){
     Object.values((state && state.records) || {}).forEach(r=>{
@@ -97,8 +131,9 @@
       if(r.tail && r.tail.revision !== r.head.revision + 1) throw new Error('REVISION_GAP');
       if(r.tombstone && (r.head || r.tail)) throw new Error('TOMBSTONE_HAS_PENDING');
       if(r.head && r.head.revision !== r.committedRevision + 1) throw new Error('HEAD_REVISION_GAP');
+      if(r.conflict && (!r.head || r.conflict.requestId !== r.head.requestId)) throw new Error('INVALID_CONFLICT');
     });
     return true;
   }
-  return {key, enqueue, markAttempted, acknowledge, reconcile, recoverUncommittedAddTicketGap, pending, assertInvariants};
+  return {key, enqueue, markAttempted, acknowledge, reconcile, markConflict, conflictFor, acceptServerConflict, keepLocalConflict, recoverUncommittedAddTicketGap, pending, assertInvariants};
 });

@@ -59,7 +59,10 @@ function renderTicketCard(t, opts={}){
   // або відновив його через підписаний getEntityState після втраченої відповіді.
   let syncBadge = '';
   if(getScriptUrl()){
-    syncBadge = isEntitySynced('ticket',t.id)
+    const conflict = getEntityConflict('ticket',t.id);
+    syncBadge = conflict
+      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${t.id}" title="Оберіть, яку версію зберегти" style="border:none; cursor:pointer;">⚠️ Конфлікт</button>`
+      : isEntitySynced('ticket',t.id)
       ? `<span class="tc-sync-badge tc-sync-ok" title="Підтверджено сервером">✅ Таблиця</span>`
       : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;
   }

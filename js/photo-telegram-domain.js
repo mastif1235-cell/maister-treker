@@ -276,21 +276,45 @@ async function fetchWithRetry(url, opts, retries=1){
     return fetchWithRetry(url, opts, retries-1);
   } finally { clearTimeout(timeoutId); }
 }
+function telegramRetryAfterMs(response, data){
+  const jsonSeconds=Number(data && data.parameters && data.parameters.retry_after);
+  const headerSeconds=Number(response && response.headers && response.headers.get && response.headers.get('Retry-After'));
+  const seconds=Number.isFinite(jsonSeconds)&&jsonSeconds>0 ? jsonSeconds : headerSeconds;
+  return Math.min(60000, Math.max(1000, (Number.isFinite(seconds)&&seconds>0 ? seconds : 2) * 1000));
+}
+async function telegramBackupFetchJson(url, opts, ticket, rateRetries=2){
+  const response=await fetchWithRetry(url,opts);
+  const data=await response.json();
+  const rateLimited=(response && response.status===429) || (data && Number(data.error_code)===429);
+  if(!rateLimited) return data;
+  const current=tickets.find(item=>String(item.id)===String(ticket.id));
+  if(rateRetries<=0 || !current || current.tgBackupPending!==true) throw new Error('TELEGRAM_RATE_LIMIT');
+  await new Promise(resolve=>setTimeout(resolve,telegramRetryAfterMs(response,data)));
+  const stillPending=tickets.find(item=>String(item.id)===String(ticket.id));
+  if(!stillPending || stillPending.tgBackupPending!==true) throw new Error('TELEGRAM_RETRY_CANCELLED');
+  return telegramBackupFetchJson(url,opts,stillPending,rateRetries-1);
+}
 // Серіалізуємо backup по stable id. Наступний запит завжди дістає заявку
 // наново з tickets уже після попереднього завершення: save/edit може замінити
 // tickets[idx] новим об'єктом, тож старе async-посилання не можна продовжувати.
 const telegramBackupQueues = new Map();
+let telegramBackupGlobalQueue = Promise.resolve();
+function enqueueTelegramBackupGlobal(job){
+  const queued=telegramBackupGlobalQueue.catch(()=>{}).then(job);
+  telegramBackupGlobalQueue=queued.catch(()=>{});
+  return queued;
+}
 function backupTicketToTelegram(ticket, options){
   const id = ticket && ticket.id;
   if(id === undefined || id === null) return Promise.resolve(false);
   const key = String(id);
   const pendingOnly = !!(options && options.pendingOnly);
   const previous = telegramBackupQueues.get(key) || Promise.resolve();
-  const job = previous.catch(()=>{}).then(()=>{
+  const job = previous.catch(()=>{}).then(()=>enqueueTelegramBackupGlobal(()=>{
     const current = tickets.find(x=>String(x.id)===key);
     if(pendingOnly && (!current || current.tgBackupPending !== true)) return false;
     return current ? backupTicketToTelegramNow(current) : false;
-  });
+  }));
   let tracked;
   tracked = job.finally(()=>{
     if(telegramBackupQueues.get(key) === tracked) telegramBackupQueues.delete(key);
@@ -355,21 +379,19 @@ async function backupTicketToTelegramNow(t){
     if(t.content){
       const addr = [t.city, t.street, t.house].filter(Boolean).join(', ');
       const sepText = `➖➖➖➖➖➖➖➖➖➖\n🧾 ${(t.type||'ЗАЯВКА').toUpperCase()}${t.date? ' · '+t.date:''}${t.time? ' '+t.time:''}${addr? ' · '+addr:''}`;
-      const res = await fetchWithRetry(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text: sepText})
-      });
-      const data = await res.json();
+      },t);
       if(data.ok) t.tgSepMsgId = data.result.message_id;
     }
     // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
       const text = buildTelegramBackupText(t).slice(0, 4000); // ліміт Telegram на текст повідомлення
-      const res = await fetchWithRetry(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text})
-      });
-      const data = await res.json();
+      },t);
       if(data.ok){ textOk = true; t.tgTextMsgId = data.result.message_id; }
     }
     // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
@@ -397,8 +419,7 @@ async function backupTicketToTelegramNow(t){
       const caption = `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim();
       form.append('caption', (photosToSend.length>1 ? `${caption} (${pi+1}/${photosToSend.length})` : caption).slice(0,1020));
       form.append('photo', blob, 'foto.jpg');
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
-      const data = await res.json();
+      const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form},t);
       if(data.ok){
         const sizes = data.result.photo || [];
         const fileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
@@ -426,8 +447,7 @@ async function backupTicketToTelegramNow(t){
       const form = new FormData();
       form.append('chat_id', chatId);
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form});
-      const data = await res.json();
+      const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form},t);
       if(data.ok){ jsonOk = true; t.tgJsonMsgId = data.result.message_id; }
     }catch(e){ console.error('Telegram JSON backup request failed'); }
     // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер

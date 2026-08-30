@@ -64,6 +64,80 @@ async function retrySyncQueue(){
   showToast(ok ? 'Усе синхронізовано ✅' : `Залишилось не синхронізовано: ${syncEngine.pendingCount()}`);
 }
 
+function ticketFromConflictServer(serverTicket, current){
+  const next = Object.assign({}, current || blankTicketObject());
+  let fullData = null;
+  if(serverTicket && serverTicket.fullDataJson){
+    try{ fullData=JSON.parse(serverTicket.fullDataJson); }catch(_e){}
+  }
+  const extra = parseBackupNote(serverTicket && serverTicket.backupNote);
+  if(!fullData && extra.fullData) fullData=extra.fullData;
+  if(fullData) Object.assign(next, fullData);
+  Object.assign(next, {
+    id:String(serverTicket.id), date:serverTicket.date, time:serverTicket.time,
+    content:serverTicket.content || '', sum:Number(serverTicket.sum)||0,
+    tags:Array.isArray(serverTicket.tags) ? serverTicket.tags.slice() : [],
+    geoLink:extra.geoLink || '', masterNote:extra.masterNote || '',
+    login:extra.login || next.login || '', password:extra.password || next.password || ''
+  });
+  return next;
+}
+
+async function readCurrentTicketConflict(id){
+  const transport=syncEngine && syncEngine.transport;
+  if(!transport || !transport.getEntityState || !transport.getTicket) throw new Error('TRANSPORT_UNAVAILABLE');
+  const stateResponse=await transport.getEntityState('ticket',id);
+  if(!stateResponse.ok || !stateResponse.result || !stateResponse.result.state) throw new Error(stateResponse.result?.code || 'STATE_READ_FAILED');
+  const state=stateResponse.result.state;
+  if(state.tombstone) return {state,ticket:null};
+  const ticketResponse=await transport.getTicket(id);
+  if(!ticketResponse.ok || !ticketResponse.result || !ticketResponse.result.ticket) throw new Error(ticketResponse.result?.code || 'TICKET_READ_FAILED');
+  const confirmedStateResponse=await transport.getEntityState('ticket',id);
+  if(!confirmedStateResponse.ok || !confirmedStateResponse.result || !confirmedStateResponse.result.state) throw new Error(confirmedStateResponse.result?.code || 'STATE_READ_FAILED');
+  const confirmed=confirmedStateResponse.result.state;
+  if(Number(confirmed.revision)!==Number(state.revision) || !!confirmed.tombstone!==!!state.tombstone || String(confirmed.fingerprint||'')!==String(state.fingerprint||'')) throw new Error('SERVER_CHANGED_RETRY');
+  return {state,ticket:ticketResponse.result.ticket};
+}
+
+async function acceptServerTicketConflict(id){
+  const current=tickets.find(t=>String(t.id)===String(id));
+  if(!current || !getEntityConflict('ticket',id)) return;
+  const remote=await readCurrentTicketConflict(id);
+  if(remote.state.tombstone) tickets=tickets.filter(t=>String(t.id)!==String(id));
+  else tickets[tickets.indexOf(current)]=ticketFromConflictServer(remote.ticket,current);
+  const saved=await ticketsDbPut(tickets);
+  if(!saved) throw new Error('LOCAL_WRITE_FAILED');
+  syncTicketsSnapshot=JSON.parse(JSON.stringify(tickets));
+  await syncEngine.acceptServerConflict('ticket',id,remote.state);
+  closeModal(); renderTicketsScreen(); showToast('Прийнято серверну версію ✅');
+}
+
+async function keepLocalTicketConflict(id){
+  const local=tickets.find(t=>String(t.id)===String(id));
+  if(!local || !getEntityConflict('ticket',id)) return;
+  const remote=await readCurrentTicketConflict(id);
+  if(remote.state.tombstone) throw new Error('TOMBSTONED');
+  await syncEngine.keepLocalConflict('ticket',id,remote.state,ticketToSyncPayload(local));
+  closeModal(); renderTicketsScreen();
+  showToast(isEntitySynced('ticket',id) ? 'Локальну версію збережено ✅' : 'Версію поставлено в чергу');
+}
+
+function showTicketConflictResolution(id){
+  if(!getEntityConflict('ticket',id)) return;
+  openModal('⚠️ Конфлікт заявки', `
+    <div style="font-size:14px; line-height:1.5; margin-bottom:12px;">Цю заявку змінили на іншому пристрої. Оберіть версію — автоматично дані не перезаписуються.</div>
+    <button type="button" class="btn btn-block" id="acceptServerConflictBtn">Прийняти версію з Таблиці</button>
+    <button type="button" class="btn btn-accent btn-block" id="keepLocalConflictBtn" style="margin-top:8px;">Залишити цю локальну версію</button>`, {
+    onOpen:()=>{
+      const run=async(button,action)=>{button.disabled=true;try{await action();}catch(error){button.disabled=false;showToast(error.message==='TOMBSTONED'?'Заявку вже видалено на іншому пристрої — прийміть серверну версію':`Не вдалося вирішити конфлікт: ${error.message}`);}};
+      const accept=document.getElementById('acceptServerConflictBtn');
+      const keep=document.getElementById('keepLocalConflictBtn');
+      accept.onclick=()=>run(accept,()=>acceptServerTicketConflict(id));
+      keep.onclick=()=>run(keep,()=>keepLocalTicketConflict(id));
+    }
+  });
+}
+
 function renderMainTicketList(){
   const listEl = document.getElementById('ticketList');
   let list;
