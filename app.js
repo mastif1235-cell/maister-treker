@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v76 · 2026-08-30';
+const APP_VERSION = 'v77 · 2026-08-30';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -464,6 +464,7 @@ async function init(){
   // до розблокування абсолютно безпечно.
   applyTheme();
   await ensureAppUnlocked(); // якщо ввімкнено захист входу — чекаємо пароль/відбиток, перш ніж щось малювати чи підвантажувати
+  await MTSingleWriterLock.acquire();
   bindTabBar();
   bindTicketsScreen();
   bindCalculatorScreen();

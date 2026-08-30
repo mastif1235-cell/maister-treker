@@ -6,16 +6,19 @@
  * змінюваного стану застосунку.
  */
 
+function safeNonNegativeNumber(value,fallback=0){const number=Number(value);return Number.isFinite(number)&&number>=0?number:fallback;}
+function safeWorkQuantity(value){const number=Number(value);if(!Number.isFinite(number))return 1;if(number<0)return 0;return number||1;}
+
 function calculateTicketTotal(state){
   const emptyResult = {total:0, callFee:0, tariff:0, equipmentSum:0, cablesSum:0, additionalWorkSum:0, presetWorkSum:0};
-  if(state.cloudImported) return {...emptyResult, total:Number(state.rawSum)||0};
+  if(state.cloudImported) return {...emptyResult, total:safeNonNegativeNumber(state.rawSum)};
   if(state.payment === 'Безкоштовно') return emptyResult;
-  const callFee = Number(state.callFee)||0;
-  const tariff = Number(state.tariff)||0;
-  const equipmentSum = (state.equipment||[]).reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
-  const cablesSum = (state.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0);
-  const additionalWorkSum = (state.additionalWork||[]).reduce((s,w)=> s + (Number(w.sum)||0), 0);
-  const presetWorkSum = (state.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
+  const callFee = safeNonNegativeNumber(state.callFee);
+  const tariff = safeNonNegativeNumber(state.tariff);
+  const equipmentSum = (state.equipment||[]).reduce((s,e)=> s + (e.checked ? safeNonNegativeNumber(e.price) : 0), 0);
+  const cablesSum = (state.cables||[]).reduce((s,c)=> s + safeNonNegativeNumber(c.meters)*safeNonNegativeNumber(c.pricePerMeter), 0);
+  const additionalWorkSum = (state.additionalWork||[]).reduce((s,w)=> s + safeNonNegativeNumber(w.sum), 0);
+  const presetWorkSum = (state.presetWorks||[]).reduce((s,w)=> s + (w.checked ? safeNonNegativeNumber(w.price)*safeWorkQuantity(w.qty) : 0), 0);
   return {total:callFee + tariff + equipmentSum + cablesSum + additionalWorkSum + presetWorkSum, callFee, tariff, equipmentSum, cablesSum, additionalWorkSum, presetWorkSum};
 }
 
@@ -27,10 +30,10 @@ function buildMixedPaymentItemsFromTicket(t){
   const items = [];
   if(Number(t.callFee)>0) items.push({key:'callFee', label: callFeeLabelFor(t.type), amount: Number(t.callFee)});
   if(Number(t.tariff)>0) items.push({key:'tariff', label:'Тариф', amount: Number(t.tariff)});
-  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount: Number(e.price)||0}));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount: m*(Number(c.pricePerMeter)||0)}); });
-  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:(Number(w.price)||0)*(Number(w.qty)||1)}));
-  (t.additionalWork||[]).forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:Number(w.sum)||0}); });
+  (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount:safeNonNegativeNumber(e.price)}));
+  (t.cables||[]).forEach(c=>{ const m=safeNonNegativeNumber(c.meters); if(m>0) items.push({key:'cab_'+c.id, label:`${c.label} (${m}м)`, amount:m*safeNonNegativeNumber(c.pricePerMeter)}); });
+  (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> items.push({key:'pw_'+w.id, label:w.label, amount:safeNonNegativeNumber(w.price)*safeWorkQuantity(w.qty)}));
+  (t.additionalWork||[]).forEach((w,i)=>{ if(w.desc || w.sum) items.push({key:'aw_'+i, label:w.desc||'Робота', amount:safeNonNegativeNumber(w.sum)}); });
   return items;
 }
 
@@ -52,7 +55,7 @@ function buildWorkSummaryLines(t){
   if(Number(t.callFee)>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${isFree ? '0 грн' : fmtMoney(t.callFee)}`);
   if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(t.tariff)}`);
   (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`));
-  (t.cables||[]).forEach(c=>{ const m=Number(c.meters)||0; if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(m*(Number(c.pricePerMeter)||0))}грн`); });
+  (t.cables||[]).forEach(c=>{ const m=safeNonNegativeNumber(c.meters),price=safeNonNegativeNumber(c.pricePerMeter); if(m>0) lines.push(`🔌 ${c.label}: ${m}м х ${isFree ? '0' : price}грн = ${isFree ? '0' : Math.round(m*price)}грн`); });
   (t.presetWorks||[]).filter(w=>w.checked!==false).forEach(w=> lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`));
   (t.additionalWork||[]).forEach(w=>{ if(w.desc || w.sum) lines.push(`✏️ ${w.desc||'Робота'}: ${isFree ? '0 грн' : fmtMoney(w.sum)}`); });
   if(t.payment) lines.push(`💳 Оплата: ${t.payment}`);
@@ -86,8 +89,8 @@ function buildTicketContent(s, total){
     lines.push(`🛠️ ${e.label}: 1 шт. х ${isFree ? '0' : Math.round(e.price)} грн`);
   });
   (s.cables||[]).forEach(c=>{
-    const meters = Number(c.meters)||0;
-    if(meters>0) lines.push(`🔌 ${c.label}: ${meters}м х ${isFree ? '0' : c.pricePerMeter}грн = ${isFree ? '0' : Math.round(meters*(Number(c.pricePerMeter)||0))}грн`);
+    const meters=safeNonNegativeNumber(c.meters),price=safeNonNegativeNumber(c.pricePerMeter);
+    if(meters>0) lines.push(`🔌 ${c.label}: ${meters}м х ${isFree ? '0' : price}грн = ${isFree ? '0' : Math.round(meters*price)}грн`);
   });
   (s.presetWorks||[]).filter(w=>w.checked).forEach(w=>{
     lines.push(`🔧 ${w.label}: ${w.qty||1} шт. х ${isFree ? '0' : Math.round(w.price)} грн = ${isFree ? '0' : Math.round((w.price||0)*(w.qty||1))}грн`);

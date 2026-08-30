@@ -1,0 +1,25 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const {webcrypto}=require('node:crypto');
+const source=fs.readFileSync(path.join(__dirname,'..','js','backup-system.js'),'utf8').replace('  async function mtBackupMigrateLegacySlots(){','  globalThis.__mtBackupRestore=mtBackupRestore;\n  async function mtBackupMigrateLegacySlots(){');
+let ticketWrites=0,shiftWrites=0,syncMutations=0,photoWrites=0;
+const journal={records:{'ticket:t1':{head:{revision:1}}}};
+const context={console,crypto:webcrypto,TextEncoder,TextDecoder,Blob,URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},setTimeout:()=>1,clearTimeout:()=>{},btoa,atob,window:{},document:{getElementById:()=>null,createElement:()=>({click(){}})},prompt:()=>null,confirm:()=>true,showToast:()=>{},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},backupDbGet:async()=>null,backupDbPut:async()=>true,backupDbDelete:async()=>true,localDateKey:()=>'',blankTicketObject:()=>({}),securityRuntimeSanitizeTicket:value=>value,securitySanitizeSettingsForBackup:value=>value,securityMergeImportedSettings:value=>value,saveSettings(){},settings:{theme:'dark'},tickets:[{id:'t1',content:'new'}],shifts:[{id:'s1',hours:9}],syncTicketsSnapshot:[{id:'t1',content:'new'}],syncShiftsSnapshot:[{id:'s1',hours:9}],MTSyncEngineRuntime:{uuid:()=> 'uuid'},saveTickets:async()=>{syncMutations++;},saveShifts:async()=>{syncMutations++;},saveTicketsLocalOnly:async()=>{ticketWrites++;return true;},saveShiftsLocalOnly:async()=>{shiftWrites++;return true;},photoDbPut:async()=>{photoWrites++;return true;},migrateLegacyPhotosToIdb:async()=>{},renderTicketsScreen(){},renderShiftsScreen(){},renderSettingsScreen(){}};
+context.window=context;vm.createContext(context);vm.runInContext(source,context);
+(async()=>{
+  const beforeJournal=JSON.stringify(journal);
+  context.restoreJson=JSON.stringify({app:'master-tracker',tickets:[{id:'t1',content:'old'},{id:'t2',content:'backup'}],shifts:[{id:'s1',date:'01.01.2026',hours:5,coworker:'Сам'}],settings:{theme:'light'},photoData:{'idb:p':'data:image/png;base64,AA=='}});
+  const restored=await context.__mtBackupRestore(vm.runInContext('JSON.parse(restoreJson)',context));
+  assert.equal(restored,true);assert.equal(syncMutations,0,'restore creates no Google ticket or shift mutation');
+  assert.equal(ticketWrites,1);assert.equal(shiftWrites,1);assert.equal(photoWrites,1,'photo restore remains active');
+  assert.equal(context.tickets[0].content,'old','backup tickets are persisted locally');assert.equal(context.shifts[0].hours,5,'backup shifts are persisted locally');
+  assert.equal(JSON.stringify(context.syncTicketsSnapshot),JSON.stringify(context.tickets),'ticket snapshot aligns without enqueue');assert.equal(JSON.stringify(context.syncShiftsSnapshot),JSON.stringify(context.shifts),'shift snapshot aligns without enqueue');
+  assert.equal(JSON.stringify(journal),beforeJournal,'pre-existing pending journal is untouched');
+  const edited=JSON.parse(JSON.stringify(context.tickets));edited[0].content='real edit';
+  const changed=edited.filter((ticket,index)=>JSON.stringify(ticket)!==JSON.stringify(context.syncTicketsSnapshot[index]));
+  assert.equal(changed.length,1,'next real edit produces exactly one normal diff candidate');
+  console.log('PASS backup restore is local-only, snapshot-aligned, journal-safe, and photo-compatible');
+})().catch(error=>{console.error(error);process.exitCode=1;});

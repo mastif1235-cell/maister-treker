@@ -5,7 +5,7 @@ function bindSettingsCatalogControls(){
     const li = e.target.closest('.mat-label-inp');
     const pi = e.target.closest('.mat-price-inp');
     if(li){ settings.materials[Number(li.dataset.idx)].label = li.value; saveSettings(); }
-    if(pi){ settings.materials[Number(pi.dataset.idx)].price = Number(pi.value)||0; saveSettings(); }
+    if(pi){settings.materials[Number(pi.dataset.idx)].price=safeNonNegativeNumber(pi.value);saveSettings();}
   });
   document.getElementById('matMgmtList').addEventListener('click', e=>{
     const rm = e.target.closest('.remove-mat-btn'); if(!rm) return;
@@ -18,7 +18,7 @@ function bindSettingsCatalogControls(){
     const priceEl = document.getElementById('newMatPrice');
     const label = nameEl.value.trim();
     if(!label){ showToast('Введіть назву матеріалу'); return; }
-    const price = Number(priceEl.value)||0;
+    const price=safeNonNegativeNumber(priceEl.value);
     const id = 'mat_'+Date.now();
     settings.materials.push({id, label, price});
     ensureCatalogTags(); // NEW: одразу створює тег з такою ж назвою
@@ -67,7 +67,7 @@ function bindSettingsCatalogControls(){
     const li = e.target.closest('.cable-label-inp');
     const pi = e.target.closest('.cable-price-inp');
     if(li){ settings.cableTypes[Number(li.dataset.idx)].label = li.value; saveSettings(); }
-    if(pi){ settings.cableTypes[Number(pi.dataset.idx)].pricePerMeter = Number(pi.value)||0; saveSettings(); }
+    if(pi){settings.cableTypes[Number(pi.dataset.idx)].pricePerMeter=safeNonNegativeNumber(pi.value);saveSettings();}
   });
   document.getElementById('cableMgmtList').addEventListener('click', e=>{
     const rm = e.target.closest('.remove-cable-btn'); if(!rm) return;
@@ -80,7 +80,7 @@ function bindSettingsCatalogControls(){
     const priceEl = document.getElementById('newCablePrice');
     const label = nameEl.value.trim();
     if(!label){ showToast('Введіть назву кабелю'); return; }
-    const pricePerMeter = Number(priceEl.value)||0;
+    const pricePerMeter=safeNonNegativeNumber(priceEl.value);
     const id = 'cable_'+Date.now();
     settings.cableTypes.push({id, label, pricePerMeter});
     saveSettings(); renderCableMgmtList();
@@ -96,7 +96,7 @@ function bindSettingsCatalogControls(){
     const li = e.target.closest('.work-label-inp');
     const pi = e.target.closest('.work-price-inp');
     if(li){ settings.workTypes[Number(li.dataset.idx)].label = li.value; saveSettings(); }
-    if(pi){ settings.workTypes[Number(pi.dataset.idx)].price = Number(pi.value)||0; saveSettings(); }
+    if(pi){settings.workTypes[Number(pi.dataset.idx)].price=safeNonNegativeNumber(pi.value);saveSettings();}
   });
   document.getElementById('workMgmtList').addEventListener('click', e=>{
     const rm = e.target.closest('.remove-work-btn'); if(!rm) return;
@@ -109,7 +109,7 @@ function bindSettingsCatalogControls(){
     const priceEl = document.getElementById('newWorkPrice');
     const label = nameEl.value.trim();
     if(!label){ showToast('Введіть назву роботи'); return; }
-    const price = Number(priceEl.value)||0;
+    const price=safeNonNegativeNumber(priceEl.value);
     const id = 'work_'+Date.now();
     settings.workTypes.push({id, label, price});
     ensureCatalogTags(); // NEW: одразу створює тег з такою ж назвою

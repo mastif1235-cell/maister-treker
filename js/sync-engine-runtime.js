@@ -26,8 +26,8 @@
     resetBackoff(){this.cancelRetryTimer();this.retryStep=0;}
     scheduleRetry(){if(this.retryTimer!==null||!this.online()||!this.pendingCount())return;const delay=this.retryDelays[Math.min(this.retryStep,this.retryDelays.length-1)];this.retryStep=Math.min(this.retryStep+1,this.retryDelays.length-1);this.retryTimer=this.setTimer(()=>{this.retryTimer=null;this.flush();},delay);}
     flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())return Promise.resolve(false);let failed=false;
-      this.loop=(async()=>{await this.write;while(this.online()){
-        const item=this.core.pending(this.state)[0];if(!item)break;
+      this.loop=(async()=>{await this.write;const failedEntities=new Set();while(this.online()){
+        const item=this.core.pending(this.state).find(candidate=>!failedEntities.has(`${candidate.entity}:${candidate.id}`));if(!item)break;
         await this.persistTransition(s=>this.core.markAttempted(s,item.entity,item.id));
         const result=await this.transport.send(item);
         if(!result.ok){
@@ -37,8 +37,7 @@
             await this.persistTransition(s=>{const repair=this.core.recoverUncommittedAddTicketGap(s,item,error.state,uuid);recovered=repair.recovered;return repair.state;});
             if(recovered)continue;
           }
-          failed=true;
-          break;
+          failed=true;failedEntities.add(`${item.entity}:${item.id}`);continue;
         }
         await this.persistTransition(s=>result.state?this.core.reconcile(s,item.entity,item.id,result.state):this.core.acknowledge(s,item.entity,item.id,item.revision));
         this.resetBackoff();

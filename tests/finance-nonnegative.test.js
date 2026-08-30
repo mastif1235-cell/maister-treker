@@ -1,0 +1,15 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const context={fmtMoney:value=>String(value)};vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'..','js','finance-utils.js'),'utf8'),context);
+const base={payment:'Готівка',callFee:10,tariff:20,equipment:[],cables:[],additionalWork:[],presetWorks:[]};
+assert.equal(context.calculateTicketTotal({...base,cables:[{meters:-10,pricePerMeter:15}]}).total,30,'negative meters cannot reduce total');
+assert.equal(context.calculateTicketTotal({...base,cables:[{meters:10,pricePerMeter:-15}]}).total,30,'negative cable price cannot reduce total');
+assert.equal(context.calculateTicketTotal({...base,equipment:[{checked:true,price:-500}]}).total,30,'negative equipment price cannot reduce total');
+assert.equal(context.calculateTicketTotal({...base,additionalWork:[{sum:-90}]}).total,30,'negative additional work cannot reduce total');
+assert.equal(context.calculateTicketTotal({...base,presetWorks:[{checked:true,price:25,qty:-2}]}).total,30,'negative quantity cannot reduce total');
+assert.equal(context.calculateTicketTotal({...base,callFee:NaN,tariff:Infinity,cables:[{meters:Infinity,pricePerMeter:10}]}).total,0,'NaN and Infinity normalize safely');
+assert.equal(context.calculateTicketTotal({...base,cables:[{meters:2.5,pricePerMeter:3.2}],equipment:[{checked:true,price:4.5}],additionalWork:[{sum:1.25}],presetWorks:[{checked:true,price:2.5,qty:1.5}]}).total,47.5,'positive fractional values retain existing arithmetic');
+console.log('PASS non-negative financial normalization and positive fractional calculations');

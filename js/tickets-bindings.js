@@ -407,15 +407,15 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
   });
   document.getElementById('equipmentList').addEventListener('input', e=>{
     const price = e.target.closest('.eq-price');
-    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price = Number(price.value)||0; applyDefaultCallFee(); updateEquipmentSummary(); }
+    if(price){ calcState.equipment[Number(price.dataset.eqidx)].price=safeNonNegativeNumber(price.value);applyDefaultCallFee();updateEquipmentSummary(); }
   });
 
   // NEW: обробники для динамічного списку кабелів
   document.getElementById('cablesList').addEventListener('input', e=>{
     const metersEl = e.target.closest('.cab-meters');
     const priceEl = e.target.closest('.cab-price');
-    if(metersEl){ calcState.cables[Number(metersEl.dataset.cabidx)].meters = Number(metersEl.value)||0; computeTotal(); updateCablesSummary(); }
-    if(priceEl){ calcState.cables[Number(priceEl.dataset.cabidx)].pricePerMeter = Number(priceEl.value)||0; computeTotal(); updateCablesSummary(); }
+    if(metersEl){calcState.cables[Number(metersEl.dataset.cabidx)].meters=safeNonNegativeNumber(metersEl.value);computeTotal();updateCablesSummary();}
+    if(priceEl){calcState.cables[Number(priceEl.dataset.cabidx)].pricePerMeter=safeNonNegativeNumber(priceEl.value);computeTotal();updateCablesSummary();}
   });
 
   document.getElementById('presetWorksList').addEventListener('change', e=>{
@@ -430,8 +430,8 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
   document.getElementById('presetWorksList').addEventListener('input', e=>{
     const qty = e.target.closest('.pw-qty');
     const price = e.target.closest('.pw-price');
-    if(qty){ calcState.presetWorks[Number(qty.dataset.pwidx)].qty = Number(qty.value)||1; computeTotal(); }
-    if(price){ calcState.presetWorks[Number(price.dataset.pwidx)].price = Number(price.value)||0; computeTotal(); }
+    if(qty){calcState.presetWorks[Number(qty.dataset.pwidx)].qty=safeWorkQuantity(qty.value);computeTotal();}
+    if(price){calcState.presetWorks[Number(price.dataset.pwidx)].price=safeNonNegativeNumber(price.value);computeTotal();}
   });
 
   document.getElementById('addWorkBtn').addEventListener('click', ()=>{
@@ -443,9 +443,9 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
     const idx = Number(row.dataset.awidx);
     if(e.target.classList.contains('aw-desc')) calcState.additionalWork[idx].desc = e.target.value;
     if(e.target.classList.contains('aw-sum')) {
-      calcState.additionalWork[idx].sum = Number(e.target.value)||0;
+      calcState.additionalWork[idx].sum=safeNonNegativeNumber(e.target.value);
       computeTotal();
-      const sum = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
+      const sum=calcState.additionalWork.reduce((s,w)=>s+safeNonNegativeNumber(w.sum),0);
       document.getElementById('additionalWorkSummary').textContent = `— ${calcState.additionalWork.length}, ${fmtMoney(sum)}`;
     }
   });

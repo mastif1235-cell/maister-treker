@@ -107,5 +107,28 @@ const payload=id=>({id,date:'23.08.2026',time:'10:00',content:'x',sum:1,tags:[]}
   assert.equal(manualSends,2,'manual flush retries immediately without waiting for timer');
   assert.equal(manualTimers[0].cancelled,true,'manual flush cancels scheduled automatic retry');
   assert.equal(manualEngine.pendingCount(),0,'manual retry clears pending after success');
+
+  const independentDb=storage();const independentCalls=[];
+  const independentEngine=new Engine({core,storage:independentDb,payload:(_entity,item)=>item,online:()=>true,setTimeout:()=>1,clearTimeout:()=>{},transport:{send:async item=>{
+    independentCalls.push(`${item.entity}:${item.id}:${item.revision}`);
+    if(item.id==='A')return{ok:false,result:{status:'error',code:'VALIDATION_FAILED'}};
+    return{ok:true,state:{revision:item.revision,tombstone:false}};
+  }}});
+  await independentEngine.init();
+  await independentEngine.recordDiff('ticket',[],[payload('A'),payload('B')]);
+  await independentEngine.recordDiff('shift',[],[{id:'S',date:'23.08.2026',hours:8,coworker:'Сам'}]);
+  await independentEngine.loop;
+  assert.deepEqual(independentCalls,['ticket:A:1','ticket:B:1','shift:S:1'],'failed ticket does not block an independent ticket or shift');
+  assert.equal(independentCalls.filter(value=>value.startsWith('ticket:A')).length,1,'failed entity is attempted only once per flush');
+  assert.deepEqual(core.pending(independentDb.value()).map(item=>`${item.entity}:${item.id}`),['ticket:A'],'only the failed entity remains pending');
+
+  let sameEntity=core.enqueue({records:{}},{entity:'ticket',id:'A',payload:payload('A')},()=> 'same_head_request_abcdefghijkl');
+  sameEntity=core.markAttempted(sameEntity,'ticket','A');
+  sameEntity=core.enqueue(sameEntity,{entity:'ticket',id:'A',payload:{...payload('A'),content:'tail'}},()=> 'same_tail_request_abcdefghijkl');
+  const sameCalls=[];const sameDb=storage(sameEntity);
+  const sameEngine=new Engine({core,storage:sameDb,payload:(_entity,item)=>item,online:()=>true,setTimeout:()=>1,clearTimeout:()=>{},transport:{send:async item=>{sameCalls.push(item.revision);return{ok:false,result:{status:'error',code:'VALIDATION_FAILED'}};}}});
+  await sameEngine.init();await sameEngine.loop;
+  assert.deepEqual(sameCalls,[1],'failed head blocks its own tail and is not retried in the same flush');
+  assert.equal(core.pending(sameDb.value())[0].revision,1,'failed head remains first for its entity');
   console.log('PASS durable-before-send/offline-online/single-loop/startup head/head+tail recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});

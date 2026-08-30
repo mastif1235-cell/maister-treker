@@ -60,10 +60,10 @@ if(typeof window!=='undefined'){
     if(!MTBackupSystem.validatePayload(data))throw new Error('BAD_PAYLOAD');
     const hasTickets=Array.isArray(data.tickets),hasShifts=Array.isArray(data.shifts),hasSettings=data.settings&&typeof data.settings==='object';
     if(!confirm(`Відновити ${[hasTickets?'заявки':'',hasShifts?'зміни':'',hasSettings?'налаштування':''].filter(Boolean).join(', ')}? Поточні дані відповідного типу буде замінено; локальні secrets/lock залишаться.`))return false;
-    if(hasTickets){const next=data.tickets.map(mtBackupCleanTicket);if(data.photoData){for(const [key,value] of Object.entries(data.photoData))if(!await photoDbPut(key,value))throw new Error('PHOTO_WRITE_FAILED');}tickets=next;await saveTickets();await migrateLegacyPhotosToIdb();}
-    if(hasShifts){shifts=data.shifts.map(s=>({id:String(s?.id||MTSyncEngineRuntime.uuid()),date:String(s?.date||''),hours:Number(s?.hours)||0,coworker:String(s?.coworker||'Сам')}));await saveShifts();}
+    if(hasTickets){const next=data.tickets.map(mtBackupCleanTicket);if(data.photoData){for(const [key,value] of Object.entries(data.photoData))if(!await photoDbPut(key,value))throw new Error('PHOTO_WRITE_FAILED');}tickets=next;syncTicketsSnapshot=JSON.parse(JSON.stringify(next));if(!await saveTicketsLocalOnly())throw new Error('TICKET_WRITE_FAILED');await migrateLegacyPhotosToIdb();}
+    if(hasShifts){shifts=data.shifts.map(s=>({id:String(s?.id||MTSyncEngineRuntime.uuid()),date:String(s?.date||''),hours:Number(s?.hours)||0,coworker:String(s?.coworker||'Сам')}));syncShiftsSnapshot=JSON.parse(JSON.stringify(shifts));if(!await saveShiftsLocalOnly())throw new Error('SHIFT_WRITE_FAILED');}
     if(hasSettings){settings=typeof securityMergeImportedSettings==='function'?securityMergeImportedSettings(data.settings,settings):settings;saveSettings();}
-    renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();return true;
+    renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();showToast('Відновлені дані збережено локально й не відправлено в хмару');return true;
   }
   async function mtBackupMigrateLegacySlots(){
     const raw=localStorage.getItem('autoBackupSlots');if(!raw||!backupDb)return;

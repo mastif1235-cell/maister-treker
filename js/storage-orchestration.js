@@ -4,10 +4,17 @@
 function saveNaryadQueue(){ localStorage.setItem('naryadQueue', JSON.stringify(naryadQueue)); }
 
 function saveShifts(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   shiftsRevision++;
   const before=syncShiftsSnapshot; const after=JSON.parse(JSON.stringify(shifts));
   const persist=syncEngine ? syncEngine.recordDiff('shift',before,after) : Promise.resolve();
   return persist.then(()=>{syncShiftsSnapshot=after;localStorage.setItem('shifts',JSON.stringify(shifts));});
+}
+
+function saveShiftsLocalOnly(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
+  localStorage.setItem('shifts',JSON.stringify(shifts));
+  return Promise.resolve(true);
 }
 
 const DAILY_BACKUP_MAX = 10;

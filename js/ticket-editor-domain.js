@@ -326,7 +326,7 @@ function renderPhotoPreview(){
 function computeTotal(){
   let calculation;
   if(calcState.cloudImported){ // NEW: для відновленої з хмари заявки сума вводиться вручну
-    calculation = calculateTicketTotal({cloudImported:true, rawSum:Number(document.getElementById('f_rawSum').value)||0});
+    calculation=calculateTicketTotal({cloudImported:true,rawSum:safeNonNegativeNumber(document.getElementById('f_rawSum').value)});
     document.getElementById('calcTotal').textContent = fmtMoney(calculation.total);
     return calculation.total;
   }
@@ -341,8 +341,8 @@ function computeTotal(){
   }
   calculation = calculateTicketTotal({
     payment: paymentEl ? paymentEl.value : '',
-    callFee: Number(document.getElementById('f_callFee').value)||0,
-    tariff: Number(document.getElementById('f_tariff').value)||0,
+    callFee:safeNonNegativeNumber(document.getElementById('f_callFee').value),
+    tariff:safeNonNegativeNumber(document.getElementById('f_tariff').value),
     equipment: calcState.equipment,
     cables: calcState.cables,
     additionalWork: calcState.additionalWork,
@@ -617,8 +617,8 @@ function syncFormToState(){
   calcState.password = cred.password;
   calcState.date = document.getElementById('f_date').value.trim() || formatDate(new Date());
   calcState.time = document.getElementById('f_time').value.trim() || formatTime(new Date());
-  calcState.callFee = Number(document.getElementById('f_callFee').value)||0;
-  calcState.tariff = Number(document.getElementById('f_tariff').value)||0;
+  calcState.callFee=safeNonNegativeNumber(document.getElementById('f_callFee').value);
+  calcState.tariff=safeNonNegativeNumber(document.getElementById('f_tariff').value);
   calcState.payment = document.getElementById('f_payment').value;
   // NEW: для "Змішана" cashAmount/cardAmount і так вже актуальні — їх
   // рахує й одразу пише в calcState сам renderMixedPaymentItems() при
@@ -640,7 +640,7 @@ function syncFormToState(){
   // і правки в цих двох полях губились при випадковому закритті застосунку.
   if(calcState.cloudImported){
     calcState.content = document.getElementById('f_rawContent').value.trim();
-    calcState.sum = Number(document.getElementById('f_rawSum').value)||0;
+    calcState.sum=safeNonNegativeNumber(document.getElementById('f_rawSum').value);
   }
   // geoLink вже синхронізується через setGeoLink
 }
@@ -864,7 +864,7 @@ async function saveTicketFromForm(e){
     // Берем текст і суму напряму з полів редагування.
     if(!calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
     calcState.content = document.getElementById('f_rawContent').value.trim();
-    calcState.sum = Number(document.getElementById('f_rawSum').value)||0;
+    calcState.sum=safeNonNegativeNumber(document.getElementById('f_rawSum').value);
   } else {
     if(isOther && !calcState.otherNote){ showToast('Введіть текст нотатки'); return; }
     if(!isOther && !calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
@@ -879,9 +879,10 @@ async function saveTicketFromForm(e){
   // це і є той рефакторинг, що прибирає роздування об'єкта заявки. Форма й
   // далі повністю розгортає каталог при відкритті (loadTicketIntoForm /
   // blankCalcState) — тут лише те, що потрапляє у збережений об'єкт.
-  calcState.equipment = (calcState.equipment||[]).filter(e=>e.checked).map(e=>({id:e.id, label:e.label, price:Number(e.price)||0}));
-  calcState.cables = (calcState.cables||[]).filter(c=>Number(c.meters)>0).map(c=>({id:c.id, label:c.label, meters:Number(c.meters)||0, pricePerMeter:Number(c.pricePerMeter)||0}));
-  calcState.presetWorks = (calcState.presetWorks||[]).filter(w=>w.checked).map(w=>({id:w.id, label:w.label, price:Number(w.price)||0, qty:Number(w.qty)||1}));
+  calcState.additionalWork=(calcState.additionalWork||[]).map(w=>({...w,sum:safeNonNegativeNumber(w.sum)}));
+  calcState.equipment=(calcState.equipment||[]).filter(e=>e.checked).map(e=>({id:e.id,label:e.label,price:safeNonNegativeNumber(e.price)}));
+  calcState.cables=(calcState.cables||[]).filter(c=>safeNonNegativeNumber(c.meters)>0).map(c=>({id:c.id,label:c.label,meters:safeNonNegativeNumber(c.meters),pricePerMeter:safeNonNegativeNumber(c.pricePerMeter)}));
+  calcState.presetWorks=(calcState.presetWorks||[]).filter(w=>w.checked).map(w=>({id:w.id,label:w.label,price:safeNonNegativeNumber(w.price),qty:safeWorkQuantity(w.qty)}));
 
   // NEW: до 3 фото на заявку — кожне НОВЕ (сире, ще не idb:...) переносимо
   // в IndexedDB, а всі старі фото цієї заявки, яких більше нема в новому

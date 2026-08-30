@@ -49,7 +49,7 @@ function mergeEquipmentWithCatalog(saved, catalog){
   return catalog.map(e=>{
     const s = savedMap.get(e.id);
     const savedPrice = s ? Number(s.price) : NaN;
-    return {id:e.id, label:e.label, price: (s && !isNaN(savedPrice)) ? savedPrice : e.price, checked: s ? (s.checked !== false) : false};
+    return{id:e.id,label:e.label,price:(s&&Number.isFinite(savedPrice))?safeNonNegativeNumber(savedPrice):safeNonNegativeNumber(e.price),checked:s?(s.checked!==false):false};
   });
 }
 
@@ -58,7 +58,7 @@ function mergeCablesWithCatalog(saved, catalog){
   return catalog.map(c=>{
     const s = savedMap.get(c.id);
     const savedPrice = s ? Number(s.pricePerMeter) : NaN;
-    return {id:c.id, label:c.label, meters: s ? (Number(s.meters)||0) : 0, pricePerMeter: (s && !isNaN(savedPrice)) ? savedPrice : c.pricePerMeter};
+    return{id:c.id,label:c.label,meters:s?safeNonNegativeNumber(s.meters):0,pricePerMeter:(s&&Number.isFinite(savedPrice))?safeNonNegativeNumber(savedPrice):safeNonNegativeNumber(c.pricePerMeter)};
   });
 }
 
@@ -67,6 +67,6 @@ function mergePresetWorksWithCatalog(saved, catalog){
   return catalog.map(w=>{
     const s = savedMap.get(w.id);
     const savedPrice = s ? Number(s.price) : NaN;
-    return {id:w.id, label:w.label, price: (s && !isNaN(savedPrice)) ? savedPrice : w.price, qty: s ? (Number(s.qty)||1) : 1, checked: s ? (s.checked !== false) : false};
+    return{id:w.id,label:w.label,price:(s&&Number.isFinite(savedPrice))?safeNonNegativeNumber(savedPrice):safeNonNegativeNumber(w.price),qty:s?safeWorkQuantity(s.qty):1,checked:s?(s.checked!==false):false};
   });
 }

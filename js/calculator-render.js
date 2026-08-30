@@ -14,7 +14,7 @@ function renderEquipmentList(){
 // щоб не збивати фокус/курсор під час введення ціни
 function updateEquipmentSummary(){
   const checkedCount = calcState.equipment.filter(e=>e.checked).length;
-  const sum = calcState.equipment.reduce((s,e)=> s + (e.checked ? (Number(e.price)||0) : 0), 0);
+  const sum = calcState.equipment.reduce((s,e)=> s + (e.checked ? safeNonNegativeNumber(e.price) : 0), 0);
   document.getElementById('equipmentSummary').textContent = checkedCount ? `— обрано: ${checkedCount}, ${fmtMoney(sum)}` : '';
 }
 
@@ -39,7 +39,7 @@ function renderCablesList(){
 // NEW: оновлює лише текст підсумку кабелів, не перебудовуючи інпути —
 // щоб не збивати фокус/курсор під час введення метрів чи ціни
 function updateCablesSummary(){
-  const sum = (calcState.cables||[]).reduce((s,c)=> s + (Number(c.meters)||0)*(Number(c.pricePerMeter)||0), 0);
+  const sum = (calcState.cables||[]).reduce((s,c)=>s+safeNonNegativeNumber(c.meters)*safeNonNegativeNumber(c.pricePerMeter),0);
   document.getElementById('cablesSummary').textContent = sum ? `— ${fmtMoney(sum)}` : '';
 }
 
@@ -57,7 +57,7 @@ function renderPresetWorksList(){
       </div>`).join('');
   }
   const checkedCount = (calcState.presetWorks||[]).filter(w=>w.checked).length;
-  const sum = (calcState.presetWorks||[]).reduce((s,w)=> s + (w.checked ? (Number(w.price)||0)*(Number(w.qty)||1) : 0), 0);
+  const sum = (calcState.presetWorks||[]).reduce((s,w)=>s+(w.checked?safeNonNegativeNumber(w.price)*safeWorkQuantity(w.qty):0),0);
   document.getElementById('presetWorksSummary').textContent = checkedCount ? `— обрано: ${checkedCount}, разом: ${fmtMoney(sum)}` : '';
 }
 
@@ -74,7 +74,7 @@ function renderAdditionalWorkList(){
       <input type="number" class="aw-sum" placeholder="Сума" min="0" value="${w.sum}">
       <button type="button" class="btn btn-icon btn-sm aw-remove">✕</button>
     </div>`).join('');
-  const sum = calcState.additionalWork.reduce((s,w)=> s + (Number(w.sum)||0), 0);
+  const sum = calcState.additionalWork.reduce((s,w)=>s+safeNonNegativeNumber(w.sum),0);
   document.getElementById('additionalWorkSummary').textContent = `— ${calcState.additionalWork.length}, ${fmtMoney(sum)}`;
 }
 

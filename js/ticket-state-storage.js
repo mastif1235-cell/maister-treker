@@ -68,6 +68,7 @@ async function loadTicketsFromIdb(){
   if(await ticketsDbPut(tickets)) localStorage.removeItem('tickets');
 }
 function saveTickets(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   ticketsRevision++;
   const before=syncTicketsSnapshot;
   const after=JSON.parse(JSON.stringify(tickets));
@@ -79,6 +80,7 @@ function saveTickets(){
   });
 }
 function saveTicketsLocalOnly(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   return ticketsDbPut(tickets).then(ok=>{
     if(!ok) savePendingTicketsFallback();
     else pendingTicketsFallbackWarningShown = false;
