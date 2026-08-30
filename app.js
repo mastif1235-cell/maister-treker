@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v70 · 2026-08-30';
+const APP_VERSION = 'v71 · 2026-08-30';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -499,6 +499,7 @@ async function init(){
 
   backupDb = await openBackupDb();
   await maybeRunDailyBackup(); // NEW: раз на день — автоматичний знімок заявок/змін у IndexedDB (10 останніх днів по колу)
+  maybeOfferExternalDailyBackup(); // зовнішній файл пропонується раз на день, але завантажується лише після кліку
 
   renderTicketsScreen();
   resetCalcForm(currentTicketDate);

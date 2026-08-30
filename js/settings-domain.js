@@ -160,6 +160,7 @@ function bindSettingsScreen(){
   document.getElementById('sendShiftsAllBtn').addEventListener('click', sendShiftsToCloud);
   document.getElementById('showScriptBtn').addEventListener('click', showAppsScriptModal);
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
+  document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
   document.getElementById('importJsonBtn').addEventListener('click', ()=> document.getElementById('jsonImportInput').click());
   document.getElementById('jsonImportInput').addEventListener('change', (e)=>{
     const file = e.target.files[0];
@@ -208,4 +209,3 @@ function bindSettingsScreen(){
    був видний людині, яка просто відкриє налаштування чи експортований
    бекап. */
 // NEW: встановлення чи зміна пароля захисту входу
-

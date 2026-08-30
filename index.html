@@ -726,10 +726,10 @@
         <summary>📅 Щоденні бекапи <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">
-          При першому відкритті застосунку за день <strong>автоматично скачується справжній файл</strong> (master-tracker-backup-РРРР-ММ-ДД.json) у папку «Завантаження» на телефоні — саме він переживе очищення кешу/даних сайту чи перевстановлення. Такі файли в «Завантаженнях» самі не видаляються — це реальні файли, час від часу почисти старі вручну.
+          При першому відкритті застосунку за день з’являється пропозиція вручну зберегти зашифрований файл (master-tracker-daily-РРРР-ММ-ДД-encrypted.json) у папку «Завантаження» — саме він переживе очищення даних сайту чи перевстановлення. Без натискання кнопки файл не завантажується.
           Список нижче — це окрема швидка копія за останні 10 днів усередині самого застосунку (для зручного перегляду й відновлення в один дотик), вона зникне разом з рештою, якщо почистити дані сайту.
         </div>
-        <div style="font-size:11px; color:var(--text-faint); margin-bottom:10px;">Якщо браузер запитає дозвіл на автозавантаження файлів для цього сайту — дозволь, інакше щоденний файл не збережеться.</div>
+        <button class="btn btn-accent btn-block" id="downloadExternalBackupNowBtn" style="margin-bottom:10px;">Скачать бэкап сейчас</button>
         <div id="dailyBackupList"></div>
         </div>
       </details>
@@ -749,6 +749,7 @@
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
 <div id="cleanupReminderRoot"></div>
+<div id="externalDailyBackupRoot"></div>
 <script src="qrcode.js"></script>
 <script src="js/core-utils.js"></script>
 <script src="js/app-format-utils.js"></script>
