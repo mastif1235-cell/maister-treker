@@ -206,12 +206,17 @@ function openReportModal(){
       <input type="checkbox" id="reportFullToggle"> Повний текст кожної заявки (а не короткий рядок)
     </label>
     <div id="reportOutput"></div>
+    <div class="field" style="margin-top:12px;">
+      <label for="reportCommentInput">Комментарий к отчёту</label>
+      <textarea id="reportCommentInput" rows="4" placeholder="Необов’язковий коментар"></textarea>
+    </div>
   `, {onOpen:(body)=>{
     let currentRange = 'day';
     body.querySelectorAll('[data-rep]').forEach(btn=>{
       btn.onclick = ()=>{ currentRange = btn.dataset.rep; renderReport(currentRange); };
     });
     document.getElementById('reportFullToggle').addEventListener('change', ()=> renderReport(currentRange));
+    document.getElementById('reportCommentInput').addEventListener('input', ()=> renderReport(currentRange));
     renderReport('day');
   }});
 }
@@ -241,6 +246,7 @@ function renderReport(range){
   // збігалася б із сумою готівки та безготівки.
   const full = document.getElementById('reportFullToggle')?.checked;
   let text = buildTicketReportText({list, title, full, totals:{count, total, cashTotal, cardTotal}, formatMoney:fmtMoney});
+  text = appendTicketReportComment(text,document.getElementById('reportCommentInput')?.value);
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
   const out = document.getElementById('reportOutput');

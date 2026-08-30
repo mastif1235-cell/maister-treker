@@ -2,6 +2,7 @@
 
 function hasUnsavedChanges(){
   const s = calcState;
+  if(s.signal) return true;
   if(s.otherNote) return true;
   if(s.city || s.address || s.street || s.house || s.clientName || s.phone) return true;
   if(s.note || s.masterNote) return true;
@@ -254,6 +255,10 @@ function fillFormFromState(){
   document.getElementById('f_phone').value = calcState.phone || '';
   syncPhoneFieldMaskState(); // NEW: див. коментар біля оголошення функції
   document.getElementById('f_mac').value = calcState.macAddress || '';
+  const signalInputState=onuSignalInputState(calcState.signal);
+  document.getElementById('f_signalPreset').value=signalInputState.preset;
+  document.getElementById('f_signalCustom').value=signalInputState.custom;
+  updateOnuSignalCustomVisibility(false);
   { const hint = document.getElementById('macHint'); if(hint) hint.style.display = (calcState.macAddress && !/^[0-9A-F]{12}$/.test(calcState.macAddress)) ? '' : 'none'; }
   document.getElementById('f_credRaw').value = [calcState.login, calcState.password].filter(Boolean).join('\n');
   updateCredParsedHint();
@@ -277,6 +282,16 @@ function fillFormFromState(){
   renderPhotoPreview();
   renderGeoBadge();
   computeTotal();
+}
+
+function updateOnuSignalCustomVisibility(focusCustom=false){
+  const preset=document.getElementById('f_signalPreset');
+  const custom=document.getElementById('f_signalCustom');
+  const wrap=document.getElementById('signalCustomWrap');
+  const show=preset && preset.value==='other';
+  if(wrap) wrap.classList.toggle('hidden',!show);
+  if(show && focusCustom && custom) custom.focus();
+  if(!show && custom) custom.value='';
 }
 
 function renderPhotoPreview(){
@@ -593,6 +608,10 @@ function syncFormToState(){
   calcState.clientName = document.getElementById('f_client').value.trim();
   calcState.phone = document.getElementById('f_phone').value.trim();
   calcState.macAddress = normalizeMac(document.getElementById('f_mac').value);
+  calcState.signal = resolveOnuSignalInput(
+    document.getElementById('f_signalPreset').value,
+    document.getElementById('f_signalCustom').value
+  );
   const cred = parseCredentials(document.getElementById('f_credRaw').value);
   calcState.login = cred.login;
   calcState.password = cred.password;

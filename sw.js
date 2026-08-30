@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v66-runtime-10';
+const CACHE_NAME = 'maister-treker-v66-runtime-11';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js',
   './js/core-utils.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/settings-core.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',

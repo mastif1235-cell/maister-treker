@@ -195,6 +195,7 @@ function bindCalculatorScreen(){
   });
   document.getElementById('f_phone').addEventListener('input', formatPhoneInput);
   document.getElementById('f_type').addEventListener('change', ()=>{ applyDefaultTypeTag(); toggleTypeOtherField(); updateCallFeeLabel(); applyDefaultCallFee(); applyDefaultTariff(); });
+  document.getElementById('f_signalPreset').addEventListener('change', ()=> updateOnuSignalCustomVisibility(true));
   // NEW: при зміні міста — одразу підвантажуємо підказки вулиць саме для цього міста
   // NEW: підказка клієнта за адресою — якщо на цю ж адресу вже була заявка,
 // пропонуємо підставити ім'я/телефон, щоб не вбивати вручну вдруге.

@@ -78,6 +78,7 @@ function renderMainTicketList(){
       (t.city||'').toLowerCase().includes(q) ||
       (t.address||'').toLowerCase().includes(q) ||
       (t.clientName||'').toLowerCase().includes(q) ||
+      ticketSignalMatchesQuery(t,q) ||
       // NEW: раніше пошук телефону тут не спрацьовував — t.content містить
       // номер УЖЕ ЗІ СКОБКАМИ/ДЕФІСАМИ ("(067)123-45-67"), а простий пошук
       // цифр ("067123") не збігається як підрядок такого форматованого

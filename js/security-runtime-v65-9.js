@@ -99,7 +99,7 @@ function securityRuntimeSanitizeTicket(ticket,index=0){
 
   // Fields that later appear in text/attributes are bounded to keep malformed
   // imports from creating giant DOM nodes or pathological localStorage values.
-  const short=['date','time','type','city','street','house','apartment','clientName','phone','payment','contractNumber','contractNumberDate','contractNumberMastersKey','login','macAddress'];
+  const short=['date','time','type','city','street','house','apartment','clientName','phone','payment','contractNumber','contractNumberDate','contractNumberMastersKey','login','macAddress','signal'];
   short.forEach(k=>{ if(k in t) t[k]=securityRuntimeString(t[k],500); });
   const medium=['address','note','masterNote','otherNote','abonentNote'];
   medium.forEach(k=>{ if(k in t) t[k]=securityRuntimeString(t[k],5000); });

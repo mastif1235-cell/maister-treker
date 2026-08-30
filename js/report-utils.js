@@ -13,3 +13,9 @@ function calculateTicketReportTotals(tickets){
   const cardTotal = list.reduce((s,t)=> s + (t.payment==='Безготівка' ? (Number(t.sum)||0) : t.payment==='Змішана' ? (Number(t.cardAmount)||0) : 0), 0);
   return {count:list.length, total, cashTotal, cardTotal};
 }
+
+function appendTicketReportComment(reportText,comment){
+  const text=String(reportText||'');
+  const cleanComment=String(comment||'').trim();
+  return cleanComment ? `${text}\n\nКомментарий:\n${cleanComment}` : text;
+}

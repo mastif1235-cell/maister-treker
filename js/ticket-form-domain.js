@@ -3,7 +3,7 @@ function blankTicketObject(){
   return {
     id:null, date:'', time:'', content:'', sum:0, tags:[], photo:null,
     photos:[], // NEW: до 3 фото на заявку; photo (одне) лишається як дублікат першого фото — для сумісності зі старим кодом, який ще читає лише photo
-    type:'Підключення', city:'', address:'', clientName:'', phone:'',
+    type:'Підключення', city:'', address:'', clientName:'', phone:'', signal:'',
     callFee:0, tariff:0,
     equipment: [],
     cables: [], // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
@@ -15,6 +15,33 @@ function blankTicketObject(){
     tgPhotoFileIds:[], tgPhotoMsgIds:[], // NEW: file_id/message_id ВСІХ фото заявки (до 3) — tgPhotoFileId/tgPhotoMsgId лишаються як дублікат першого, для сумісності зі старим кодом
     cloudImported:false // NEW: позначка «завантажено з хмари» — вмикає режим сирого редагування тексту
   };
+}
+
+const ONU_SIGNAL_PRESETS = Array.from({length:16},(_,index)=>String(-15-index));
+function normalizeOnuSignal(value){
+  const text=String(value ?? '').trim().replace(',','.');
+  if(!text) return '';
+  const number=Number(text);
+  if(!Number.isFinite(number)) return '';
+  return String(number);
+}
+function onuSignalInputState(value){
+  const signal=normalizeOnuSignal(value);
+  if(!signal) return {preset:'',custom:''};
+  return ONU_SIGNAL_PRESETS.includes(signal)
+    ? {preset:signal,custom:''}
+    : {preset:'other',custom:signal};
+}
+function resolveOnuSignalInput(preset,custom){
+  return normalizeOnuSignal(preset==='other' ? custom : preset);
+}
+function formatOnuSignal(value){
+  const signal=normalizeOnuSignal(value);
+  return signal ? `📶 ${signal} dBm` : '';
+}
+function ticketSignalMatchesQuery(ticket,query){
+  const signal=normalizeOnuSignal(ticket && ticket.signal);
+  return !!signal && signal.toLowerCase().includes(String(query||'').trim().toLowerCase());
 }
 
 function mergeEquipmentWithCatalog(saved, catalog){

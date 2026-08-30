@@ -30,6 +30,7 @@ function buildShowMoreTicketsButton(remaining){
 function renderTicketCard(t, opts={}){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
+  const signalText = formatOnuSignal(t.signal);
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
   const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
@@ -65,6 +66,7 @@ function renderTicketCard(t, opts={}){
       <div style="flex:1; min-width:0;">
         <div class="tc-type">${dayNum ? `<span class="tc-num">${dayNum}</span>` : ''}${escapeHtml(t.type||'Заявка')}</div>
         ${sub ? `<div class="tc-sub">${escapeHtml(sub)}</div>` : ''}
+        ${signalText ? `<div class="tc-sub">${escapeHtml(signalText)}</div>` : ''}
       </div>
       <div style="text-align:right; flex-shrink:0;">
         <div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div>
