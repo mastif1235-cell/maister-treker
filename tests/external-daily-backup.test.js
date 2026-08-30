@@ -7,7 +7,7 @@ const {webcrypto}=require('node:crypto');
 
 const root=path.join(__dirname,'..');
 const source=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
-const store=new Map(),elements={},downloads=[];let capturedPayload=null;
+const store=new Map(),vaultStore=new Map(),elements={},downloads=[];let capturedPayload=null;
 function button(){return{disabled:false,onclick:null};}
 const offerRoot={_html:'',set innerHTML(value){this._html=String(value);if(this._html.includes('externalDailyBackupSaveBtn'))elements.externalDailyBackupSaveBtn=button();},get innerHTML(){return this._html;}};
 elements.externalDailyBackupRoot=offerRoot;
@@ -19,6 +19,7 @@ const context={
   confirm:()=>true,window:{},
   document:{getElementById:id=>elements[id]||null,createElement:tag=>tag==='a'?{href:'',download:'',click(){downloads.push(this.download);}}:{}},
   localStorage:{getItem:key=>store.has(key)?store.get(key):null,setItem:(key,value)=>store.set(key,String(value)),removeItem:key=>store.delete(key)},
+  backupDbGet:async key=>vaultStore.get(key)||null,backupDbPut:async(key,value)=>{vaultStore.set(key,value);return true;},backupDbDelete:async key=>vaultStore.delete(key),
   localDateKey:date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`,
   tickets:[{id:'ticket-1',content:'safe',photo:'idb:photo-1',photoData:{raw:'data:image/png;base64,forbidden'}}],shifts:[{id:'shift-1',date:'30.08.2026',hours:8,coworker:'Сам'}],
   settings:{theme:'dark',syncHmacSecret:'must-not-export',tgBotToken:'must-not-export-either'},

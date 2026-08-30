@@ -37,6 +37,7 @@ function renderSettingsScreen(){
   renderCableMgmtList();
   renderMasterMgmtList();
   renderDailyBackupList();
+  void renderBackupPasswordStatus();
 }
 
 function renderTagMgmtList(){

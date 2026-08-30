@@ -751,6 +751,15 @@
           При першому відкритті застосунку за день з’являється пропозиція вручну зберегти зашифрований файл (master-tracker-daily-РРРР-ММ-ДД-encrypted.json) у папку «Завантаження» — саме він переживе очищення даних сайту чи перевстановлення. Без натискання кнопки файл не завантажується.
           Список нижче — це окрема швидка копія за останні 10 днів усередині самого застосунку (для зручного перегляду й відновлення в один дотик), вона зникне разом з рештою, якщо почистити дані сайту.
         </div>
+        <div class="settings-row" style="display:block; margin-bottom:10px;">
+          <div class="sr-title">Пароль для бекапов</div>
+          <div class="sr-desc" id="backupPasswordStatus">Пароль для бэкапов ещё не сохранён</div>
+          <button type="button" class="btn btn-block" id="backupPasswordSaveBtn" style="margin-top:8px;">🔐 Сохранить пароль для бэкапов</button>
+          <div class="row wrap" style="gap:8px; margin-top:8px;">
+            <button type="button" class="btn btn-sm hidden" id="backupPasswordChangeBtn">Изменить пароль</button>
+            <button type="button" class="btn btn-sm btn-ghost hidden" id="backupPasswordForgetBtn">Забыть пароль</button>
+          </div>
+        </div>
         <button class="btn btn-accent btn-block" id="downloadExternalBackupNowBtn" style="margin-bottom:10px;">Скачать бэкап сейчас</button>
         <div id="dailyBackupList"></div>
         </div>
