@@ -239,6 +239,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     login: editData.login, password: editData.password, contractNumber: editData.contractNumber
   };
   return `
+    ${typeof toolsMapReturnButtonHtml==='function'?toolsMapReturnButtonHtml():''}
     <div class="card abonent-profile-card" style="margin-bottom:12px; padding:14px;">
       <div class="row between" style="align-items:flex-start; gap:8px;">
         <div style="font-size:17px; font-weight:700; margin-bottom:4px;">📍 ${escapeHtml(addrLine || 'Адреса не вказана')}</div>

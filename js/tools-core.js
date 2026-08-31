@@ -147,6 +147,10 @@
     if(!needle)return points.slice();
     return points.filter(point=>[point.type,point.name,point.label,point.city,point.street,point.house,point.note].some(value=>text(value).toLocaleLowerCase('uk').includes(needle)));
   }
+  function removeNetworkPoint(points=[],id=''){
+    const targetId=text(id),removed=points.find(point=>text(point?.id)===targetId)||null;
+    return {removed,points:removed?points.filter(point=>text(point?.id)!==targetId):points.slice()};
+  }
   function tileRange(lon,lat,zoom){
     const n=2**zoom,x=Math.floor((lon+180)/360*n),rad=lat*Math.PI/180,y=Math.floor((1-Math.asinh(Math.tan(rad))/Math.PI)/2*n);
     return{x:Math.max(0,Math.min(n-1,x)),y:Math.max(0,Math.min(n-1,y))};
@@ -178,5 +182,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,searchNetworkPoints,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,searchNetworkPoints,removeNetworkPoint,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

@@ -21,6 +21,7 @@
   let picker=null;
   let userLayer=null;
   let selectionLayer=null;
+  let placement=null;
 
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
   function validPoint(value){
@@ -67,26 +68,29 @@
     layer._mtKind='online';
     return layer;
   }
-  async function addOfflineBaseLayer(targetMap,statusNode){
+  function setOfflineEmptyState(node,visible){
+    if(node)node.classList.toggle('hidden',!visible);
+  }
+  async function addOfflineBaseLayer(targetMap,statusNode,emptyStateNode){
     const stored=await root.MTOfflineMap?.archive?.();
-    if(!stored){setStatus(statusNode,'Офлайн-карта не встановлена. Маркери доступні без підкладки.');return null;}
+    if(!stored){setStatus(statusNode,'Для цієї області офлайн-карта ще не завантажена. Маркери доступні без підкладки.');setOfflineEmptyState(emptyStateNode,true);return null;}
     const header=stored.info.header||{};
     const bounds=root.L.latLngBounds([[header.minLat,header.minLon],[header.maxLat,header.maxLon]]);
     const layer=root.pmtiles.leafletRasterLayer(stored.archive,{
       minZoom:header.minZoom,maxNativeZoom:header.maxZoom,maxZoom:19,bounds,
       attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
     });
-    const updateCoverage=()=>setStatus(statusNode,bounds.contains(targetMap.getCenter())?'':'Поза межами офлайн-карти. Маркери не видалено.');
+    const updateCoverage=()=>{const covered=bounds.contains(targetMap.getCenter());setStatus(statusNode,covered?'':'Для цієї області офлайн-карта ще не завантажена. Маркери не видалено.');setOfflineEmptyState(emptyStateNode,!covered);};
     targetMap.on('moveend',updateCoverage);
     layer.on('tileerror',()=>setStatus(statusNode,'Не вдалося прочитати плитку офлайн-карти. Маркери не змінено.'));
     layer.addTo(targetMap);layer._mtKind='offline';layer._mtCoverageUpdate=updateCoverage;
     updateCoverage();
     return layer;
   }
-  async function addBaseLayer(targetMap,statusNode,requestedMode){
+  async function addBaseLayer(targetMap,statusNode,requestedMode,emptyStateNode){
     const mode=requestedMode||root.MTOfflineMap?.getMode?.()||'auto';
-    if(mode==='online'||(mode==='auto'&&root.navigator?.onLine!==false))return addOnlineBaseLayer(targetMap,statusNode);
-    return addOfflineBaseLayer(targetMap,statusNode);
+    if(mode==='online'||(mode==='auto'&&root.navigator?.onLine!==false)){setOfflineEmptyState(emptyStateNode,false);return addOnlineBaseLayer(targetMap,statusNode);}
+    return addOfflineBaseLayer(targetMap,statusNode,emptyStateNode);
   }
   function captureView(){
     if(!map)return savedView;
@@ -97,6 +101,7 @@
   function destroyMap(){
     if(!map)return;
     captureView();
+    cancelPointPlacement();
     map.remove();map=null;tileLayer=null;groups=new Map();userLayer=null;selectionLayer=null;
   }
   function currentCenter(){if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
@@ -107,6 +112,46 @@
     root.L.circle([valid.lat,valid.lng],{radius:Math.max(1,Number(accuracy)||1),color:'#2a8cff',fillColor:'#2a8cff',fillOpacity:.12,weight:2}).addTo(userLayer);
     root.L.marker([valid.lat,valid.lng],{icon:iconFor(null,true),title:'Моє місце'}).bindTooltip(`Моє місце${accuracy?` · точність ≈ ${Math.round(accuracy)} м`:''}`).addTo(userLayer);
     map.setView([valid.lat,valid.lng],Math.max(map.getZoom(),16));return true;
+  }
+  function cancelPointPlacement(){
+    if(!placement)return;
+    if(map&&placement.clickHandler)map.off('click',placement.clickHandler);
+    placement.layer?.remove();
+    placement=null;
+  }
+  function startPointPlacement(options={}){
+    if(!map)return null;
+    cancelPointPlacement();
+    const layer=root.L.layerGroup().addTo(map);
+    let marker=null,onChange=null,opened=false;
+    const controller={
+      getPoint(){if(!marker)return null;const value=marker.getLatLng();return{lat:value.lat,lng:value.lng};},
+      onChange(callback){onChange=typeof callback==='function'?callback:null;},
+      cancel:cancelPointPlacement
+    };
+    const setPoint=value=>{
+      const point=validPoint(value);if(!point)return null;
+      if(!marker){
+        marker=root.L.marker([point.lat,point.lng],{icon:iconFor(null,true),draggable:true,title:'Новий об’єкт'}).addTo(layer);
+        marker.on('dragend',()=>onChange?.(controller.getPoint()));
+      }else marker.setLatLng([point.lat,point.lng]);
+      if(!opened){
+        opened=true;map.off('click',clickHandler);map.panTo([point.lat,point.lng],{animate:false});
+        map.getContainer()?.scrollIntoView({block:'start'});
+        options.onPlace?.(controller.getPoint(),controller);
+      }
+      return controller.getPoint();
+    };
+    const clickHandler=event=>setPoint(event.latlng);
+    placement={layer,clickHandler,controller};
+    if(options.initial)setPoint(options.initial);else map.on('click',clickHandler);
+    return controller;
+  }
+  function focusPoint(point,zoom=17){
+    const valid=validPoint(point);if(!valid)return false;
+    savedView={lat:valid.lat,lng:valid.lng,zoom};
+    if(map)map.setView([valid.lat,valid.lng],zoom);
+    return true;
   }
   function selectBounds(onDone){
     if(!map)return false;
@@ -165,7 +210,7 @@
     }
     map=root.L.map(container,{zoomControl:true,tap:true,worldCopyJump:true});
     const mountedMap=map;
-    addBaseLayer(mountedMap,statusNode,options.baseMode).then(layer=>{
+    addBaseLayer(mountedMap,statusNode,options.baseMode,options.emptyStateNode||null).then(layer=>{
       if(map===mountedMap)tileLayer=layer;
       else if(layer){layer.remove();}
     }).catch(()=>setStatus(statusNode,'Офлайн-підкладку не вдалося відкрити. Маркери не змінено.'));
@@ -186,6 +231,7 @@
     else if(bounds.length>1)map.fitBounds(bounds,{padding:[24,24],maxZoom:17});
     else map.setView(DEFAULT_CENTER,6);
     map.on('moveend zoomend',captureView);
+    map.on('contextmenu',event=>options.onAddHere?.({lat:event.latlng.lat,lng:event.latlng.lng}));
     setTimeout(()=>map?.invalidateSize(),0);
     return map;
   }
@@ -219,7 +265,7 @@
     observer.observe(document.body,{childList:true,subtree:true});
     picker={map:pickerMap,tileLayer:pickerTile,observer,getPoint,setPoint,destroy:destroyPicker};
     const mountedPicker=picker;
-    addBaseLayer(pickerMap,options.statusNode||null,options.baseMode).then(layer=>{
+    addBaseLayer(pickerMap,options.statusNode||null,options.baseMode,null).then(layer=>{
       if(picker===mountedPicker){picker.tileLayer=layer;}
       else if(layer){layer.remove();}
     }).catch(()=>setStatus(options.statusNode||null,'Підкладку не вдалося відкрити. Точку можна вказати за координатами.'));
@@ -227,5 +273,5 @@
     return picker;
   }
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,CATEGORY_META,mount,captureView,currentCenter,showUserLocation,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer};
+  root.MTToolsMap={TILE_URL,CATEGORY_META,mount,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer};
 })(typeof window!=='undefined'?window:globalThis);

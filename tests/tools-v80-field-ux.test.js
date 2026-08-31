@@ -14,7 +14,7 @@ assert.equal(homes.length,1,'coordinate variants share one house marker and opaq
 const point=core.normalizeNetworkPoint({type:'Муфта',name:'Муфта біля опори',city:'Курахове',street:'Академіка Павлова',house:'опора 7',lat:47.99,lng:37.25,note:'ОСИ',photoKeys:['idb:1','idb:2']},new Date('2026-08-31T10:00:00Z'));
 assert.equal(core.networkPointAddress(point),'Курахове, Академіка Павлова, опора 7');assert.equal(point.photoKeys.length,2);assert.equal(core.searchNetworkPoints([point],'академіка').length,1);assert.equal(core.searchNetworkPoints([point],'оси').length,1);
 assert.match(domain,/map-add-object/);assert.match(domain,/FOB|Муфта/);assert.match(domain,/map-my-location/);assert.match(map,/showUserLocation/);assert.match(map,/accuracy/);
-assert.match(domain,/Надіслати в Telegram після локального збереження/);assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(send)await toolsSendNetworkPointTelegram'),'local save precedes optional Telegram transport');
+assert.match(domain,/Зберегти і надіслати в Telegram/);assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(send)await toolsSendNetworkPointTelegram'),'local save precedes optional Telegram transport');
 assert.match(domain,/multiple/);assert.match(domain,/slice\(0,3\)/);assert.match(domain,/toolsNetworkSearch/);
 
 const estimate=core.estimateOfflineArea({minLat:48,minLng:37,maxLat:48.1,maxLng:37.1},10,12);assert.ok(estimate.tiles>0&&estimate.bytes>0);
@@ -24,5 +24,5 @@ assert.ok(core.offlineBoundsOverlap(areaA,{minLat:47.9,minLon:36.9,maxLat:48.2,m
 assert.match(domain,/Вибрати область/);assert.match(map,/root\.L\.rectangle/);assert.match(domain,/не робить масове завантаження з OpenStreetMap/);
 assert.match(styles,/\.modal #modalBody\{[^}]*overflow-y:auto/);assert.match(styles,/\.tools-map-picker\{height:240px/);assert.match(styles,/max-width:600px[^}]*\.tools-map-picker\{height:280px/);assert.match(domain,/tools-point-editor-footer/);assert.match(domain,/toolsPointCancelBtn/);
 assert.match(ticketsRender,/class="tc-details tc-collapsed"[\s\S]*class="tc-tags"/);assert.doesNotMatch(ticketsRender,/tc-tags-details/);
-assert.match(domain,/Зберегти область/);assert.match(domain,/toolsSaveOfflineArea/);assert.match(domain,/toolsEditOfflineArea/);assert.match(domain,/toolsDeleteOfflineArea/);assert.match(domain,/toolsImportOfflineArea/);assert.match(domain,/Показати на карті/);assert.match(domain,/Офлайн-файл не додано/);assert.match(domain,/Офлайн-карта встановлена/);assert.match(map,/drawBounds/);
+assert.match(domain,/Зберегти область/);assert.match(domain,/toolsSaveOfflineArea/);assert.match(domain,/toolsEditOfflineArea/);assert.match(domain,/toolsDeleteOfflineArea/);assert.match(domain,/toolsImportOfflineArea/);assert.match(domain,/Показати на карті/);assert.match(domain,/Тільки область збережена/);assert.match(domain,/Офлайн-карта встановлена/);assert.match(map,/drawBounds/);
 console.log('PASS v80 draft return, unified geolocation, network-point UX, location and offline bounds');

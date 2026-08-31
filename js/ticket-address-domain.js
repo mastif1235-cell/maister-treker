@@ -520,7 +520,7 @@ function renderAddressNav(){
     </div>
     <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
     <div id="addrNavResultsArea">${addrNavResultsAreaHtml()}</div>`;
-  openModal(title, topHtml, {onOpen: attachAddressNavHandlers});
+  openModal(title, topHtml, {onClose:()=>{if(typeof toolsClearMapReturnContext==='function')toolsClearMapReturnContext();closeModal();},onOpen: attachAddressNavHandlers});
 }
 
 function attachAddressNavHandlers(rootEl){
@@ -549,6 +549,8 @@ function attachAddressNavHandlers(rootEl){
   if(naryadBtn) naryadBtn.addEventListener('click', showNaryadChecker);
 
   rootEl.addEventListener('click', e=>{
+    const backToMapBtn=e.target.closest('.abonent-back-map-btn');
+    if(backToMapBtn&&typeof toolsReturnFromProfileToMap==='function'){toolsReturnFromProfileToMap();return;}
     const crumb = e.target.closest('.addr-nav-crumb');
     if(crumb){
       const to = crumb.dataset.crumb;

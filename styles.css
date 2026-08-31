@@ -80,7 +80,10 @@ nav.tabbar{
 .tools-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
 .tools-grid .btn{min-height:88px; flex-direction:column; font-size:15px;}
 .tools-grid .btn .tools-icon{font-size:28px;}
-.tools-map{position:relative; height:min(62vh,520px); min-height:360px; overflow:hidden; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); touch-action:none;}
+.tools-map-shell{position:relative;}
+.tools-map{position:relative; height:min(62vh,520px); min-height:360px; overflow:hidden; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); touch-action:none;scroll-margin-top:calc(68px + env(safe-area-inset-top,0px));}
+.tools-map-empty{position:absolute;z-index:1000;left:12px;right:12px;top:50%;transform:translateY(-50%);padding:14px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--surface) 94%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.28);text-align:center;}
+.tools-map-empty .row{justify-content:center;margin-top:10px;}
 .tools-map-actions{margin-bottom:10px;gap:8px}.tools-point-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tools-point-photo-grid img:first-child:last-child{grid-column:1/-1}
 .tools-map-picker{height:240px;min-height:220px;}
 .tools-map-picker-panel{margin:0 0 12px; padding:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2);}
@@ -277,7 +280,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 
 /* ===== Модальні вікна (bottom-sheet) ===== */
 .modal-overlay{
-  position:fixed; inset:0; background:var(--overlay); z-index:60;
+  position:fixed; inset:0; background:var(--overlay); z-index:2000;
   display:flex; align-items:flex-end; justify-content:center;
 }
 .modal{
@@ -285,6 +288,9 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
   background:var(--surface); border-radius:18px 18px 0 0; padding:16px 16px calc(20px + env(safe-area-inset-bottom,0px));
   animation:sheetUp .18s ease-out;
 }
+.tools-point-editor-overlay{pointer-events:none;background:linear-gradient(to bottom,transparent 0,transparent 34vh,var(--overlay) 54vh);}
+.tools-point-editor-overlay .modal{pointer-events:auto;max-height:58vh;box-shadow:0 -10px 30px rgba(0,0,0,.34);}
+.tools-map-editor-open{padding-bottom:64vh;}
 @keyframes sheetUp{from{transform:translateY(16px); opacity:.6;} to{transform:translateY(0); opacity:1;}}
 .modal-head{display:flex; flex:0 0 auto; justify-content:space-between; align-items:center; margin-bottom:12px;}
 .modal #modalBody{min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;}

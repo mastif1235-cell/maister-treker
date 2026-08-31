@@ -54,5 +54,6 @@ assert.match(backupSource,/diagnostics:tools\.diagnostics/);assert.match(backupS
 assert.match(backupSource,/toolsRestoreData/,'restore includes optional local tools data');
 assert.match(backupSource,/toolsPhotoOwnerRecords/,'full backup collects network-point photos from the shared photo store');
 assert.match(backupSource,/photoDbPut\(key,value\)/,'full restore writes shared photos before restoring points');
-assert.match(domain,/Download','Недоступно без контрольованого speed-test endpoint/,'unsupported speed values are not fabricated');
+assert.match(domain,/https:\/\/speed\.cloudflare\.com\//,'unsupported speed values open a real external test instead of fabricating metrics');
+assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/,'IPv6 is not shown in the primary diagnostics UI');
 console.log('PASS tools diagnostics/profile/map/network-point/backup compatibility');

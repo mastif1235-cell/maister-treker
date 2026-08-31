@@ -44,8 +44,9 @@ function showToast(msg, ms=2200){
 
 function openModal(title, bodyHtml, opts={}){
   const root = document.getElementById('modalRoot');
+  const overlayClass = String(opts.overlayClass||'').replace(/[^a-zA-Z0-9_-]/g,'');
   root.innerHTML = `
-    <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-overlay ${overlayClass}" id="modalOverlay">
       <div class="modal">
         <div class="modal-head"><h3>${escapeHtml(title)}</h3><button class="modal-close" id="modalCloseBtn">✕</button></div>
         <div id="modalBody">${bodyHtml}</div>

@@ -160,7 +160,9 @@ async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
         const form = new FormData();
         form.append('chat_id', chatId);
         form.append('photo', blob, 'foto.jpg');
-        await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
+        const photoRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form});
+        const photoResult = await photoRes.json();
+        if(!photoResult.ok) return {ok:false, reason:photoResult.description || 'sendPhoto failed'};
       }
     }
     return {ok:true};

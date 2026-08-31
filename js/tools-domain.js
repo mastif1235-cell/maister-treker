@@ -14,6 +14,8 @@ let toolsCalculatorDraft=null;
 let toolsOfflinePendingBounds=null;
 let toolsOfflineEditingAreaId='';
 let toolsOfflineImportAreaId='';
+let toolsLastUserLocation=null;
+let toolsMapReturnContext=null;
 let toolsDiagnostics=MTToolsCore.sanitizeDiagnostics(loadJSON(MT_TOOLS_DIAGNOSTICS_KEY,[]));
 let toolsNetworkPoints=MTToolsCore.sanitizeNetworkPoints(loadJSON(MT_TOOLS_NETWORK_POINTS_KEY,[]));
 function toolsLoadOfflineAreas(){
@@ -63,21 +65,21 @@ function toolsDiagnosticResultsHtml(){
   const r=MTToolsCore.sanitizeDiagnosticResult(toolsDiagnosticResult);
   const rows=[
     ['Інтернет',r.online?'✅ Доступний':'❌ Немає з’єднання'],
-    ['External IP',r.publicIp?`${escapeHtml(r.publicIp)}${r.ipFamily?` (${r.ipFamily})`:''}`:'Недоступно'],
-    ['IPv4',r.ipv4?'✅ Доступний':'Недоступно / не підтверджено'],
-    ['IPv6',r.ipv6?'✅ Доступний':'Недоступно / не підтверджено']
+    ['Public IP',r.publicIp?escapeHtml(r.publicIp.split(' / ')[0]):'Недоступно'],
+    ['IPv4',r.ipv4?'✅ Доступний':'Недоступно / не підтверджено']
   ];
   r.resources.forEach(item=>rows.push([item.label,item.ok?`✅ HTTP ${item.httpMs??'—'} мс`:'❌ Недоступний']));
   rows.push(['HTTP latency',r.latencyMs!==null?`${r.latencyMs} мс`:'Недоступно в браузері']);
   rows.push(['HTTP jitter',r.jitterMs!==null?`${r.jitterMs} мс`:'Недоступно в браузері']);
-  rows.push(['Download','Недоступно без контрольованого speed-test endpoint']);
-  rows.push(['Upload','Недоступно без контрольованого speed-test endpoint']);
   const actions=toolsDiagnosticContext
     ? `<button type="button" class="btn btn-accent" data-tools-action="save-diagnostics" style="flex:1;" ${toolsDiagnosticSaved?'disabled':''}>${toolsDiagnosticSaved?'✅ Збережено':'Зберегти в профіль'}</button>`
     : `<button type="button" class="btn" data-tools-action="attach-diagnostics" style="flex:1;">Прив'язати до адреси</button>`;
   return `<div class="card">${rows.map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong style="text-align:right;">${row[1]}</strong></div>`).join('')}</div>
+    <button type="button" class="btn btn-block" data-tools-action="external-speed-test" style="margin-bottom:10px;">⚡ Перевірити швидкість</button>
+    <div style="font-size:11.5px;color:var(--text-dim);margin:-4px 0 12px;">Відкриється офіційний Cloudflare Speed Test у новій вкладці. Тест може використати значний обсяг мобільного трафіку.</div>
     <div class="row wrap"><button type="button" class="btn" data-tools-action="copy-diagnostics" style="flex:1;">📋 Скопіювати</button>${actions}</div>`;
 }
+function toolsOpenExternalSpeedTest(){window.open('https://speed.cloudflare.com/','_blank','noopener');}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
     <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">🛠 Запустити діагностику</button>
@@ -154,7 +156,7 @@ function toolsProfileDiagnosticsHtml(list=[]){
   const profile=MTToolsCore.profileFromTickets(list),history=toolsDiagnostics.filter(item=>item.profileId===profile.id).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
   const latest=history[0],previous=history[1],comparison=latest&&previous?MTToolsCore.diagnosticComparison(latest,previous):[];
   const historyHtml=history.slice(0,5).map(item=>{
-    const result=item.result||{},metrics=[result.latencyMs!==null&&result.latencyMs!==undefined?`HTTP ${result.latencyMs} мс`:'',result.downloadMbps!==null&&result.downloadMbps!==undefined?`${result.downloadMbps} Mbps`:'',result.ipFamily||''].filter(Boolean).join(' · ');
+    const result=item.result||{},metrics=[result.latencyMs!==null&&result.latencyMs!==undefined?`HTTP ${result.latencyMs} мс`:'',result.downloadMbps!==null&&result.downloadMbps!==undefined?`${result.downloadMbps} Mbps`:''].filter(Boolean).join(' · ');
     return `<div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">${escapeHtml(new Date(item.timestamp).toLocaleString('uk-UA'))}${metrics?` — ${escapeHtml(metrics)}`:''}</div>`;
   }).join('');
   const ids=escapeHtml(JSON.stringify(list.map(ticket=>ticket.id)));
@@ -191,25 +193,31 @@ function toolsMapHtml(){
     return `<button type="button" class="tools-map-filter active" data-map-filter="${escapeHtml(category)}" aria-pressed="true">${meta.icon} ${escapeHtml(meta.label)}</button>`;
   }).join('');
   return `${toolsBackButton()}
-    <div class="row wrap tools-map-actions"><button type="button" class="btn btn-accent" data-tools-action="map-add-object" style="flex:1;">＋ Додати об’єкт</button><button type="button" class="btn" data-tools-action="map-my-location" style="flex:1;">◎ Моє місце</button><button type="button" class="btn" data-tools-action="map-bind-address" style="flex:1 0 100%;">📍 Прив’язати адресу</button></div>
+    <div class="row wrap tools-map-actions"><button type="button" class="btn btn-accent" data-tools-action="map-add-object" style="flex:1;">＋ Додати об’єкт</button><button type="button" class="btn" data-tools-action="map-my-location" style="flex:1;">◎ Моє місце</button><button type="button" class="btn ${toolsLastUserLocation?'':'hidden'}" id="toolsAddAtLocationBtn" data-tools-action="map-add-at-location" style="flex:1 0 100%;">＋ Додати об’єкт тут</button><button type="button" class="btn" data-tools-action="map-bind-address" style="flex:1 0 100%;">📍 Прив’язати адресу</button></div>
     <div class="card tools-map-privacy">Підкладка: OpenStreetMap. Постачальник плиток отримує лише координати видимої ділянки — без ПІБ, телефонів, адресного тексту, MAC, нотаток, фото чи історії.</div>
     <div class="card tools-offline-map-card">
       <div class="row between wrap"><div><strong>Офлайн-карта: ${offline?'✅ встановлена':'не встановлена'}</strong>${offline?`<div class="tools-offline-map-meta">${escapeHtml(MTOfflineMap.formatBytes(offline.size))} · Z${offline.header.minZoom}–Z${offline.header.maxZoom}</div>`:''}</div>
         <select id="toolsMapBaseMode" class="tools-map-mode" aria-label="Режим підкладки"><option value="auto" ${mode==='auto'?'selected':''}>Авто</option><option value="online" ${mode==='online'?'selected':''}>Онлайн</option><option value="offline" ${mode==='offline'?'selected':''}>Офлайн</option></select></div>
-      <div class="row wrap" style="margin-top:8px;"><button type="button" class="btn btn-sm" data-tools-action="import-offline-map" style="flex:1;">${offline?'Замінити карту':'Імпортувати офлайн-карту'}</button>${offline?'<button type="button" class="btn btn-sm btn-danger" data-tools-action="delete-offline-map">Видалити</button>':''}</div>
+      <div class="row wrap" style="margin-top:8px;"><button type="button" class="btn btn-sm" data-tools-view="offline" style="flex:1;">Офлайн-карти</button>${offline?'<button type="button" class="btn btn-sm btn-danger" data-tools-action="delete-offline-map">Видалити</button>':''}</div>
       <input type="file" id="toolsOfflineMapFile" accept=".pmtiles,application/octet-stream" class="hidden">
     </div>
     <div class="tools-map-filters" id="toolsMapFilters" aria-label="Фільтри об’єктів карти"><button type="button" class="tools-map-filter active" data-map-filter="all" aria-pressed="true">Усі</button>${filters}</div>
     ${objects.length?'':'<div class="card" style="font-size:12px;color:var(--text-dim);">Немає об’єктів із координатами. Додайте геолокацію до профілю або створіть точку мережі.</div>'}
     <div id="toolsMapStatus" class="tools-map-status hidden" role="status"></div>
-    <div class="tools-map" id="toolsLeafletMap" aria-label="Інтерактивна карта об’єктів"></div>`;
+    <div class="tools-map-shell"><div class="tools-map" id="toolsLeafletMap" aria-label="Інтерактивна карта об’єктів"></div><div id="toolsMapEmptyState" class="tools-map-empty hidden"><strong>Для цієї області офлайн-карта ще не завантажена.</strong><div class="row wrap"><button type="button" class="btn btn-sm" data-tools-action="map-use-online">Онлайн</button><button type="button" class="btn btn-sm" data-tools-view="offline">Офлайн-карти</button><button type="button" class="btn btn-sm" data-tools-action="import-offline-map">Додати файл карти</button></div></div></div>`;
 }
-function toolsChooseNetworkType(point=null){
-  openModal('Додати об’єкт',MTToolsCore.NETWORK_POINT_TYPES.map(type=>`<button type="button" class="btn btn-block tools-point-type-choice" data-type="${escapeHtml(type)}" style="margin-bottom:8px;">${escapeHtml(type)}</button>`).join(''),{onOpen:root=>root.onclick=event=>{const button=event.target.closest('.tools-point-type-choice');if(!button)return;closeModal();toolsOpenNetworkPointEditor('',{type:button.dataset.type,...(point||MTToolsMap.currentCenter?.()||{})});}});
+function toolsOpenPointEditorFromMap(point,placement){
+  toolsOpenNetworkPointEditor('',{type:'FOB',...point},{placement,returnView:'map'});
+}
+function toolsStartMapAddMode(point=null){
+  const status=document.getElementById('toolsMapStatus');
+  if(status){status.textContent=point?'Перетягніть робочий маркер за потреби.':'Натисніть місце на карті для нового об’єкта.';status.classList.remove('hidden');}
+  const placement=MTToolsMap.startPointPlacement({initial:point,onPlace:toolsOpenPointEditorFromMap});
+  if(!placement)showToast('Карта ще не готова');
 }
 function toolsLocateOnMap(){
   if(!navigator.geolocation){showToast('Геолокація не підтримується');return;}
-  showToast('Визначаю ваше місце…');navigator.geolocation.getCurrentPosition(position=>{MTToolsMap.showUserLocation({lat:position.coords.latitude,lng:position.coords.longitude},position.coords.accuracy);showToast(`Місце знайдено${position.coords.accuracy?` · точність ≈ ${Math.round(position.coords.accuracy)} м`:''}`);},()=>showToast('Доступ до геолокації заборонено або місце недоступне'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+  showToast('Визначаю ваше місце…');navigator.geolocation.getCurrentPosition(position=>{toolsLastUserLocation={lat:position.coords.latitude,lng:position.coords.longitude};MTToolsMap.showUserLocation(toolsLastUserLocation,position.coords.accuracy);document.getElementById('toolsAddAtLocationBtn')?.classList.remove('hidden');showToast(`Місце знайдено${position.coords.accuracy?` · точність ≈ ${Math.round(position.coords.accuracy)} м`:''}. GPS-маркер не переміщується.`);},()=>showToast('Доступ до геолокації заборонено або місце недоступне'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
 }
 function toolsBindAddressFromMap(){
   const profiles=MTToolsCore.listProfiles(tickets);if(!profiles.length){showToast('Немає існуючих адрес для прив’язки');return;}
@@ -254,11 +262,11 @@ function toolsOfflineSelectionHtml(value){
 }
 function toolsOfflineAreasHtml(areas=[]){
   const installed=MTOfflineMap.readMeta?.();if(!areas.length)return '<div class="card"><strong>Офлайн-області</strong><div style="font-size:12px;color:var(--text-dim);margin-top:6px;">Збережених областей ще немає.</div></div>';
-  return `<div class="card"><strong>Офлайн-області (${areas.length})</strong><div style="margin-top:9px;">${areas.map((area,index)=>{const linked=installed?.areaId===area.id;return `<div class="tools-offline-area-row"><div><strong>${index+1}. ${escapeHtml(area.name)}</strong><div class="tools-offline-map-meta">Z${area.minZoom}–Z${area.maxZoom} · ~${escapeHtml(MTOfflineMap.formatBytes(area.estimatedBytes))}<br>${linked?`✅ Офлайн-карта встановлена · ${escapeHtml(MTOfflineMap.formatBytes(installed.size))}`:'Офлайн-файл не додано'}</div></div><div class="row wrap" style="margin-top:7px;"><button type="button" class="btn btn-sm" data-tools-action="show-offline-area" data-area-id="${escapeHtml(area.id)}">Показати на карті</button><button type="button" class="btn btn-sm" data-tools-action="edit-offline-area" data-area-id="${escapeHtml(area.id)}">Змінити</button><button type="button" class="btn btn-sm" data-tools-action="import-offline-area" data-area-id="${escapeHtml(area.id)}">Додати файл карти</button><button type="button" class="btn btn-sm btn-danger" data-tools-action="delete-offline-area" data-area-id="${escapeHtml(area.id)}">Видалити</button></div></div>`;}).join('')}</div></div>`;
+  return `<div class="card"><strong>Офлайн-області (${areas.length})</strong><div style="margin-top:9px;">${areas.map((area,index)=>{const linked=installed?.areaId===area.id;return `<div class="tools-offline-area-row"><div><strong>${index+1}. ${escapeHtml(area.name)}</strong><div class="tools-offline-map-meta">Z${area.minZoom}–Z${area.maxZoom} · ~${escapeHtml(MTOfflineMap.formatBytes(area.estimatedBytes))}<br>${linked?`✅ Офлайн-карта встановлена · ${escapeHtml(MTOfflineMap.formatBytes(installed.size))}`:'⚠️ Тільки область збережена'}</div></div><div class="row wrap" style="margin-top:7px;"><button type="button" class="btn btn-sm" data-tools-action="show-offline-area" data-area-id="${escapeHtml(area.id)}">Показати на карті</button><button type="button" class="btn btn-sm" data-tools-action="edit-offline-area" data-area-id="${escapeHtml(area.id)}">Змінити</button><button type="button" class="btn btn-sm" data-tools-action="export-offline-area" data-area-id="${escapeHtml(area.id)}">Експортувати параметри</button><button type="button" class="btn btn-sm" data-tools-action="import-offline-area" data-area-id="${escapeHtml(area.id)}">Додати файл карти</button><button type="button" class="btn btn-sm btn-danger" data-tools-action="delete-offline-area" data-area-id="${escapeHtml(area.id)}">Видалити</button></div></div>`;}).join('')}</div></div>`;
 }
 function toolsOfflineHtml(){
   const areas=toolsLoadOfflineAreas(),shown=toolsOfflinePendingBounds;
-  return `${toolsBackButton()}<div class="card"><strong>Файл офлайн-карти</strong><p style="font-size:13px;color:var(--text-dim);">PMTiles — це файл офлайн-карти вибраного району. Він потрібен лише якщо карта має працювати без інтернету.<br><br>Якщо офлайн-карта вам поки не потрібна — цей крок можна пропустити. Застосунок не робить масове завантаження з OpenStreetMap.</p><button type="button" class="btn btn-block" data-tools-action="import-offline-map">Додати файл офлайн-карти <small>(.pmtiles)</small></button><input type="file" id="toolsOfflineMapFile" accept=".pmtiles,application/octet-stream" class="hidden"></div>${toolsOfflineAreasHtml(areas)}
+  return `${toolsBackButton()}<div class="card"><strong>Як працює офлайн-карта</strong><p style="font-size:13px;color:var(--text-dim);">Збережена область — це лише назва, межі та zoom. Вулиці, дороги й підписи доступні без мережі тільки після встановлення окремого файла карти, підготовленого на ПК або отриманого від дозволеного постачальника. Застосунок не робить масове завантаження з OpenStreetMap.</p><details class="instructions"><summary>Додатково / Імпорт файлу PMTiles</summary><div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Підтримується raster PMTiles. Спочатку збережіть область, потім додайте підготовлений файл до цієї області.</div><button type="button" class="btn btn-block" data-tools-action="import-offline-map">Додати файл карти</button></details><input type="file" id="toolsOfflineMapFile" accept=".pmtiles,application/octet-stream" class="hidden"></div>${toolsOfflineAreasHtml(areas)}
     <div class="card"><strong>Додати область</strong><div style="font-size:12px;color:var(--text-dim);margin:6px 0;">Вкажіть zoom, натисніть «Вибрати область» і поставте дві протилежні точки прямокутника.</div><div class="field-row"><div class="field"><label>Мін. zoom</label><input id="toolsOfflineMinZoom" type="number" min="0" max="22" value="${shown?.minZoom||10}"></div><div class="field"><label>Макс. zoom</label><input id="toolsOfflineMaxZoom" type="number" min="0" max="22" value="${shown?.maxZoom||16}"></div></div><button type="button" class="btn btn-accent btn-block" data-tools-action="select-offline-bounds">▱ Вибрати область</button><div id="toolsOfflineSelection">${toolsOfflineSelectionHtml(shown)}</div></div>
     <div id="toolsOfflineSelectStatus" class="tools-map-status hidden"></div><div id="toolsOfflineSelectMap" class="tools-map"></div>`;
 }
@@ -276,12 +284,22 @@ function toolsEditOfflineArea(id){const area=toolsLoadOfflineAreas().find(item=>
 function toolsDeleteOfflineArea(id){const areas=toolsLoadOfflineAreas(),area=areas.find(item=>item.id===id);if(!area||!confirm(`Видалити лише область «${area.name}»? Встановлений PMTiles та інші дані залишаться.`))return;toolsSaveOfflineAreas(areas.filter(item=>item.id!==id));if(toolsOfflineEditingAreaId===id){toolsOfflineEditingAreaId='';toolsOfflinePendingBounds=null;}renderToolsScreen('offline');showToast('Область видалено. Дані та PMTiles не змінено');}
 function toolsShowOfflineArea(id){const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;MTToolsMap.drawBounds(area);document.getElementById('toolsOfflineSelectMap')?.scrollIntoView({behavior:'smooth',block:'center'});}
 function toolsImportOfflineArea(id){toolsOfflineImportAreaId=id;document.getElementById('toolsOfflineMapFile')?.click();}
+function toolsExportOfflineArea(id){
+  const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;
+  const payload={format:'master-tracker-offline-area-v1',name:area.name,bounds:{minLat:area.minLat,minLng:area.minLng,maxLat:area.maxLat,maxLng:area.maxLng},zoom:{min:area.minZoom,max:area.maxZoom}};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=`master-tracker-area-${String(area.name||'area').replace(/[^a-zа-яіїє0-9_-]+/gi,'-').replace(/^-|-$/g,'')||'area'}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);showToast('Параметри області експортовано. Це не файл карти.');
+}
 function toolsOpenProfileById(profileId){
   const profile=MTToolsCore.listProfiles(tickets).find(item=>item.id===profileId);
   if(!profile){showToast('Профіль не знайдено');return;}
+  toolsMapReturnContext={profileId};
   addrNavState={level:'tickets',city:profile.city,street:profile.street,house:profile.house||'(без номера)',apartment:profile.apartment||'(без кв.)'};
   addrNavSearchQuery='';switchTab('tickets');renderAddressNav();
 }
+function toolsMapReturnButtonHtml(){return toolsMapReturnContext?'<button type="button" class="btn btn-block abonent-back-map-btn" style="margin-bottom:10px;">← Назад до карти</button>':'';}
+function toolsClearMapReturnContext(){toolsMapReturnContext=null;}
+function toolsReturnFromProfileToMap(){closeModal();toolsMapReturnContext=null;toolsView='map';switchTab('tools');}
 function toolsOpenMapObject(item){
   if(!item)return;
   if(item.kind==='network'){toolsShowNetworkPoint(item.id);return;}
@@ -312,10 +330,11 @@ function toolsNetworkHtml(){
     <div style="margin-top:8px;">${list.length?list.map(point=>`<button type="button" class="btn btn-block tools-network-open" data-point-id="${escapeHtml(point.id)}" style="height:auto;min-height:58px;margin-bottom:8px;text-align:left;justify-content:space-between;"><span>📡 <strong>${escapeHtml(point.name||point.type||'Без назви')}</strong><small style="display:block;color:var(--text-dim);">${escapeHtml(MTToolsCore.networkPointAddress(point)||`${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`)}${point.note?` · ${escapeHtml(point.note.slice(0,50))}`:''}</small></span><span>›</span></button>`).join(''):'<div class="card">Нічого не знайдено.</div>'}</div>`;
 }
 let toolsNetworkSearch='';
-function toolsOpenNetworkPointEditor(id='',defaults={}){
+function toolsOpenNetworkPointEditor(id='',defaults={},options={}){
   const existing=toolsNetworkPoints.find(point=>point.id===id)||defaults||{};
   const cities=[...new Set([...(settings.cities||[]),...tickets.map(ticket=>ticket.city)].filter(Boolean))].sort();
   const streets=[...new Set([...Object.values(settings.streets||{}).flat(),...tickets.map(ticket=>ticket.street)].filter(Boolean))].sort();
+  const closePointEditor=()=>{document.getElementById('toolsScreenRoot')?.classList.remove('tools-map-editor-open');options.placement?.cancel?.();MTToolsMap.destroyPicker();closeModal();};
   openModal(existing.id?'Редагувати точку':'Нова точка мережі',`
     <div class="field"><label>Тип</label><select id="toolsPointType">${MTToolsCore.NETWORK_POINT_TYPES.map(type=>`<option ${type===(existing.type||'FOB')?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select></div>
     <div class="field-row"><div class="field"><label>Місто</label><input id="toolsPointCity" list="toolsPointCities" value="${escapeHtml(existing.city||'')}"><datalist id="toolsPointCities">${cities.map(value=>`<option value="${escapeHtml(value)}">`).join('')}</datalist></div><div class="field"><label>Вулиця</label><input id="toolsPointStreet" list="toolsPointStreets" value="${escapeHtml(existing.street||'')}"><datalist id="toolsPointStreets">${streets.map(value=>`<option value="${escapeHtml(value)}">`).join('')}</datalist></div></div>
@@ -325,13 +344,14 @@ function toolsOpenNetworkPointEditor(id='',defaults={}){
     <div id="toolsPointPickerPanel" class="hidden tools-map-picker-panel"><div id="toolsPointPickerStatus" class="tools-map-status hidden" role="status"></div><div id="toolsPointPickerMap" class="tools-map tools-map-picker" aria-label="Вибір координат точки"></div><div class="row" style="margin-top:8px;"><button type="button" class="btn btn-accent" id="toolsPointUseMapBtn" style="flex:1;">Використати цю точку</button><button type="button" class="btn" id="toolsPointCancelMapBtn">Скасувати</button></div></div>
     <div class="field"><label>Примітка</label><textarea id="toolsPointNote">${escapeHtml(existing.note||'')}</textarea></div>
     <div class="field"><label>Фото (до 3)</label><input type="file" id="toolsPointPhoto" accept="image/*" multiple></div>
-    <label class="row" style="margin:8px 0 12px;"><input type="checkbox" id="toolsPointSendTelegram"> <span>Надіслати в Telegram після локального збереження</span></label>
-    <div class="tools-point-editor-footer"><button type="button" class="btn btn-accent" id="toolsPointSaveBtn" style="flex:1;">Зберегти</button><button type="button" class="btn" id="toolsPointCancelBtn">Скасувати</button></div>`,{onOpen:()=>{
+    <div class="tools-point-editor-footer row wrap"><button type="button" class="btn" id="toolsPointSaveBtn" style="flex:1;">Зберегти</button><button type="button" class="btn btn-accent" id="toolsPointSaveTelegramBtn" style="flex:1 0 100%;">Зберегти і надіслати в Telegram</button><button type="button" class="btn" id="toolsPointCancelBtn" style="flex:1;">Скасувати</button></div>`,{overlayClass:options.placement?'tools-point-editor-overlay':'',onClose:closePointEditor,onOpen:()=>{
       const latInput=document.getElementById('toolsPointLat'),lngInput=document.getElementById('toolsPointLng'),panel=document.getElementById('toolsPointPickerPanel');
       let mapPicker=null;
       const inputPoint=()=>MTToolsCore.parseCoordinates(`${latInput.value.replace(',','.')},${lngInput.value.replace(',','.')}`);
       const writePoint=point=>{latInput.value=Number(point.lat).toFixed(6);lngInput.value=Number(point.lng).toFixed(6);};
-      document.getElementById('toolsPointCancelBtn').onclick=closeModal;
+      options.placement?.onChange?.(writePoint);
+      if(options.placement){document.getElementById('toolsScreenRoot')?.classList.add('tools-map-editor-open');setTimeout(()=>document.getElementById('toolsLeafletMap')?.scrollIntoView({block:'start'}),0);}
+      document.getElementById('toolsPointCancelBtn').onclick=closePointEditor;
       document.getElementById('toolsPointPickBtn').onclick=()=>{
         panel.classList.remove('hidden');
         mapPicker=MTToolsMap.mountPicker(document.getElementById('toolsPointPickerMap'),{initial:inputPoint(),statusNode:document.getElementById('toolsPointPickerStatus')});
@@ -349,14 +369,16 @@ function toolsOpenNetworkPointEditor(id='',defaults={}){
           const point={lat:position.coords.latitude,lng:position.coords.longitude};writePoint(point);mapPicker?.setPoint(point);showToast('Поточне місце визначено');
         },()=>showToast('Не вдалося отримати геолокацію'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
       };
-      document.getElementById('toolsPointSaveBtn').onclick=async()=>{
+      const savePoint=async send=>{
         const now=new Date(),type=document.getElementById('toolsPointType').value,label=document.getElementById('toolsPointLabel').value.trim(),base={...existing,name:[type,label].filter(Boolean).join(' '),type,city:document.getElementById('toolsPointCity').value,street:document.getElementById('toolsPointStreet').value,house:document.getElementById('toolsPointHouse').value,label,lat:document.getElementById('toolsPointLat').value.replace(',','.'),lng:document.getElementById('toolsPointLng').value.replace(',','.'),note:document.getElementById('toolsPointNote').value};
         const normalized=MTToolsCore.normalizeNetworkPoint(base,now);if(!normalized){showToast('Вкажіть коректні координати');return;}
         const files=[...document.getElementById('toolsPointPhoto').files].slice(0,3),keys=(existing.photoKeys||[existing.photoKey]).filter(Boolean);
         for(const file of files){const key=await toolsStoreCompressedPhoto(file);if(!key){showToast('Не вдалося зберегти фото');return;}keys.push(key);}normalized.photoKeys=[...new Set(keys)].slice(0,3);normalized.photoKey=normalized.photoKeys[0]||'';
         const at=toolsNetworkPoints.findIndex(point=>point.id===normalized.id);if(at>=0)toolsNetworkPoints[at]=normalized;else toolsNetworkPoints.push(normalized);
-        if(!toolsSaveNetworkPoints())return;const send=document.getElementById('toolsPointSendTelegram').checked;closeModal();renderToolsScreen('network');showToast('Точку збережено локально');if(send)await toolsSendNetworkPointTelegram(normalized);
+        if(!toolsSaveNetworkPoints())return;closePointEditor();renderToolsScreen(options.returnView||'network');showToast('Точку збережено локально');if(send)await toolsSendNetworkPointTelegram(normalized);
       };
+      document.getElementById('toolsPointSaveBtn').onclick=()=>savePoint(false);
+      document.getElementById('toolsPointSaveTelegramBtn').onclick=()=>savePoint(true);
     }});
 }
 async function toolsSendNetworkPointTelegram(point){
@@ -368,11 +390,33 @@ async function toolsSendNetworkPointTelegram(point){
 function toolsStoreCompressedPhoto(file){
   return new Promise(resolve=>{const reader=new FileReader();reader.onerror=()=>resolve(null);reader.onload=event=>{const image=new Image();image.onerror=()=>resolve(null);image.onload=async()=>{const scale=Math.min(1,800/image.width),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);resolve(await storePhoto(canvas.toDataURL('image/jpeg',.72)));};image.src=event.target.result;};reader.readAsDataURL(file);});
 }
+function toolsPhotoKeyStillUsed(key,removedPointId){
+  const inAnotherPoint=toolsNetworkPoints.some(point=>String(point.id)!==String(removedPointId)&&(point.photoKeys||[point.photoKey]).filter(Boolean).includes(key));
+  const inTicket=tickets.some(ticket=>(ticket.photos||[ticket.photo]).filter(Boolean).includes(key));
+  return inAnotherPoint||inTicket;
+}
+async function toolsDeleteNetworkPoint(id){
+  const previous=toolsNetworkPoints,outcome=MTToolsCore.removeNetworkPoint(previous,id);if(!outcome.removed)return false;
+  toolsNetworkPoints=outcome.points;
+  if(!toolsSaveNetworkPoints()){toolsNetworkPoints=previous;return false;}
+  const photoKeys=[...new Set((outcome.removed.photoKeys||[outcome.removed.photoKey]).filter(Boolean))];
+  for(const key of photoKeys){if(!toolsPhotoKeyStillUsed(key,id))await deletePhotoKey(key);}
+  closeModal();renderToolsScreen(toolsView);showToast('Об’єкт видалено');return true;
+}
+function toolsConfirmDeleteNetworkPoint(id){
+  const point=toolsNetworkPoints.find(item=>String(item.id)===String(id));if(!point)return;
+  openModal('Видалити об’єкт',`<p style="margin:0 0 14px;">Видалити цей об’єкт?</p><div class="row wrap"><button type="button" class="btn btn-danger" id="toolsPointDeleteConfirmBtn" style="flex:1;">Видалити</button><button type="button" class="btn" id="toolsPointDeleteCancelBtn" style="flex:1;">Скасувати</button></div>`,{onOpen:()=>{
+    document.getElementById('toolsPointDeleteCancelBtn').onclick=()=>toolsShowNetworkPoint(point.id);
+    document.getElementById('toolsPointDeleteConfirmBtn').onclick=async event=>{event.currentTarget.disabled=true;await toolsDeleteNetworkPoint(point.id);};
+  }});
+}
 function toolsShowNetworkPoint(id){
   const point=toolsNetworkPoints.find(item=>item.id===id);if(!point)return;
-  const address=MTToolsCore.networkPointAddress(point);openModal(point.name||point.type||'Точка мережі',`<div style="font-size:13px;line-height:1.6;"><strong>${escapeHtml(point.type)}</strong>${address?`<br>🏘 ${escapeHtml(address)}`:''}<br>📍 ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">Створено: ${escapeHtml(new Date(point.createdAt).toLocaleString('uk-UA'))}<br>Оновлено: ${escapeHtml(new Date(point.updatedAt).toLocaleString('uk-UA'))}</div>${point.note?`<div style="white-space:pre-wrap;margin-top:8px;">${escapeHtml(point.note)}</div>`:''}<div id="toolsPointPhotoPreview" class="tools-point-photo-grid" style="margin-top:8px;"></div><div class="row wrap" style="margin-top:10px;"><button type="button" class="btn" id="toolsPointRouteBtn" style="flex:1;">🗺 Маршрут</button><button type="button" class="btn" id="toolsPointEditBtn" style="flex:1;">✏️ Редагувати</button><button type="button" class="btn" id="toolsPointTelegramBtn" style="flex:1 0 100%;">✈️ Надіслати в Telegram</button></div></div>`,{onOpen:async()=>{
+  const address=MTToolsCore.networkPointAddress(point);openModal(point.name||point.type||'Точка мережі',`<div style="font-size:13px;line-height:1.6;"><strong>${escapeHtml(point.type)}</strong>${address?`<br>🏘 ${escapeHtml(address)}`:''}<br>📍 ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">Створено: ${escapeHtml(new Date(point.createdAt).toLocaleString('uk-UA'))}<br>Оновлено: ${escapeHtml(new Date(point.updatedAt).toLocaleString('uk-UA'))}</div>${point.note?`<div style="white-space:pre-wrap;margin-top:8px;">${escapeHtml(point.note)}</div>`:''}<div id="toolsPointPhotoPreview" class="tools-point-photo-grid" style="margin-top:8px;"></div><div class="row wrap" style="margin-top:10px;"><button type="button" class="btn" id="toolsPointMapBtn" style="flex:1;">📍 Показати на карті</button><button type="button" class="btn" id="toolsPointRouteBtn" style="flex:1;">🗺 Маршрут</button><button type="button" class="btn" id="toolsPointEditBtn" style="flex:1;">✏️ Редагувати</button><button type="button" class="btn" id="toolsPointTelegramBtn" style="flex:1 0 100%;">✈️ Надіслати в Telegram</button><button type="button" class="btn btn-danger" id="toolsPointDeleteBtn" style="flex:1 0 100%;">Видалити об’єкт</button></div></div>`,{onOpen:async()=>{
+    document.getElementById('toolsPointMapBtn').onclick=()=>{closeModal();MTToolsMap.focusPoint(point,18);toolsView='map';switchTab('tools');};
     document.getElementById('toolsPointRouteBtn').onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${point.lat},${point.lng}`)}`,'_blank','noopener');
     document.getElementById('toolsPointEditBtn').onclick=()=>{closeModal();toolsOpenNetworkPointEditor(point.id);};
+    document.getElementById('toolsPointDeleteBtn').onclick=()=>toolsConfirmDeleteNetworkPoint(point.id);
     document.getElementById('toolsPointTelegramBtn').onclick=async event=>{
       const button=event.currentTarget;button.disabled=true;await toolsSendNetworkPointTelegram(point);button.disabled=false;
     };
@@ -388,7 +432,7 @@ function renderToolsScreen(view){
   else if(toolsView==='map'){
     root.innerHTML=toolsMapHtml();
     requestAnimationFrame(()=>MTToolsMap.mount(document.getElementById('toolsLeafletMap'),MTToolsCore.mapObjects(tickets,toolsNetworkPoints),{
-      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),onSelect:toolsOpenMapObject
+      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),emptyStateNode:document.getElementById('toolsMapEmptyState'),onSelect:toolsOpenMapObject,onAddHere:point=>toolsStartMapAddMode(point)
     }));
   }
   else if(toolsView==='network')root.innerHTML=toolsNetworkHtml();
@@ -409,10 +453,13 @@ function bindToolsScreen(){
     else if(action==='copy-diagnostics')toolsCopyDiagnostic();
     else if(action==='attach-diagnostics')toolsAttachDiagnostics();
     else if(action==='save-diagnostics')toolsSaveCurrentDiagnostic();
+    else if(action==='external-speed-test')toolsOpenExternalSpeedTest();
     else if(action==='return-to-ticket')toolsReturnToTicket();
     else if(action==='new-network-point')toolsOpenNetworkPointEditor();
-    else if(action==='map-add-object')toolsChooseNetworkType();
+    else if(action==='map-add-object')toolsStartMapAddMode();
     else if(action==='map-my-location')toolsLocateOnMap();
+    else if(action==='map-add-at-location'&&toolsLastUserLocation)toolsStartMapAddMode(toolsLastUserLocation);
+    else if(action==='map-use-online'){MTOfflineMap.setMode('online');renderToolsScreen('map');}
     else if(action==='map-bind-address')toolsBindAddressFromMap();
     else if(action==='select-offline-bounds')toolsStartOfflineBoundsSelection();
     else if(action==='save-offline-area')toolsSaveOfflineArea();
@@ -420,6 +467,7 @@ function bindToolsScreen(){
     else if(action==='edit-offline-area')toolsEditOfflineArea(event.target.closest('[data-area-id]')?.dataset.areaId);
     else if(action==='delete-offline-area')toolsDeleteOfflineArea(event.target.closest('[data-area-id]')?.dataset.areaId);
     else if(action==='import-offline-area')toolsImportOfflineArea(event.target.closest('[data-area-id]')?.dataset.areaId);
+    else if(action==='export-offline-area')toolsExportOfflineArea(event.target.closest('[data-area-id]')?.dataset.areaId);
     else if(action==='import-offline-map'){toolsOfflineImportAreaId='';document.getElementById('toolsOfflineMapFile')?.click();}
     else if(action==='delete-offline-map')toolsDeleteOfflineMap();
   });
