@@ -698,8 +698,9 @@ function handlePhotoFile(file){
 
 /* ---- Геолокація ---- */
 
-function setGeoLink(link){
+function setGeoLink(link,coords=null){
   calcState.geoLink = link;
+  if(coords){calcState.geoLat=Number(coords.lat.toFixed(6));calcState.geoLng=Number(coords.lng.toFixed(6));}
   formTouchedByUser = true; // NEW: модалка геолокації живе поза #calcForm, тож звичайний input/change-делегат її не бачить — без цього рядка чернетка з самою лише геолокацією (без інших полів) не зберігалась
   // Геолокація тепер НЕ потрапляє в текст примітки/заявки — вона лише
   // для власного використання майстра (кнопка 📍 і бейдж з посиланням).
@@ -743,7 +744,7 @@ function openGeoPasteModal(headerMsg){
       if(!raw){ showToast('Встав посилання або координати'); return; }
       const coords = parseMapsLink(raw);
       const link = coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw;
-      setGeoLink(link);
+      setGeoLink(link,coords);
       closeModal();
       showToast('✅ Геолокацію збережено');
     };
@@ -781,7 +782,7 @@ function openAbonentGeoEditModal(ids, currentLink){
       if(!raw){ showToast('Встав посилання або координати'); return; }
       const coords = parseMapsLink(raw);
       const link = coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw;
-      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=link; });
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t){t.geoLink=link;if(coords){t.geoLat=Number(coords.lat.toFixed(6));t.geoLng=Number(coords.lng.toFixed(6));}} });
       saveTickets();
       showToast('✅ Геолокацію збережено');
       renderAddressNav();

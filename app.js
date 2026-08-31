@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v79 · 2026-08-30';
+const APP_VERSION = 'v80 · 2026-08-30';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -192,7 +192,7 @@ function ticketToSyncPayload(t){
     payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
     note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones,
-    signal:t.signal
+    signal:t.signal, geoLat:t.geoLat, geoLng:t.geoLng
   };
   return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n'), fullDataJson: JSON.stringify(fullData)};
 }
@@ -472,6 +472,7 @@ async function init(){
   bindTicketsScreen();
   bindCalculatorScreen();
   bindShiftsScreen();
+  bindToolsScreen();
   bindSettingsScreen();
 
   ticketsDb = await openTicketsDb();
@@ -509,6 +510,7 @@ async function init(){
   renderTicketsScreen();
   resetCalcForm(currentTicketDate);
   renderShiftsScreen();
+  renderToolsScreen();
   renderSettingsScreen();
 
   restoreDraftIfAny();

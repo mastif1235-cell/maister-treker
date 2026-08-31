@@ -75,6 +75,8 @@ function renderTicketCard(t, opts={}){
       ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">☁️✅ Telegram</button>`
       : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">☁️⏳ Telegram</button>`;
   }
+  const hasPhotos=!!((t.photos&&t.photos.length)||t.photo);
+  const photoBadge=hasPhotos?`<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-ids='${escapeHtml(JSON.stringify((t.tgPhotoFileIds&&t.tgPhotoFileIds.length)?t.tgPhotoFileIds:(t.tgPhotoFileId?[t.tgPhotoFileId]:[])))}'>📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>`:'';
   // NEW: у шапці лишили тільки статус заявки + адресу; все інше (час, сума,
   // номер договору, логін/пароль, опис, нотатка майстра) сховано всередину
   // одного блоку tc-details, який розгортається кнопкою "▼ Розгорнути"
@@ -90,8 +92,8 @@ function renderTicketCard(t, opts={}){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
-    ${(syncBadge || tgBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}</div>` : ''}
-    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
+    ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
+    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
@@ -104,10 +106,10 @@ function renderTicketCard(t, opts={}){
       </div>` : ''}
       ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : (!hasContent && opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
+      ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
-    <div class="tc-tags" style="margin-top:8px;">${tagsHtml}${(t.photos&&t.photos.length)||t.photo ? `<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-ids='${escapeHtml(JSON.stringify((t.tgPhotoFileIds&&t.tgPhotoFileIds.length)?t.tgPhotoFileIds:(t.tgPhotoFileId?[t.tgPhotoFileId]:[])))}'>📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>` : ''}</div>
-    ${(t.photos&&t.photos.length)||t.photo ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
+    ${hasPhotos ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
     <div class="tc-actions">
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️ Редагувати</button>
       ${opts.workOnly

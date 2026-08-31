@@ -57,7 +57,7 @@ function openModal(title, bodyHtml, opts={}){
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
 }
 
-const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулятор', shifts:'Зміни', settings:'Налаштування'};
+const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулятор', shifts:'Зміни', tools:'Інструменти', settings:'Налаштування'};
 function switchTab(tab){
   // NEW: якщо вкладка вже й так активна — не скидаємо скрол. Це прибирає
   // ефект "улетів на початок форми", який траплявся, якщо щось під час
@@ -67,6 +67,7 @@ function switchTab(tab){
   document.getElementById('screen-'+tab).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('screenTitle').textContent = SCREEN_TITLES[tab];
+  if(tab==='tools' && typeof renderToolsScreen==='function') renderToolsScreen();
   // "Дані" в Налаштуваннях рендеряться один раз при старті застосунку — але
   // кошик змінюється протягом сесії (заявки видаляються з інших екранів),
   // тож оновлюємо саме його щоразу при відкритті вкладки.

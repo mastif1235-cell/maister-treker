@@ -637,6 +637,14 @@ function attachAddressNavHandlers(rootEl){
       showEditAbonentProfile(editProfileBtn.dataset.profile);
       return;
     }
+    const diagnosticsBtn = e.target.closest('.abonent-diagnostics-btn');
+    if(diagnosticsBtn){
+      let ids=[];
+      try{ids=JSON.parse(diagnosticsBtn.dataset.ids||'[]');}catch(_e){ids=[];}
+      closeModal();
+      openToolsDiagnosticsFromProfile(ids);
+      return;
+    }
     // NEW: "➕ Заявка" в профілі — та сама форма створення заявки, але з уже
     // підставленими даними абонента; повертаємось сюди ж після збереження
     const newTicketBtn = e.target.closest('.abonent-new-ticket-btn');
@@ -652,6 +660,13 @@ function attachAddressNavHandlers(rootEl){
       let ids = [];
       try{ ids = JSON.parse(geoEditBtn.dataset.ids || '[]'); }catch(err){ ids = []; }
       openAbonentGeoEditModal(ids, geoEditBtn.dataset.geoLink || '');
+      return;
+    }
+    const mapPointBtn = e.target.closest('.abonent-map-point-btn');
+    if(mapPointBtn){
+      let ids = [];
+      try{ ids = JSON.parse(mapPointBtn.dataset.ids || '[]'); }catch(err){ ids = []; }
+      openAbonentMapPointPicker(ids);
       return;
     }
     // NEW: редагування примітки про абонента прямо з профілю — без заходу

@@ -1,0 +1,36 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.join(__dirname,'..');
+const read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const html=read('index.html'),map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),render=read('js/tickets-render.js'),styles=read('styles.css'),sw=read('sw.js'),leaflet=read('vendor/leaflet/leaflet.js'),offline=read('js/offline-map-storage.js'),address=read('js/address-render.js');
+
+assert.match(leaflet,/version="1\.9\.4"/,'stable Leaflet 1.9.4 is vendored locally');
+assert.match(html,/vendor\/leaflet\/leaflet\.css/);assert.match(html,/vendor\/leaflet\/leaflet\.js/);assert.match(html,/js\/tools-map\.js/);
+assert.match(html,/vendor\/pmtiles\/pmtiles\.js/);assert.match(html,/js\/offline-map-storage\.js/);
+assert.match(html,/img-src[^;]*https:\/\/tile\.openstreetmap\.org/,'CSP permits only the selected OSM tile image host');
+assert.match(html,/<meta name="referrer" content="no-referrer">/,'global referrer privacy remains unchanged');
+assert.match(map,/https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png/);
+assert.match(map,/referrerPolicy:'strict-origin-when-cross-origin'/,'only OSM tile images receive an origin referrer');
+assert.match(map,/OpenStreetMap<\/a> contributors/,'required attribution remains visible');
+assert.doesNotMatch(map,/clientName|phone|macAddress|masterNote|photo/,'tile module has no subscriber payload fields');
+assert.match(map,/root\.L\.map/);assert.match(leaflet,/touchZoom/,'vendored Leaflet includes mobile touch zoom');
+assert.match(map,/savedView=\{lat:center\.lat,lng:center\.lng,zoom:map\.getZoom\(\)\}/,'filter/remount preserves map viewport');
+assert.match(map,/groups\.set\(category,root\.L\.layerGroup\(\)\)/,'category layers can later be replaced by clustered marker layers');
+for(const category of ['private','apartment','FOB','Муфта','Вузол','Інше'])assert.match(map,new RegExp(category));
+assert.match(domain,/data-map-filter="all"/);assert.match(domain,/MTToolsCore\.MAP_CATEGORIES/);
+assert.match(domain,/navigator\.geolocation\.getCurrentPosition/,'current device location is user-triggered');
+assert.match(domain,/MTToolsMap\.mountPicker/);assert.match(map,/draggable:true/);assert.match(map,/pickerMap\.on\('click'/);
+assert.match(domain,/Використати цю точку/);assert.match(domain,/writePoint\(point\)/);
+assert.match(map,/tileerror/);assert.match(map,/Поза межами офлайн-карти/,'leaving archive bounds is graceful');
+assert.match(map,/leafletRasterLayer/);assert.match(offline,/getDirectory\(\)/);assert.match(offline,/map-a\.pmtiles/);assert.match(offline,/map-b\.pmtiles/);
+assert.match(domain,/Імпортувати офлайн-карту/);assert.match(offline,/navigator&&root\.navigator\.storage/);assert.match(domain,/MTOfflineMap\.install/);
+assert.match(domain,/Google Maps посилання залишиться без змін/);assert.match(address,/abonent-map-point-btn/);
+assert.match(sw,/vendor\/leaflet\/leaflet\.js/);assert.match(sw,/js\/tools-map\.js/,'map runtime is in the PWA application cache');
+assert.match(sw,/vendor\/pmtiles\/pmtiles\.js/);assert.match(sw,/js\/offline-map-storage\.js/);
+
+const statusStart=render.indexOf('<div class="tc-status-row">');
+assert.ok(statusStart>0 && render.indexOf('${photoBadge}',statusStart)>statusStart,'photo action sits with Sheets/Telegram statuses');
+assert.match(render,/class="tc-details tc-collapsed"[\s\S]*class="tc-tags"/,'tags live inside the existing collapsed ticket details');
+assert.doesNotMatch(render,/tc-tags-details/,'compact card has no separate tags row');
+assert.match(styles,/\.tools-map-filters\{display:flex;[^}]*overflow-x:auto/,'map filters stay compact on mobile');
+console.log('PASS interactive OSM map, filters, precise point picker, privacy, compact tags and photo action');

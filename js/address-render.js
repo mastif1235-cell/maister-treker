@@ -197,13 +197,15 @@ function addrAbonentProfileHtml(list, keySuffix=''){
   // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
   // профілю — а не дублюються в кожній картці заявки нижче
   const geoTicket = list.find(t=>t.geoLink);
+  const mapPointTicket = list.find(t=>typeof MTToolsCore!=='undefined' && (MTToolsCore.parseCoordinates(`${t.geoLat??''},${t.geoLng??''}`)||MTToolsCore.parseCoordinates(t.geoLink)));
   // NEW: геолокацію тепер можна не лише переглянути ("Перейти"), а й
   // додати/виправити прямо з профілю — застосовується одразу до ВСІХ
   // заявок за цією адресою, як і решта полів профілю.
   const geoIdsJson = escapeHtml(JSON.stringify(list.map(t=>t.id)));
-  const geoEditBtnHtml = `<button type="button" class="btn btn-sm abonent-geo-edit-btn" data-ids="${geoIdsJson}" data-geo-link="${escapeHtml(geoTicket ? geoTicket.geoLink : '')}" title="${geoTicket ? 'Редагувати геолокацію' : 'Додати геолокацію'}" style="${geoTicket ? '' : 'flex:1;'}">${geoTicket ? '✏️' : '📍 Додати геолокацію'}</button>`;
+  const geoEditBtnHtml = `<button type="button" class="btn btn-sm abonent-geo-edit-btn" data-ids="${geoIdsJson}" data-geo-link="${escapeHtml(geoTicket ? geoTicket.geoLink : '')}" title="${geoTicket ? 'Редагувати посилання Google Maps' : 'Додати геолокацію'}" style="${geoTicket ? '' : 'flex:1;'}">${geoTicket ? '✏️ Посилання' : '📍 Додати геолокацію'}</button>`;
+  const mapPointBtnHtml = `<button type="button" class="btn btn-sm abonent-map-point-btn" data-ids="${geoIdsJson}" style="flex:1;">${mapPointTicket?'📍 На карті / Уточнити':'📍 Додати / Уточнити точку'}</button>`;
   const actionBtnsHtml = `
-    <div class="row" style="gap:8px; margin-top:8px;">
+    <div class="row wrap" style="gap:8px; margin-top:8px;">
       <!-- NEW: раніше кнопка "Договір" з'являлась лише за наявності номера
            договору — але showDogovor() і так коректно показує картку/QR і
            без нього (просто без рядка "№ ..."). Якщо номер невідомий (лише
@@ -212,7 +214,9 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${acctTicket ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
       ${geoTicket ? `<a href="${escapeHtml(geoTicket.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">📍 Перейти</a>` : ''}
       ${geoEditBtnHtml}
+      ${mapPointBtnHtml}
     </div>`;
+  const diagnosticsHtml = typeof toolsProfileDiagnosticsHtml==='function' ? toolsProfileDiagnosticsHtml(list) : '';
   // NEW: редагування ПІБ/телефону/адреси/логіна/пароля/договору просто в
   // профілі — застосовується одразу до ВСІХ заявок за цією адресою (додає,
   // де не було, виправляє, де було). Дані пакуємо в один data-атрибут, щоб
@@ -249,6 +253,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
       ${acctHtml}
       ${noteHtml}
       ${actionBtnsHtml}
+      ${diagnosticsHtml}
       ${photoBtnHtml}
       <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">🗓️ Заявок за цією адресою: ${list.length}</div>
       ${others.length ? `<div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:12.5px; color:var(--text-dim);">⚠️ Раніше тут також траплялось: ${others.map(o=>escapeHtml([o.clientName,o.phone].filter(Boolean).join(' · '))).join('; ')} — можливо, інший абонент</div>` : ''}

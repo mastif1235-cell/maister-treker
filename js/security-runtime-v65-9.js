@@ -109,6 +109,8 @@ function securityRuntimeSanitizeTicket(ticket,index=0){
   ['sum','callFee','tariff','cashAmount','cardAmount'].forEach(k=>{
     if(k in t) t[k]=securityRuntimeSafeNumber(t[k],0,0,100000000);
   });
+  if('geoLat' in t)t.geoLat=t.geoLat===null||t.geoLat===''?null:securityRuntimeSafeNumber(t.geoLat,null,-90,90);
+  if('geoLng' in t)t.geoLng=t.geoLng===null||t.geoLng===''?null:securityRuntimeSafeNumber(t.geoLng,null,-180,180);
 
   ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork'].forEach(k=>{
     if(k in t && !Array.isArray(t[k])) t[k]=[];
