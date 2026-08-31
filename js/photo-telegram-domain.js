@@ -122,6 +122,11 @@ function telegramMessageLink(msgId){
   const internalId = chatId.replace(/^-100/, '').replace(/^-/, '');
   return `https://t.me/c/${internalId}/${msgId}`;
 }
+function telegramNetworkMessageLink(chatIdValue,msgId){
+  const chatId=String(chatIdValue||'').trim();
+  if(!/^-100\d+$/.test(chatId)||!Number.isSafeInteger(Number(msgId))||Number(msgId)<1)return null;
+  return `https://t.me/c/${chatId.slice(4)}/${Number(msgId)}`;
+}
 function openTicketInTelegram(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
   // беремо перше з наявних — розділювач (початок "картки" заявки) як пріоритет,
@@ -165,7 +170,7 @@ async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
         if(!photoResult.ok) return {ok:false, reason:photoResult.description || 'sendPhoto failed'};
       }
     }
-    return {ok:true};
+    return {ok:true,chatId:String(chatId),messageId:Number(msgData.result?.message_id)||0};
   }catch(e){ return {ok:false, reason:String(e)}; }
 }
 // NEW: список налаштованих диспетчерів — {name, chatId}, тільки ті, де chatId заповнено

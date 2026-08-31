@@ -138,6 +138,7 @@
       label:text(value.label).slice(0,120),profileId:text(value.profileId).slice(0,500),
       lat:coords.lat,lng:coords.lng,note:text(value.note).slice(0,4000),
       photoKey:text(value.photoKey),photoKeys:[...new Set((Array.isArray(value.photoKeys)?value.photoKeys:[value.photoKey]).map(text).filter(Boolean))].slice(0,3),
+      telegramChatId:text(value.telegramChatId).slice(0,80),telegramMessageId:Number.isSafeInteger(Number(value.telegramMessageId))&&Number(value.telegramMessageId)>0?Number(value.telegramMessageId):0,
       createdAt,updatedAt:safeNow.toISOString()
     };
   }

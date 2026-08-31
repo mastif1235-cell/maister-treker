@@ -22,7 +22,7 @@ assert.match(domain,/Перевірити швидкість/);assert.match(doma
 assert.match(domain,/Для цієї області офлайн-карта ще не завантажена/);assert.match(domain,/toolsMapEmptyState/,'13 missing basemap has an actionable empty state');
 assert.match(domain,/Тільки область збережена/);assert.match(domain,/Офлайн-карта встановлена/,'14 multiple areas expose honest installation status');
 assert.match(map,/function addOnlineBaseLayer/);assert.match(map,/tile\.openstreetmap\.org/,'15 online map path remains intact');
-assert.match(domain,/Експортувати параметри/);assert.match(domain,/Це не файл карти/,'area JSON is explicitly not presented as map data');
+assert.match(domain,/Зберегти межі області \(\.json\)/);assert.match(domain,/Це лише межі та масштаб, не файл карти/,'area JSON is explicitly not presented as map data');
 assert.match(telegram,/photoResult\.ok/,'photo send failures are reported by the existing transport');
 const sourcePoints=[{id:'point-a',type:'FOB'},{id:'point-b',type:'Муфта'}],tickets=[{id:'ticket-1',city:'Київ'}],profiles=[{id:'profile-1'}];
 const removed=core.removeNetworkPoint(sourcePoints,'point-a');

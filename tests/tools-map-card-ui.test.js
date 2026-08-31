@@ -23,7 +23,7 @@ assert.match(domain,/MTToolsMap\.mountPicker/);assert.match(map,/draggable:true/
 assert.match(domain,/Використати цю точку/);assert.match(domain,/writePoint\(point\)/);
 assert.match(map,/tileerror/);assert.match(map,/Для цієї області офлайн-карта ще не завантажена/,'leaving archive bounds is graceful and actionable');
 assert.match(map,/leafletRasterLayer/);assert.match(offline,/getDirectory\(\)/);assert.match(offline,/map-a\.pmtiles/);assert.match(offline,/map-b\.pmtiles/);
-assert.match(domain,/Додатково \/ Імпорт файлу PMTiles/);assert.match(offline,/navigator&&root\.navigator\.storage/);assert.match(domain,/MTOfflineMap\.install/);
+assert.match(domain,/Як працює офлайн-карта\?/);assert.match(domain,/Додати офлайн-карту \(\.pmtiles\)/);assert.match(offline,/navigator&&root\.navigator\.storage/);assert.match(domain,/MTOfflineMap\.install/);
 assert.match(domain,/Google Maps посилання залишиться без змін/);assert.match(address,/abonent-map-point-btn/);
 assert.match(sw,/vendor\/leaflet\/leaflet\.js/);assert.match(sw,/js\/tools-map\.js/,'map runtime is in the PWA application cache');
 assert.match(sw,/vendor\/pmtiles\/pmtiles\.js/);assert.match(sw,/js\/offline-map-storage\.js/);
