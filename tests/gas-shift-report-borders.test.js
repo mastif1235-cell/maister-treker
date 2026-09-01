@@ -52,12 +52,30 @@ const expandedMonth = [
   ['📊 РАЗОМ ЗА МІСЯЦЬ:','',24,'3 упряжок','']
 ];
 
+const reportRows = JSON.parse(JSON.stringify(context.buildShiftReportRows_([
+  {id:'stable-shift-id', date:'25.08.2026', hours:8, coworker:'Сам'}
+])));
+assert.equal(reportRows.every((row)=>row.length === 5), true, 'report data keeps its five-column schema');
+assert.equal(reportRows[2][4], 'stable-shift-id', 'stable shift ID remains in hidden column E');
+
 const afterLaterShift = borderSheet([[4, 'SOLID_MEDIUM']]);
 clearAllBorders(afterLaterShift, expandedMonth.length);
 context.formatShiftReportBorders_(afterLaterShift, expandedMonth);
 assert.equal(afterLaterShift.horizontal.get(4), 'SOLID', 'old month end becomes an ordinary internal border');
 assert.equal(afterLaterShift.horizontal.get(5), 'SOLID_MEDIUM', 'monthly total starts with the only thick internal border');
 assert.equal(afterLaterShift.horizontal.get(6), 'SOLID_MEDIUM', 'thick bottom border moves to the actual month end');
+const visibleBorderCalls = afterLaterShift.calls.filter((call)=>call.top !== false);
+assert.equal(visibleBorderCalls.every((call)=>call.column === 1 && call.width === 4), true, 'all visual borders are limited to visible columns A:D');
+assert.equal(
+  visibleBorderCalls.some((call)=>call.top === true && call.right === true && call.width === 4),
+  true,
+  'monthly outer border ends immediately after visible column D'
+);
+assert.equal(
+  afterLaterShift.calls.some((call)=>call.width === 5 && call.top === false && call.right === false),
+  true,
+  'stale border cleanup still covers the full A:E report footprint'
+);
 
 const afterBackdatedShift = borderSheet([[3, 'SOLID_MEDIUM']]);
 clearAllBorders(afterBackdatedShift, expandedMonth.length);

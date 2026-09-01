@@ -886,10 +886,10 @@ function formatShiftReportBorders_(report, rows) {
     if (first !== '📊 РАЗОМ ЗА МІСЯЦЬ:' || !blockStart) return;
 
     var blockRows = index + 2 - blockStart;
-    report.getRange(blockStart, 1, blockRows, 5)
+    report.getRange(blockStart, 1, blockRows, 4)
       .setBorder(true, true, true, true, null, null, '#000000', medium)
       .setBorder(null, null, null, null, true, true, '#d9d9d9', solid);
-    report.getRange(index + 1, 1, 1, 5)
+    report.getRange(index + 1, 1, 1, 4)
       .setBorder(true, null, true, null, null, null, '#000000', medium);
     blockStart = 0;
   });
