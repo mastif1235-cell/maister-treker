@@ -237,6 +237,11 @@
     setTimeout(()=>map?.invalidateSize(),0);
     return map;
   }
+  function invalidateSize(){
+    if(!map)return false;
+    requestAnimationFrame(()=>map?.invalidateSize());
+    return true;
+  }
   function destroyPicker(){
     if(!picker)return;
     picker.observer?.disconnect();
@@ -275,5 +280,5 @@
     return picker;
   }
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,CATEGORY_META,mount,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer};
+  root.MTToolsMap={TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer};
 })(typeof window!=='undefined'?window:globalThis);

@@ -161,6 +161,7 @@ function bindSettingsScreen(){
   document.getElementById('showScriptBtn').addEventListener('click', showAppsScriptModal);
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
   document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
+  document.getElementById('openOfflineMapSettingsBtn').addEventListener('click', openOfflineMapSettings);
   document.getElementById('backupPasswordSaveBtn').addEventListener('click', saveBackupPasswordCredential);
   document.getElementById('backupPasswordChangeBtn').addEventListener('click', saveBackupPasswordCredential);
   document.getElementById('backupPasswordForgetBtn').addEventListener('click', forgetBackupPasswordCredential);

@@ -81,6 +81,10 @@ nav.tabbar{
 .tools-grid .btn{min-height:88px; flex-direction:column; font-size:15px;}
 .tools-grid .btn .tools-icon{font-size:28px;}
 .tools-map-shell{position:relative;}
+.tools-map-fullscreen-open{overflow:hidden;}
+.tools-map-shell.tools-map-fullscreen{position:fixed;inset:0;z-index:1900;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);background:var(--bg);}
+.tools-map-shell.tools-map-fullscreen .tools-map{width:100%;height:100%;min-height:0;border:0;border-radius:0;}
+.tools-map-shell.tools-map-fullscreen .tools-map-floating-controls{top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));}
 .tools-map{position:relative; height:min(62vh,520px); min-height:360px; overflow:hidden; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); touch-action:none;scroll-margin-top:calc(68px + env(safe-area-inset-top,0px));}
 .tools-map-floating-controls{position:absolute;z-index:1001;right:12px;top:12px;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
 .tools-map-floating-btn{width:46px;height:46px;min-width:46px;padding:0;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--surface) 94%,transparent);color:var(--text);box-shadow:0 3px 14px rgba(0,0,0,.3);font:700 23px/1 inherit;display:grid;place-items:center;pointer-events:auto;touch-action:manipulation;}
@@ -302,7 +306,7 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 @keyframes sheetUp{from{transform:translateY(16px); opacity:.6;} to{transform:translateY(0); opacity:1;}}
 .modal-head{display:flex; flex:0 0 auto; justify-content:space-between; align-items:center; margin-bottom:12px;}
 .modal #modalBody{min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;}
-.naryad-editor-overlay .modal{width:min(94vw,560px);max-width:calc(100vw - 20px);overflow-x:hidden}.naryad-editor-overlay #modalBody{overflow-x:hidden;padding-left:2px;padding-right:2px}.naryad-editor-textarea{display:block;width:100%;max-width:100%;min-height:120px;box-sizing:border-box;margin:0;padding:12px 14px;resize:vertical;overflow-x:hidden}
+.naryad-editor-overlay .modal{width:min(94vw,560px);max-width:calc(100vw - 20px);overflow-x:hidden}.naryad-editor-overlay #modalBody{overflow-x:hidden;padding:2px}.naryad-editor-textarea{display:block;width:100%;max-width:100%;min-height:120px;box-sizing:border-box;margin:0;padding:12px 14px;resize:vertical;overflow-x:hidden;border:1px solid var(--border);border-radius:var(--radius-sm)}.naryad-editor-textarea:focus{outline:2px solid var(--accent);outline-offset:-2px}
 .modal-head h3{margin:0; font-size:17px;}
 .modal-close{background:none; border:none; font-size:22px; color:var(--text-dim); padding:4px 8px;}
 .report-text{white-space:pre-wrap; font-family:var(--mono); font-size:12.5px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; max-height:40vh; overflow-y:auto;}

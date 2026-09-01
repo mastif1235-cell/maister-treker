@@ -31,8 +31,8 @@ const result={online:true,publicIp:'203.0.113.4',ipFamily:'IPv4',ipv4:true,resou
 const profile=core.profileFromTickets([tickets[0]]),record=core.makeDiagnosticRecord(result,profile,new Date('2026-08-30T10:00:00Z'));
 assert.equal(record.profileId,profile.id);assert.equal(record.result.latencyMs,25);
 const previous=core.makeDiagnosticRecord({...result,latencyMs:20},profile,new Date('2026-08-29T10:00:00Z'));
-assert.deepEqual(core.diagnosticComparison(record,previous).find(item=>item.key==='latencyMs'),{key:'latencyMs',label:'HTTP latency',unit:'мс',from:20,to:25});
-assert.match(core.diagnosticReport(result,null,new Date('2026-08-30T10:00:00Z')),/HTTP latency: 25 мс/);
+assert.deepEqual(core.diagnosticComparison(record,previous).find(item=>item.key==='latencyMs'),{key:'latencyMs',label:'Відгук інтернету',unit:'мс',from:20,to:25});
+assert.match(core.diagnosticReport(result,null,new Date('2026-08-30T10:00:00Z')),/Відгук інтернету: 25 мс/);
 assert.doesNotMatch(core.diagnosticReport(result,null,new Date('2026-08-30T10:00:00Z')),/Адреса:/,'quick report carries no address');
 
 const oldPayload={app:'master-tracker',backupVersion:6,tickets:[],shifts:[],settings:{theme:'dark'}};

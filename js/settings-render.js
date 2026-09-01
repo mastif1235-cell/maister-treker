@@ -37,6 +37,8 @@ function renderSettingsScreen(){
   renderCableMgmtList();
   renderMasterMgmtList();
   renderDailyBackupList();
+  const offlineStatus=document.getElementById('offlineMapSettingsStatus'),offlineMeta=window.MTOfflineMap?.readMeta?.();
+  if(offlineStatus)offlineStatus.textContent=offlineMeta?`✅ Офлайн-карта встановлена · ${MTOfflineMap.formatBytes(offlineMeta.size)}`:'Офлайн-карта не встановлена';
   void renderBackupPasswordStatus();
 }
 
@@ -191,7 +193,7 @@ const SETTINGS_HUB_SECTIONS = [
   {key:'sync', icon:'☁️', title:'Синхронізація', sub:'Google для заявок і змін', match:['Синхронізація — Заявки','Синхронізація — Зміни']},
   {key:'telegram', icon:'✈️', title:'Telegram', sub:'Диспетчери, архів і звіти', match:['Telegram-бот']},
   {key:'security', icon:'🔐', title:'Безпека', sub:'Пароль та відбиток пальця', match:['Захист входу']},
-  {key:'data', icon:'💾', title:'Дані та резервні копії', sub:'Кошик, імпорт, експорт і бекапи', match:['Кошик','Дані','Щоденні бекапи']},
+  {key:'data', icon:'💾', title:'Дані та резервні копії', sub:'Кошик, імпорт, експорт, офлайн-карта і бекапи', match:['Кошик','Дані','Офлайн-карта','Щоденні бекапи']},
   {key:'app', icon:'⚙️', title:'Застосунок', sub:'Ставка, тема та загальні параметри', match:['Параметри']},
 ];
 
@@ -213,6 +215,7 @@ const SETTINGS_HUB_ITEM_ICONS = [
   ['Кошик','🗑️'],
   ['Дані','💾'],
   ['Щоденні бекапи','🗄️'],
+  ['Офлайн-карта','🗺️'],
 ];
 
 function settingsHubSummaryText(detailsEl){

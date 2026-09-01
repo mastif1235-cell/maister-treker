@@ -85,7 +85,7 @@
   }
   function diagnosticComparison(current,previous){
     if(!current||!previous)return[];
-    const fields=[['downloadMbps','Download','Mbps'],['uploadMbps','Upload','Mbps'],['latencyMs','HTTP latency','мс'],['jitterMs','HTTP jitter','мс']];
+    const fields=[['downloadMbps','Download','Mbps'],['uploadMbps','Upload','Mbps'],['latencyMs','Відгук інтернету','мс'],['jitterMs','Стабільність відгуку','мс']];
     return fields.flatMap(([key,label,unit])=>{
       const from=Number(previous.result?.[key]),to=Number(current.result?.[key]);
       return Number.isFinite(from)&&Number.isFinite(to)?[{key,label,unit,from,to}]:[];
@@ -100,8 +100,8 @@
     r.resources.forEach(item=>lines.push(`${item.label}: ${item.ok?'доступний':'недоступний'}${item.httpMs!==null?`, HTTP ${item.httpMs} мс`:''}`));
     if(r.downloadMbps!==null)lines.push(`Download: ${r.downloadMbps} Mbps`);
     if(r.uploadMbps!==null)lines.push(`Upload: ${r.uploadMbps} Mbps`);
-    if(r.latencyMs!==null)lines.push(`HTTP latency: ${r.latencyMs} мс`);
-    if(r.jitterMs!==null)lines.push(`HTTP jitter: ${r.jitterMs} мс`);
+    if(r.latencyMs!==null)lines.push(`Відгук інтернету: ${r.latencyMs} мс`);
+    if(r.jitterMs!==null)lines.push(`Стабільність відгуку: ${r.jitterMs} мс`);
     return lines.join('\n');
   }
   function mapObjects(tickets=[],networkPoints=[]){
