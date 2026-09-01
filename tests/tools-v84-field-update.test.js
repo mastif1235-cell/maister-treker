@@ -12,13 +12,13 @@ const toggle=domain.match(/root\.addEventListener\('toggle',[^;]+;/s)?.[0]||'';a
 assert.match(domain,/toolsOpenNetworkPhotoViewer/);assert.match(styles,/tools-photo-viewer/);
 assert.match(domain,/toolsMoveNetworkPoint/);assert.match(domain,/if\(!picker\?\.hasChanged\(\)\)/);assert.match(map,/hasChanged:\(\)=>changed/);
 assert.match(map,/if\(initial\)setPoint\(initial,false,false\)/);assert.match(domain,/requestAnimationFrame\(\(\)=>requestAnimationFrame/);
-assert.match(domain,/const closePicker=\(\)=>\{MTToolsMap\.destroyPicker\(\);closeModal\(\);\}/);
+assert.match(domain,/const closePicker=\(\)=>\{MTToolsMap\.destroyPicker\(\);closeModal\(\);renderAddressNav\(\);\}/);
 
 // D-K: local-first Telegram single send/update, durable ref, no silent duplicate.
 assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('await toolsSendNetworkPointTelegram(normalized'));
 assert.match(domain,/toolsNetworkTelegramSending=new Set/);assert.match(domain,/editTelegramTextMessage\(current\.telegramChatId,current\.telegramMessageId,text\)/);
 assert.match(telegram,/async function editTelegramTextMessage/);assert.doesNotMatch(domain,/Створити ще одне повідомлення/);
-assert.match(domain,/telegramMediaUpdatePending/);assert.match(domain,/формат існуючого повідомлення не дозволяє безпечно замінити медіа/);
+assert.match(domain,/telegramMediaUpdatePending/);assert.match(domain,/Telegram-медіа без message ID неможливо безпечно змінити/);
 assert.match(domain,/NETWORK_POINT_JSON/);assert.match(domain,/master-tracker-network-point-v1/);
 
 // N-S: many-to-many stable links, reverse history, unlink and safe delete cleanup.
@@ -36,6 +36,6 @@ assert.match(editor,/equipmentTotal=.*reduce/);assert.match(html,/Для рем�
 // AA/AB and mobile editor safety.
 assert.match(domain,/name="mt-internal-profile-search"/);assert.match(domain,/role="searchbox"/);assert.match(domain,/autocomplete="off"/);
 const point=core.normalizeNetworkPoint({id:'stable',type:'Муфта',lat:48,lng:37,telegramChatId:'-1001',telegramMessageId:7,photoKeys:['idb:p']},new Date('2026-09-01T12:00:00Z'));assert.equal(point.id,'stable');assert.equal(point.telegramMessageId,7);assert.deepEqual(point.photoKeys,['idb:p']);
-assert.match(styles,/tools-point-editor-overlay textarea\{width:100%/);assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v84 · 2026-09-01/);assert.match(read('sw.js'),/maister-treker-v66-runtime-26/);
+assert.match(styles,/tools-point-editor-overlay textarea,.tools-point-editor-modal textarea\{width:100%/);assert.match(styles,/tools-point-editor-footer\{position:sticky/);
+assert.match(app,/v85 · 2026-09-01/);assert.match(read('sw.js'),/maister-treker-v66-runtime-27/);
 console.log('PASS v84 network tree/viewer/Telegram update/links, repair threshold and coordinate-modal regressions');

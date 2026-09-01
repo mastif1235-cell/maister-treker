@@ -142,6 +142,7 @@
       telegramSendPending:value.telegramSendPending===true,
       telegramMediaUpdatePending:value.telegramMediaUpdatePending===true,
       telegramPhotoSignature:text(value.telegramPhotoSignature).slice(0,500),
+      telegramMediaRefs:(Array.isArray(value.telegramMediaRefs)?value.telegramMediaRefs:[]).map(ref=>({photoKey:text(ref?.photoKey).slice(0,500),messageId:Number(ref?.messageId)||0})).filter(ref=>ref.photoKey&&Number.isSafeInteger(ref.messageId)&&ref.messageId>0).slice(0,3),
       createdAt,updatedAt:safeNow.toISOString()
     };
   }

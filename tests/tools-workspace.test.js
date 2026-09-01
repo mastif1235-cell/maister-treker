@@ -48,7 +48,8 @@ assert.match(domain,/toolsDiagnostics\.push\(record\)/,'only explicit save path 
 assert.match(domain,/navigator\.clipboard\.writeText\(report\)/,'copy path is present');
 assert.doesNotMatch(domain,/syncEngine\.|syncAll/,'tools never trigger bulk or direct sync-engine operations');
 assert.match(domain,/await saveTickets\(\)/,'address coordinates persist only after explicit confirmation');
-assert.match(domain,/sendToTelegramChat\(chatId,text,photos\[0\]/,'network point Telegram sharing reuses the existing explicit transport');
+assert.match(domain,/sendToTelegramChat\(chatId,text,null,null\)/,'network point Telegram sharing sends one canonical text publication');
+assert.match(domain,/sendTelegramPhotoMessage\(chatId,key/,'network point photos use the explicit media transport without duplicating the text publication');
 assert.match(domain,/storePhoto\(canvas\.toDataURL/,'network point photos reuse the existing photo store');
 assert.match(backupSource,/diagnostics:tools\.diagnostics/);assert.match(backupSource,/networkPoints:tools\.networkPoints/);
 assert.match(backupSource,/toolsRestoreData/,'restore includes optional local tools data');

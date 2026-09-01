@@ -128,18 +128,18 @@
           <div id="fullFormFields">
           <div class="field">
             <label>Місто</label>
-            <input type="text" id="f_city" list="cityDatalist" placeholder="Місто / селище" autocomplete="off">
+            <input type="text" id="f_city" name="mt-internal-ticket-city" list="cityDatalist" placeholder="Місто / селище" autocomplete="off" autocorrect="off" spellcheck="false">
             <datalist id="cityDatalist"></datalist>
           </div>
           <div class="field">
             <label>Вулиця</label>
-            <input type="text" id="f_street" list="streetDatalist" placeholder="вулиця" autocomplete="off">
+            <input type="text" id="f_street" name="mt-internal-ticket-street" list="streetDatalist" placeholder="вулиця" autocomplete="off" autocorrect="off" spellcheck="false">
             <datalist id="streetDatalist"></datalist>
           </div>
           <div class="row" style="gap:10px;">
             <div class="field" style="flex:1;">
               <label>Будинок</label>
-              <input type="text" id="f_house" placeholder="буд." autocomplete="off">
+              <input type="text" id="f_house" name="mt-internal-ticket-location" placeholder="буд." autocomplete="off" autocorrect="off" spellcheck="false">
             </div>
             <div class="field" style="flex:1;">
               <label>Квартира</label>
@@ -418,7 +418,7 @@
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Список для підказок при введенні міста в калькуляторі. Вводити вручну все одно можна — підказки лише допомагають.</div>
         <div class="tag-mgmt-list" id="cityMgmtList"></div>
         <div class="row">
-          <input type="text" id="newCityInput" placeholder="Нове місто">
+          <input type="text" id="newCityInput" name="mt-internal-new-city" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Нове місто">
           <button class="btn btn-icon" id="addCityBtn">+</button>
         </div>
         </div>
@@ -434,7 +434,7 @@
         </div>
         <div class="tag-mgmt-list" id="streetMgmtList"></div>
         <div class="row">
-          <input type="text" id="newStreetInput" placeholder="Нова вулиця">
+          <input type="text" id="newStreetInput" name="mt-internal-new-street" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Нова вулиця">
           <button class="btn btn-icon" id="addStreetBtn">+</button>
         </div>
         <button type="button" class="btn btn-sm btn-ghost btn-block" id="backfillAddrBtn" style="margin-top:12px;">🔄 Підтягнути з наявних заявок</button>

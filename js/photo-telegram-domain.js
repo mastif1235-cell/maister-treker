@@ -293,6 +293,27 @@ async function editTelegramTextMessage(chatId,messageId,text){
     return{ok:false,reason:data.description||'editMessageText failed'};
   }catch(error){return{ok:false,reason:String(error)};}
 }
+async function sendTelegramPhotoMessage(chatId,photoKey,caption=''){
+  const token=(settings.tgBotToken||'').trim();
+  if(!token||!chatId||!photoKey)return{ok:false,reason:'не налаштовано Telegram photo'};
+  try{
+    const photoData=await resolvePhotoAsync(photoKey,null);if(!photoData)return{ok:false,reason:'локальне фото недоступне'};
+    const blob=await(await fetch(photoData)).blob(),form=new FormData();
+    form.append('chat_id',String(chatId));form.append('photo',blob,'network-point.jpg');
+    if(caption)form.append('caption',String(caption).slice(0,1000));
+    const response=await fetch(`https://api.telegram.org/bot${token}/sendPhoto`,{method:'POST',body:form}),data=await response.json();
+    if(!data.ok)return{ok:false,reason:data.description||'sendPhoto failed'};
+    return{ok:true,chatId:String(chatId),messageId:Number(data.result?.message_id)||0};
+  }catch(error){return{ok:false,reason:String(error)};}
+}
+async function deleteTelegramMessageById(chatId,messageId){
+  const token=(settings.tgBotToken||'').trim();
+  if(!token||!chatId||!messageId)return{ok:false,reason:'не налаштовано Telegram reference'};
+  try{
+    const response=await fetch(`https://api.telegram.org/bot${token}/deleteMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:String(chatId),message_id:Number(messageId)})}),data=await response.json();
+    return data.ok?{ok:true}:{ok:false,reason:data.description||'deleteMessage failed'};
+  }catch(error){return{ok:false,reason:String(error)};}
+}
 function telegramRetryAfterMs(response, data){
   const jsonSeconds=Number(data && data.parameters && data.parameters.retry_after);
   const headerSeconds=Number(response && response.headers && response.headers.get && response.headers.get('Retry-After'));

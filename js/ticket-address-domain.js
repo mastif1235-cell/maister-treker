@@ -407,8 +407,8 @@ function showEditAbonentProfile(profileJson){
   const ids = data.ids || [];
   const bodyHtml = `
     <div class="row" style="gap:10px;">
-      <div class="field" style="flex:1;"><label>Місто</label><input type="text" id="abonentEditCity" list="abonentEditCityDatalist" autocomplete="off" value="${escapeHtml(data.city||'')}"><datalist id="abonentEditCityDatalist"></datalist></div>
-      <div class="field" style="flex:2;"><label>Вулиця</label><input type="text" id="abonentEditStreet" list="abonentEditStreetDatalist" autocomplete="off" value="${escapeHtml(data.street||'')}"><datalist id="abonentEditStreetDatalist"></datalist></div>
+      <div class="field" style="flex:1;"><label>Місто</label><input type="text" id="abonentEditCity" name="mt-internal-profile-city" list="abonentEditCityDatalist" autocomplete="off" autocorrect="off" spellcheck="false" value="${escapeHtml(data.city||'')}"><datalist id="abonentEditCityDatalist"></datalist></div>
+      <div class="field" style="flex:2;"><label>Вулиця</label><input type="text" id="abonentEditStreet" name="mt-internal-profile-street" list="abonentEditStreetDatalist" autocomplete="off" autocorrect="off" spellcheck="false" value="${escapeHtml(data.street||'')}"><datalist id="abonentEditStreetDatalist"></datalist></div>
     </div>
     <div class="row" style="gap:10px; margin-top:10px;">
       <div class="field" style="flex:1;"><label>Будинок</label><input type="text" id="abonentEditHouse" value="${escapeHtml(data.house||'')}"></div>
@@ -515,7 +515,7 @@ function renderAddressNav(){
   const title = addrNavTitle();
   const topHtml = `
     <div class="row" style="gap:6px; margin-bottom:10px;">
-      <input type="text" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off">
+      <input type="search" role="searchbox" name="mt-internal-profile-search" inputmode="search" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
       <button type="button" class="btn btn-icon" id="addrNavClearSearchBtn" title="Очистити пошук">✕</button>
     </div>
     <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
