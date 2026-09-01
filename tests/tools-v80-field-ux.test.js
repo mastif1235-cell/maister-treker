@@ -14,7 +14,7 @@ assert.equal(homes.length,1,'coordinate variants share one house marker and opaq
 const point=core.normalizeNetworkPoint({type:'Муфта',name:'Муфта біля опори',city:'Курахове',street:'Академіка Павлова',house:'опора 7',lat:47.99,lng:37.25,note:'ОСИ',photoKeys:['idb:1','idb:2']},new Date('2026-08-31T10:00:00Z'));
 assert.equal(core.networkPointAddress(point),'Курахове, Академіка Павлова, опора 7');assert.equal(point.photoKeys.length,2);assert.equal(core.searchNetworkPoints([point],'академіка').length,1);assert.equal(core.searchNetworkPoints([point],'оси').length,1);
 assert.match(domain,/map-add-object/);assert.match(domain,/FOB|Муфта/);assert.match(domain,/map-my-location/);assert.match(map,/showUserLocation/);assert.match(map,/accuracy/);
-assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(isNew)await toolsSendNetworkPointTelegram'),'local save precedes automatic Telegram transport for a new point');
+assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('await toolsSendNetworkPointTelegram(normalized'),'local save precedes automatic Telegram transport/update');
 assert.match(domain,/multiple/);assert.match(domain,/slice\(0,3\)/);assert.match(domain,/toolsNetworkSearch/);
 
 const estimate=core.estimateOfflineArea({minLat:48,minLng:37,maxLat:48.1,maxLng:37.1},10,12);assert.ok(estimate.tiles>0&&estimate.bytes>0);

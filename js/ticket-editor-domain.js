@@ -233,6 +233,7 @@ function updateCredParsedHint(){
 }
 
 function fillFormFromState(){
+  calcState.networkPointIds=typeof MTToolsCore!=='undefined'?MTToolsCore.networkPointIds(calcState.networkPointIds):(Array.isArray(calcState.networkPointIds)?calcState.networkPointIds:[]);
   document.getElementById('f_type').value = calcState.type || 'Підключення';
   document.getElementById('f_otherNote').value = calcState.otherNote || '';
   renderMasterChips();
@@ -281,6 +282,7 @@ function fillFormFromState(){
   renderCalcTagChips();
   renderPhotoPreview();
   renderGeoBadge();
+  if(typeof toolsRenderTicketNetworkLinks==='function')toolsRenderTicketNetworkLinks();
   computeTotal();
 }
 
@@ -340,6 +342,8 @@ function computeTotal(){
     return calculation.total;
   }
   calculation = calculateTicketTotal({
+    type:getEffectiveType(),
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0,
     payment: paymentEl ? paymentEl.value : '',
     callFee:safeNonNegativeNumber(document.getElementById('f_callFee').value),
     tariff:safeNonNegativeNumber(document.getElementById('f_tariff').value),
@@ -564,8 +568,9 @@ function applyDefaultTypeTag(){
 function applyDefaultCallFee(){
   // У режимі редагування автопідстановка ціни вимкнена, але сам підсумок
   // однаково має одразу реагувати на зміну обладнання.
-  if(!feeIsAutoDefault || calcState.cloudImported){ computeTotal(); return; }
+  if(calcState.cloudImported){ computeTotal(); return; }
   const type = getEffectiveType();
+  if(!feeIsAutoDefault&&type!=='Ремонт'){computeTotal();return;}
   let def = null;
   if(type === 'Підключення') def = Number(settings.defaultConnectFee) || 0;
   else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
@@ -574,7 +579,8 @@ function applyDefaultCallFee(){
   // ніколи не залежить від проданого обладнання. Нульова позиція теж не
   // може спрацювати, навіть якщо майстер поставить поріг 0 грн.
   const threshold = Number(settings.freeRepairCallThreshold) || 0;
-  if(type === 'Ремонт' && (calcState.equipment||[]).some(e=>e.checked && Number(e.price)>0 && Number(e.price)>=threshold)) def = 0;
+  const equipmentTotal=(calcState.equipment||[]).reduce((sum,item)=>sum+(item.checked?safeNonNegativeNumber(item.price):0),0);
+  if(type === 'Ремонт' && threshold>0 && equipmentTotal>=threshold) def = 0;
   document.getElementById('f_callFee').value = def;
   computeTotal();
 }
@@ -589,6 +595,7 @@ function applyDefaultTariff(){
 }
 
 function syncFormToState(){
+  calcState.networkPointIds=typeof MTToolsCore!=='undefined'?MTToolsCore.networkPointIds(calcState.networkPointIds):(Array.isArray(calcState.networkPointIds)?calcState.networkPointIds:[]);
   calcState.type = getEffectiveType();
   calcState.otherNote = document.getElementById('f_otherNote').value.trim();
   // NEW: для ремонту номер договору абонента вводиться вручну (абонент вже

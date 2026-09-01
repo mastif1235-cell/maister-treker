@@ -140,6 +140,8 @@
       photoKey:text(value.photoKey),photoKeys:[...new Set((Array.isArray(value.photoKeys)?value.photoKeys:[value.photoKey]).map(text).filter(Boolean))].slice(0,3),
       telegramChatId:text(value.telegramChatId).slice(0,80),telegramMessageId:Number.isSafeInteger(Number(value.telegramMessageId))&&Number(value.telegramMessageId)>0?Number(value.telegramMessageId):0,
       telegramSendPending:value.telegramSendPending===true,
+      telegramMediaUpdatePending:value.telegramMediaUpdatePending===true,
+      telegramPhotoSignature:text(value.telegramPhotoSignature).slice(0,500),
       createdAt,updatedAt:safeNow.toISOString()
     };
   }
@@ -162,6 +164,11 @@
     const targetId=text(id),removed=points.find(point=>text(point?.id)===targetId)||null;
     return {removed,points:removed?points.filter(point=>text(point?.id)!==targetId):points.slice()};
   }
+  function networkPointIds(value=[]){return [...new Set((Array.isArray(value)?value:[]).map(text).filter(Boolean))];}
+  function linkNetworkPoint(ids=[],id=''){const target=text(id);return networkPointIds(target?[...ids,target]:ids);}
+  function unlinkNetworkPoint(ids=[],id=''){const target=text(id);return networkPointIds(ids).filter(value=>value!==target);}
+  function ticketsForNetworkPoint(tickets=[],id=''){const target=text(id);return tickets.filter(ticket=>networkPointIds(ticket?.networkPointIds).includes(target));}
+  function removeNetworkPointLinks(tickets=[],id=''){const target=text(id),changed=[];tickets.forEach(ticket=>{const before=networkPointIds(ticket?.networkPointIds),after=before.filter(value=>value!==target);if(after.length!==before.length){ticket.networkPointIds=after;changed.push(ticket);}});return changed;}
   function tileRange(lon,lat,zoom){
     const n=2**zoom,x=Math.floor((lon+180)/360*n),rad=lat*Math.PI/180,y=Math.floor((1-Math.asinh(Math.tan(rad))/Math.PI)/2*n);
     return{x:Math.max(0,Math.min(n-1,x)),y:Math.max(0,Math.min(n-1,y))};
@@ -193,5 +200,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

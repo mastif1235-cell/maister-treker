@@ -30,15 +30,15 @@ assert.match(domain,/toolsFocusNetworkPoint[\s\S]*MTToolsMap\.focusPoint/);
 assert.match(domain,/toolsSelectedNetworkPointId/);assert.match(domain,/toolsHighlightNetworkPointInList/);
 assert.match(domain,/toolsAddressSearch/);assert.match(domain,/profile\.apartment/);assert.match(domain,/profile\.address/);
 
-// Telegram is automatic only for a newly saved object, durable and deduplicated.
-assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(isNew)await toolsSendNetworkPointTelegram'));
+// Telegram is durable, deduplicated and updates the existing publication after local save.
+assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('await toolsSendNetworkPointTelegram(normalized'));
 assert.match(domain,/const toolsNetworkTelegramSending=new Set\(\)/);
 assert.match(domain,/toolsNetworkTelegramSending\.has\(current\.id\)/);
 assert.match(domain,/toolsNetworkTelegramSending\.add\(current\.id\)/);
 assert.match(domain,/finally\{toolsNetworkTelegramSending\.delete\(current\.id\)/);
-assert.match(domain,/hasReference&&!options\.republish/);
+assert.match(domain,/hasReference&&!options\.updateExisting&&!options\.republish/);
 assert.match(domain,/telegramSendPending=true/);assert.match(domain,/telegramSendPending=false/);
-assert.match(domain,/Створити ще одне повідомлення цього об’єкта в Telegram\?/);
+assert.match(domain,/editTelegramTextMessage/);
 assert.match(domain,/Повторити відправлення/);
 const restoredPoint=core.sanitizeNetworkPoints([{...points[0],telegramChatId:'-1001234567',telegramMessageId:44,telegramSendPending:true,photoKeys:['idb:p1']}])[0];
 assert.equal(restoredPoint.telegramMessageId,44);assert.equal(restoredPoint.telegramSendPending,true);assert.deepEqual(restoredPoint.photoKeys,['idb:p1']);
@@ -70,6 +70,6 @@ assert.match(domain,/state\.log=state\.log\.slice\(0,20\)/);
 assert.match(domain,/toolsStopConnectionCheck/);assert.match(read('js/ui-orchestration.js'),/if\(tab!=='tools'/);
 assert.doesNotMatch(domain,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
 
-assert.match(sw,/maister-treker-v66-runtime-25/);
-assert.match(read('app.js'),/v83 · 2026-09-01/);
+assert.match(sw,/maister-treker-v66-runtime-26/);
+assert.match(read('app.js'),/v84 · 2026-09-01/);
 console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and honest availability check');

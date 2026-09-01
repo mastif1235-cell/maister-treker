@@ -283,6 +283,16 @@ async function fetchWithRetry(url, opts, retries=1){
     return fetchWithRetry(url, opts, retries-1);
   } finally { clearTimeout(timeoutId); }
 }
+async function editTelegramTextMessage(chatId,messageId,text){
+  const token=(settings.tgBotToken||'').trim();
+  if(!token||!chatId||!messageId)return{ok:false,reason:'не налаштовано Telegram reference'};
+  try{
+    const response=await fetch(`https://api.telegram.org/bot${token}/editMessageText`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,message_id:Number(messageId),text:String(text||'').slice(0,4000)})});
+    const data=await response.json();
+    if(data.ok||/message is not modified/i.test(String(data.description||'')))return{ok:true,chatId:String(chatId),messageId:Number(messageId)};
+    return{ok:false,reason:data.description||'editMessageText failed'};
+  }catch(error){return{ok:false,reason:String(error)};}
+}
 function telegramRetryAfterMs(response, data){
   const jsonSeconds=Number(data && data.parameters && data.parameters.retry_after);
   const headerSeconds=Number(response && response.headers && response.headers.get && response.headers.get('Retry-After'));

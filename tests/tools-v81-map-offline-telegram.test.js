@@ -15,7 +15,7 @@ const oldPoint=core.normalizeNetworkPoint({id:'p1',type:'FOB',lat:48,lng:37,phot
 assert.equal(oldPoint.id,'p1');assert.deepEqual(oldPoint.photoKeys,['idb:photo']);assert.equal(oldPoint.telegramChatId,'-100123456');assert.equal(oldPoint.telegramMessageId,77,'point data and real Telegram reference survive normalization');
 assert.match(telegram,/return \{ok:true,chatId:String\(chatId\),messageId:Number\(msgData\.result\?\.message_id\)\|\|0\}/,'transport exposes confirmed Telegram reference');
 assert.match(telegram,/function telegramNetworkMessageLink[\s\S]*\/\^-100\\d\+\$\//,'network deep-link accepts only a real supergroup reference');
-assert.match(domain,/telegramNetworkMessageLink\(firstResult\.chatId,firstResult\.messageId\)/);assert.match(domain,/Відкрити в Telegram/);assert.match(domain,/Надіслати повторно/);
+assert.match(domain,/telegramNetworkMessageLink\(firstResult\.chatId,firstResult\.messageId\)/);assert.match(domain,/Відкрити в Telegram/);assert.match(domain,/Оновити в Telegram/);
 
 assert.match(domain,/Зберегти межі області \(\.json\)/);assert.match(domain,/Це лише межі та масштаб, не файл карти/);assert.match(domain,/Додати офлайн-карту \(\.pmtiles\)/);
 assert.match(domain,/parsed\?\.format==='master-tracker-offline-area-v1'/);assert.match(domain,/Це файл параметрів області, а не офлайн-карта/);assert.match(domain,/Потрібен файл офлайн-карти у форматі \.pmtiles/);

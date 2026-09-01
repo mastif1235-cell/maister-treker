@@ -45,6 +45,7 @@ function renderTicketCard(t, opts={}){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
   const signalText = formatOnuSignal(t.signal);
+  const linkedPoints=(typeof toolsNetworkPoints!=='undefined'?toolsNetworkPoints:[]).filter(point=>(Array.isArray(t.networkPointIds)?t.networkPointIds:[]).map(String).includes(String(point.id)));
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
   const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
@@ -93,7 +94,7 @@ function renderTicketCard(t, opts={}){
       </div>
     </div>
     ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
-    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
+    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
@@ -104,6 +105,7 @@ function renderTicketCard(t, opts={}){
       ${((t.login || t.password) && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
+      ${(!opts.workOnly&&linkedPoints.length)?`<div class="tc-network-links"><strong>📡 Об’єкти мережі</strong>${linkedPoints.map(point=>`<div class="row between"><button type="button" class="btn btn-sm ticket-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml((typeof MTToolsCore!=='undefined'&&MTToolsCore.networkPointAddress(point))||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger ticket-network-unlink" data-ticket-id="${escapeHtml(t.id)}" data-point-id="${escapeHtml(point.id)}">Відв’язати</button></div>`).join('')}</div>`:''}
       ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : (!hasContent && opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}

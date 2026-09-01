@@ -157,6 +157,10 @@
             </div>
           </div>
           <button type="button" class="btn btn-block" id="calcDiagnosticsBtn" style="margin-bottom:10px;">🛠 Діагностика за цією адресою</button>
+          <div class="card calc-network-links" id="calcNetworkPointCard">
+            <div class="row between"><strong>📡 Об’єкт мережі</strong><button type="button" class="btn btn-sm" id="calcNetworkPointAddBtn">Прив’язати об’єкт</button></div>
+            <div id="calcNetworkPointLinks" style="margin-top:8px;"></div>
+          </div>
           <div class="field">
             <label>ПІБ клієнта</label>
             <input type="text" id="f_client" autocomplete="off">
@@ -518,7 +522,7 @@
           <input type="number" id="defaultRepairCallFeeInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
         <div class="settings-row">
-          <div><div class="sr-title">Поріг безкоштовного виклику, грн</div><div class="sr-sub">Лише для ремонту та лише за обладнанням</div></div>
+          <div><div class="sr-title">Поріг безкоштовного виклику, грн</div><div class="sr-sub">Для ремонту: якщо сума вибраного обладнання дорівнює або перевищує цей поріг, вартість виклику не додається.</div></div>
           <input type="number" id="freeRepairCallThresholdInput" min="0" style="width:100px; min-height:38px; padding:6px 10px;">
         </div>
         </div>

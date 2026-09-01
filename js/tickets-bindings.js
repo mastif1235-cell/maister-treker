@@ -95,6 +95,14 @@ function bindTicketsScreen(){
     renderTicketsScreen();
   });
   document.getElementById('ticketList').addEventListener('click', e=>{
+    const networkOpen=e.target.closest('.ticket-network-open');
+    const networkUnlink=e.target.closest('.ticket-network-unlink');
+    if(networkOpen){toolsShowNetworkPoint(networkOpen.dataset.pointId);return;}
+    if(networkUnlink){
+      if(!confirm('Відв’язати об’єкт від заявки?'))return;
+      const ticket=tickets.find(item=>String(item.id)===String(networkUnlink.dataset.ticketId));if(!ticket)return;
+      ticket.networkPointIds=MTToolsCore.unlinkNetworkPoint(ticket.networkPointIds,networkUnlink.dataset.pointId);saveTickets().then(renderTicketsScreen);return;
+    }
     const editBtn  = e.target.closest('.edit-ticket-btn');
     const delBtn   = e.target.closest('.delete-ticket-btn');
     const shareBtn = e.target.closest('.share-ticket-btn');

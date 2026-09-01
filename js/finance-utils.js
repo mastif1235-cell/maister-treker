@@ -13,9 +13,11 @@ function calculateTicketTotal(state){
   const emptyResult = {total:0, callFee:0, tariff:0, equipmentSum:0, cablesSum:0, additionalWorkSum:0, presetWorkSum:0};
   if(state.cloudImported) return {...emptyResult, total:safeNonNegativeNumber(state.rawSum)};
   if(state.payment === 'Безкоштовно') return emptyResult;
-  const callFee = safeNonNegativeNumber(state.callFee);
+  const configuredCallFee = safeNonNegativeNumber(state.callFee);
   const tariff = safeNonNegativeNumber(state.tariff);
   const equipmentSum = (state.equipment||[]).reduce((s,e)=> s + (e.checked ? safeNonNegativeNumber(e.price) : 0), 0);
+  const threshold=safeNonNegativeNumber(state.freeRepairCallThreshold);
+  const callFee=state.type==='Ремонт'&&threshold>0&&equipmentSum>=threshold?0:configuredCallFee;
   const cablesSum = (state.cables||[]).reduce((s,c)=> s + safeNonNegativeNumber(c.meters)*safeNonNegativeNumber(c.pricePerMeter), 0);
   const additionalWorkSum = (state.additionalWork||[]).reduce((s,w)=> s + safeNonNegativeNumber(w.sum), 0);
   const presetWorkSum = (state.presetWorks||[]).reduce((s,w)=> s + (w.checked ? safeNonNegativeNumber(w.price)*safeWorkQuantity(w.qty) : 0), 0);

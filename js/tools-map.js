@@ -255,28 +255,29 @@
     const pickerMap=root.L.map(container,{zoomControl:true,tap:true}).setView(initial?[initial.lat,initial.lng]:DEFAULT_CENTER,initial?17:6);
     let pickerTile=null;
     let marker=null;
-    function setPoint(value,center=true){
+    let changed=false;
+    function setPoint(value,center=true,notify=true){
       const point=validPoint(value);if(!point)return null;
       if(!marker){
         marker=root.L.marker([point.lat,point.lng],{icon:iconFor(null,true),draggable:true,title:'Обрана точка'}).addTo(pickerMap);
-        marker.on('dragend',()=>options.onChange?.(getPoint()));
+        marker.on('dragend',()=>{changed=true;options.onChange?.(getPoint());});
       }else marker.setLatLng([point.lat,point.lng]);
       if(center)pickerMap.setView([point.lat,point.lng],Math.max(pickerMap.getZoom(),17));
-      options.onChange?.(point);
+      if(notify){changed=true;options.onChange?.(point);}
       return point;
     }
     function getPoint(){if(!marker)return null;const point=marker.getLatLng();return{lat:point.lat,lng:point.lng};}
     pickerMap.on('click',event=>setPoint(event.latlng,false));
-    if(initial)setPoint(initial,false);
+    if(initial)setPoint(initial,false,false);
     const observer=new MutationObserver(()=>{if(!container.isConnected)destroyPicker();});
     observer.observe(document.body,{childList:true,subtree:true});
-    picker={map:pickerMap,tileLayer:pickerTile,observer,getPoint,setPoint,destroy:destroyPicker};
+    picker={map:pickerMap,tileLayer:pickerTile,observer,getPoint,setPoint,hasChanged:()=>changed,invalidateSize:()=>pickerMap.invalidateSize(),destroy:destroyPicker};
     const mountedPicker=picker;
     addBaseLayer(pickerMap,options.statusNode||null,options.baseMode,null).then(layer=>{
       if(picker===mountedPicker){picker.tileLayer=layer;}
       else if(layer){layer.remove();}
     }).catch(()=>setStatus(options.statusNode||null,'Підкладку не вдалося відкрити. Точку можна вказати за координатами.'));
-    setTimeout(()=>pickerMap.invalidateSize(),0);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>pickerMap.invalidateSize()));
     return picker;
   }
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
