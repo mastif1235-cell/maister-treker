@@ -166,7 +166,7 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
   const initialDate = editingNaryad ? naryadItemDate(editingNaryad, formatDate) : (defaultDate || today);
   const isEditing = !!editingNaryad;
   const bodyHtml = `
-    <textarea id="addNaryadInput" placeholder="Встав сюди текст наряду від диспетчера…" style="min-height:90px; width:calc(100% + 32px); margin-left:-16px; margin-right:-16px; border-radius:0;">${escapeHtml(editingNaryad ? editingNaryad.text : '')}</textarea>
+    <textarea id="addNaryadInput" class="naryad-editor-textarea" placeholder="Встав сюди текст наряду від диспетчера…">${escapeHtml(editingNaryad ? editingNaryad.text : '')}</textarea>
     <div class="row" style="gap:6px; margin-top:10px;">
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${today}" style="flex:1;">Сьогодні</button>
       <button type="button" class="btn btn-sm addNaryadDateBtn" data-date="${shiftDate(today,1)}" style="flex:1;">Завтра</button>
@@ -177,7 +177,7 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
       <input type="date" id="addNaryadDateInput" value="${ddmmyyyyToIso(initialDate)}">
     </div>
     <button type="button" class="btn btn-block btn-accent" id="addNaryadSaveBtn" style="margin-top:12px;">${isEditing ? '✅ Зберегти зміни' : '✅ Додати в чергу'}</button>`;
-  openModal(isEditing ? 'Редагувати наряд' : 'Новий наряд', bodyHtml, {onClose: ()=> showNaryadQueue(initialDate), onOpen: ()=>{
+  openModal(isEditing ? 'Редагувати наряд' : 'Новий наряд', bodyHtml, {overlayClass:'naryad-editor-overlay',onClose: ()=> showNaryadQueue(initialDate), onOpen: ()=>{
     document.getElementById('addNaryadInput').focus();
     document.querySelectorAll('.addNaryadDateBtn').forEach(btn=>{
       btn.addEventListener('click', ()=>{ document.getElementById('addNaryadDateInput').value = ddmmyyyyToIso(btn.dataset.date); });

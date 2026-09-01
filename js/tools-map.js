@@ -173,7 +173,7 @@
     const allSelected=selected.size===categories.length;
     filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{
       const key=button.dataset.mapFilter;
-      const active=key==='all'?allSelected:selected.has(key);
+      const active=key==='all'?allSelected:key==='none'?selected.size===0:selected.has(key);
       button.classList.toggle('active',active);
       button.setAttribute('aria-pressed',String(active));
     });
@@ -194,6 +194,8 @@
       const key=button.dataset.mapFilter;
       if(key==='all'){
         selected.clear();categories.forEach(category=>selected.add(category));
+      }else if(key==='none'){
+        selected.clear();
       }else if(selected.has(key))selected.delete(key);
       else selected.add(key);
       applyFilters(filterRoot);

@@ -10,12 +10,12 @@ assert.match(styles,/\.tools-map-editor-open\{padding-bottom:64vh/);assert.match
 assert.match(map,/startPointPlacement[\s\S]*map\.on\('click',clickHandler\)/,'2 add mode waits for a map tap');
 assert.match(map,/map\.panTo\(\[point\.lat,point\.lng\]/);assert.match(map,/scrollIntoView\(\{block:'start'\}\)/,'placed marker is kept in the visible map area above the sheet');
 assert.match(map,/title:'Новий об’єкт'\}\)\.addTo\(layer\)/);assert.match(map,/draggable:true/,'3 temporary marker is draggable');
-assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(send)await toolsSendNetworkPointTelegram'),'4 object is stored locally before optional transport');
+assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('if(isNew)await toolsSendNetworkPointTelegram'),'4 object is stored locally before automatic new-object transport');
 assert.match(map,/userLayer=root\.L\.layerGroup/);assert.match(map,/const layer=root\.L\.layerGroup\(\)\.addTo\(map\)/,'5 GPS and working marker use separate layers');
 assert.match(domain,/abonent-back-map-btn/);assert.match(address,/toolsMapReturnButtonHtml/);assert.match(addressDomain,/toolsReturnFromProfileToMap/,'6 profile has a direct return to map');
 assert.match(map,/savedView=\{lat:center\.lat,lng:center\.lng,zoom:map\.getZoom\(\)\}/);assert.match(map,/const selected=new Set\(categories\)/,'7 viewport and filters remain in map runtime');
 assert.match(domain,/toolsSendNetworkPointTelegram[\s\S]*sendToTelegramChat\(chatId,text/,'8 network point reuses existing Telegram transport');
-assert.match(domain,/Точку збережено локально[\s\S]*if\(send\)await toolsSendNetworkPointTelegram/,'9 Telegram failure cannot remove the locally saved point');
+assert.match(domain,/Точку збережено локально[\s\S]*if\(isNew\)await toolsSendNetworkPointTelegram/,'9 Telegram failure cannot remove the locally saved point');
 assert.match(domain,/toolsPointPhotoPreview/);assert.match(domain,/resolvePhotoAsync/,'10 saved point photos can be opened later');
 assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/);assert.doesNotMatch(domain,/result\.ipFamily\|\|''/,'11 IPv6 is hidden from results and profile history');
 assert.match(domain,/Перевірити швидкість/);assert.match(domain,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/rows\.push\(\['Download'/,'12 speed UX has no fake empty metrics');
