@@ -864,13 +864,35 @@ function refreshShiftReport_(ss) {
   var reportRange = report.getRange(1, 1, clearRows, 5);
   if (typeof reportRange.breakApart === 'function') reportRange.breakApart();
   reportRange.clearContent();
+  reportRange.setBorder(false, false, false, false, false, false);
 
   if (rows.length) {
     report.getRange(1, 1, rows.length, 5).setValues(rows);
     report.getRange(1, 1, rows.length, 2).setNumberFormat('@');
     report.getRange(1, 3, rows.length, 1).setNumberFormat('0.##');
     report.getRange(1, 4, rows.length, 2).setNumberFormat('@');
+    formatShiftReportBorders_(report, rows);
   }
+}
+
+function formatShiftReportBorders_(report, rows) {
+  var blockStart = 0;
+  var medium = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
+  var solid = SpreadsheetApp.BorderStyle.SOLID;
+
+  (rows || []).forEach(function (row, index) {
+    var first = String(row && row[0] || '');
+    if (first.indexOf('📅 МІСЯЦЬ: ') === 0) blockStart = index + 1;
+    if (first !== '📊 РАЗОМ ЗА МІСЯЦЬ:' || !blockStart) return;
+
+    var blockRows = index + 2 - blockStart;
+    report.getRange(blockStart, 1, blockRows, 5)
+      .setBorder(true, true, true, true, null, null, '#000000', medium)
+      .setBorder(null, null, null, null, true, true, '#d9d9d9', solid);
+    report.getRange(index + 1, 1, 1, 5)
+      .setBorder(true, null, true, null, null, null, '#000000', medium);
+    blockStart = 0;
+  });
 }
 
 function buildShiftReportRows_(shifts) {
