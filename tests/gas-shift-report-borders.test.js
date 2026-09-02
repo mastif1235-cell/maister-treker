@@ -40,7 +40,7 @@ function borderSheet(initialBorders) {
 }
 
 function clearAllBorders(sheet, rowCount) {
-  sheet.getRange(1, 1, rowCount, 5).setBorder(false, false, false, false, false, false);
+  sheet.getRange(1, 1, rowCount, 6).setBorder(false, false, false, false, false, false);
 }
 
 const expandedMonth = [
@@ -56,7 +56,7 @@ const reportRows = JSON.parse(JSON.stringify(context.buildShiftReportRows_([
   {id:'stable-shift-id', date:'25.08.2026', hours:8, coworker:'Сам'}
 ])));
 assert.equal(reportRows.every((row)=>row.length === 5), true, 'report data keeps its five-column schema');
-assert.equal(reportRows[2][4], 'stable-shift-id', 'stable shift ID remains in hidden column E');
+assert.equal(reportRows[2][4], 'stable-shift-id', 'stable shift ID remains the fifth projected value written to hidden column F');
 
 const afterLaterShift = borderSheet([[4, 'SOLID_MEDIUM']]);
 clearAllBorders(afterLaterShift, expandedMonth.length);
@@ -65,24 +65,24 @@ assert.equal(afterLaterShift.horizontal.get(4), 'SOLID', 'old month end becomes 
 assert.equal(afterLaterShift.horizontal.get(5), 'SOLID', 'monthly total starts with an ordinary thin internal border');
 assert.equal(afterLaterShift.horizontal.get(6), 'SOLID_MEDIUM', 'thick bottom border moves to the actual month end');
 const visibleBorderCalls = afterLaterShift.calls.filter((call)=>call.top !== false);
-assert.equal(visibleBorderCalls.every((call)=>call.column === 1 && call.width <= 4), true, 'all visual borders are limited to visible columns A:D');
+assert.equal(visibleBorderCalls.every((call)=>call.column === 2 && call.width <= 4), true, 'all visual borders are limited to visible columns B:E');
 assert.equal(
   visibleBorderCalls.some((call)=>call.top === true && call.right === true && call.width === 4),
   true,
-  'monthly outer border ends immediately after visible column D'
+  'monthly outer border ends immediately after visible column E'
 );
-const internalCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.vertical === true && call.innerHorizontal === true);
-const outerCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === true && call.left === true && call.bottom === true && call.right === true);
-assert.ok(internalCallIndex > -1 && outerCallIndex > internalCallIndex, 'closed A:D outer border is applied after all internal separators');
-const blockClearCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === false && call.left === false && call.bottom === false && call.right === false && call.vertical === false && call.innerHorizontal === false);
-assert.ok(blockClearCallIndex > -1 && blockClearCallIndex < internalCallIndex, 'each A:D month block clears all old borders before rebuilding them');
-const explicitLeftCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 1 && call.width === 1 && call.left === true && call.color === '#000000' && call.style === 'SOLID_MEDIUM');
-assert.ok(explicitLeftCallIndex > outerCallIndex, 'explicit left border for column A is applied after the closed A:D contour');
-assert.equal(explicitLeftCallIndex, afterLaterShift.calls.length - 1, 'explicit left border for column A is the final border operation for the month');
+const internalCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 2 && call.width === 4 && call.vertical === true && call.innerHorizontal === true);
+const outerCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 2 && call.width === 4 && call.top === true && call.left === true && call.bottom === true && call.right === true);
+assert.ok(internalCallIndex > -1 && outerCallIndex > internalCallIndex, 'closed B:E outer border is applied after all internal separators');
+const blockClearCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 2 && call.width === 4 && call.top === false && call.left === false && call.bottom === false && call.right === false && call.vertical === false && call.innerHorizontal === false);
+assert.ok(blockClearCallIndex > -1 && blockClearCallIndex < internalCallIndex, 'each B:E month block clears all old borders before rebuilding them');
+const explicitLeftCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 2 && call.width === 1 && call.left === true && call.color === '#000000' && call.style === 'SOLID_MEDIUM');
+assert.ok(explicitLeftCallIndex > outerCallIndex, 'explicit left border for column B is applied after the closed B:E contour');
+assert.equal(explicitLeftCallIndex, afterLaterShift.calls.length - 1, 'explicit left border for column B is the final border operation for the month');
 assert.equal(
-  afterLaterShift.calls.some((call)=>call.width === 5 && call.top === false && call.right === false),
+  afterLaterShift.calls.some((call)=>call.column === 1 && call.width === 6 && call.top === false && call.right === false),
   true,
-  'stale border cleanup still covers the full A:E report footprint'
+  'stale border cleanup covers both the legacy A:E and new B:F report footprints'
 );
 
 const afterBackdatedShift = borderSheet([[3, 'SOLID_MEDIUM']]);

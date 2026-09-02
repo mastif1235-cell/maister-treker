@@ -48,7 +48,7 @@ context.formatShiftReport_(sheet, rows);
 function rowStyle(firstCell) {
   const index = rows.findIndex((row)=>row[0] === firstCell);
   assert.notEqual(index, -1, `row ${firstCell} exists`);
-  return sheet.styles.get(`${index + 1}:1:1:4`);
+  return sheet.styles.get(`${index + 1}:2:1:4`);
 }
 
 assert.equal(rowStyle('22.06.2026').background, rowStyle('24.06.2026').background, 'June dates in one calendar week share a color');
@@ -63,7 +63,7 @@ const monthRows = rows.filter((row)=>String(row[0]).startsWith('📅 МІСЯЦ�
 const totalRows = rows.filter((row)=>row[0] === '📊 РАЗОМ ЗА МІСЯЦЬ:');
 for (const row of monthRows.concat(totalRows)) {
   const index = rows.indexOf(row);
-  const style = sheet.styles.get(`${index + 1}:1:1:4`);
+  const style = sheet.styles.get(`${index + 1}:2:1:4`);
   assert.equal(style.fontWeight, 'bold', 'month and total rows have explicit bold styling');
   assert.ok(style.background && !['#f3f4f6', '#eaf3ff', '#edf7ed'].includes(style.background), 'month and total rows do not inherit a weekly color');
 }

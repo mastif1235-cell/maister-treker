@@ -861,18 +861,22 @@ function refreshShiftReport_(ss) {
   var rows = buildShiftReportRows_(shifts);
   var report = ss.getSheetByName(SHIFT_REPORT_SHEET) || ss.insertSheet(SHIFT_REPORT_SHEET);
   var clearRows = Math.max(report.getLastRow(), rows.length, 1);
-  var reportRange = report.getRange(1, 1, clearRows, 5);
+  var reportRange = report.getRange(1, 1, clearRows, 6);
   if (typeof reportRange.breakApart === 'function') reportRange.breakApart();
   reportRange.clearContent();
   reportRange.setBackground(null);
   reportRange.setFontWeight('normal');
   reportRange.setBorder(false, false, false, false, false, false);
+  report.showColumns(1);
+  report.showColumns(5);
+  report.setColumnWidth(1, 12);
+  report.hideColumns(6);
 
   if (rows.length) {
-    report.getRange(1, 1, rows.length, 5).setValues(rows);
-    report.getRange(1, 1, rows.length, 2).setNumberFormat('@');
-    report.getRange(1, 3, rows.length, 1).setNumberFormat('0.##');
-    report.getRange(1, 4, rows.length, 2).setNumberFormat('@');
+    report.getRange(1, 2, rows.length, 5).setValues(rows);
+    report.getRange(1, 2, rows.length, 2).setNumberFormat('@');
+    report.getRange(1, 4, rows.length, 1).setNumberFormat('0.##');
+    report.getRange(1, 5, rows.length, 2).setNumberFormat('@');
     formatShiftReport_(report, rows);
     formatShiftReportBorders_(report, rows);
   }
@@ -881,7 +885,7 @@ function refreshShiftReport_(ss) {
 function formatShiftReport_(report, rows) {
   (rows || []).forEach(function (row, index) {
     var first = String(row && row[0] || '');
-    var range = report.getRange(index + 1, 1, 1, 4);
+    var range = report.getRange(index + 1, 2, 1, 4);
 
     if (first.indexOf('📅 МІСЯЦЬ: ') === 0) {
       range.setBackground('#d9ead3').setFontWeight('bold');
@@ -925,12 +929,12 @@ function formatShiftReportBorders_(report, rows) {
     if (first !== '📊 РАЗОМ ЗА МІСЯЦЬ:' || !blockStart) return;
 
     var blockRows = index + 2 - blockStart;
-    var blockRange = report.getRange(blockStart, 1, blockRows, 4);
+    var blockRange = report.getRange(blockStart, 2, blockRows, 4);
     blockRange
       .setBorder(false, false, false, false, false, false)
       .setBorder(null, null, null, null, true, true, '#d9d9d9', solid)
       .setBorder(true, true, true, true, null, null, '#000000', medium);
-    report.getRange(blockStart, 1, blockRows, 1)
+    report.getRange(blockStart, 2, blockRows, 1)
       .setBorder(null, true, null, null, null, null, '#000000', medium);
     blockStart = 0;
   });
