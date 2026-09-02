@@ -925,11 +925,11 @@ function formatShiftReportBorders_(report, rows) {
     if (first !== '📊 РАЗОМ ЗА МІСЯЦЬ:' || !blockStart) return;
 
     var blockRows = index + 2 - blockStart;
-    report.getRange(blockStart, 1, blockRows, 4)
+    var blockRange = report.getRange(blockStart, 1, blockRows, 4);
+    blockRange
+      .setBorder(false, false, false, false, false, false)
       .setBorder(null, null, null, null, true, true, '#d9d9d9', solid)
       .setBorder(true, true, true, true, null, null, '#000000', medium);
-    report.getRange(index + 1, 1, 1, 4)
-      .setBorder(true, null, true, null, null, null, '#000000', medium);
     blockStart = 0;
   });
 }

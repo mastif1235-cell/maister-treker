@@ -62,7 +62,7 @@ const afterLaterShift = borderSheet([[4, 'SOLID_MEDIUM']]);
 clearAllBorders(afterLaterShift, expandedMonth.length);
 context.formatShiftReportBorders_(afterLaterShift, expandedMonth);
 assert.equal(afterLaterShift.horizontal.get(4), 'SOLID', 'old month end becomes an ordinary internal border');
-assert.equal(afterLaterShift.horizontal.get(5), 'SOLID_MEDIUM', 'monthly total starts with the only thick internal border');
+assert.equal(afterLaterShift.horizontal.get(5), 'SOLID', 'monthly total starts with an ordinary thin internal border');
 assert.equal(afterLaterShift.horizontal.get(6), 'SOLID_MEDIUM', 'thick bottom border moves to the actual month end');
 const visibleBorderCalls = afterLaterShift.calls.filter((call)=>call.top !== false);
 assert.equal(visibleBorderCalls.every((call)=>call.column === 1 && call.width === 4), true, 'all visual borders are limited to visible columns A:D');
@@ -74,6 +74,9 @@ assert.equal(
 const internalCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.vertical === true && call.innerHorizontal === true);
 const outerCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === true && call.left === true && call.bottom === true && call.right === true);
 assert.ok(internalCallIndex > -1 && outerCallIndex > internalCallIndex, 'closed A:D outer border is applied after all internal separators');
+const blockClearCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === false && call.left === false && call.bottom === false && call.right === false && call.vertical === false && call.innerHorizontal === false);
+assert.ok(blockClearCallIndex > -1 && blockClearCallIndex < internalCallIndex, 'each A:D month block clears all old borders before rebuilding them');
+assert.equal(outerCallIndex, afterLaterShift.calls.length - 1, 'the closed A:D outer border is the final border operation for the month');
 assert.equal(
   afterLaterShift.calls.some((call)=>call.width === 5 && call.top === false && call.right === false),
   true,
