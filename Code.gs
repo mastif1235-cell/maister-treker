@@ -864,6 +864,8 @@ function refreshShiftReport_(ss) {
   var reportRange = report.getRange(1, 1, clearRows, 5);
   if (typeof reportRange.breakApart === 'function') reportRange.breakApart();
   reportRange.clearContent();
+  reportRange.setBackground(null);
+  reportRange.setFontWeight('normal');
   reportRange.setBorder(false, false, false, false, false, false);
 
   if (rows.length) {
@@ -871,8 +873,45 @@ function refreshShiftReport_(ss) {
     report.getRange(1, 1, rows.length, 2).setNumberFormat('@');
     report.getRange(1, 3, rows.length, 1).setNumberFormat('0.##');
     report.getRange(1, 4, rows.length, 2).setNumberFormat('@');
+    formatShiftReport_(report, rows);
     formatShiftReportBorders_(report, rows);
   }
+}
+
+function formatShiftReport_(report, rows) {
+  (rows || []).forEach(function (row, index) {
+    var first = String(row && row[0] || '');
+    var range = report.getRange(index + 1, 1, 1, 4);
+
+    if (first.indexOf('📅 МІСЯЦЬ: ') === 0) {
+      range.setBackground('#d9ead3').setFontWeight('bold');
+      return;
+    }
+    if (first === 'Дата') {
+      range.setBackground('#e2e3e5').setFontWeight('bold');
+      return;
+    }
+    if (first === '📊 РАЗОМ ЗА МІСЯЦЬ:') {
+      range.setBackground('#fff2cc').setFontWeight('bold');
+      return;
+    }
+
+    var weekColor = shiftReportWeekColor_(first);
+    if (weekColor) range.setBackground(weekColor).setFontWeight('normal');
+  });
+}
+
+function shiftReportWeekColor_(dateValue) {
+  var date = parseDdMmYyyy(dateValue);
+  if (!date) return '';
+
+  var dayUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  var weekdayFromMonday = (new Date(dayUtc).getUTCDay() + 6) % 7;
+  var mondayUtc = dayUtc - weekdayFromMonday * 24 * 60 * 60 * 1000;
+  var absoluteWeek = Math.floor(mondayUtc / (7 * 24 * 60 * 60 * 1000));
+  var colors = ['#f3f4f6', '#eaf3ff', '#edf7ed'];
+  var colorIndex = ((absoluteWeek % colors.length) + colors.length) % colors.length;
+  return colors[colorIndex];
 }
 
 function formatShiftReportBorders_(report, rows) {
@@ -887,8 +926,8 @@ function formatShiftReportBorders_(report, rows) {
 
     var blockRows = index + 2 - blockStart;
     report.getRange(blockStart, 1, blockRows, 4)
-      .setBorder(true, true, true, true, null, null, '#000000', medium)
-      .setBorder(null, null, null, null, true, true, '#d9d9d9', solid);
+      .setBorder(null, null, null, null, true, true, '#d9d9d9', solid)
+      .setBorder(true, true, true, true, null, null, '#000000', medium);
     report.getRange(index + 1, 1, 1, 4)
       .setBorder(true, null, true, null, null, null, '#000000', medium);
     blockStart = 0;

@@ -71,6 +71,9 @@ assert.equal(
   true,
   'monthly outer border ends immediately after visible column D'
 );
+const internalCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.vertical === true && call.innerHorizontal === true);
+const outerCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === true && call.left === true && call.bottom === true && call.right === true);
+assert.ok(internalCallIndex > -1 && outerCallIndex > internalCallIndex, 'closed A:D outer border is applied after all internal separators');
 assert.equal(
   afterLaterShift.calls.some((call)=>call.width === 5 && call.top === false && call.right === false),
   true,
@@ -103,8 +106,8 @@ assert.equal(
 
 assert.match(
   source,
-  /reportRange\.clearContent\(\);\s*reportRange\.setBorder\(false, false, false, false, false, false\);/,
-  'refresh clears stale borders across both the previous and current report footprint'
+  /reportRange\.clearContent\(\);\s*reportRange\.setBackground\(null\);\s*reportRange\.setFontWeight\('normal'\);\s*reportRange\.setBorder\(false, false, false, false, false, false\);/,
+  'refresh clears stale backgrounds, bold and borders across the previous and current report footprint'
 );
 
 console.log('PASS shift report month borders are rebuilt without stale internal month ends');
