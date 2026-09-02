@@ -65,7 +65,7 @@ assert.equal(afterLaterShift.horizontal.get(4), 'SOLID', 'old month end becomes 
 assert.equal(afterLaterShift.horizontal.get(5), 'SOLID', 'monthly total starts with an ordinary thin internal border');
 assert.equal(afterLaterShift.horizontal.get(6), 'SOLID_MEDIUM', 'thick bottom border moves to the actual month end');
 const visibleBorderCalls = afterLaterShift.calls.filter((call)=>call.top !== false);
-assert.equal(visibleBorderCalls.every((call)=>call.column === 1 && call.width === 4), true, 'all visual borders are limited to visible columns A:D');
+assert.equal(visibleBorderCalls.every((call)=>call.column === 1 && call.width <= 4), true, 'all visual borders are limited to visible columns A:D');
 assert.equal(
   visibleBorderCalls.some((call)=>call.top === true && call.right === true && call.width === 4),
   true,
@@ -76,7 +76,9 @@ const outerCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 
 assert.ok(internalCallIndex > -1 && outerCallIndex > internalCallIndex, 'closed A:D outer border is applied after all internal separators');
 const blockClearCallIndex = afterLaterShift.calls.findIndex((call)=>call.width === 4 && call.top === false && call.left === false && call.bottom === false && call.right === false && call.vertical === false && call.innerHorizontal === false);
 assert.ok(blockClearCallIndex > -1 && blockClearCallIndex < internalCallIndex, 'each A:D month block clears all old borders before rebuilding them');
-assert.equal(outerCallIndex, afterLaterShift.calls.length - 1, 'the closed A:D outer border is the final border operation for the month');
+const explicitLeftCallIndex = afterLaterShift.calls.findIndex((call)=>call.column === 1 && call.width === 1 && call.left === true && call.color === '#000000' && call.style === 'SOLID_MEDIUM');
+assert.ok(explicitLeftCallIndex > outerCallIndex, 'explicit left border for column A is applied after the closed A:D contour');
+assert.equal(explicitLeftCallIndex, afterLaterShift.calls.length - 1, 'explicit left border for column A is the final border operation for the month');
 assert.equal(
   afterLaterShift.calls.some((call)=>call.width === 5 && call.top === false && call.right === false),
   true,

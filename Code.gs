@@ -930,6 +930,8 @@ function formatShiftReportBorders_(report, rows) {
       .setBorder(false, false, false, false, false, false)
       .setBorder(null, null, null, null, true, true, '#d9d9d9', solid)
       .setBorder(true, true, true, true, null, null, '#000000', medium);
+    report.getRange(blockStart, 1, blockRows, 1)
+      .setBorder(null, true, null, null, null, null, '#000000', medium);
     blockStart = 0;
   });
 }
