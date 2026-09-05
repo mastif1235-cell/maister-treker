@@ -116,6 +116,12 @@ nav.tabbar{
 .tools-leaflet-pin.private{background:#3aa76d}.tools-leaflet-pin.apartment{background:#5666d8}.tools-leaflet-pin.fob{background:#e1922c}.tools-leaflet-pin.splice{background:#a368dc}.tools-leaflet-pin.node{background:#d94a4a}.tools-leaflet-pin.other{background:#59636d}.tools-leaflet-pin.picker{background:var(--accent);color:var(--accent-ink);}
 .tools-map .leaflet-control-attribution{font-size:9px;background:rgba(255,255,255,.88);}
 .tools-map .leaflet-control-zoom a{color:#111;}
+.tools-map-layer-switcher{display:flex;gap:3px;padding:3px;border-radius:9px;background:rgba(255,255,255,.94);box-shadow:0 1px 5px rgba(0,0,0,.35);}
+.tools-map-layer-switcher button{border:0;border-radius:7px;padding:7px 8px;background:transparent;color:#222;font:700 11px/1.1 inherit;white-space:nowrap;cursor:pointer;}
+.tools-map-layer-switcher button.active{background:#263541;color:#fff;}
+.maptiler-logo-control{margin:0 0 18px 8px!important;padding:3px 5px;border-radius:4px;background:rgba(255,255,255,.9);line-height:0;}
+.maptiler-logo-control img{display:block;width:72px;height:auto;}
+@media (max-width:420px){.tools-map-layer-switcher button{padding:6px;font-size:10px}.maptiler-logo-control img{width:62px}}
 .tools-result-row{display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
 .tools-result-row:last-child{border-bottom:0;}
 

@@ -196,7 +196,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
     : `<button type="button" class="btn btn-sm abonent-note-edit-btn" data-ids="${noteIdsJson}" data-note="" style="margin-top:8px;">📝 Додати примітку</button>`;
   // NEW: кнопки "Договір" і "Перейти" (геолокація) тепер тут, на рівні
   // профілю — а не дублюються в кожній картці заявки нижче
-  const geoTicket = list.find(t=>t.geoLink);
+  const geoTicket = list.find(t=>typeof MTToolsCore!=='undefined'&&MTToolsCore.googleMapsUrl(t));
   const mapPointTicket = list.find(t=>typeof MTToolsCore!=='undefined' && (MTToolsCore.parseCoordinates(`${t.geoLat??''},${t.geoLng??''}`)||MTToolsCore.parseCoordinates(t.geoLink)));
   // NEW: геолокацію тепер можна не лише переглянути ("Перейти"), а й
   // додати/виправити прямо з профілю — застосовується одразу до ВСІХ
@@ -212,7 +212,7 @@ function addrAbonentProfileHtml(list, keySuffix=''){
            логін/пароль від диспетчера, без офіційного номера) — кнопка
            тепер теж доступна, щоб абонент міг відсканувати ті ж дані. -->
       ${acctTicket ? `<button type="button" class="btn btn-sm contract-ticket-btn" data-id="${acctTicket.id}" style="flex:1;">📜 Договір</button>` : ''}
-      ${geoTicket ? `<a href="${escapeHtml(geoTicket.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">📍 Перейти</a>` : ''}
+      ${geoTicket ? `<a href="${escapeHtml(MTToolsCore.googleMapsUrl(geoTicket))}" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1; text-decoration:none; text-align:center;">🗺️ Google Maps</a>` : ''}
       ${geoEditBtnHtml}
       ${mapPointBtnHtml}
     </div>`;

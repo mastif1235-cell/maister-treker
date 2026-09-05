@@ -3,6 +3,8 @@
   'use strict';
 
   const TILE_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const MAPTILER_TILE_URL='https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg';
+  const MAPTILER_LOGO_URL='https://api.maptiler.com/resources/logo.svg';
   const DEFAULT_CENTER=[48.45,31.2];
   const CATEGORY_META={
     private:{label:'Приватні',icon:'🏠',className:'private'},
@@ -22,6 +24,7 @@
   let userLayer=null;
   let selectionLayer=null;
   let placement=null;
+  const baseStates=new WeakMap();
 
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
   function validPoint(value){
@@ -68,6 +71,39 @@
     layer._mtKind='online';
     return layer;
   }
+  function setLayerButtons(state,kind){
+    state?.controlNode?.querySelectorAll('[data-mt-base-layer]').forEach(button=>{
+      const active=button.dataset.mtBaseLayer===kind;
+      button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+    });
+  }
+  function removeMapTilerLogo(state){if(state?.logoControl){state.logoControl.remove();state.logoControl=null;}}
+  function addMapTilerLogo(targetMap,state){
+    removeMapTilerLogo(state);
+    const control=root.L.control({position:'bottomleft'});
+    control.onAdd=()=>{const wrap=root.L.DomUtil.create('div','maptiler-logo-control');wrap.innerHTML=`<a href="https://www.maptiler.com" target="_blank" rel="noopener"><img src="${MAPTILER_LOGO_URL}" alt="MapTiler"></a>`;root.L.DomEvent.disableClickPropagation(wrap);return wrap;};
+    control.addTo(targetMap);state.logoControl=control;
+  }
+  function removeCurrentBase(targetMap,state){
+    if(state?.layer&&targetMap.hasLayer(state.layer))targetMap.removeLayer(state.layer);
+    state?.coverageCleanup?.();state.coverageCleanup=null;removeMapTilerLogo(state);
+  }
+  function addSatelliteBaseLayer(targetMap,statusNode,state){
+    const key=root.MTMapTilerLocal?.getKey?.();
+    if(!key||root.navigator?.onLine===false)return null;
+    let failed=false;
+    const layer=root.L.tileLayer(`${MAPTILER_TILE_URL}?key=${encodeURIComponent(key)}`,{
+      tileSize:512,zoomOffset:-1,minZoom:1,maxZoom:22,crossOrigin:true,referrerPolicy:'strict-origin-when-cross-origin',
+      attribution:'&copy; <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>'
+    });
+    layer.on('tileerror',()=>{
+      if(failed||baseStates.get(targetMap)?.layer!==layer)return;failed=true;
+      root.MTMapTilerLocal?.saveLayer?.('map');
+      switchBaseLayer(targetMap,'map',statusNode,{remember:false,message:'Супутниковий шар недоступний: перевірте ключ або квоту. Відкрито звичайну карту.'});
+    });
+    layer.on('tileload',()=>{if(!failed)setStatus(statusNode,'');});
+    layer.addTo(targetMap);state.kind='satellite';state.layer=layer;addMapTilerLogo(targetMap,state);return layer;
+  }
   function setOfflineEmptyState(node,visible){
     if(node)node.classList.toggle('hidden',!visible);
   }
@@ -89,8 +125,42 @@
   }
   async function addBaseLayer(targetMap,statusNode,requestedMode,emptyStateNode){
     const mode=requestedMode||root.MTOfflineMap?.getMode?.()||'auto';
-    if(mode==='online'||(mode==='auto'&&root.navigator?.onLine!==false)){setOfflineEmptyState(emptyStateNode,false);return addOnlineBaseLayer(targetMap,statusNode);}
-    return addOfflineBaseLayer(targetMap,statusNode,emptyStateNode);
+    const state=baseStates.get(targetMap)||{layer:null,kind:'map',statusNode,emptyStateNode,mode};baseStates.set(targetMap,state);
+    if(mode==='online'||(mode==='auto'&&root.navigator?.onLine!==false)){
+      setOfflineEmptyState(emptyStateNode,false);
+      const preferred=root.MTMapTilerLocal?.getLayer?.()||'map';
+      if(preferred==='satellite'&&root.MTMapTilerLocal?.hasKey?.())return addSatelliteBaseLayer(targetMap,statusNode,state);
+      state.kind='map';state.layer=addOnlineBaseLayer(targetMap,statusNode);return state.layer;
+    }
+    state.kind='offline';state.layer=await addOfflineBaseLayer(targetMap,statusNode,emptyStateNode);return state.layer;
+  }
+  function switchBaseLayer(targetMap,kind,statusNode,options={}){
+    const state=baseStates.get(targetMap)||{layer:null,kind:'map',statusNode,emptyStateNode:null,mode:'auto'};baseStates.set(targetMap,state);
+    if(kind==='satellite'){
+      if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн. Поточна підкладка не змінена.');return false;}
+      if(!root.MTMapTilerLocal?.hasKey?.()){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
+    }
+    removeCurrentBase(targetMap,state);
+    if(kind==='satellite')addSatelliteBaseLayer(targetMap,statusNode,state);
+    else{state.kind='map';state.layer=addOnlineBaseLayer(targetMap,statusNode);}
+    if(targetMap===map)tileLayer=state.layer;
+    if(picker?.map===targetMap)picker.tileLayer=state.layer;
+    if(options.remember!==false)root.MTMapTilerLocal?.saveLayer?.(kind);
+    setLayerButtons(state,state.kind);setOfflineEmptyState(state.emptyStateNode,false);
+    if(options.message)setStatus(statusNode,options.message);
+    return true;
+  }
+  function addLayerSwitcher(targetMap,statusNode){
+    const state=baseStates.get(targetMap);if(!state)return null;
+    const control=root.L.control({position:'topright'});
+    control.onAdd=()=>{
+      const wrap=root.L.DomUtil.create('div','tools-map-layer-switcher');
+      wrap.innerHTML='<button type="button" data-mt-base-layer="map" aria-pressed="false">🗺️ Карта</button><button type="button" data-mt-base-layer="satellite" aria-pressed="false">🛰️ Супутник</button>';
+      root.L.DomEvent.disableClickPropagation(wrap);root.L.DomEvent.disableScrollPropagation(wrap);
+      wrap.addEventListener('click',event=>{const button=event.target.closest('[data-mt-base-layer]');if(button)switchBaseLayer(targetMap,button.dataset.mtBaseLayer,statusNode);});
+      state.controlNode=wrap;setLayerButtons(state,state.kind);return wrap;
+    };
+    control.addTo(targetMap);state.control=control;return control;
   }
   function captureView(){
     if(!map)return savedView;
@@ -102,7 +172,7 @@
     if(!map)return;
     captureView();
     cancelPointPlacement();
-    map.remove();map=null;tileLayer=null;groups=new Map();userLayer=null;selectionLayer=null;
+    baseStates.delete(map);map.remove();map=null;tileLayer=null;groups=new Map();userLayer=null;selectionLayer=null;
   }
   function currentCenter(){if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
   function showUserLocation(point,accuracy){
@@ -213,7 +283,7 @@
     map=root.L.map(container,{zoomControl:true,tap:true,worldCopyJump:true});
     const mountedMap=map;
     addBaseLayer(mountedMap,statusNode,options.baseMode,options.emptyStateNode||null).then(layer=>{
-      if(map===mountedMap)tileLayer=layer;
+      if(map===mountedMap){tileLayer=layer;addLayerSwitcher(mountedMap,statusNode);}
       else if(layer){layer.remove();}
     }).catch(()=>setStatus(statusNode,'Офлайн-підкладку не вдалося відкрити. Маркери не змінено.'));
     categories.forEach(category=>groups.set(category,root.L.layerGroup()));
@@ -245,7 +315,7 @@
   function destroyPicker(){
     if(!picker)return;
     picker.observer?.disconnect();
-    picker.map.remove();
+    baseStates.delete(picker.map);picker.map.remove();
     picker=null;
   }
   function mountPicker(container,options={}){
@@ -274,12 +344,12 @@
     picker={map:pickerMap,tileLayer:pickerTile,observer,getPoint,setPoint,hasChanged:()=>changed,invalidateSize:()=>pickerMap.invalidateSize(),destroy:destroyPicker};
     const mountedPicker=picker;
     addBaseLayer(pickerMap,options.statusNode||null,options.baseMode,null).then(layer=>{
-      if(picker===mountedPicker){picker.tileLayer=layer;}
+      if(picker===mountedPicker){picker.tileLayer=layer;addLayerSwitcher(pickerMap,options.statusNode||null);}
       else if(layer){layer.remove();}
     }).catch(()=>setStatus(options.statusNode||null,'Підкладку не вдалося відкрити. Точку можна вказати за координатами.'));
     requestAnimationFrame(()=>requestAnimationFrame(()=>pickerMap.invalidateSize()));
     return picker;
   }
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer};
+  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer};
 })(typeof window!=='undefined'?window:globalThis);

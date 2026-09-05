@@ -116,11 +116,11 @@ function renderGeoBadge(){
   const badge = document.getElementById('geoBadge');
   const linkEl = document.getElementById('geoLink');
   const btn = document.getElementById('geoBtn');
-  if(calcState.geoLink){
-    // витягуємо координати з посилання для красивого відображення
-    const m = calcState.geoLink.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-    const label = m ? `📍 ${Number(m[1]).toFixed(5)}, ${Number(m[2]).toFixed(5)}` : `📍 ${calcState.geoLink.slice(0,40)}…`;
-    linkEl.innerHTML = `<a href="${escapeHtml(calcState.geoLink)}" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:none;">${label}</a>`;
+  const coords=typeof MTToolsCore!=='undefined'&&(MTToolsCore.explicitCoordinates(calcState)||MTToolsCore.parseCoordinates(calcState.geoLink));
+  const mapsUrl=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(calcState):calcState.geoLink;
+  if(mapsUrl){
+    const label=coords?`📍 ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`:'📍 Відкрити збережену геолокацію';
+    linkEl.innerHTML = `<a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:none;">${label}</a>`;
     badge.classList.remove('hidden');
     btn.style.background = 'var(--success)';
     btn.style.color = '#fff';

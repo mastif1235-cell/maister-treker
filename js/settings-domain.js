@@ -162,6 +162,23 @@ function bindSettingsScreen(){
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
   document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
   document.getElementById('openOfflineMapSettingsBtn').addEventListener('click', openOfflineMapSettings);
+  document.getElementById('mapTilerKeyToggleBtn').addEventListener('click', ()=>{
+    const input=document.getElementById('mapTilerKeyInput');
+    input.type=input.type==='password'?'text':'password';
+  });
+  document.getElementById('mapTilerKeySaveBtn').addEventListener('click', ()=>{
+    const input=document.getElementById('mapTilerKeyInput'),key=input.value.trim();
+    if(!key){showToast('Вставте MapTiler API key');return;}
+    if(!window.MTMapTilerLocal?.saveKey?.(key)){showToast('Не вдалося зберегти ключ на цьому пристрої');return;}
+    input.value='';input.type='password';renderSettingsScreen();showToast('✅ Ключ збережено на цьому пристрої');
+  });
+  document.getElementById('mapTilerKeyClearBtn').addEventListener('click', ()=>{
+    if(!window.MTMapTilerLocal?.hasKey?.())return;
+    if(!confirm('Очистити MapTiler API key на цьому пристрої?'))return;
+    window.MTMapTilerLocal.clearKey();window.MTMapTilerLocal.saveLayer('map');
+    const input=document.getElementById('mapTilerKeyInput');input.value='';input.type='password';
+    renderSettingsScreen();showToast('Ключ очищено. Звичайна карта залишається доступною');
+  });
   document.getElementById('backupPasswordSaveBtn').addEventListener('click', saveBackupPasswordCredential);
   document.getElementById('backupPasswordChangeBtn').addEventListener('click', saveBackupPasswordCredential);
   document.getElementById('backupPasswordForgetBtn').addEventListener('click', forgetBackupPasswordCredential);

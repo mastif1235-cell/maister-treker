@@ -750,16 +750,7 @@ function setGeoLink(link,coords=null){
    - якщо HTTPS і GPS доступні — визначає координати автоматично
    - якщо GPS заблокований або файл відкрито локально — одразу показує модалку «вставити посилання» */
 function handleGeoBtn(){
-  // GPS на телефоні часто дає неточну точку, тож більше не використовуємо
-  // автоматичне визначення — одразу відкриваємо Google Maps, де можна
-  // вручну поставити мітку та скопіювати посилання.
-  if(calcState.geoLink){
-    if(confirm('Геолокація вже додана. Оновити?')){
-      calcState.geoLink='';
-      openGeoPasteModal();
-    }
-    return;
-  }
+  if((calcState.geoLink||MTToolsCore.explicitCoordinates(calcState))&&!confirm('Геолокація вже додана. Оновити?'))return;
   openGeoPasteModal();
 }
 
@@ -767,8 +758,9 @@ function handleGeoBtn(){
 function openGeoPasteModal(headerMsg){
   openModal('📍 Додати геолокацію', `
     <div style="font-size:13px; color:var(--text-dim); margin-bottom:10px;">
-      ${escapeHtml(headerMsg||'Відкрий Google Maps → постав мітку → Поділитися → Копіювати посилання → встав нижче.')}
+      ${escapeHtml(headerMsg||'Оберіть точку на внутрішній карті або, за потреби, вставте старе посилання Google Maps.')}
     </div>
+    <button type="button" class="btn btn-accent btn-block" id="openInternalMapBtn" style="margin-bottom:10px;">📍 На внутрішній карті</button>
     <button type="button" class="btn btn-block" id="openMapsAppBtn" style="margin-bottom:10px;">🗺️ Відкрити Google Maps</button>
     <div class="field"><label>Посилання або координати (50.4501, 30.5234)</label>
       <textarea id="geoPasteInput" placeholder="https://maps.app.goo.gl/... або 50.4501, 30.5234" style="min-height:60px;"></textarea>
@@ -777,6 +769,7 @@ function openGeoPasteModal(headerMsg){
     <button type="button" class="btn btn-block hidden" id="geoPasteRefineBtn" style="margin-bottom:10px;">📍 Уточнити точку</button>
     <button type="button" class="btn btn-accent btn-block" id="geoPasteAddBtn">✅ Додати в заявку</button>
   `, {onOpen:()=>{
+    document.getElementById('openInternalMapBtn').onclick = ()=> openTicketGeoPointPicker();
     document.getElementById('openMapsAppBtn').onclick = ()=> window.open('https://www.google.com/maps', '_blank');
     document.getElementById('geoPasteRefineBtn').onclick = ()=> openTicketGeoPointPicker();
     document.getElementById('geoPasteAddBtn').onclick = ()=>{

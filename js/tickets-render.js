@@ -47,7 +47,8 @@ function renderTicketCard(t, opts={}){
   const signalText = formatOnuSignal(t.signal);
   const linkedPoints=(typeof toolsNetworkPoints!=='undefined'?toolsNetworkPoints:[]).filter(point=>(Array.isArray(t.networkPointIds)?t.networkPointIds:[]).map(String).includes(String(point.id)));
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
-  const geoBtn = t.geoLink ? `<a href="${escapeHtml(t.geoLink)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">📍 Перейти</a>` : '';
+  const mapsUrl=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(t):t.geoLink;
+  const geoBtn = mapsUrl ? `<a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">🗺️ Відкрити в Google Maps</a>` : '';
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
   // замість повного тексту заявки (де є ім'я/телефон/адреса) показуємо лише
   // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.

@@ -40,6 +40,38 @@
     }
     return null;
   }
+  function explicitCoordinates(source={}){
+    const lat=Number(source?.geoLat??source?.lat),lng=Number(source?.geoLng??source?.lng);
+    return Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180?{lat,lng}:null;
+  }
+  function googleMapsUrl(source={}){
+    const coords=explicitCoordinates(source)||parseCoordinates(source?.geoLink);
+    if(coords)return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${coords.lat},${coords.lng}`)}`;
+    const link=text(source?.geoLink);
+    return /^https:\/\//i.test(link)?link:'';
+  }
+  function requestCurrentPosition(geolocation,options={}){
+    return new Promise((resolve,reject)=>{
+      if(!geolocation||typeof geolocation.getCurrentPosition!=='function'){reject(Object.assign(new Error('UNSUPPORTED'),{code:'UNSUPPORTED'}));return;}
+      geolocation.getCurrentPosition(position=>{
+        const point=explicitCoordinates({lat:position?.coords?.latitude,lng:position?.coords?.longitude});
+        if(!point){reject(Object.assign(new Error('UNAVAILABLE'),{code:'UNAVAILABLE'}));return;}
+        resolve({...point,accuracy:Number(position.coords.accuracy)||0});
+      },error=>reject(error||Object.assign(new Error('UNAVAILABLE'),{code:'UNAVAILABLE'})),{
+        enableHighAccuracy:true,timeout:15000,maximumAge:30000,...options
+      });
+    });
+  }
+  function createGeoDraft(source={}){
+    const original={geoLat:source.geoLat,geoLng:source.geoLng,geoLink:source.geoLink};
+    let point=explicitCoordinates(source)||parseCoordinates(source.geoLink);
+    return {
+      get:()=>point?{...point}:null,
+      set(value){const next=explicitCoordinates(value);if(next)point=next;return this.get();},
+      commit(){return point?{geoLat:Number(point.lat.toFixed(6)),geoLng:Number(point.lng.toFixed(6)),geoLink:original.geoLink}:original;},
+      cancel:()=>({...original})
+    };
+  }
   function listProfiles(tickets=[]){
     const groups=new Map();
     tickets.forEach(ticket=>{
@@ -214,5 +246,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

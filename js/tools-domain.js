@@ -243,7 +243,7 @@ function toolsMapHtml(){
     <div class="card tools-network-groups-card"><div class="row between wrap"><strong>Об’єкти мережі</strong><span class="tools-offline-map-meta">${toolsNetworkPoints.length}</span></div><div class="field" style="margin-top:8px;"><label>Пошук об’єктів</label><input type="search" role="searchbox" name="mt-internal-network-search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" inputmode="search" id="toolsNetworkSearch" value="${escapeHtml(toolsNetworkSearch)}" placeholder="ID, тип, місто, вулиця, будинок, примітка"></div><div id="toolsNetworkGroups">${toolsNetworkGroupsHtml()}</div></div>
     <div class="row wrap tools-map-actions"><button type="button" class="btn" data-tools-action="map-bind-address" style="flex:1 0 100%;">📍 Прив’язати існуючу адресу</button></div>
     <div class="tools-offline-map-meta" style="margin:-2px 0 9px;">${offline?`✅ Офлайн-карта встановлена · ${escapeHtml(MTOfflineMap.formatBytes(offline.size))} · режим ${escapeHtml(mode)}`:'Офлайн-карта не встановлена'}</div>
-    <details class="tools-map-info"><summary>ⓘ Про карту</summary><div>Підкладка: OpenStreetMap. Постачальник плиток отримує лише координати видимої ділянки — без ПІБ, телефонів, адресного тексту, MAC, нотаток, фото чи історії.</div></details>`;
+    <details class="tools-map-info"><summary>ⓘ Про карту</summary><div>Звичайна підкладка: OpenStreetMap. Супутникова: MapTiler із власним ключем користувача. Постачальник плиток отримує лише координати видимої ділянки — без ПІБ, телефонів, адресного тексту, MAC, нотаток, фото чи історії.</div></details>`;
 }
 function toolsNetworkGroupsHtml(){
   const query=String(toolsNetworkSearch||'').trim(),groups=MTToolsCore.groupNetworkPoints(toolsNetworkPoints,query);if(!groups.length)return '<div class="tools-network-empty">Нічого не знайдено.</div>';
@@ -258,9 +258,10 @@ function toolsStartMapAddMode(point=null){
   const placement=MTToolsMap.startPointPlacement({initial:point,onPlace:toolsOpenPointEditorFromMap});
   if(!placement)showToast('Карта ще не готова');else if(!point)showToast('Торкніться карти, щоб додати об’єкт');
 }
-function toolsLocateOnMap(){
-  if(!navigator.geolocation){showToast('Геолокація не підтримується');return;}
-  showToast('Визначаю ваше місце…');navigator.geolocation.getCurrentPosition(position=>{toolsLastUserLocation={lat:position.coords.latitude,lng:position.coords.longitude};MTToolsMap.showUserLocation(toolsLastUserLocation,position.coords.accuracy);showToast(`Ваше місце${position.coords.accuracy?` · точність ≈ ${Math.round(position.coords.accuracy)} м`:''}`);},()=>showToast('Доступ до геолокації заборонено або місце недоступне'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+async function toolsLocateOnMap(){
+  showToast('Визначаю ваше місце…');
+  try{const point=await MTToolsCore.requestCurrentPosition(navigator.geolocation);toolsLastUserLocation=point;MTToolsMap.showUserLocation(point,point.accuracy);showToast(`Ваше місце${point.accuracy?` · точність ≈ ${Math.round(point.accuracy)} м`:''}`);}
+  catch(error){const code=Number(error?.code);showToast(code===1?'Доступ до геолокації заборонено':code===3?'Час очікування GPS вичерпано':'Геолокація недоступна');}
 }
 function toolsToggleMapFullscreen(){
   toolsMapFullscreen=!toolsMapFullscreen;
@@ -283,7 +284,7 @@ function toolsOpenAddressBindingPicker(profile){
   openModal('Вкажіть точку на карті',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">${escapeHtml(profile.address)}. Натисніть карту або перетягніть маркер. GPS використовується лише після окремого натискання.</div><div id="toolsAddressPickerStatus" class="tools-map-status hidden"></div><div id="toolsAddressPicker" class="tools-map tools-map-picker"></div><div class="row wrap" style="margin-top:8px;"><button type="button" class="btn" id="toolsAddressPickerGps" style="flex:1;">🎯 Моє місце</button><button type="button" class="btn btn-accent" id="toolsAddressPickerSave" style="flex:1;">Зберегти координати</button><button type="button" class="btn" id="toolsAddressPickerCancel">Скасувати</button></div>`,{onClose:()=>MTToolsMap.destroyPicker(),onOpen:()=>{
     picker=MTToolsMap.mountPicker(document.getElementById('toolsAddressPicker'),{initial,statusNode:document.getElementById('toolsAddressPickerStatus')});
     document.getElementById('toolsAddressPickerCancel').onclick=closeModal;
-    document.getElementById('toolsAddressPickerGps').onclick=()=>{if(!navigator.geolocation){showToast('Геолокація не підтримується');return;}navigator.geolocation.getCurrentPosition(position=>picker?.setPoint({lat:position.coords.latitude,lng:position.coords.longitude}),()=>showToast('Не вдалося отримати геолокацію'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});};
+    document.getElementById('toolsAddressPickerGps').onclick=async()=>{try{const point=await MTToolsCore.requestCurrentPosition(navigator.geolocation);picker?.setPoint(point);showToast(point.accuracy?`Точність GPS ≈ ${Math.round(point.accuracy)} м`:'Точку GPS визначено');}catch(_error){showToast('Не вдалося отримати геолокацію');}};
     document.getElementById('toolsAddressPickerSave').onclick=async()=>{const point=picker?.getPoint();if(!point){showToast('Вкажіть точку на карті');return;}list.forEach(ticket=>{ticket.geoLat=Number(point.lat.toFixed(6));ticket.geoLng=Number(point.lng.toFixed(6));});await saveTickets();closeModal();renderToolsScreen('map');showToast('✅ Координати адреси збережено');};
   }});
 }
@@ -383,9 +384,10 @@ function openAbonentMapPointPicker(ids=[]){
   const initial=source&&(MTToolsCore.parseCoordinates(`${source.geoLat??''},${source.geoLng??''}`)||MTToolsCore.parseCoordinates(source.geoLink));
   let picker=null;
   const closePicker=()=>{MTToolsMap.destroyPicker();closeModal();renderAddressNav();};
-  openModal(initial?'📍 Уточнити точку':'📍 Додати на карту',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Поставте маркер або перетягніть його. Google Maps посилання залишиться без змін.</div><div id="abonentMapPointStatus" class="tools-map-status hidden"></div><div id="abonentMapPointPicker" class="tools-map tools-map-picker"></div><div class="row" style="margin-top:8px;"><button type="button" class="btn btn-accent" id="abonentMapPointSave" style="flex:1;">Зберегти точку</button><button type="button" class="btn" id="abonentMapPointCancel">Скасувати</button></div>`,{onClose:closePicker,onOpen:()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  openModal(initial?'📍 Уточнити точку':'📍 Додати на карту',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Поставте маркер або перетягніть його. Google Maps посилання залишиться без змін.</div><div id="abonentMapPointStatus" class="tools-map-status hidden"></div><div id="abonentMapPointPicker" class="tools-map tools-map-picker"></div><div class="row wrap" style="margin-top:8px;"><button type="button" class="btn" id="abonentMapPointGps" style="flex:1;">🎯 Моє місце</button><button type="button" class="btn btn-accent" id="abonentMapPointSave" style="flex:1;">Зберегти точку</button><button type="button" class="btn" id="abonentMapPointCancel">Скасувати</button></div>`,{onClose:closePicker,onOpen:()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
     picker=MTToolsMap.mountPicker(document.getElementById('abonentMapPointPicker'),{initial,statusNode:document.getElementById('abonentMapPointStatus')});
     document.getElementById('abonentMapPointCancel').onclick=closePicker;
+    document.getElementById('abonentMapPointGps').onclick=async()=>{try{picker?.setPoint(await MTToolsCore.requestCurrentPosition(navigator.geolocation));}catch(_error){showToast('Не вдалося отримати геолокацію');}};
     document.getElementById('abonentMapPointSave').onclick=async()=>{
       if(!picker?.hasChanged()){showToast('Поставте або перемістіть маркер');return;}
       const point=picker?.getPoint();if(!point){showToast('Натисніть потрібне місце на карті');return;}
@@ -398,16 +400,21 @@ function openAbonentMapPointPicker(ids=[]){
 }
 
 function openTicketGeoPointPicker(){
-  const initial=MTToolsCore.parseCoordinates(`${calcState.geoLat??''},${calcState.geoLng??''}`)||MTToolsCore.parseCoordinates(calcState.geoLink);
+  const draft=MTToolsCore.createGeoDraft(calcState),initial=draft.get();
   let picker=null;
   const closePicker=()=>{MTToolsMap.destroyPicker();closeModal();};
-  openModal('📍 Уточнити точку',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Поставте маркер або перетягніть його. Збережене Google Maps посилання залишиться без змін.</div><div id="ticketGeoPointStatus" class="tools-map-status hidden"></div><div id="ticketGeoPointPicker" class="tools-map tools-map-picker"></div><div class="row" style="margin-top:8px;"><button type="button" class="btn btn-accent" id="ticketGeoPointSave" style="flex:1;">Зберегти точку</button><button type="button" class="btn" id="ticketGeoPointCancel">Скасувати</button></div>`,{onClose:closePicker,onOpen:()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    picker=MTToolsMap.mountPicker(document.getElementById('ticketGeoPointPicker'),{initial,statusNode:document.getElementById('ticketGeoPointStatus')});
+  openModal('📍 Уточнити точку',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Поставте маркер або перетягніть його. GPS працює лише після натискання. До збереження заявка не змінюється.</div><div id="ticketGeoPointStatus" class="tools-map-status hidden"></div><div id="ticketGeoPointPicker" class="tools-map tools-map-picker"></div><div id="ticketGeoPointCoords" style="font:12px var(--mono);color:var(--text-dim);margin-top:7px;">${initial?`${initial.lat.toFixed(6)}, ${initial.lng.toFixed(6)}`:'Точку ще не вибрано'}</div><div class="row wrap" style="margin-top:8px;"><button type="button" class="btn" id="ticketGeoPointGps" style="flex:1;">🎯 Моє місцезнаходження</button><button type="button" class="btn btn-accent" id="ticketGeoPointSave" style="flex:1;">Зберегти точку</button><button type="button" class="btn" id="ticketGeoPointCancel">Скасувати</button></div>`,{onClose:closePicker,onOpen:()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const showPoint=point=>{draft.set(point);const node=document.getElementById('ticketGeoPointCoords');if(node&&point)node.textContent=`${Number(point.lat).toFixed(6)}, ${Number(point.lng).toFixed(6)}`;};
+    picker=MTToolsMap.mountPicker(document.getElementById('ticketGeoPointPicker'),{initial,statusNode:document.getElementById('ticketGeoPointStatus'),onChange:showPoint});
     document.getElementById('ticketGeoPointCancel').onclick=closePicker;
+    document.getElementById('ticketGeoPointGps').onclick=async()=>{
+      try{const point=await MTToolsCore.requestCurrentPosition(navigator.geolocation);picker?.setPoint(point);showToast(point.accuracy?`Точність GPS ≈ ${Math.round(point.accuracy)} м`:'Точку GPS визначено');}
+      catch(error){const code=Number(error?.code);showToast(code===1?'Доступ до геолокації заборонено':code===3?'Час очікування GPS вичерпано':'Не вдалося визначити місцезнаходження');}
+    };
     document.getElementById('ticketGeoPointSave').onclick=()=>{
       if(!picker?.hasChanged()){showToast('Поставте або перемістіть маркер');return;}
       const point=picker.getPoint();if(!point){showToast('Натисніть потрібне місце на карті');return;}
-      setGeoLink(calcState.geoLink,point);
+      draft.set(point);const committed=draft.commit();setGeoLink(committed.geoLink,{lat:committed.geoLat,lng:committed.geoLng});
       closePicker();showToast('✅ Точку збережено');
     };
   }))});

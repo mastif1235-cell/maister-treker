@@ -37,5 +37,5 @@ assert.match(editor,/function applyDefaultCallFee[\s\S]*effectiveTicketCallFee/)
 assert.match(domain,/name="mt-internal-profile-search"/);assert.match(domain,/role="searchbox"/);assert.match(domain,/autocomplete="off"/);
 const point=core.normalizeNetworkPoint({id:'stable',type:'Муфта',lat:48,lng:37,telegramChatId:'-1001',telegramMessageId:7,photoKeys:['idb:p']},new Date('2026-09-01T12:00:00Z'));assert.equal(point.id,'stable');assert.equal(point.telegramMessageId,7);assert.deepEqual(point.photoKeys,['idb:p']);
 assert.match(styles,/tools-point-editor-overlay textarea,.tools-point-editor-modal textarea\{width:100%/);assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v90 · 2026-09-05/);assert.match(read('sw.js'),/maister-treker-v66-runtime-32/);
+assert.match(app,/v91 · 2026-09-05/);assert.match(read('sw.js'),/maister-treker-v66-runtime-33/);
 console.log('PASS v84 network tree/viewer/Telegram update/links, repair threshold and coordinate-modal regressions');

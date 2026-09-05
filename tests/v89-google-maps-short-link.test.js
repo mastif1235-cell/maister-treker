@@ -24,7 +24,7 @@ assert.match(editor,/abonentGeoRefineBtn[\s\S]*openAbonentMapPointPicker\(ids\)/
 assert.match(editor,/setGeoLink\(result\.link,result\.coords\)/,'ordinary coordinates keep the immediate local path');
 assert.match(editor,/if\(coords\)\{calcState\.geoLat=/,'missing coordinates do not erase an existing confirmed point');
 assert.match(tools,/function openTicketGeoPointPicker\(\)[\s\S]*MTToolsMap\.mountPicker/);
-assert.match(tools,/setGeoLink\(calcState\.geoLink,point\)/,'picker confirms the point while retaining the short link');
+assert.match(tools,/draft\.commit\(\)[\s\S]*setGeoLink\(committed\.geoLink/,'picker confirms the point while retaining the short link');
 assert.match(tools,/if\(!picker\?\.hasChanged\(\)\)/,'an existing point is not overwritten without explicit movement and save');
 
 const mapped=core.mapObjects([{id:'t1',city:'Дніпро',street:'Миру',house:'1',geoLink:short,geoLat:48.45,geoLng:34.98}],[]);
