@@ -1,9 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),handlers={},deleted=[],added=[];let localTouches=0,idbTouches=0;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-29'/,'installed-PWA cache revision includes the v87 persistence fixes');
-assert.match(fs.readFileSync(path.join(root,'app.js'),'utf8'),/APP_VERSION\s*=\s*'v87 · 2026-09-05'/,'canonical release identity is v87');
-assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v87 · 2026-09-05'/,'final compatibility wrapper displays canonical v87 identity');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-30'/,'installed-PWA cache revision includes the v88 UX and low-risk fixes');
+assert.match(fs.readFileSync(path.join(root,'app.js'),'utf8'),/APP_VERSION\s*=\s*'v88 · 2026-09-05'/,'canonical release identity is v88');
+assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v88 · 2026-09-05'/,'final compatibility wrapper displays canonical v88 identity');
 const cache={addAll:async assets=>added.push(...assets),match:async()=>null,put:async()=>{}};
 const context={URL,fetch:async()=>({ok:true,clone(){return this;}}),caches:{open:async()=>cache,keys:async()=>['maister-treker-v65-old','unrelated-cache'],delete:async key=>{deleted.push(key);return true;},match:async()=>null},clients:{matchAll:async()=>[],claim:async()=>{}},self:{addEventListener:(name,fn)=>{handlers[name]=fn;},skipWaiting:()=>{}},localStorage:new Proxy({},{get(){localTouches++;}}),indexedDB:new Proxy({},{get(){idbTouches++;}})};context.self.clients=context.clients;vm.createContext(context);vm.runInContext(source,context);
 async function fire(name){let promise;handlers[name]({waitUntil:p=>{promise=p;}});await promise;}

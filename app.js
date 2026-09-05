@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v87 · 2026-09-05';
+const APP_VERSION = 'v88 · 2026-09-05';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -203,140 +203,7 @@ function shiftToSyncPayload(s){
 }
 
 async function loadFromCloud(){
-  showToast('Повне відновлення з хмари вимкнено до окремого recovery protocol'); return;
-  const ticketsUrl = getScriptUrl();
-  const shiftsUrl = getShiftsScriptUrl();
-  if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
-  if(!confirm('Завантажити дані з хмари? Це замінить локальні заявки та/або зміни.')) return;
-  const loadTicketsRevision = ticketsRevision;
-  const loadShiftsRevision = shiftsRevision;
-  setSyncState('syncing');
-  let nextTickets = null;
-  let nextShifts = null;
-  const loadErrors = [];
-  // NEW: у хмарі немає полів photo/tg* (там лише текст, суми, теги) — раніше
-  // після "Завантажити з хмари" ці посилання просто стирались навіть якщо
-  // фото фізично й досі лежить в IndexedDB, а повідомлення — в Telegram-групі.
-  // Зберігаємо їх заздалегідь за id, щоб повернути в об'єднані заявки нижче.
-  const localPhotoAndTgById = new Map();
-  tickets.forEach(t=>{
-    // NEW: раніше зберігали лише ОДНЕ фото (t.photo) і одинарні tg-поля —
-    // для заявок із 2-3 фото (masiv photos/tgPhotoFileIds/tgPhotoMsgIds)
-    // друге й третє фото після "Завантажити з хмари" тихо відв'язувались
-    // від заявки (лишались в IndexedDB сиротами, але заявка про них більше
-    // "не знала" — картка показувала тільки перше фото).
-    if(t.photo || (t.photos && t.photos.length) || t.tgBackedUp || t.tgPhotoFileId || (t.tgPhotoFileIds && t.tgPhotoFileIds.length)){
-      localPhotoAndTgById.set(String(t.id), {
-        photo: t.photo,
-        photos: t.photos ? t.photos.slice() : undefined,
-        tgBackedUp: t.tgBackedUp,
-        tgPhotoFileId: t.tgPhotoFileId,
-        tgPhotoFileIds: t.tgPhotoFileIds ? t.tgPhotoFileIds.slice() : undefined,
-        tgSepMsgId: t.tgSepMsgId, tgTextMsgId: t.tgTextMsgId,
-        tgPhotoMsgId: t.tgPhotoMsgId,
-        tgPhotoMsgIds: t.tgPhotoMsgIds ? t.tgPhotoMsgIds.slice() : undefined,
-        tgJsonMsgId: t.tgJsonMsgId
-      });
-    }
-  });
-  if(ticketsUrl){
-    try{
-      throw new Error('ADMIN_RECOVERY_REQUIRED');
-      const data = await res.json();
-      // NEW: КРИТИЧНО — раніше тут не перевірялась відповідь сервера взагалі.
-      // Якщо секретний ключ невірний (наприклад, друкарська помилка чи
-      // застарілий), справжній Apps Script повертає {status:'error',
-      // message:'forbidden'} — БЕЗ поля tickets. Код же читав
-      // (data.tickets||[]) — за відсутності поля це ставало ПОРОЖНІМ
-      // масивом, і рядком нижче (saveTickets()) ЛОКАЛЬНА БАЗА ЗАЯВОК
-      // ЗАМІНЯЛАСЬ НА ПОРОЖНЮ. Тобто неправильний секрет міг стерти всі
-      // заявки на телефоні одним натисканням "Завантажити з хмари".
-      if(data.status === 'error' || !Array.isArray(data.tickets)){
-        throw new Error(data.message || 'Сервер не повернув список заявок (перевірте секретний ключ)');
-      }
-      nextTickets = data.tickets.map(t=>{
-        const blank = blankTicketObject();
-        const extra = parseBackupNote(t.backupNote); // NEW: дістаємо геолокацію/примітку майстра (і, для старих рядків, повні дані, якщо вони туди ще потрапляли)
-        // NEW: новий, чистіший шлях — окремий стовпець "повніДаніJSON" у
-        // таблиці (не роздуває нотатки_майстра). Для рядків, які встигли
-        // синхронізуватись ДО оновлення Apps Script, підстраховуємось старим
-        // способом (parseBackupNote вище).
-        let fullData = extra.fullData;
-        if(t.fullDataJson){
-          try{ fullData = JSON.parse(t.fullDataJson); }
-          catch(e){ /* пошкоджений JSON у цьому стовпці — лишаємо те, що вже дістали з backupNote (може бути null) */ }
-        }
-        const merged = Object.assign(blank, {
-          id: t.id, date: t.date, time: t.time, content: t.content,
-          sum: Number(t.sum)||0,
-          tags: Array.isArray(t.tags) ? t.tags : String(t.tags||'').split(',').map(s=>s.trim()).filter(Boolean),
-          photo: null,
-          geoLink: extra.geoLink,       // NEW
-          masterNote: extra.masterNote, // NEW
-          login: extra.login,           // NEW
-          password: extra.password,     // NEW
-          // NEW: якщо є повні структуровані дані (заявки, збережені після
-          // цього оновлення) — відновлюємо адресу/MAC/обладнання/оплату один
-          // в один, і сирий режим редагування більше не потрібен. Старі
-          // заявки без цих даних відновлюються як і раніше — лише за текстом.
-          cloudImported: !fullData
-        });
-        if(fullData) Object.assign(merged, fullData);
-        // NEW: якщо для цього id є збережені локальні photo/tg* — повертаємо їх
-        const local = localPhotoAndTgById.get(String(merged.id));
-        if(local){
-          Object.assign(merged, local);
-          // NEW: Object.assign копіює й undefined-значення (якщо в local не
-          // було масиву photos — властивість все одно перезаписується на
-          // undefined) — тож після злиття завжди узгоджуємо одне з одним,
-          // а не покладаємось, що обидва поля прийшли синхронізованими.
-          if((!merged.photos || !merged.photos.length) && merged.photo) merged.photos = [merged.photo];
-          if(merged.photos && merged.photos.length && !merged.photo) merged.photo = merged.photos[0];
-          if(!merged.tgPhotoFileIds || !merged.tgPhotoFileIds.length){ merged.tgPhotoFileIds = merged.tgPhotoFileId ? [merged.tgPhotoFileId] : []; }
-          if(!merged.tgPhotoMsgIds || !merged.tgPhotoMsgIds.length){ merged.tgPhotoMsgIds = merged.tgPhotoMsgId ? [merged.tgPhotoMsgId] : []; }
-        }
-        return merged;
-      });
-    }catch(err){ console.error(err); loadErrors.push(`заявки${err.message ? `: ${err.message}` : ''}`); }
-  } else {
-    loadErrors.push('заявки: не налаштовано URL');
-  }
-  if(shiftsUrl){
-    try{
-      throw new Error('ADMIN_RECOVERY_REQUIRED');
-      const data = await res.json();
-      // NEW: та сама критична перевірка, що й для заявок вище — без неї
-      // невірний секрет так само стирав би локальні "Зміни".
-      if(data.status === 'error' || !Array.isArray(data.shifts)){
-        throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
-      }
-      nextShifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
-    }catch(err){ console.error(err); loadErrors.push(`зміни${err.message ? `: ${err.message}` : ''}`); }
-  } else {
-    loadErrors.push('зміни: не налаштовано URL');
-  }
-  if(loadErrors.length === 0){
-    // Атомарність tickets+shifts не захищає від нової локальної роботи під
-    // час await fetch. Не зливаємо два незалежні стани автоматично: краще
-    // лишити локальні дані й попросити користувача повторити завантаження.
-    if(ticketsRevision !== loadTicketsRevision || shiftsRevision !== loadShiftsRevision){
-      renderTicketsScreen(); renderShiftsScreen();
-      setSyncState('err');
-      showToast('Локальні дані змінилися під час завантаження. Дані з хмари не застосовано — повторіть завантаження.');
-      return;
-    }
-    tickets = nextTickets;
-    shifts = nextShifts;
-    saveTickets();
-    saveShifts();
-    renderTicketsScreen(); renderShiftsScreen();
-    setSyncState('ok');
-    showToast(`Завантажено: ${tickets.length} заявок, ${shifts.length} змін`);
-  } else {
-    renderTicketsScreen(); renderShiftsScreen();
-    setSyncState('err');
-    showToast(`Не вдалося завантажити дані з хмари: ${loadErrors.join('; ')}. Локальні дані НЕ змінено.`);
-  }
+  showToast('Повне відновлення з хмари вимкнено до окремого recovery protocol');
 }
 
 
@@ -376,25 +243,7 @@ async function sendAllToCloud(){
    навіть якщо "URL Apps Script для змін" не заповнений — це явні кнопки
    саме для блоку "Синхронізація — Зміни", щоб не плутати користувача. */
 async function loadShiftsFromCloud(){
-  showToast('Повне відновлення змін вимкнено до окремого recovery protocol'); return;
-  const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
-  if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
-  if(!confirm('Завантажити зміни з хмари? Поточні локальні зміни буде замінено.')) return;
-  setSyncState('syncing');
-  try{
-    throw new Error('ADMIN_RECOVERY_REQUIRED');
-    const data = await res.json();
-    if(data.status === 'error' || !Array.isArray(data.shifts)) throw new Error(data.message || 'Сервер не повернув список змін (перевірте секретний ключ)');
-    backupLocalData();
-    shifts = data.shifts.map(s=>({id:s.id, date:isoToDdmmyyyy(s.date), hours:Number(s.hours)||0, coworker:s.coworker||'Сам'}));
-    saveShifts();
-    renderShiftsScreen();
-    setSyncState('ok');
-    showToast(`Завантажено: ${shifts.length} змін`);
-  }catch(err){
-    console.error(err); setSyncState('err');
-    showToast('Не вдалося завантажити зміни з хмари — перевірте, що скрипт підтримує ?action=list');
-  }
+  showToast('Повне відновлення змін вимкнено до окремого recovery protocol');
 }
 /* Дата з таблиці може прийти як ДД.ММ.РРРР (рядок зі скрипта) — вона вже
    в потрібному форматі, але про всяк випадок підтримуємо й конвертацію,

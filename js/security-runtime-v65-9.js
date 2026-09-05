@@ -82,15 +82,6 @@ function securityRuntimeHasPrototypeKeys(value,depth=0,seen=new Set()){
   return false;
 }
 
-if(false && typeof securityValidateBackupEnvelope==='function'){
-  const securityRuntimePreviousBackupValidator=securityValidateBackupEnvelope;
-  securityValidateBackupEnvelope=function(data){
-    if(!securityRuntimePreviousBackupValidator(data)) return false;
-    if(securityRuntimeHasPrototypeKeys(data)) return false;
-    return true;
-  };
-}
-
 function securityRuntimeSanitizeTicket(ticket,index=0){
   if(!ticket || typeof ticket!=='object' || Array.isArray(ticket)) return {};
   const t=Object.assign({},ticket);

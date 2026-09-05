@@ -147,6 +147,19 @@
     };
   }
   function networkPointAddress(value={}){return [text(value.city),text(value.street),text(value.house)].filter(Boolean).join(', ');}
+  function networkPointPickerMeta(value={}){
+    const note=text(value.note).slice(0,60),identity=text(value.name)||text(value.label)||text(value.id);
+    return [note?`«${note}»`:'',identity].filter(Boolean).join(' · ');
+  }
+  function networkPointPreviewData(value={}){
+    const lat=Number(value.lat),lng=Number(value.lng),hasCoords=Number.isFinite(lat)&&Number.isFinite(lng);
+    return {
+      id:text(value.id),type:text(value.type),name:text(value.name),label:text(value.label),address:networkPointAddress(value),
+      city:text(value.city),street:text(value.street),house:text(value.house),note:text(value.note),
+      coordinates:hasCoords?`${lat.toFixed(6)}, ${lng.toFixed(6)}`:'',
+      photoKeys:[...new Set((Array.isArray(value.photoKeys)?value.photoKeys:[value.photoKey]).map(text).filter(Boolean))].slice(0,3)
+    };
+  }
   function searchNetworkPoints(points=[],query=''){
     const needle=text(query).toLocaleLowerCase('uk');
     if(!needle)return points.slice();
@@ -201,5 +214,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

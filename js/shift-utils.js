@@ -43,5 +43,5 @@ function calculateYearlyShiftHours(shifts, year){
 }
 
 function sortShiftsByDateDesc(shifts){
-  return (shifts||[]).slice().sort((a,b)=> parseDate(b.date) - parseDate(a.date) || b.id - a.id);
+  return (shifts||[]).slice().sort((a,b)=> parseDate(b.date) - parseDate(a.date) || String(b.id??'').localeCompare(String(a.id??''),'uk',{numeric:true,sensitivity:'base'}));
 }
