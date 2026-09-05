@@ -6,7 +6,7 @@ const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),editor=read(
 const styles=read('styles.css'),ticketsRender=read('js/tickets-render.js');
 
 assert.match(domain,/MT_TOOLS_DRAFT_KEY/);assert.match(domain,/toolsCalculatorDraft=\{state:JSON\.parse/);assert.match(domain,/Повернутися до заявки/);assert.match(domain,/fillFormFromState\(\)/,'calculator draft is restored into the same form');
-assert.match(editor,/setGeoLink\(link,coords\)/);assert.match(editor,/calcState\.geoLat=Number/,'coordinate input also populates the internal-map source');
+assert.match(editor,/setGeoLink\(result\.link,result\.coords\)/);assert.match(editor,/calcState\.geoLat=Number/,'coordinate input also populates the internal-map source');
 assert.match(address,/На карті \/ Уточнити/,'existing coordinate is presented as one map location');
 const homes=core.mapObjects([{id:'1',city:'Курахове',street:'Миру',house:'1',apartment:'1',geoLink:'50.1,30.2'},{id:'2',city:'Курахове',street:'Миру',house:'1',apartment:'2',geoLat:50.1,geoLng:30.2},{id:'3',city:'Курахове',street:'Нова',house:'2',geoLink:'https://maps.app.goo.gl/opaque'}],[]).filter(item=>item.kind==='home');
 assert.equal(homes.length,1,'coordinate variants share one house marker and opaque short link is not fabricated');

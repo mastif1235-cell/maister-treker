@@ -397,6 +397,22 @@ function openAbonentMapPointPicker(ids=[]){
   }))});
 }
 
+function openTicketGeoPointPicker(){
+  const initial=MTToolsCore.parseCoordinates(`${calcState.geoLat??''},${calcState.geoLng??''}`)||MTToolsCore.parseCoordinates(calcState.geoLink);
+  let picker=null;
+  const closePicker=()=>{MTToolsMap.destroyPicker();closeModal();};
+  openModal('📍 Уточнити точку',`<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Поставте маркер або перетягніть його. Збережене Google Maps посилання залишиться без змін.</div><div id="ticketGeoPointStatus" class="tools-map-status hidden"></div><div id="ticketGeoPointPicker" class="tools-map tools-map-picker"></div><div class="row" style="margin-top:8px;"><button type="button" class="btn btn-accent" id="ticketGeoPointSave" style="flex:1;">Зберегти точку</button><button type="button" class="btn" id="ticketGeoPointCancel">Скасувати</button></div>`,{onClose:closePicker,onOpen:()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    picker=MTToolsMap.mountPicker(document.getElementById('ticketGeoPointPicker'),{initial,statusNode:document.getElementById('ticketGeoPointStatus')});
+    document.getElementById('ticketGeoPointCancel').onclick=closePicker;
+    document.getElementById('ticketGeoPointSave').onclick=()=>{
+      if(!picker?.hasChanged()){showToast('Поставте або перемістіть маркер');return;}
+      const point=picker.getPoint();if(!point){showToast('Натисніть потрібне місце на карті');return;}
+      setGeoLink(calcState.geoLink,point);
+      closePicker();showToast('✅ Точку збережено');
+    };
+  }))});
+}
+
 function toolsNetworkHtml(){
   const query=String(toolsNetworkSearch||''),list=MTToolsCore.searchNetworkPoints(toolsNetworkPoints,query).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   return `${toolsBackButton()}<button type="button" class="btn btn-accent btn-block" data-tools-action="new-network-point">＋ Додати точку</button>

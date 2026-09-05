@@ -53,6 +53,27 @@ function parseMapsLink(text){
   return null;
 }
 
+function isGoogleMapsShortLink(text){
+  try{
+    const url = new URL(String(text||'').trim());
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === 'maps.app.goo.gl';
+  }catch(_e){
+    return false;
+  }
+}
+
+function prepareGeoInput(text){
+  const raw = String(text||'').trim();
+  const parsed = parseMapsLink(raw);
+  const coords = parsed ? {lat:Number(parsed.lat),lng:Number(parsed.lng)} : null;
+  return {
+    raw,
+    coords,
+    link: coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw,
+    needsPicker: !coords && isGoogleMapsShortLink(raw)
+  };
+}
+
 function ticketSortKey(t){
   const d = parseDate(t.date);
   const m = String(t.time||'').match(/^(\d{1,2}):(\d{2})/);

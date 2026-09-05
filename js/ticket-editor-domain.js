@@ -748,15 +748,25 @@ function openGeoPasteModal(headerMsg){
     <div class="field"><label>Посилання або координати (50.4501, 30.5234)</label>
       <textarea id="geoPasteInput" placeholder="https://maps.app.goo.gl/... або 50.4501, 30.5234" style="min-height:60px;"></textarea>
     </div>
+    <div id="geoPasteShortLinkStatus" class="tools-map-status hidden" role="status" style="margin-bottom:10px;"></div>
+    <button type="button" class="btn btn-block hidden" id="geoPasteRefineBtn" style="margin-bottom:10px;">📍 Уточнити точку</button>
     <button type="button" class="btn btn-accent btn-block" id="geoPasteAddBtn">✅ Додати в заявку</button>
   `, {onOpen:()=>{
     document.getElementById('openMapsAppBtn').onclick = ()=> window.open('https://www.google.com/maps', '_blank');
+    document.getElementById('geoPasteRefineBtn').onclick = ()=> openTicketGeoPointPicker();
     document.getElementById('geoPasteAddBtn').onclick = ()=>{
       const raw = document.getElementById('geoPasteInput').value.trim();
       if(!raw){ showToast('Встав посилання або координати'); return; }
-      const coords = parseMapsLink(raw);
-      const link = coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw;
-      setGeoLink(link,coords);
+      const result = prepareGeoInput(raw);
+      setGeoLink(result.link,result.coords);
+      if(result.needsPicker){
+        const status = document.getElementById('geoPasteShortLinkStatus');
+        status.textContent = 'Посилання збережено, але координати не визначено';
+        status.classList.remove('hidden');
+        document.getElementById('geoPasteRefineBtn').classList.remove('hidden');
+        showToast('Посилання збережено, але координати не визначено');
+        return;
+      }
       closeModal();
       showToast('✅ Геолокацію збережено');
     };
@@ -776,12 +786,15 @@ function openAbonentGeoEditModal(ids, currentLink){
     <div class="field"><label>Посилання або координати (50.4501, 30.5234)</label>
       <textarea id="abonentGeoPasteInput" placeholder="https://maps.app.goo.gl/... або 50.4501, 30.5234" style="min-height:60px;">${escapeHtml(currentLink||'')}</textarea>
     </div>
+    <div id="abonentGeoShortLinkStatus" class="tools-map-status hidden" role="status" style="margin-bottom:10px;"></div>
+    <button type="button" class="btn btn-block hidden" id="abonentGeoRefineBtn" style="margin-bottom:10px;">📍 Уточнити точку</button>
     <div class="row" style="gap:8px; margin-top:10px;">
       ${currentLink ? `<button type="button" class="btn btn-danger" id="abonentGeoClearBtn" style="flex:1;">🗑️ Прибрати</button>` : ''}
       <button type="button" class="btn btn-accent" id="abonentGeoSaveBtn" style="flex:2;">✅ Зберегти</button>
     </div>
   `, {onClose: renderAddressNav, onOpen: ()=>{
     document.getElementById('abonentGeoOpenMapsBtn').onclick = ()=> window.open('https://www.google.com/maps', '_blank');
+    document.getElementById('abonentGeoRefineBtn').onclick = ()=> openAbonentMapPointPicker(ids);
     const clearBtn = document.getElementById('abonentGeoClearBtn');
     if(clearBtn) clearBtn.onclick = ()=>{
       ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=''; });
@@ -789,13 +802,20 @@ function openAbonentGeoEditModal(ids, currentLink){
       showToast('Геолокацію прибрано');
       renderAddressNav();
     };
-    document.getElementById('abonentGeoSaveBtn').onclick = ()=>{
+    document.getElementById('abonentGeoSaveBtn').onclick = async()=>{
       const raw = document.getElementById('abonentGeoPasteInput').value.trim();
       if(!raw){ showToast('Встав посилання або координати'); return; }
-      const coords = parseMapsLink(raw);
-      const link = coords ? `https://www.google.com/maps?q=${coords.lat},${coords.lng}` : raw;
-      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t){t.geoLink=link;if(coords){t.geoLat=Number(coords.lat.toFixed(6));t.geoLng=Number(coords.lng.toFixed(6));}} });
-      saveTickets();
+      const result = prepareGeoInput(raw);
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t){t.geoLink=result.link;if(result.coords){t.geoLat=Number(result.coords.lat.toFixed(6));t.geoLng=Number(result.coords.lng.toFixed(6));}} });
+      await saveTickets();
+      if(result.needsPicker){
+        const status = document.getElementById('abonentGeoShortLinkStatus');
+        status.textContent = 'Посилання збережено, але координати не визначено';
+        status.classList.remove('hidden');
+        document.getElementById('abonentGeoRefineBtn').classList.remove('hidden');
+        showToast('Посилання збережено, але координати не визначено');
+        return;
+      }
       showToast('✅ Геолокацію збережено');
       renderAddressNav();
     };
