@@ -496,7 +496,10 @@ function showEditAbonentProfile(profileJson){
           // залишався СТАРИМ — диспетчеру при пересиланні/копіюванні летіло
           // старе ім'я/адреса/телефон, хоча в самій заявці все вже виправлено.
           // Для звичайних (не raw) заявок перебудовуємо текст з новими даними.
-          if(!t.cloudImported) t.content = buildTicketContent(t, Number(t.sum)||0);
+          if(!t.cloudImported) t.content = buildTicketContent({
+            ...t,
+            freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+          }, Number(t.sum)||0);
           // Профіль змінює вже наявну заявку, тому повтор має йти update,
           // а не add: сервер оновлює рядок по stable id без delete-вікна.
         }

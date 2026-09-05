@@ -365,7 +365,8 @@ function computeTotal(){
 // загальною сумою — рахувати в умі більше не треба.
 function buildMixedPaymentItems(){
   return buildMixedPaymentItemsFromTicket({
-    type: calcState.type,
+    type: getEffectiveType(),
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0,
     callFee: Number(document.getElementById('f_callFee').value)||0,
     tariff: Number(document.getElementById('f_tariff').value)||0,
     equipment: calcState.equipment, cables: calcState.cables,
@@ -506,7 +507,11 @@ function getCurrentTicketText(){
   const isOther = calcState.type === 'Інше';
   assignContractNumberIfNeeded();
   const total = isOther ? 0 : computeTotal();
-  return buildTicketContent(calcState, total);
+  return buildTicketContent({
+    ...calcState,
+    type:getEffectiveType(),
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+  }, total);
 }
 
 function getEffectiveType(){
@@ -878,6 +883,11 @@ async function saveTicketFromForm(e){
     if(!isOther && !calcState.payment){ showToast('Оберіть спосіб оплати'); return; }
     assignContractNumberIfNeeded();
     const total = isOther ? 0 : computeTotal();
+    calcState.callFee = effectiveTicketCallFee({
+      ...calcState,
+      type:getEffectiveType(),
+      freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+    });
     calcState.sum = total;
     calcState.content = buildTicketContent(calcState, total);
   }
