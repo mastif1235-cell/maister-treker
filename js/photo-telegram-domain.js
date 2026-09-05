@@ -405,11 +405,16 @@ async function backupTicketToTelegramNow(t){
     tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
     tgJsonMsgId: t.tgJsonMsgId
   };
+  const currentAttemptMsgIds = {
+    tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null,
+    tgPhotoMsgIds:[], tgJsonMsgId:null
+  };
   let backupSucceeded = false;
   try{
     const previousPrimaryPhotoFileId = t.tgPhotoFileId;
     t.tgPhotoFileId = null;
     t.tgBackedUp = false;
+    let sepOk = false;
     let textOk = false;
 
     // 0) розділювач-заголовок — щоб у стрічці групи було одразу видно, де
@@ -421,7 +426,11 @@ async function backupTicketToTelegramNow(t){
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text: sepText})
       },t);
-      if(data.ok) t.tgSepMsgId = data.result.message_id;
+      if(data.ok && data.result && data.result.message_id){
+        sepOk = true;
+        t.tgSepMsgId = data.result.message_id;
+        currentAttemptMsgIds.tgSepMsgId = data.result.message_id;
+      }
     }
     // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
@@ -430,7 +439,11 @@ async function backupTicketToTelegramNow(t){
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, text})
       },t);
-      if(data.ok){ textOk = true; t.tgTextMsgId = data.result.message_id; }
+      if(data.ok && data.result && data.result.message_id){
+        textOk = true;
+        t.tgTextMsgId = data.result.message_id;
+        currentAttemptMsgIds.tgTextMsgId = data.result.message_id;
+      }
     }
     // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
     // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
@@ -458,11 +471,12 @@ async function backupTicketToTelegramNow(t){
       form.append('caption', (photosToSend.length>1 ? `${caption} (${pi+1}/${photosToSend.length})` : caption).slice(0,1020));
       form.append('photo', blob, 'foto.jpg');
       const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form},t);
-      if(data.ok){
+      if(data.ok && data.result && data.result.message_id){
         const sizes = data.result.photo || [];
         const fileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
         t.tgPhotoFileIds.push(fileId);
         t.tgPhotoMsgIds.push(data.result.message_id);
+        currentAttemptMsgIds.tgPhotoMsgIds.push(data.result.message_id);
       }
     }
     // NEW: раніше стару копію видаляли, щойно проходив ТЕКСТ (t.tgBackedUp),
@@ -486,12 +500,16 @@ async function backupTicketToTelegramNow(t){
       form.append('chat_id', chatId);
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
       const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendDocument`, {method:'POST', body: form},t);
-      if(data.ok){ jsonOk = true; t.tgJsonMsgId = data.result.message_id; }
+      if(data.ok && data.result && data.result.message_id){
+        jsonOk = true;
+        t.tgJsonMsgId = data.result.message_id;
+        currentAttemptMsgIds.tgJsonMsgId = data.result.message_id;
+      }
     }catch(e){ console.error('Telegram JSON backup request failed'); }
-    // NEW: нова версія підтверджено відправлена (текст пройшов) — тепер
+    // NEW: нова версія підтверджено відправлена повністю — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
-    if(textOk && photosOk && jsonOk){
+    if(sepOk && textOk && photosOk && jsonOk){
       t.tgBackedUp = true;
       await deleteTicketTelegramMessages(oldMsgIds, token, chatId);
       backupSucceeded = true;
@@ -499,7 +517,11 @@ async function backupTicketToTelegramNow(t){
     }
   }catch(e){ console.error('Telegram backup request failed'); } // тихо — це лише резервна копія, не критична дія
   finally{
-    if(!backupSucceeded) Object.assign(t, previousBackupState);
+    if(!backupSucceeded){
+      await deleteTicketTelegramMessages(currentAttemptMsgIds, token, chatId);
+      Object.assign(t, previousBackupState);
+      t.tgBackupPending = true;
+    }
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
     // якщо зв'язок обривався десь на середині (а повідомлення в Telegram все
     // одно доходило), локально це не зберігалось і галочка "✅" губилась

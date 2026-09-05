@@ -306,6 +306,7 @@ function moveTicketToTrash(t){
 }
 
 function saveDeletedTickets(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
   try{ localStorage.setItem('deletedTickets', JSON.stringify(deletedTickets)); }catch(e){ /* сховище повне — не критично, це лише кошик */ }
 }
 

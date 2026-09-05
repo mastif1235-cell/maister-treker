@@ -172,6 +172,7 @@ function loadSettings(){
 }
 
 function saveSettings(){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
   settings = migrateSyncSettingsV66(settings, settings);
   localStorage.setItem('settings', JSON.stringify(settings));
 }
