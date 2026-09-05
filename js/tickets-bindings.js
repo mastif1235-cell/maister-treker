@@ -273,7 +273,10 @@ document.getElementById('f_apartment').addEventListener('blur', maybeSuggestClie
 
 document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
-  document.getElementById('f_callFee').addEventListener('input', ()=>{ feeIsAutoDefault = false; }, {capture:true});
+  document.getElementById('f_callFee').addEventListener('input', event=>{
+    feeIsAutoDefault = false;
+    calcState.baseCallFee=safeNonNegativeNumber(event.target.value);
+  }, {capture:true});
   document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
   /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
    Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому

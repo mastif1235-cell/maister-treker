@@ -119,6 +119,9 @@ function resetCalcForm(presetDate, overrides){
   // навігатора адрес) у щойно відкриту порожню форму — застосовується ДО
   // логіки тегу за типом нижче, щоб автотег теж підхопив правильний тип.
   if(overrides) Object.assign(calcState, overrides);
+  if(overrides && !Object.prototype.hasOwnProperty.call(overrides,'baseCallFee') && Object.prototype.hasOwnProperty.call(overrides,'callFee')){
+    calcState.baseCallFee=safeNonNegativeNumber(overrides.callFee);
+  }
   editingTicketId = null;
   feeIsAutoDefault = true; // NEW: нова заявка — ціну можна підставляти автоматично за типом
   tariffIsAutoDefault = true;
@@ -146,6 +149,11 @@ function resetCalcForm(presetDate, overrides){
 
 function loadTicketIntoForm(t){
   calcState = JSON.parse(JSON.stringify(t)); // глибока копія, щоб не мутувати реєстр до збереження
+  // Старі заявки не мають окремої базової ціни. Беремо їхнє фактичне
+  // збережене значення як є (у тому числі 0), не намагаючись вгадати,
+  // чи колись воно було обнулене порогом безкоштовного виклику.
+  if(!Object.prototype.hasOwnProperty.call(calcState,'baseCallFee')) calcState.baseCallFee=safeNonNegativeNumber(calcState.callFee);
+  else calcState.baseCallFee=safeNonNegativeNumber(calcState.baseCallFee);
   naryadPendingCompletionId = null;
   formSessionId++; // NEW: те саме застереження, що й у resetCalcForm — новий сеанс форми
   // NEW: знімок оригінальних content/sum на момент відкриття — потрібен
@@ -266,7 +274,10 @@ function fillFormFromState(){
   document.getElementById('f_contractManual').value = calcState.type === 'Ремонт' ? (calcState.contractNumber || '') : ''; // NEW
   setDateFieldValue(calcState.date || '');
   document.getElementById('f_time').value = calcState.time || '';
-  document.getElementById('f_callFee').value = calcState.callFee || 0;
+  document.getElementById('f_callFee').value = effectiveTicketCallFee({
+    ...calcState,
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+  });
   document.getElementById('f_tariff').value = calcState.tariff || 0;
   document.getElementById('f_payment').value = calcState.payment || '';
   updateMixedPaymentVisibility(); // NEW: показує/ховає перелік розбивки суми залежно від способу оплати (і сам малює позиції з calcState.itemPayments)
@@ -345,6 +356,7 @@ function computeTotal(){
     type:getEffectiveType(),
     freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0,
     payment: paymentEl ? paymentEl.value : '',
+    baseCallFee:ticketBaseCallFee(calcState),
     callFee:safeNonNegativeNumber(document.getElementById('f_callFee').value),
     tariff:safeNonNegativeNumber(document.getElementById('f_tariff').value),
     equipment: calcState.equipment,
@@ -367,6 +379,7 @@ function buildMixedPaymentItems(){
   return buildMixedPaymentItemsFromTicket({
     type: getEffectiveType(),
     freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0,
+    baseCallFee:ticketBaseCallFee(calcState),
     callFee: Number(document.getElementById('f_callFee').value)||0,
     tariff: Number(document.getElementById('f_tariff').value)||0,
     equipment: calcState.equipment, cables: calcState.cables,
@@ -575,18 +588,23 @@ function applyDefaultCallFee(){
   // однаково має одразу реагувати на зміну обладнання.
   if(calcState.cloudImported){ computeTotal(); return; }
   const type = getEffectiveType();
-  if(!feeIsAutoDefault&&type!=='Ремонт'){computeTotal();return;}
-  let def = null;
-  if(type === 'Підключення') def = Number(settings.defaultConnectFee) || 0;
-  else if(type === 'Ремонт') def = Number(settings.defaultRepairCallFee) || 0;
-  if(def === null){ computeTotal(); return; }
-  // Безкоштовний виклик — правило лише для ремонту. Вартість підключення
-  // ніколи не залежить від проданого обладнання. Нульова позиція теж не
-  // може спрацювати, навіть якщо майстер поставить поріг 0 грн.
-  const threshold = Number(settings.freeRepairCallThreshold) || 0;
-  const equipmentTotal=(calcState.equipment||[]).reduce((sum,item)=>sum+(item.checked?safeNonNegativeNumber(item.price):0),0);
-  if(type === 'Ремонт' && threshold>0 && equipmentTotal>=threshold) def = 0;
-  document.getElementById('f_callFee').value = def;
+  let baseFee;
+  if(feeIsAutoDefault){
+    if(type === 'Підключення') baseFee = Number(settings.defaultConnectFee) || 0;
+    else if(type === 'Ремонт') baseFee = Number(settings.defaultRepairCallFee) || 0;
+    else baseFee = 0;
+    calcState.baseCallFee=safeNonNegativeNumber(baseFee);
+  }else{
+    baseFee=ticketBaseCallFee(calcState);
+  }
+  const effectiveFee=effectiveTicketCallFee({
+    ...calcState,
+    type,
+    baseCallFee:baseFee,
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+  });
+  calcState.callFee=effectiveFee;
+  document.getElementById('f_callFee').value = effectiveFee;
   computeTotal();
 }
 
@@ -629,7 +647,14 @@ function syncFormToState(){
   calcState.password = cred.password;
   calcState.date = document.getElementById('f_date').value.trim() || formatDate(new Date());
   calcState.time = document.getElementById('f_time').value.trim() || formatTime(new Date());
-  calcState.callFee=safeNonNegativeNumber(document.getElementById('f_callFee').value);
+  if(!Object.prototype.hasOwnProperty.call(calcState,'baseCallFee')){
+    calcState.baseCallFee=safeNonNegativeNumber(document.getElementById('f_callFee').value);
+  }
+  calcState.callFee=effectiveTicketCallFee({
+    ...calcState,
+    type:calcState.type,
+    freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
+  });
   calcState.tariff=safeNonNegativeNumber(document.getElementById('f_tariff').value);
   calcState.payment = document.getElementById('f_payment').value;
   // NEW: для "Змішана" cashAmount/cardAmount і так вже актуальні — їх

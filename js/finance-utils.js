@@ -9,6 +9,12 @@
 function safeNonNegativeNumber(value,fallback=0){const number=Number(value);return Number.isFinite(number)&&number>=0?number:fallback;}
 function safeWorkQuantity(value){const number=Number(value);if(!Number.isFinite(number))return 1;if(number<0)return 0;return number||1;}
 
+function ticketBaseCallFee(state){
+  return Object.prototype.hasOwnProperty.call(state||{},'baseCallFee')
+    ? safeNonNegativeNumber(state.baseCallFee)
+    : safeNonNegativeNumber(state&&state.callFee);
+}
+
 function effectiveTicketCallFee(state,equipmentSum){
   const selectedEquipmentSum = equipmentSum === undefined
     ? (state.equipment||[]).reduce((sum,item)=>sum+(item.checked!==false?safeNonNegativeNumber(item.price):0),0)
@@ -16,7 +22,7 @@ function effectiveTicketCallFee(state,equipmentSum){
   const threshold=safeNonNegativeNumber(state.freeRepairCallThreshold);
   return state.type==='Ремонт'&&threshold>0&&selectedEquipmentSum>=threshold
     ? 0
-    : safeNonNegativeNumber(state.callFee);
+    : ticketBaseCallFee(state);
 }
 
 function calculateTicketTotal(state){

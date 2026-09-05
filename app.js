@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v89 · 2026-09-05';
+const APP_VERSION = 'v90 · 2026-09-05';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -190,7 +190,7 @@ function ticketToSyncPayload(t){
   const fullData = {
     type:t.type, city:t.city, street:t.street, house:t.house, apartment:t.apartment,
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
-    payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
+    payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, baseCallFee:t.baseCallFee, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
     note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones,
     signal:t.signal, geoLat:t.geoLat, geoLng:t.geoLng,

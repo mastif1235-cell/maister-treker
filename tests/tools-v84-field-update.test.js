@@ -31,11 +31,11 @@ assert.match(app,/networkPointIds/);assert.match(backup,/tickets/);
 const context={};vm.createContext(context);vm.runInContext(read('js/finance-utils.js'),context);
 let result=context.calculateTicketTotal({type:'Ремонт',callFee:300,freeRepairCallThreshold:800,equipment:[{checked:true,price:500},{checked:true,price:1000}]});assert.equal(result.total,1500);assert.equal(result.callFee,0);
 result=context.calculateTicketTotal({type:'Ремонт',callFee:300,freeRepairCallThreshold:800,equipment:[{checked:true,price:500}]});assert.equal(result.total,800);assert.equal(result.callFee,300);
-assert.match(editor,/equipmentTotal=.*reduce/);assert.match(html,/Для ремонту: якщо сума вибраного обладнання дорівнює або перевищує цей поріг/);
+assert.match(editor,/function applyDefaultCallFee[\s\S]*effectiveTicketCallFee/);assert.match(html,/Для ремонту: якщо сума вибраного обладнання дорівнює або перевищує цей поріг/);
 
 // AA/AB and mobile editor safety.
 assert.match(domain,/name="mt-internal-profile-search"/);assert.match(domain,/role="searchbox"/);assert.match(domain,/autocomplete="off"/);
 const point=core.normalizeNetworkPoint({id:'stable',type:'Муфта',lat:48,lng:37,telegramChatId:'-1001',telegramMessageId:7,photoKeys:['idb:p']},new Date('2026-09-01T12:00:00Z'));assert.equal(point.id,'stable');assert.equal(point.telegramMessageId,7);assert.deepEqual(point.photoKeys,['idb:p']);
 assert.match(styles,/tools-point-editor-overlay textarea,.tools-point-editor-modal textarea\{width:100%/);assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v89 · 2026-09-05/);assert.match(read('sw.js'),/maister-treker-v66-runtime-31/);
+assert.match(app,/v90 · 2026-09-05/);assert.match(read('sw.js'),/maister-treker-v66-runtime-32/);
 console.log('PASS v84 network tree/viewer/Telegram update/links, repair threshold and coordinate-modal regressions');

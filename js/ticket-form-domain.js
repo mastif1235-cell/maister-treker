@@ -4,7 +4,7 @@ function blankTicketObject(){
     id:null, date:'', time:'', content:'', sum:0, tags:[], photo:null,
     photos:[], // NEW: до 3 фото на заявку; photo (одне) лишається як дублікат першого фото — для сумісності зі старим кодом, який ще читає лише photo
     type:'Підключення', city:'', address:'', clientName:'', phone:'', signal:'',
-    callFee:0, tariff:0,
+    baseCallFee:0, callFee:0, tariff:0,
     equipment: [],
     cables: [], // NEW: динамічний список кабелів замість фіксованих UTP/Оптика
     presetWorks: [],
