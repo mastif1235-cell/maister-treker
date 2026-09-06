@@ -17,11 +17,11 @@ assert.match(telegram,/return \{ok:true,chatId:String\(chatId\),messageId:Number
 assert.match(telegram,/function telegramNetworkMessageLink[\s\S]*\/\^-100\\d\+\$\//,'network deep-link accepts only a real supergroup reference');
 assert.match(domain,/telegramNetworkMessageLink\(firstResult\.chatId,firstResult\.messageId\)/);assert.match(domain,/Відкрити в Telegram/);assert.match(domain,/Оновити в Telegram/);
 
-assert.match(domain,/Зберегти межі області \(\.json\)/);assert.match(domain,/Це лише межі та масштаб, не файл карти/);assert.match(domain,/Додати офлайн-карту \(\.pmtiles\)/);
+assert.match(domain,/Зберегти параметри \(\.json\)/);assert.match(domain,/Вибрати файл \.pmtiles і встановити/);assert.match(domain,/Карта не встановлена/);
 assert.match(domain,/parsed\?\.format==='master-tracker-offline-area-v1'/);assert.match(domain,/Це файл параметрів області, а не офлайн-карта/);assert.match(domain,/Потрібен файл офлайн-карти у форматі \.pmtiles/);
-assert.match(domain,/<details class="tools-offline-more"><summary>Ще<\/summary>/);assert.match(domain,/<summary>Як працює офлайн-карта\?<\/summary>/,'offline explanations are collapsed');
+assert.match(domain,/<details class="tools-offline-more"><summary>Технічна інформація<\/summary>/,'offline technical details are collapsed');
 assert.match(domain,/Як отримати файл \.pmtiles\?/);assert.match(domain,/готовий <strong>PMTiles v3<\/strong> із vector MVT або raster-плитками/);assert.match(domain,/https:\/\/docs\.protomaps\.com\/pmtiles\/cli/,'guide links only to official PMTiles CLI documentation');
-assert.match(domain,/Застосунок не завантажує плитки масово з OpenStreetMap або MapTiler/);assert.match(domain,/JSON не містить плиток/);
+assert.match(domain,/Застосунок не завантажує плитки масово з OpenStreetMap або MapTiler/);
 assert.doesNotMatch(domain,/api\.maptiler\.com[^'"`]*\?key=/,'offline workflow does not embed or export a MapTiler key');
 assert.match(offline,/SLOTS=\['map-a\.pmtiles','map-b\.pmtiles'\]/);assert.match(offline,/previous=readMeta\(\)/);assert.match(offline,/catch\(error\)\{await removeSlot\(directory,theSlot\);throw error;\}/,'PMTiles replacement remains rollback-safe');assert.match(map,/function addOnlineBaseLayer/,'online map remains available');
 console.log('PASS v81 floating map controls, Telegram reference and compact honest offline UX');

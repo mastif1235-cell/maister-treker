@@ -123,6 +123,7 @@ nav.tabbar{
 .tools-offline-map-meta{color:var(--text-dim);margin-top:2px;}
 .tools-offline-area-row{padding:10px 0;border-top:1px solid var(--border)}.tools-offline-area-row:first-child{border-top:0;padding-top:0}.tools-offline-area-row:last-child{padding-bottom:0}
 .tools-offline-primary-actions{margin-top:8px;}.tools-offline-primary-actions .btn{flex:1;}.tools-offline-more{margin-top:7px;font-size:12px;}.tools-offline-more summary{cursor:pointer;font-weight:700;color:var(--text-dim);}.tools-offline-more .row{margin-top:7px;}
+.tools-offline-install{margin-top:9px;min-height:46px;}
 .tools-map-mode{min-height:36px;width:auto;padding:6px 30px 6px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font:600 12px/1.2 inherit;}
 .tools-map-status{padding:7px 9px;margin-bottom:7px;border-radius:8px;background:rgba(255,184,77,.14);color:#c57a00;font-size:12px;}
 .tools-map-filters{display:flex;gap:6px;overflow-x:auto;padding:2px 0 9px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;}

@@ -234,6 +234,10 @@
     const a={w:Number(area.minLng),s:Number(area.minLat),e:Number(area.maxLng),n:Number(area.maxLat)},b={w:Number(header.minLon??header.minLng),s:Number(header.minLat),e:Number(header.maxLon??header.maxLng),n:Number(header.maxLat)};
     if(![a.w,a.s,a.e,a.n,b.w,b.s,b.e,b.n].every(Number.isFinite))return 0;const intersection=Math.max(0,Math.min(a.e,b.e)-Math.max(a.w,b.w))*Math.max(0,Math.min(a.n,b.n)-Math.max(a.s,b.s)),areaSize=Math.max(0,(a.e-a.w)*(a.n-a.s));return areaSize?Math.min(1,intersection/areaSize):0;
   }
+  function offlineAreaDuplicate(first={},second={}){
+    const name=value=>text(value).toLocaleLowerCase('uk').replace(/\s+/g,' '),sameName=!!name(first.name)&&name(first.name)===name(second.name);
+    return sameName||(offlineBoundsOverlap(first,second)>=.95&&offlineBoundsOverlap(second,first)>=.95);
+  }
   function sanitizeDiagnostics(value){
     if(!Array.isArray(value))return[];
     return value.slice(0,5000).flatMap(item=>{
@@ -246,5 +250,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

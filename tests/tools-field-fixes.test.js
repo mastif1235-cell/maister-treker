@@ -20,9 +20,9 @@ assert.match(domain,/toolsPointPhotoPreview/);assert.match(domain,/resolvePhotoA
 assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/);assert.doesNotMatch(domain,/result\.ipFamily\|\|''/,'11 IPv6 is hidden from results and profile history');
 assert.match(domain,/Перевірити швидкість/);assert.match(domain,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/rows\.push\(\['Download'/,'12 speed UX has no fake empty metrics');
 assert.match(domain,/Офлайн-підкладка для цієї області не встановлена/);assert.match(domain,/toolsMapEmptyState/,'13 missing basemap has an honest empty state');
-assert.match(domain,/Збережена лише область/);assert.match(domain,/Офлайн-карта встановлена/,'14 multiple areas expose honest installation status');
+assert.match(domain,/Карта не встановлена/);assert.match(domain,/Офлайн-карта встановлена/,'14 multiple areas expose honest installation status');
 assert.match(map,/function addOnlineBaseLayer/);assert.match(map,/tile\.openstreetmap\.org/,'15 online map path remains intact');
-assert.match(domain,/Зберегти межі області \(\.json\)/);assert.match(domain,/Це лише межі та масштаб, не файл карти/,'area JSON is explicitly not presented as map data');
+assert.match(domain,/Зберегти параметри \(\.json\)/);assert.match(domain,/JSON містить лише назву, координати меж і zoom/,'area JSON is explicitly described only inside technical help');
 assert.match(telegram,/photoResult\.ok/,'photo send failures are reported by the existing transport');
 const sourcePoints=[{id:'point-a',type:'FOB'},{id:'point-b',type:'Муфта'}],tickets=[{id:'ticket-1',city:'Київ'}],profiles=[{id:'profile-1'}];
 const removed=core.removeNetworkPoint(sourcePoints,'point-a');

@@ -6,6 +6,7 @@ const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
 const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
+const OBJECT_ICON_SCALE={min:.59,max:.98};
 
 export function createOsmStyle(){
   return{
@@ -112,7 +113,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(existing)existing.setData(data);
     else{
       map.addSource('mt-objects',{type:'geojson',data});
-      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,.45,17,.75],'icon-anchor':'bottom','icon-allow-overlap':false}});
+      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,OBJECT_ICON_SCALE.min,17,OBJECT_ICON_SCALE.max],'icon-anchor':'bottom','icon-allow-overlap':false}});
       map.on('click','mt-objects',event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])options.onSelect?.(objectItems[index]);});
       map.on('mouseenter','mt-objects',()=>{map.getCanvas().style.cursor='pointer';});
       map.on('mouseleave','mt-objects',()=>{map.getCanvas().style.cursor='';});
