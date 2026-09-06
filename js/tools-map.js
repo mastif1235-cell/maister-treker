@@ -27,6 +27,10 @@
   const baseStates=new WeakMap();
 
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
+  function requestedEngine(options={}){
+    if(options.engine)return options.engine;
+    try{return root.URLSearchParams&&new root.URLSearchParams(root.location?.search||'').get('mapEngine')==='maplibre'?'maplibre':'leaflet';}catch(_error){return'leaflet';}
+  }
   function validPoint(value){
     const lat=Number(value?.lat),lng=Number(value?.lng);
     return Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180?{lat,lng}:null;
@@ -287,7 +291,7 @@
   function mount(container,objects=[],options={}){
     if(!container)return null;
     destroyMap();
-    if(options.engine==='maplibre'&&root.MTToolsMapLibreAdapter?.mount){
+    if(requestedEngine(options)==='maplibre'&&root.MTToolsMapLibreAdapter?.mount){
       const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,{...options,selectedCategories:selected});
       if(mounted)return mounted;
     }
@@ -338,7 +342,7 @@
   }
   function mountPicker(container,options={}){
     destroyPicker();
-    if(options.engine==='maplibre'&&root.MTToolsMapLibreAdapter?.mountPicker){const mounted=root.MTToolsMapLibreAdapter.mountPicker(container,options);if(mounted)return mounted;}
+    if(requestedEngine(options)==='maplibre'&&root.MTToolsMapLibreAdapter?.mountPicker){const mounted=root.MTToolsMapLibreAdapter.mountPicker(container,options);if(mounted)return mounted;}
     if(!container||!hasLeaflet())return null;
     const initial=validPoint(options.initial);
     const pickerMap=root.L.map(container,{zoomControl:true,tap:true}).setView(initial?[initial.lat,initial.lng]:DEFAULT_CENTER,initial?17:6);
