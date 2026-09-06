@@ -135,6 +135,7 @@
     state.kind='offline';state.layer=await addOfflineBaseLayer(targetMap,statusNode,emptyStateNode);return state.layer;
   }
   function switchBaseLayer(targetMap,kind,statusNode,options={}){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.()&&targetMap===root.MTToolsMapLibreAdapter.getMap())return root.MTToolsMapLibreAdapter.switchBaseLayer(kind,statusNode,options);
     const state=baseStates.get(targetMap)||{layer:null,kind:'map',statusNode,emptyStateNode:null,mode:'auto'};baseStates.set(targetMap,state);
     if(kind==='satellite'){
       if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн. Поточна підкладка не змінена.');return false;}

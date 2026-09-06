@@ -1,6 +1,7 @@
 import * as maplibregl from '../vendor/maplibre/maplibre-gl.mjs';
 
 const OSM_TILE_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const MAPTILER_TILE_URL='https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg';
 const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
 const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
@@ -11,6 +12,10 @@ export function createOsmStyle(){
     sources:{osm:{type:'raster',tiles:[OSM_TILE_URL],tileSize:256,maxzoom:19,attribution:'© OpenStreetMap contributors'}},
     layers:[{id:'osm',type:'raster',source:'osm'}]
   };
+}
+
+export function createSatelliteStyle(key){
+  return{version:8,sources:{satellite:{type:'raster',tiles:[`${MAPTILER_TILE_URL}?key=${encodeURIComponent(key)}`],tileSize:512,minzoom:1,maxzoom:22,attribution:'© MapTiler © OpenStreetMap contributors'}},layers:[{id:'satellite',type:'raster',source:'satellite'}]};
 }
 
 export function accuracyPolygon(point,radius,steps=72){
@@ -32,6 +37,9 @@ export function createMapLibreAdapter(gl,root=globalThis){
   let objectItems=[];
   let selectedCategories=null;
   let filterRoot=null;
+  let currentOptions={};
+  let currentBase='map';
+  let baseControl=null;
   let savedView=null;
   const setStatus=(node,message='')=>{if(!node)return;node.textContent=message;node.classList?.toggle?.('hidden',!message);};
   const webgl2Available=()=>{try{return !!root.document?.createElement('canvas')?.getContext('webgl2');}catch(_error){return false;}};
@@ -72,6 +80,22 @@ export function createMapLibreAdapter(gl,root=globalThis){
     }
     applyObjectFilters();
   };
+  const updateBaseButtons=()=>baseControl?.querySelectorAll('[data-mt-base-layer]').forEach(button=>{const active=button.dataset.mtBaseLayer===currentBase;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+  const switchBaseLayer=(kind,statusNode=currentOptions.statusNode,options={})=>{
+    if(!map)return false;
+    if(kind==='satellite'){
+      if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн.');return false;}
+      const key=root.MTMapTilerLocal?.getKey?.();if(!key){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
+      currentBase='satellite';map.setStyle(createSatelliteStyle(key));
+    }else{currentBase='map';map.setStyle(createOsmStyle());}
+    map.once('style.load',()=>{restoreUserLocation();restoreObjects(currentOptions);updateBaseButtons();setStatus(statusNode,options.message||'');});
+    if(options.remember!==false)root.MTMapTilerLocal?.saveLayer?.(currentBase);
+    updateBaseButtons();return true;
+  };
+  const addBaseSwitcher=()=>{
+    const control={onAdd(){const wrap=root.document.createElement('div');wrap.className='maplibregl-ctrl tools-map-layer-switcher';wrap.innerHTML='<button type="button" data-mt-base-layer="map">🗺️ Карта</button><button type="button" data-mt-base-layer="satellite">🛰️ Супутник</button>';wrap.addEventListener('click',event=>{const button=event.target.closest('[data-mt-base-layer]');if(button)switchBaseLayer(button.dataset.mtBaseLayer);});baseControl=wrap;updateBaseButtons();return wrap;},onRemove(){baseControl?.remove();baseControl=null;}};
+    map.addControl(control,'top-left');
+  };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
   const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;};
   const destroy=()=>{destroyPicker();cancelPointPlacement();userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;captureView();map.remove();map=null;};
@@ -81,21 +105,23 @@ export function createMapLibreAdapter(gl,root=globalThis){
       setStatus(options.statusNode,'MapLibre потребує WebGL2. Використано резервну карту Leaflet.');
       return null;
     }
-    objectItems=Array.isArray(_objects)?_objects:[];selectedCategories=options.selectedCategories||new Set(Object.keys(CATEGORY_COLORS));filterRoot=options.filterRoot||null;bindObjectFilters();
+    currentOptions=options;objectItems=Array.isArray(_objects)?_objects:[];selectedCategories=options.selectedCategories||new Set(Object.keys(CATEGORY_COLORS));filterRoot=options.filterRoot||null;bindObjectFilters();
+    const preferred=root.navigator?.onLine!==false&&root.MTMapTilerLocal?.getLayer?.()==='satellite'&&root.MTMapTilerLocal?.getKey?.();currentBase=preferred?'satellite':'map';
     const view=options.initialView||savedView||DEFAULT_VIEW;
     map=new gl.Map({
-      container,style:createOsmStyle(),center:[Number(view.lng),Number(view.lat)],zoom:Number(view.zoom),bearing:Number(view.bearing)||0,pitch:0,
+      container,style:preferred?createSatelliteStyle(preferred):createOsmStyle(),center:[Number(view.lng),Number(view.lat)],zoom:Number(view.zoom),bearing:Number(view.bearing)||0,pitch:0,
       dragRotate:true,touchZoomRotate:true,attributionControl:false
     });
     map.addControl(new gl.NavigationControl({showCompass:true,showZoom:true,visualizePitch:true}),'top-right');
     map.addControl(new gl.FullscreenControl({container}),'top-right');
     map.addControl(new gl.AttributionControl({compact:true}),'bottom-right');
+    addBaseSwitcher();
     map.touchZoomRotate?.enable?.();
     map.touchZoomRotate?.enableRotation?.();
     map.on('moveend',captureView);
     map.on('load',()=>{setStatus(options.statusNode,'');restoreUserLocation();restoreObjects(options);});
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
-    map.on('error',event=>setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`));
+    map.on('error',event=>{if(currentBase==='satellite'){root.MTMapTilerLocal?.saveLayer?.('map');switchBaseLayer('map',options.statusNode,{remember:false,message:'Супутниковий шар недоступний. Відкрито звичайну карту.'});}else setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`);});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());
     return map;
   };
@@ -125,7 +151,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     picker={map:pickerMap,getPoint,setPoint,hasChanged:()=>changed,invalidateSize:()=>{pickerMap.resize();return true;},destroy:destroyPicker};
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>pickerMap.resize());return picker;
   };
-  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
+  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,switchBaseLayer,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
 }
 
 maplibregl.setWorkerUrl(WORKER_URL);

@@ -11,7 +11,7 @@ assert.equal(config.clearKey(),true);assert.equal(config.hasKey(),false,'KEY-6 c
 
 const html=read('index.html'),sw=read('sw.js'),settings=read('js/settings-core.js'),backup=read('js/backup-system.js'),telegram=read('js/photo-telegram-domain.js');
 assert.match(html,/id="mapTilerKeyInput"[^>]+type="password"|type="password"[^>]+id="mapTilerKeyInput"/);
-assert.match(html,/img-src[^;]+https:\/\/api\.maptiler\.com/);assert.doesNotMatch(html,/connect-src[^;]+api\.maptiler\.com/,'CSP adds MapTiler only to img-src');
+assert.match(html,/img-src[^;]+https:\/\/api\.maptiler\.com/);assert.match(html,/connect-src[^;]+api\.maptiler\.com/,'MapLibre raster requests use the restricted official MapTiler origin');
 assert.ok(html.indexOf('js/maptiler-local-config.js')<html.indexOf('js/tools-map.js'));assert.match(sw,/js\/maptiler-local-config\.js/);
 for(const [name,source] of [['settings',settings],['backup',backup],['telegram',telegram]])assert.doesNotMatch(source,/mt-maptiler-key-v1|MTMapTilerLocal/,`KEY-3/4/5 ${name} path cannot access device key`);
 assert.doesNotMatch(read('app.js'),/mt-maptiler-key-v1|MTMapTilerLocal/,'ticket/sync model cannot access key');

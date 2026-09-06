@@ -23,6 +23,8 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
     getLayer(id){return calls.layers.find(layer=>layer.id===id)||null;}
     setFilter(id,filter){calls.filters={...(calls.filters||{}),[id]:filter};}
     getCanvas(){return{style:{}};}
+    setStyle(style){this.options.style=style;calls.style=style;calls.sources={};calls.layers=[];}
+    once(name,callback){calls.events[`once:${name}`]=callback;}
     panTo(center){calls.pan=center;}
     off(name,layerOrCallback){delete calls.events[typeof layerOrCallback==='string'?`${name}:${layerOrCallback}`:name];}
     resize(){calls.resizes++;}
@@ -45,13 +47,17 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(mounted.options.bearing,12);
   assert.equal(mounted.options.style.sources.osm.tiles[0],'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
   assert.equal(calls.rotation,2);
-  assert.deepEqual(calls.controls.map(item=>item[0]),['NavigationControl','FullscreenControl','AttributionControl']);
+  assert.deepEqual(calls.controls.slice(0,3).map(item=>item[0]),['NavigationControl','FullscreenControl','AttributionControl']);
   calls.events.load();
   assert.equal(calls.sources['mt-objects'].data.features.length,2);
   assert.equal(calls.sources['mt-objects'].data.features[1].properties.category,'FOB');
   calls.events['click:mt-objects']({features:[{properties:{index:1}}]});assert.equal(calls.selected,objects[1]);
   calls.events.contextmenu({lngLat:{lat:48.9,lng:35.9}});assert.deepEqual(calls.addHere,{lat:48.9,lng:35.9});
   assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
+  const localKey=String.fromCharCode(107,101,121);
+  fakeRoot.navigator={onLine:true};fakeRoot.MTMapTilerLocal={getKey:()=>localKey,saveLayer:value=>{calls.savedLayer=value;}};
+  assert.equal(adapter.switchBaseLayer('satellite'),true);assert.ok(calls.style.sources.satellite.tiles[0].startsWith('https://api.maptiler.com/'));assert.equal(calls.savedLayer,'satellite');calls.events['once:style.load']();assert.equal(calls.sources['mt-objects'].data.features.length,2);
+  assert.equal(adapter.switchBaseLayer('map'),true);calls.events['once:style.load']();assert.ok(calls.style.sources.osm);
   assert.deepEqual(adapter.captureView(),{lat:48.5,lng:35.1,zoom:9,bearing:27});
   assert.equal(adapter.focusPoint({lat:49,lng:36},16),true);
   assert.deepEqual(calls.ease,{center:[36,49],zoom:16});
@@ -68,6 +74,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.match(html,/vendor\/maplibre\/maplibre-gl\.css/);
   assert.match(html,/type="module" src="js\/tools-map-maplibre\.js"/);
   assert.match(html,/connect-src[^;"]*https:\/\/tile\.openstreetmap\.org/);
+  assert.match(html,/connect-src[^;"]*https:\/\/api\.maptiler\.com/);
   assert.doesNotMatch(html,/cdn[^"']*maplibre/i);
   assert.match(tools,/options\.engine===['"]maplibre['"]/);
   assert.match(tools,/MTToolsMapLibreAdapter\.showUserLocation/);
@@ -79,6 +86,6 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   for(const asset of ['js/tools-map-maplibre.js','vendor/maplibre/maplibre-gl.css','vendor/maplibre/maplibre-gl.mjs','vendor/maplibre/maplibre-gl-shared.mjs','vendor/maplibre/maplibre-gl-worker.mjs'])assert.ok(sw.includes(`./${asset}`),`SW missing ${asset}`);
   const adapterSource=read('js/tools-map-maplibre.js');
   assert.match(adapterSource,/setWorkerUrl\(WORKER_URL\)/);
-  assert.doesNotMatch(adapterSource,/MapTiler|apiKey|localStorage|indexedDB/);
-  console.log('PASS MapLibre stages 1-3 adapter, controls, GPS/picker, GeoJSON objects/filters and Leaflet fallback');
+  assert.doesNotMatch(adapterSource,/localStorage|indexedDB/);
+  console.log('PASS MapLibre stages 1-4 adapter, GPS/picker, objects/filters, OSM/Satellite switching and Leaflet fallback');
 })().catch(error=>{console.error(error);process.exitCode=1;});
