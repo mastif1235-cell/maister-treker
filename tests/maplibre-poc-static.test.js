@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.join(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'maplibre-poc.html'),'utf8');
+const js=fs.readFileSync(path.join(root,'maplibre-poc.js'),'utf8');
+
+assert.match(html,/vendor\/maplibre\/maplibre-gl\.css/);
+assert.match(html,/vendor\/pmtiles\/pmtiles\.js/);
+assert.match(html,/type="module" src="maplibre-poc\.js"/);
+assert.match(js,/maplibre-gl\.mjs/);
+assert.match(js,/new window\.pmtiles\.FileSource\(file\)/,'PMTiles uses FileSource instead of reading the whole file');
+assert.match(js,/file\.stream\(\)\.pipeTo\(writable\)/,'OPFS installation is streamed');
+assert.match(js,/new window\.pmtiles\.Protocol/);
+assert.match(js,/maplibregl\.addProtocol\('pmtiles'/);
+assert.match(js,/enableRotation\(\)/);
+assert.match(js,/new maplibregl\.FullscreenControl/);
+assert.match(js,/navigator\.geolocation\.getCurrentPosition/);
+assert.match(js,/new maplibregl\.Marker\(\{element:markerElement\(\),draggable:true\}/);
+assert.match(js,/map\.on\('click'/);
+assert.match(js,/window\.addEventListener\('online',updateNetworkStatus\)/);
+assert.match(js,/window\.addEventListener\('offline',updateNetworkStatus\)/);
+assert.match(js,/OPFS: файл збережено/);
+assert.doesNotMatch(js,/api\.maptiler|MAPTILER|access[_-]?token|api[_-]?key/i,'PoC must not contain external map keys');
+console.log('PASS isolated MapLibre PMTiles PoC wiring');

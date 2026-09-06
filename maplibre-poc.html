@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'">
+  <title>MapLibre + PMTiles PoC</title>
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="maplibre-poc.css">
+</head>
+<body>
+  <main class="poc-shell">
+    <header class="poc-toolbar">
+      <div>
+        <h1>MapLibre + PMTiles PoC</h1>
+        <p>Ізольована локальна демка. Production UI та сховище карти не використовуються.</p>
+      </div>
+      <div class="poc-actions">
+        <label class="file-button">Обрати .pmtiles<input id="pmtiles-file" type="file" accept=".pmtiles,application/octet-stream"></label>
+        <button id="open-file" type="button" disabled>Відкрити без копіювання</button>
+        <button id="install-opfs" type="button" disabled>Зберегти в demo OPFS</button>
+        <button id="gps" type="button">Показати GPS</button>
+      </div>
+    </header>
+
+    <section class="poc-status" aria-live="polite">
+      <span id="webgl-status">WebGL2: перевірка…</span>
+      <span id="network-status">Мережа: перевірка…</span>
+      <span id="map-status">Карта: запуск…</span>
+      <span id="pmtiles-status">PMTiles: файл не вибрано</span>
+      <span id="opfs-status">OPFS: перевірка…</span>
+      <span id="coords-status">Координати: натисніть на карту</span>
+    </section>
+
+    <section id="map-shell" class="map-shell">
+      <div id="map" aria-label="Тестова інтерактивна карта"></div>
+      <div class="poc-help">
+        Два пальці — масштаб і поворот · компас — скинути на північ · помаранчевий маркер можна перетягувати
+      </div>
+    </section>
+
+    <footer>
+      Після імпорту PMTiles вимкніть мережу: підкладка читається частинами з File/OPFS, а GPS, picker і marker не залежать від інтернету.
+    </footer>
+  </main>
+
+  <script src="vendor/pmtiles/pmtiles.js"></script>
+  <script type="module" src="maplibre-poc.js"></script>
+</body>
+</html>
