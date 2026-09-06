@@ -75,7 +75,11 @@ export function createMapLibreAdapter(gl,root=globalThis){
   let offlineProtocol=null;
   let offlineBounds=null;
   let offlineSequence=0;
+  let selectionBounds=null;
+  let selectionClickHandler=null;
+  let pickerStatusNode=null;
   const setStatus=(node,message='')=>{if(!node)return;node.textContent=message;node.classList?.toggle?.('hidden',!message);};
+  const setEmptyState=visible=>currentOptions.emptyStateNode?.classList?.toggle?.('hidden',!visible);
   const webgl2Available=()=>{try{return !!root.document?.createElement('canvas')?.getContext('webgl2');}catch(_error){return false;}};
   const captureView=()=>{
     if(!map)return savedView;
@@ -115,6 +119,13 @@ export function createMapLibreAdapter(gl,root=globalThis){
     }
     applyObjectFilters();
   };
+  const selectionGeoJson=bounds=>bounds?{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[bounds.minLng,bounds.minLat],[bounds.maxLng,bounds.minLat],[bounds.maxLng,bounds.maxLat],[bounds.minLng,bounds.maxLat],[bounds.minLng,bounds.minLat]]]}}:{type:'FeatureCollection',features:[]};
+  const restoreSelection=()=>{
+    if(!map||!map.isStyleLoaded?.())return;
+    const data=selectionGeoJson(selectionBounds),existing=map.getSource?.('mt-selection-bounds');
+    if(existing)existing.setData(data);
+    else{map.addSource('mt-selection-bounds',{type:'geojson',data});map.addLayer({id:'mt-selection-fill',type:'fill',source:'mt-selection-bounds',paint:{'fill-color':'#ff9f1a','fill-opacity':.12}});map.addLayer({id:'mt-selection-line',type:'line',source:'mt-selection-bounds',paint:{'line-color':'#ff9f1a','line-width':2}});}
+  };
   const updateBaseButtons=()=>baseControl?.querySelectorAll('[data-mt-base-layer]').forEach(button=>{const active=button.dataset.mtBaseLayer===currentBase;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
   const updateOfflineCoverage=()=>{
     if(currentBase!=='offline'||!offlineBounds||!map)return;
@@ -126,7 +137,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(!stored?.file||!pm?.PMTiles||!pm?.FileSource||!pm?.Protocol)throw new Error('OFFLINE_MAP_UNAVAILABLE');
     const key=`mt-offline-${Date.now()}-${++offlineSequence}`,source=new pm.FileSource(stored.file);source.getKey=()=>key;
     const archive=new pm.PMTiles(source),[header,metadata]=await Promise.all([archive.getHeader(),archive.getMetadata().catch(()=>({}))]);
-    offlineProtocol=new pm.Protocol({metadata:true});offlineProtocol.add(archive);gl.removeProtocol?.('pmtiles');gl.addProtocol('pmtiles',offlineProtocol.tile);
+    if(!offlineProtocol){offlineProtocol=new pm.Protocol({metadata:true});gl.removeProtocol?.('pmtiles');gl.addProtocol('pmtiles',offlineProtocol.tile);}offlineProtocol.add(archive);
     offlineBounds={minLon:Number(header.minLon),minLat:Number(header.minLat),maxLon:Number(header.maxLon),maxLat:Number(header.maxLat)};
     const sourceId='mt-offline',url=`pmtiles://${key}`,attribution=String(metadata?.attribution||stored.info?.attribution||'© OpenStreetMap contributors');
     if(Number(header.tileType)===1){
@@ -140,23 +151,35 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(!map)return false;
     if(kind==='offline'){
       try{const prepared=await offlineStyle();currentBase='offline';map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
-      catch(_error){setStatus(statusNode,'Офлайн-карта не встановлена або недоступна.');return false;}
+      catch(_error){setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
     }else if(kind==='satellite'){
       if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн.');return false;}
       const key=root.MTMapTilerLocal?.getKey?.();if(!key){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
       currentBase='satellite';map.setStyle(createSatelliteStyle(key));
     }else{currentBase='map';offlineBounds=null;map.setStyle(createOsmStyle());}
-    map.once('style.load',()=>{restoreUserLocation();restoreObjects(currentOptions);updateBaseButtons();if(currentBase==='offline')updateOfflineCoverage();else setStatus(statusNode,options.message||'');});
+    setEmptyState(false);
+    map.once('style.load',()=>{restoreUserLocation();restoreObjects(currentOptions);restoreSelection();updateBaseButtons();if(currentBase==='offline')updateOfflineCoverage();else setStatus(statusNode,options.message||'');});
     if(options.remember!==false){if(currentBase==='offline')root.MTOfflineMap?.setMode?.('offline');else root.MTMapTilerLocal?.saveLayer?.(currentBase);}
     updateBaseButtons();return true;
+  };
+  const switchPickerBase=async useOffline=>{
+    if(!picker?.map)return false;
+    if(!useOffline){picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'');return true;}
+    try{const prepared=await offlineStyle();picker.map.setStyle(prepared.style);setStatus(pickerStatusNode,'Офлайн-карта активна.');return true;}
+    catch(_error){picker.map.setStyle(blankStyle());setStatus(pickerStatusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');return false;}
+  };
+  const handleConnectivityChange=()=>{
+    if(!map||(root.MTOfflineMap?.getMode?.()||'auto')!=='auto')return false;
+    const kind=root.navigator?.onLine===false?'offline':root.MTMapTilerLocal?.getLayer?.()==='satellite'&&root.MTMapTilerLocal?.getKey?.()?'satellite':'map';
+    switchBaseLayer(kind,currentOptions.statusNode,{remember:false,fit:false});switchPickerBase(kind==='offline');return true;
   };
   const addBaseSwitcher=()=>{
     const control={onAdd(){const wrap=root.document.createElement('div');wrap.className='maplibregl-ctrl tools-map-layer-switcher';wrap.innerHTML='<button type="button" data-mt-base-layer="map">🗺️ Карта</button><button type="button" data-mt-base-layer="satellite">🛰️ Супутник</button><button type="button" data-mt-base-layer="offline">📦 Офлайн</button>';wrap.addEventListener('click',event=>{const button=event.target.closest('[data-mt-base-layer]');if(button)switchBaseLayer(button.dataset.mtBaseLayer);});baseControl=wrap;updateBaseButtons();return wrap;},onRemove(){baseControl?.remove();baseControl=null;}};
     map.addControl(control,'top-left');
   };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
-  const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;};
-  const destroy=()=>{destroyPicker();cancelPointPlacement();userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
+  const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;pickerStatusNode=null;if(!map&&offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}};
+  const destroy=()=>{destroyPicker();cancelPointPlacement();if(map&&selectionClickHandler)map.off('click',selectionClickHandler);selectionClickHandler=null;selectionBounds=null;userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
   const mount=(container,_objects=[],options={})=>{
     destroy();
     if(!container||!webgl2Available()){
@@ -178,7 +201,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     map.touchZoomRotate?.enable?.();
     map.touchZoomRotate?.enableRotation?.();
     map.on('moveend',()=>{captureView();updateOfflineCoverage();});
-    map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setStatus(options.statusNode,'');restoreUserLocation();restoreObjects(options);}});
+    map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');restoreUserLocation();restoreObjects(options);restoreSelection();}});
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
     map.on('error',event=>{if(currentBase==='satellite'){root.MTMapTilerLocal?.saveLayer?.('map');switchBaseLayer('map',options.statusNode,{remember:false,message:'Супутниковий шар недоступний. Відкрито звичайну карту.'});}else setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`);});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());
@@ -187,6 +210,15 @@ export function createMapLibreAdapter(gl,root=globalThis){
   const resize=()=>{if(!map)return false;(root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());return true;};
   const currentCenter=()=>{if(!map)return null;const center=map.getCenter();return{lat:center.lat,lng:center.lng};};
   const focusPoint=(point,zoom=17)=>{const lat=Number(point?.lat),lng=Number(point?.lng);if(!map||![lat,lng].every(Number.isFinite))return false;map.easeTo({center:[lng,lat],zoom});return true;};
+  const drawBounds=value=>{
+    const minLat=Number(value?.minLat),minLng=Number(value?.minLng),maxLat=Number(value?.maxLat),maxLng=Number(value?.maxLng);if(!map||![minLat,minLng,maxLat,maxLng].every(Number.isFinite))return false;
+    selectionBounds={minLat,minLng,maxLat,maxLng};restoreSelection();map.fitBounds?.([[minLng,minLat],[maxLng,maxLat]],{padding:18,maxZoom:15});return true;
+  };
+  const selectBounds=onDone=>{
+    if(!map)return false;if(selectionClickHandler)map.off('click',selectionClickHandler);selectionBounds=null;restoreSelection();let first=null;
+    selectionClickHandler=event=>{const point={lat:Number(event.lngLat.lat),lng:Number(event.lngLat.lng)};if(!first){first=point;return;}selectionBounds={minLat:Math.min(first.lat,point.lat),minLng:Math.min(first.lng,point.lng),maxLat:Math.max(first.lat,point.lat),maxLng:Math.max(first.lng,point.lng)};map.off('click',selectionClickHandler);selectionClickHandler=null;restoreSelection();onDone?.({...selectionBounds});};
+    map.on('click',selectionClickHandler);return true;
+  };
   const showUserLocation=(point,accuracy)=>{const lat=Number(point?.lat),lng=Number(point?.lng);if(!map||![lat,lng].every(Number.isFinite))return false;userPoint={lat,lng};userAccuracy=Math.max(1,Number(accuracy)||1);restoreUserLocation();map.easeTo({center:[lng,lat],zoom:Math.max(map.getZoom(),16)});return true;};
   const startPointPlacement=(options={})=>{
     if(!map)return null;cancelPointPlacement();let marker=null,onChange=null,opened=false;
@@ -199,18 +231,21 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const mountPicker=(container,options={})=>{
     destroyPicker();if(!container||!webgl2Available())return null;
+    pickerStatusNode=options.statusNode||null;
+    const mode=options.baseMode||root.MTOfflineMap?.getMode?.()||'auto',useOffline=mode==='offline'||(mode==='auto'&&root.navigator?.onLine===false);
     const initial=options.initial&&{lat:Number(options.initial.lat),lng:Number(options.initial.lng)};
     const validInitial=initial&&[initial.lat,initial.lng].every(Number.isFinite)?initial:null;
-    const pickerMap=new gl.Map({container,style:createOsmStyle(),center:validInitial?[validInitial.lng,validInitial.lat]:[DEFAULT_VIEW.lng,DEFAULT_VIEW.lat],zoom:validInitial?17:6,bearing:0,pitch:0,dragRotate:true,touchZoomRotate:true,attributionControl:false});
+    const pickerMap=new gl.Map({container,style:useOffline?blankStyle():createOsmStyle(),center:validInitial?[validInitial.lng,validInitial.lat]:[DEFAULT_VIEW.lng,DEFAULT_VIEW.lat],zoom:validInitial?17:6,bearing:0,pitch:0,dragRotate:true,touchZoomRotate:true,attributionControl:false});
     pickerMap.addControl(new gl.NavigationControl({showCompass:true,showZoom:true}),'top-right');pickerMap.addControl(new gl.AttributionControl({compact:true}),'bottom-right');pickerMap.touchZoomRotate?.enable?.();pickerMap.touchZoomRotate?.enableRotation?.();
     let marker=null,changed=false;
     const getPoint=()=>{if(!marker)return null;const value=marker.getLngLat();return{lat:value.lat,lng:value.lng};};
     const setPoint=(value,center=true,notify=true)=>{const lat=Number(value?.lat),lng=Number(value?.lng);if(![lat,lng].every(Number.isFinite))return null;if(!marker){marker=new gl.Marker({element:markerElement(),draggable:true}).setLngLat([lng,lat]).addTo(pickerMap);marker.on('dragend',()=>{changed=true;options.onChange?.(getPoint());});}else marker.setLngLat([lng,lat]);if(center)pickerMap.easeTo({center:[lng,lat],zoom:Math.max(pickerMap.getZoom(),17)});if(notify){changed=true;options.onChange?.({lat,lng});}return{lat,lng};};
     pickerMap.on('click',event=>setPoint(event.lngLat,false));if(validInitial)setPoint(validInitial,false,false);
     picker={map:pickerMap,getPoint,setPoint,hasChanged:()=>changed,invalidateSize:()=>{pickerMap.resize();return true;},destroy:destroyPicker};
+    pickerMap.on('load',()=>{if(useOffline)switchPickerBase(true);});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>pickerMap.resize());return picker;
   };
-  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,switchBaseLayer,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
+  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,selectBounds,drawBounds,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,switchBaseLayer,handleConnectivityChange,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
 }
 
 maplibregl.setWorkerUrl(WORKER_URL);

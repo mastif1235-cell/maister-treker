@@ -240,6 +240,7 @@
     return true;
   }
   function selectBounds(onDone){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.selectBounds(onDone);
     if(!map)return false;
     if(selectionLayer){selectionLayer.remove();selectionLayer=null;}
     let first=null;
@@ -251,6 +252,7 @@
     map.on('click',click);return true;
   }
   function drawBounds(value){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.drawBounds(value);
     if(!map||!value)return false;const south=Number(value.minLat),west=Number(value.minLng),north=Number(value.maxLat),east=Number(value.maxLng);if(![south,west,north,east].every(Number.isFinite))return false;
     if(selectionLayer)selectionLayer.remove();const bounds=root.L.latLngBounds([[south,west],[north,east]]);selectionLayer=root.L.rectangle(bounds,{color:'#ff9f1a',weight:2,fillOpacity:.12}).addTo(map);map.fitBounds(bounds,{padding:[18,18],maxZoom:15});return true;
   }
@@ -373,6 +375,7 @@
     requestAnimationFrame(()=>requestAnimationFrame(()=>pickerMap.invalidateSize()));
     return picker;
   }
+  function handleConnectivityChange(){return root.MTToolsMapLibreAdapter?.isMounted?.()?root.MTToolsMapLibreAdapter.handleConnectivityChange?.()||false:false;}
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer};
+  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange};
 })(typeof window!=='undefined'?window:globalThis);

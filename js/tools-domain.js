@@ -66,7 +66,8 @@ function toolsNavigate(view){
   const from=toolsView;if(from===view)return renderToolsScreen(view);
   appNavigationPush(`tools-${view}`,()=>{toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
 }
-function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsOfflineReturnSettings=false;switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
+function toolsLeaveOfflineSettings(dropNavigation=true){if(toolsView!=='offline'&&!toolsOfflineReturnSettings)return;MTToolsMap?.destroyMap?.();toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';if(dropNavigation)appNavigationDrop('tools-offline-settings');}
+function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsLeaveOfflineSettings(false);switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
 function toolsContextHtml(){
   return toolsDiagnosticContext?.address
     ? `<div class="card" style="font-size:13px;"><div class="row wrap" style="justify-content:space-between;align-items:center;"><strong>📍 ${escapeHtml(toolsDiagnosticContext.address)}</strong><button type="button" class="btn btn-sm" data-tools-action="reset-diagnostic-address">✕ Скинути адресу</button></div><div style="color:var(--text-dim);margin-top:3px;">Результат збережеться лише після вашого підтвердження.</div></div>`
@@ -719,8 +720,8 @@ function bindToolsScreen(){
   });
   root.addEventListener('toggle',event=>{const street=event.target.closest?.('[data-network-street]');if(street){street.open?toolsNetworkOpenStreets.add(street.dataset.networkStreet):toolsNetworkOpenStreets.delete(street.dataset.networkStreet);return;}const city=event.target.closest?.('[data-network-city]');if(city)city.open?toolsNetworkOpenCities.add(city.dataset.networkCity):toolsNetworkOpenCities.delete(city.dataset.networkCity);},true);
   root.addEventListener('input',event=>{if(event.target.id==='toolsNetworkSearch'){toolsNetworkSearch=event.target.value;renderToolsScreen('map');const input=document.getElementById('toolsNetworkSearch');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}});
-  window.addEventListener('online',()=>{if(toolsView==='map'&&MTOfflineMap.getMode()==='auto')renderToolsScreen('map');});
-  window.addEventListener('offline',()=>{if(toolsView==='map'&&MTOfflineMap.getMode()==='auto')renderToolsScreen('map');});
+  window.addEventListener('online',()=>{if(toolsView==='map'&&MTOfflineMap.getMode()==='auto'&&!MTToolsMap.handleConnectivityChange?.())renderToolsScreen('map');});
+  window.addEventListener('offline',()=>{if(toolsView==='map'&&MTOfflineMap.getMode()==='auto'&&!MTToolsMap.handleConnectivityChange?.())renderToolsScreen('map');});
   document.getElementById('calcDiagnosticsBtn').addEventListener('click',openToolsDiagnosticsFromCalculator);
   document.getElementById('calcNetworkPointAddBtn')?.addEventListener('click',toolsOpenTicketNetworkPointPicker);
 }

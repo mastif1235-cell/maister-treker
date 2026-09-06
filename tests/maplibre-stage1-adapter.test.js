@@ -40,9 +40,10 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   const makeElement=()=>({className:'',title:'',textContent:'',children:[],appendChild(child){this.children.push(child);},getContext:name=>name==='webgl2'?{}:null});
   const fakeRoot={document:{createElement:makeElement},requestAnimationFrame:callback=>callback()};
   const adapter=module.createMapLibreAdapter(fakeGl,fakeRoot);
+  const statusNode={textContent:'',classList:{toggle(_name,value){calls.statusHidden=value;}}},emptyStateNode={classList:{toggle(_name,value){calls.emptyHidden=value;}}};
   const objects=[{id:'house-1',category:'private',lat:48.2,lng:35.2,profiles:[{address:'Адреса'}]},{id:'fob-1',kind:'network',category:'FOB',type:'FOB',name:'FOB-1',lat:48.3,lng:35.3}];
   const selectedCategories=new Set(['private','FOB']);
-  const mounted=adapter.mount({id:'map'},objects,{initialView:{lat:48,lng:35,zoom:8,bearing:12},selectedCategories,onSelect:item=>{calls.selected=item;},onAddHere:point=>{calls.addHere=point;}});
+  const mounted=adapter.mount({id:'map'},objects,{initialView:{lat:48,lng:35,zoom:8,bearing:12},selectedCategories,statusNode,emptyStateNode,onSelect:item=>{calls.selected=item;},onAddHere:point=>{calls.addHere=point;}});
   assert.ok(mounted);
   assert.equal(mounted.options.dragRotate,true);
   assert.equal(mounted.options.touchZoomRotate,true);
@@ -60,6 +61,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(Object.keys(calls.images).length,6,'each object category has a local pin image');
   calls.events['click:mt-objects']({features:[{properties:{index:1}}]});assert.equal(calls.selected,objects[1]);
   calls.events.contextmenu({lngLat:{lat:48.9,lng:35.9}});assert.deepEqual(calls.addHere,{lat:48.9,lng:35.9});
+  let selectedBounds=null;assert.equal(adapter.selectBounds(value=>{selectedBounds=value;}),true);calls.events.click({lngLat:{lat:48,lng:35}});calls.events.click({lngLat:{lat:49,lng:36}});assert.deepEqual(selectedBounds,{minLat:48,minLng:35,maxLat:49,maxLng:36});assert.equal(calls.sources['mt-selection-bounds'].data.geometry.type,'Polygon');assert.equal(adapter.drawBounds({minLat:47,minLng:34,maxLat:48,maxLng:35}),true);assert.deepEqual(calls.fitBounds.bounds,[[34,47],[35,48]]);
   assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
   const localKey=String.fromCharCode(107,101,121);
   fakeRoot.navigator={onLine:true};fakeRoot.MTMapTilerLocal={getKey:()=>localKey,saveLayer:value=>{calls.savedLayer=value;}};
@@ -69,6 +71,8 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   class OfflineSource{constructor(file){this.file=file;}getKey(){return'original';}}
   class OfflineArchive{constructor(source){this.source=source;}async getHeader(){return{tileType:1,minZoom:8,maxZoom:15,minLon:34.5,minLat:47.5,maxLon:36,maxLat:49};}async getMetadata(){return{attribution:'© OpenStreetMap contributors',vector_layers:[{id:'roads'},{id:'buildings'}]};}}
   class OfflineProtocol{constructor(){this.tile=()=>{};}add(archive){calls.offlineArchive=archive;}}
+  fakeRoot.MTOfflineMap={archive:async()=>null,getMode:()=> 'auto'};
+  assert.equal(await adapter.switchBaseLayer('offline'),false);assert.match(statusNode.textContent,/Офлайн-карта не встановлена/);assert.equal(calls.emptyHidden,false,'missing offline map has a visible empty state');
   fakeRoot.pmtiles={FileSource:OfflineSource,PMTiles:OfflineArchive,Protocol:OfflineProtocol};
   fakeRoot.MTOfflineMap={archive:async()=>({file:{size:4096,slice(){return new ArrayBuffer(32);},arrayBuffer(){wholeFileRead=true;}},info:{}}),setMode:value=>{calls.offlineMode=value;}};
   assert.equal(await adapter.switchBaseLayer('offline'),true);assert.equal(calls.style.sources['mt-offline'].type,'vector');assert.ok(calls.style.sources['mt-offline'].url.startsWith('pmtiles://'));assert.ok(calls.style.layers.some(layer=>layer['source-layer']==='roads'));assert.ok(calls.protocols.pmtiles);assert.equal(wholeFileRead,false,'offline archive is range-read through FileSource');calls.events['once:style.load']();assert.equal(calls.offlineMode,'offline');
