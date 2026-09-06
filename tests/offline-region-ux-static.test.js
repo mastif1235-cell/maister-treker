@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
+assert.match(source,/JSON меж не є картою/);
+assert.match(source,/vector MVT або raster/);
+assert.match(source,/MTOfflineMap\.inspectFile\(file\)/);
+assert.match(source,/MTOfflineMap\.quotaFor\(file\.size\)/);
+assert.match(source,/MTOfflineMap\.install\(file,info,\{areaId:/);
+assert.match(source,/Видалити лише офлайн-карту\?/);
+assert.match(source,/Попередню карту не змінено/,'failed replacement explicitly preserves the installed map');
+assert.match(source,/PMTILES_TILE_TYPE_UNSUPPORTED/);
+console.log('PASS offline-region choose/import/status/replace/delete UX and vector PMTiles wording');

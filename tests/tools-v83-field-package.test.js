@@ -8,7 +8,7 @@ const mapHtml=domain.slice(domain.indexOf('function toolsMapHtml'),domain.indexO
 assert.doesNotMatch(home,/Офлайн-карта/,'offline manager is removed from the Tools home');
 assert.match(html,/id="openOfflineMapSettingsBtn"/);assert.match(settings,/openOfflineMapSettings/);
 assert.doesNotMatch(mapHtml,/tools-offline-map-card|delete-offline-map|toolsMapBaseMode/,'working map has status only, not offline management');
-assert.match(domain,/Збережені межі[\s\S]*окремий готовий raster-файл \.pmtiles/);assert.match(domain,/JSON меж не є картою/);
+assert.match(domain,/Збережені межі[\s\S]*окремий готовий файл PMTiles v3 \(vector MVT або raster\)/);assert.match(domain,/JSON меж не є картою/);
 assert.match(domain,/Офлайн-карта не встановлена/);assert.match(domain,/Збережена лише область/);assert.match(domain,/Офлайн-карта встановлена/);
 
 assert.match(mapHtml,/map-toggle-fullscreen/);assert.match(domain,/function toolsToggleMapFullscreen/);assert.match(map,/function invalidateSize/);assert.match(styles,/\.tools-map-shell\.tools-map-fullscreen/);assert.match(styles,/safe-area-inset-top/);
