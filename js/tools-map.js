@@ -163,18 +163,24 @@
     control.addTo(targetMap);state.control=control;return control;
   }
   function captureView(){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.captureView();
     if(!map)return savedView;
     const center=map.getCenter();
     savedView={lat:center.lat,lng:center.lng,zoom:map.getZoom()};
     return savedView;
   }
   function destroyMap(){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.()){
+      const view=root.MTToolsMapLibreAdapter.captureView();
+      if(view)savedView={lat:view.lat,lng:view.lng,zoom:view.zoom};
+      root.MTToolsMapLibreAdapter.destroy();
+    }
     if(!map)return;
     captureView();
     cancelPointPlacement();
     baseStates.delete(map);map.remove();map=null;tileLayer=null;groups=new Map();userLayer=null;selectionLayer=null;
   }
-  function currentCenter(){if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
+  function currentCenter(){if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.currentCenter();if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
   function showUserLocation(point,accuracy){
     const valid=validPoint(point);if(!map||!valid)return false;
     if(userLayer)userLayer.remove();
@@ -219,6 +225,7 @@
   }
   function focusPoint(point,zoom=17){
     const valid=validPoint(point);if(!valid)return false;
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.focusPoint(valid,zoom);
     savedView={lat:valid.lat,lng:valid.lng,zoom};
     if(map)map.setView([valid.lat,valid.lng],zoom);
     return true;
@@ -275,6 +282,10 @@
   function mount(container,objects=[],options={}){
     if(!container)return null;
     destroyMap();
+    if(options.engine==='maplibre'&&root.MTToolsMapLibreAdapter?.mount){
+      const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,options);
+      if(mounted)return mounted;
+    }
     const statusNode=options.statusNode||null;
     if(!hasLeaflet()){
       if(statusNode){statusNode.textContent='Модуль карти не завантажився. Дані об’єктів не змінено.';statusNode.classList.remove('hidden');}
@@ -308,6 +319,7 @@
     return map;
   }
   function invalidateSize(){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.resize();
     if(!map)return false;
     requestAnimationFrame(()=>map?.invalidateSize());
     return true;
