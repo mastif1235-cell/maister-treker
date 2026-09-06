@@ -42,6 +42,7 @@ button,input,select,textarea{font-family:inherit;color:inherit;}
   position:sticky; top:0; z-index:20;
 }
 .topbar-title{font-size:18px; font-weight:700; letter-spacing:.01em;}
+.topbar-leading{display:flex;align-items:center;gap:9px;min-width:0}.app-back-btn{min-height:38px;min-width:88px;margin:0 0 10px;touch-action:manipulation}.topbar .app-back-btn{margin:0;flex:0 0 auto}.modal .app-back-btn{align-self:flex-start}
 .sync-dot{width:9px;height:9px;border-radius:50%;background:var(--text-faint); transition:background .2s;}
 .sync-dot.syncing{background:var(--accent); animation:pulse 1s infinite ease-in-out;}
 .sync-dot.ok{background:var(--success);}

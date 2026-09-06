@@ -9,7 +9,7 @@ assert.equal(empty.note,'');assert.equal(empty.name,'');assert.deepEqual(empty.p
 assert.equal(core.networkPointPickerMeta({...point,name:'FOB-03'}),'«біля білого паркану» · FOB-03');
 assert.notEqual(core.networkPointPickerMeta({...point,id:'fob-04',name:'FOB-04'}),core.networkPointPickerMeta(point));
 const htmlSource=domain.slice(domain.indexOf('function toolsTicketNetworkPointPreviewHtml'),domain.indexOf('async function toolsPopulateTicketNetworkPointPreviewPhotos'));
-const htmlContext={MTToolsCore:core,escapeHtml:value=>String(value??'').replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char])};vm.createContext(htmlContext);vm.runInContext(htmlSource,htmlContext);
+const htmlContext={MTToolsCore:core,escapeHtml:value=>String(value??'').replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]),appBackButtonHtml:label=>`<button>${label}</button>`};vm.createContext(htmlContext);vm.runInContext(htmlSource,htmlContext);
 const previewHtml=htmlContext.toolsTicketNetworkPointPreviewHtml(point);
 for(const value of ['FOB','FOB-03','fob-03','Таромське, вул. Генерала Волівача, 12','біля білого паркану','48.123456, 37.654321'])assert.match(previewHtml,new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
 const emptyHtml=htmlContext.toolsTicketNetworkPointPreviewHtml({id:'node-1',type:'Вузол',lat:48,lng:37});
@@ -18,7 +18,7 @@ assert.match(domain,/ticket-network-preview/);assert.match(domain,/aria-label="�
 assert.match(domain,/function toolsOpenTicketNetworkPointPreview/);
 assert.match(domain,/id="ticketNetworkPointPreviewMapBtn"[\s\S]*id="ticketNetworkPointPreviewLinkBtn"[\s\S]*id="ticketNetworkPointPreviewCloseBtn"/);
 assert.match(domain,/ticketNetworkPointPreviewLinkBtn'[\s\S]*toolsLinkNetworkPointToTicket\(point\.id\)/);
-assert.match(domain,/ticketNetworkPointPreviewMapBtn'[\s\S]*toolsShowNetworkPointOnMap\(point\)/);
+assert.match(domain,/ticketNetworkPointPreviewMapBtn'[\s\S]*toolsShowNetworkPointOnMap\(point,true\)/);
 const previewBody=domain.slice(domain.indexOf('function toolsOpenTicketNetworkPointPreview'),domain.indexOf('function toolsNetworkPointPhotoSignature'));
 assert.doesNotMatch(previewBody,/toolsSaveNetworkPoints|toolsOpenNetworkPointEditor|toolsDeleteNetworkPoint/);
 console.log('PASS read-only network-point preview reuses link, map and photo lifecycles');

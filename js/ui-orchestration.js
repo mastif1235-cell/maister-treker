@@ -58,6 +58,32 @@ function openModal(title, bodyHtml, opts={}){
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
 }
 
+// Єдиний внутрішній Back-stack. Він зберігає лише короткий serializable state
+// і callback повторного рендера; DOM, секрети та дані форм у history не кладемо.
+const appNavigationStack=[];
+function appNavigationState(value={}){try{return JSON.parse(JSON.stringify(value));}catch(_e){return{};}}
+function appNavigationPush(key,restore,state={},guard=null){
+  appNavigationStack.push({key:String(key||''),restore,state:appNavigationState(state),guard:typeof guard==='function'?guard:null});updateAppBackButton();return true;
+}
+function appNavigationCanGoBack(){return appNavigationStack.length>0;}
+function appNavigationPeek(){return appNavigationStack[appNavigationStack.length-1]||null;}
+function appNavigationDrop(key){
+  for(let index=appNavigationStack.length-1;index>=0;index--)if(appNavigationStack[index].key===key){appNavigationStack.splice(index,1);break;}
+  updateAppBackButton();
+}
+function appNavigationDropPrefix(prefix){
+  for(let index=appNavigationStack.length-1;index>=0;index--)if(appNavigationStack[index].key.startsWith(prefix))appNavigationStack.splice(index,1);
+  updateAppBackButton();
+}
+function appNavigationClear(){appNavigationStack.length=0;updateAppBackButton();}
+function appNavigationBack(){
+  const entry=appNavigationPeek();if(!entry)return false;
+  if(entry.guard&&!entry.guard())return false;
+  appNavigationStack.pop();entry.restore?.(entry.state);updateAppBackButton();return true;
+}
+function appBackButtonHtml(label='Назад'){return `<button type="button" class="btn btn-sm btn-ghost app-back-btn" data-app-back aria-label="${escapeHtml(label)}">← ${escapeHtml(label)}</button>`;}
+function updateAppBackButton(){document.getElementById('appBackBtn')?.classList.toggle('hidden',!appNavigationCanGoBack());}
+
 const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулятор', shifts:'Зміни', tools:'Інструменти', settings:'Налаштування'};
 function switchTab(tab){
   if(tab!=='tools'&&typeof toolsStopConnectionCheck==='function')toolsStopConnectionCheck(false);
@@ -75,9 +101,11 @@ function switchTab(tab){
   // тож оновлюємо саме його щоразу при відкритті вкладки.
   if(tab==='settings') renderDeletedTicketsList();
   if(!alreadyActive) document.querySelector('main.screens').scrollTop = 0;
+  updateAppBackButton();
 }
 
 function bindTabBar(){
+  document.addEventListener('click',event=>{if(event.target.closest('[data-app-back]')){event.preventDefault();appNavigationBack();}});
   document.querySelectorAll('.tab-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const tab = btn.dataset.tab;
@@ -101,7 +129,7 @@ function bindTabBar(){
         calcState.date = currentTicketDate;
         setDateFieldValue(calcState.date);
       }
-      switchTab(tab);
+      appNavigationClear();switchTab(tab);
     });
   });
 }

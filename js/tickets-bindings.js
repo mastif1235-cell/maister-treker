@@ -126,7 +126,7 @@ function bindTicketsScreen(){
       renderMainTicketList();
       return;
     }
-    if(editBtn){ editReturnAddrState = null; editTicket(editBtn.dataset.id); } // NEW: редагування зі звичайного списку — повертатись нема куди, скидаємо можливий "хвіст" від профілю
+    if(editBtn){ openTicketEditorFromList(editBtn.dataset.id); }
     if(delBtn)   deleteTicket(delBtn.dataset.id);
     if(shareBtn) shareTicket(shareBtn.dataset.id);
     if(tgBtn)    sendTicketToDispatcher(tgBtn.dataset.id);
@@ -539,6 +539,7 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
   document.getElementById('sharePhotoBtn').addEventListener('click', sharePhoto);
   document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
   document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
+    if(appNavigationPeek()?.key==='ticket-editor'){appNavigationBack();return;}
     syncFormToState(); // щоб hasUnsavedChanges бачила саме те, що зараз у полях, а не стан на момент відкриття
     // NEW: та сама кнопка тепер править і "Скасувати редагування" (для наявної
     // заявки), і "Назад до пошуку" (для нової заявки, відкритої з профілю/

@@ -1042,6 +1042,7 @@ async function saveTicketFromForm(e){
   currentTicketDate = calcState.date;
   clearDraft();
   resetCalcForm();
+  appNavigationDrop('ticket-editor');
   returnAfterTicketEdit();
   renderTicketsScreen();
   }finally{

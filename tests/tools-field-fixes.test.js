@@ -12,7 +12,7 @@ assert.match(map,/map\.panTo\(\[point\.lat,point\.lng\]/);assert.match(map,/scro
 assert.match(map,/title:'Новий об’єкт'\}\)\.addTo\(layer\)/);assert.match(map,/draggable:true/,'3 temporary marker is draggable');
 assert.ok(domain.indexOf('toolsSaveNetworkPoints()')<domain.indexOf('await toolsSendNetworkPointTelegram(normalized'),'4 object is stored locally before automatic transport/update');
 assert.match(map,/userLayer=root\.L\.layerGroup/);assert.match(map,/const layer=root\.L\.layerGroup\(\)\.addTo\(map\)/,'5 GPS and working marker use separate layers');
-assert.match(domain,/abonent-back-map-btn/);assert.match(address,/toolsMapReturnButtonHtml/);assert.match(addressDomain,/toolsReturnFromProfileToMap/,'6 profile has a direct return to map');
+assert.match(domain,/toolsMapReturnButtonHtml\(\)[\s\S]*appBackButtonHtml\('Назад до карти'\)/);assert.match(address,/toolsMapReturnButtonHtml/);assert.match(addressDomain,/toolsReturnFromProfileToMap/,'6 profile uses the common Back path to return to map');
 assert.match(map,/savedView=\{lat:center\.lat,lng:center\.lng,zoom:map\.getZoom\(\)\}/);assert.match(map,/const selected=new Set\(categories\)/,'7 viewport and filters remain in map runtime');
 assert.match(domain,/toolsSendNetworkPointTelegram[\s\S]*sendToTelegramChat\(chatId,text/,'8 network point reuses existing Telegram transport');
 assert.match(domain,/Точку збережено локально[\s\S]*await toolsSendNetworkPointTelegram\(normalized/,'9 Telegram failure cannot remove the locally saved point');

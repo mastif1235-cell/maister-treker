@@ -325,6 +325,10 @@ let addrNavSearchQuery = ''; // NEW: глобальний пошук за ім'�
 // адрес) — запам'ятовуємо, куди повернутись після скасування/збереження,
 // замість того, щоб завжди приземлятись на звичайний список "Заявки".
 let editReturnAddrState = null;
+function pushAddressNavigation(){
+  const state={addrNavState:{...addrNavState},query:addrNavSearchQuery,scrollTop:document.getElementById('addrNavResultsArea')?.scrollTop||0};
+  appNavigationPush('address-level',saved=>{addrNavState={...saved.addrNavState};addrNavSearchQuery=saved.query||'';renderAddressNav();requestAnimationFrame(()=>{const root=document.getElementById('addrNavResultsArea');if(root)root.scrollTop=Number(saved.scrollTop)||0;});},state);
+}
 function returnAfterTicketEdit(){
   switchTab('tickets');
   if(editReturnAddrState){
@@ -517,13 +521,14 @@ function showEditAbonentProfile(profileJson){
 function renderAddressNav(){
   const title = addrNavTitle();
   const topHtml = `
+    ${!toolsMapReturnContext&&appNavigationCanGoBack()?appBackButtonHtml():''}
     <div class="row" style="gap:6px; margin-bottom:10px;">
       <input type="search" role="searchbox" name="mt-internal-profile-search" inputmode="search" id="addrNavSearchInput" placeholder="Пошук за ім'ям, телефоном або адресою" value="${escapeHtml(addrNavSearchQuery)}" style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
       <button type="button" class="btn btn-icon" id="addrNavClearSearchBtn" title="Очистити пошук">✕</button>
     </div>
     <button type="button" class="btn btn-block" id="openNaryadCheckerBtn" style="margin-bottom:12px;">📋 Перевірити наряд</button>
     <div id="addrNavResultsArea">${addrNavResultsAreaHtml()}</div>`;
-  openModal(title, topHtml, {onClose:()=>{if(typeof toolsClearMapReturnContext==='function')toolsClearMapReturnContext();closeModal();},onOpen: attachAddressNavHandlers});
+  openModal(title, topHtml, {onClose:()=>{appNavigationDropPrefix('address-');appNavigationDrop('map-profile');if(typeof toolsClearMapReturnContext==='function')toolsClearMapReturnContext();closeModal();},onOpen: attachAddressNavHandlers});
 }
 
 function attachAddressNavHandlers(rootEl){
@@ -556,6 +561,7 @@ function attachAddressNavHandlers(rootEl){
     if(backToMapBtn&&typeof toolsReturnFromProfileToMap==='function'){toolsReturnFromProfileToMap();return;}
     const crumb = e.target.closest('.addr-nav-crumb');
     if(crumb){
+      pushAddressNavigation();
       const to = crumb.dataset.crumb;
       if(to==='city') addrNavState = {level:'city', city:null, street:null, house:null, apartment:null};
       else if(to==='street'){ addrNavState.level='street'; addrNavState.street=null; addrNavState.house=null; addrNavState.apartment=null; }
@@ -564,11 +570,12 @@ function attachAddressNavHandlers(rootEl){
       renderAddressNav(); return;
     }
     const cityBtn = e.target.closest('.addr-nav-city-btn');
-    if(cityBtn){ addrNavState = {level:'street', city:cityBtn.dataset.city, street:null, house:null, apartment:null}; renderAddressNav(); return; }
+    if(cityBtn){ pushAddressNavigation();addrNavState = {level:'street', city:cityBtn.dataset.city, street:null, house:null, apartment:null}; renderAddressNav(); return; }
     const streetBtn = e.target.closest('.addr-nav-street-btn');
-    if(streetBtn){ addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; addrNavState.apartment=null; renderAddressNav(); return; }
+    if(streetBtn){pushAddressNavigation();addrNavState.level='house'; addrNavState.street=streetBtn.dataset.street; addrNavState.house=null; addrNavState.apartment=null; renderAddressNav(); return; }
     const houseBtn = e.target.closest('.addr-nav-house-btn');
     if(houseBtn){
+      pushAddressNavigation();
       addrNavState.house = houseBtn.dataset.house;
       // NEW: якщо в цьому будинку заявки лише по одній квартирі (чи квартира
       // взагалі не використовується) — одразу показуємо профіль, не змушуючи
@@ -585,6 +592,7 @@ function attachAddressNavHandlers(rootEl){
     }
     const profileBtn = e.target.closest('.addr-profile-btn');
     if(profileBtn){
+      pushAddressNavigation();
       // NEW: результати пошуку несуть повну адресу в data-*, а кнопки
       // всередині одного будинку (рівень 'profiles') — лише квартиру
       if(profileBtn.dataset.city) addrNavState.city = profileBtn.dataset.city;

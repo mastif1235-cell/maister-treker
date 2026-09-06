@@ -367,6 +367,22 @@ function renderDeletedTicketsList(){
   }).join('');
 }
 
+function leaveTicketEditorGuard(){
+  syncFormToState();
+  const message=editingTicketId?'Скасувати редагування? Незбережені зміни буде втрачено.':'Повернутись назад? Введені у заявку дані буде втрачено.';
+  if(hasUnsavedChanges()&&!confirm(message))return false;
+  cleanupUnsavedNewPhotos();clearDraft();resetCalcForm(currentTicketDate);return true;
+}
+function openTicketEditorFromList(id){
+  const listState={date:currentTicketDate,query:searchQuery,tags:[...activeFilterTags],limit:ticketListRenderLimit,scrollTop:document.querySelector('main.screens')?.scrollTop||0};
+  appNavigationPush('ticket-editor',state=>{
+    currentTicketDate=state.date;searchQuery=state.query||'';activeFilterTags=new Set(state.tags||[]);ticketListRenderLimit=Number(state.limit)||100;
+    switchTab('tickets');renderTicketsScreen();
+    const input=document.getElementById('searchInput');if(input)input.value=searchQuery;
+    requestAnimationFrame(()=>{const scroller=document.querySelector('main.screens');if(scroller)scroller.scrollTop=Number(state.scrollTop)||0;});
+  },listState,leaveTicketEditorGuard);
+  editReturnAddrState=null;editTicket(id);
+}
 function editTicket(id){
   const t = tickets.find(x=>String(x.id)===String(id)); // NEW
   if(!t) return;

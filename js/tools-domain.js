@@ -20,6 +20,8 @@ let toolsSelectedNetworkPointId='';
 let toolsConnectionCheck=null;
 let toolsOfflineReturnSettings=false;
 let toolsMapFullscreen=false;
+let toolsTicketLinkContext=null;
+let toolsLinkCreationContext=null;
 const toolsNetworkOpenCities=new Set();
 const toolsNetworkOpenStreets=new Set();
 const toolsNetworkTelegramSending=new Set();
@@ -59,10 +61,12 @@ function toolsHomeHtml(){
   </div>
   <div class="card" style="margin-top:12px;font-size:12px;color:var(--text-dim);">Інструменти зберігають дані лише на цьому пристрої. Діагностика не створює записів без явного натискання «Зберегти».</div>`;
 }
-function toolsBackButton(){return toolsView==='offline'&&toolsOfflineReturnSettings
-  ? `<button type="button" class="btn btn-sm btn-ghost" data-tools-action="offline-settings-back" style="margin-bottom:10px;">← Налаштування</button>`
-  : `<button type="button" class="btn btn-sm btn-ghost" data-tools-view="home" style="margin-bottom:10px;">← Інструменти</button>`;}
-function openOfflineMapSettings(){toolsOfflineReturnSettings=true;toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
+function toolsBackButton(){return appNavigationCanGoBack()?appBackButtonHtml(toolsView==='offline'&&toolsOfflineReturnSettings?'Налаштування':'Назад'):'';}
+function toolsNavigate(view){
+  const from=toolsView;if(from===view)return renderToolsScreen(view);
+  appNavigationPush(`tools-${view}`,()=>{toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
+}
+function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsOfflineReturnSettings=false;switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
 function toolsContextHtml(){
   return toolsDiagnosticContext?.address
     ? `<div class="card" style="font-size:13px;"><strong>📍 ${escapeHtml(toolsDiagnosticContext.address)}</strong><div style="color:var(--text-dim);margin-top:3px;">Результат збережеться лише після вашого підтвердження.</div></div>`
@@ -170,6 +174,9 @@ async function runToolsDiagnostics(){
   renderToolsScreen('diagnostics');
 }
 function toolsOpenDiagnostics(context=null,returnTab='tools'){
+  if(returnTab==='tools')appNavigationPush('tools-diagnostics',()=>{toolsView='home';switchTab('tools');renderToolsScreen('home');});
+  else if(returnTab==='calculator')appNavigationPush('tools-diagnostics',toolsReturnToTicket);
+  else if(returnTab==='tickets')appNavigationPush('tools-diagnostics',()=>{switchTab('tickets');renderAddressNav();});
   toolsDiagnosticContext=context;toolsDiagnosticResult=null;toolsDiagnosticRunAt=null;toolsDiagnosticSaved=false;toolsReturnTab=returnTab;toolsView='diagnostics';
   switchTab('tools');renderToolsScreen('diagnostics');
 }
@@ -250,7 +257,7 @@ function toolsNetworkGroupsHtml(){
   return groups.map(cityGroup=>{const cityKey=cityGroup.city,cityOpen=!!query||toolsNetworkOpenCities.has(cityKey),streets=cityGroup.streets.map(streetGroup=>{const streetKey=`${cityKey}\u0000${streetGroup.street}`,streetOpen=!!query||toolsNetworkOpenStreets.has(streetKey),items=streetGroup.points.map(point=>`<button type="button" class="tools-network-object ${String(point.id)===String(toolsSelectedNetworkPointId)?'selected':''}" data-point-id="${escapeHtml(point.id)}"><span><strong>${escapeHtml(point.name||point.type||'Без назви')}</strong><small>${escapeHtml([point.type,point.house,point.note].filter(Boolean).join(' · '))}</small></span><span>›</span></button>`).join('');return `<details class="tools-network-street" data-network-street="${escapeHtml(streetKey)}" ${streetOpen?'open':''}><summary>${escapeHtml(streetGroup.street)} <span>${streetGroup.count}</span></summary>${items}</details>`;}).join('');return `<details class="tools-network-city" data-network-city="${escapeHtml(cityKey)}" ${cityOpen?'open':''}><summary>${escapeHtml(cityGroup.city)} <span>${cityGroup.count}</span></summary>${streets}</details>`;}).join('');
 }
 function toolsOpenPointEditorFromMap(point,placement){
-  toolsOpenNetworkPointEditor('',{type:'FOB',...point},{placement,returnView:'map'});
+  toolsOpenNetworkPointEditor('',{type:'FOB',...point},{placement,returnView:'map',returnToLinking:!!toolsLinkCreationContext});
 }
 function toolsStartMapAddMode(point=null){
   const status=document.getElementById('toolsMapStatus');
@@ -364,16 +371,16 @@ function toolsExportOfflineArea(id){
 function toolsOpenProfileById(profileId){
   const profile=MTToolsCore.listProfiles(tickets).find(item=>item.id===profileId);
   if(!profile){showToast('Профіль не знайдено');return;}
-  toolsMapReturnContext={profileId};
+  toolsMapReturnContext={profileId};appNavigationPush('map-profile',()=>{toolsMapReturnContext=null;closeModal();toolsView='map';switchTab('tools');renderToolsScreen('map');});
   addrNavState={level:'tickets',city:profile.city,street:profile.street,house:profile.house||'(без номера)',apartment:profile.apartment||'(без кв.)'};
   addrNavSearchQuery='';switchTab('tickets');renderAddressNav();
 }
-function toolsMapReturnButtonHtml(){return toolsMapReturnContext?'<button type="button" class="btn btn-block abonent-back-map-btn" style="margin-bottom:10px;">← Назад до карти</button>':'';}
+function toolsMapReturnButtonHtml(){return toolsMapReturnContext?appBackButtonHtml('Назад до карти'):'';}
 function toolsClearMapReturnContext(){toolsMapReturnContext=null;}
-function toolsReturnFromProfileToMap(){closeModal();toolsMapReturnContext=null;toolsView='map';switchTab('tools');}
+function toolsReturnFromProfileToMap(){if(!appNavigationBack()){closeModal();toolsMapReturnContext=null;toolsView='map';switchTab('tools');renderToolsScreen('map');}}
 function toolsOpenMapObject(item){
   if(!item)return;
-  if(item.kind==='network'){toolsSelectedNetworkPointId=String(item.id);toolsHighlightNetworkPointInList(item.id);toolsShowNetworkPoint(item.id);return;}
+  if(item.kind==='network'){toolsSelectedNetworkPointId=String(item.id);toolsHighlightNetworkPointInList(item.id);appNavigationPush('map-network-point',()=>{closeModal();toolsView='map';switchTab('tools');renderToolsScreen('map');});toolsShowNetworkPoint(item.id);return;}
   if(item.profiles.length===1){toolsOpenProfileById(item.profiles[0].id);return;}
   openModal('Відомі квартири',item.profiles.map(profile=>`<button type="button" class="btn btn-block tools-map-profile" data-profile-id="${escapeHtml(profile.id)}" style="margin-bottom:8px;">${escapeHtml(profile.apartment?`кв. ${profile.apartment}`:profile.address)}</button>`).join(''),{onOpen:root=>root.addEventListener('click',event=>{const button=event.target.closest('.tools-map-profile');if(button){closeModal();toolsOpenProfileById(button.dataset.profileId);}})});
 }
@@ -431,19 +438,21 @@ function toolsRenderTicketNetworkLinks(){
   const root=document.getElementById('calcNetworkPointLinks');if(!root)return;calcState.networkPointIds=MTToolsCore.networkPointIds(calcState.networkPointIds);
   const points=calcState.networkPointIds.map(id=>toolsNetworkPoints.find(point=>String(point.id)===id)).filter(Boolean);
   root.innerHTML=points.length?points.map(point=>`<div class="row between calc-network-link"><button type="button" class="btn btn-sm calc-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml(MTToolsCore.networkPointAddress(point)||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger calc-network-unlink" data-point-id="${escapeHtml(point.id)}" aria-label="Відв’язати">✕</button></div>`).join(''):'<span style="font-size:12px;color:var(--text-faint);">Об’єкти не прив’язані</span>';
-  root.querySelectorAll('.calc-network-open').forEach(button=>button.onclick=()=>toolsShowNetworkPoint(button.dataset.pointId));
+  root.querySelectorAll('.calc-network-open').forEach(button=>button.onclick=()=>{appNavigationPush('calculator-network-point',closeModal);toolsShowNetworkPoint(button.dataset.pointId);});
   root.querySelectorAll('.calc-network-unlink').forEach(button=>button.onclick=()=>{if(!confirm('Відв’язати об’єкт від заявки?'))return;calcState.networkPointIds=MTToolsCore.unlinkNetworkPoint(calcState.networkPointIds,button.dataset.pointId);toolsRenderTicketNetworkLinks();formTouchedByUser=true;});
 }
 function toolsLinkNetworkPointToTicket(id){
   const point=toolsNetworkPoints.find(item=>String(item.id)===String(id));if(!point)return false;
-  calcState.networkPointIds=MTToolsCore.linkNetworkPoint(calcState.networkPointIds,point.id);closeModal();toolsRenderTicketNetworkLinks();formTouchedByUser=true;return true;
+  calcState.networkPointIds=MTToolsCore.linkNetworkPoint(calcState.networkPointIds,point.id);appNavigationDrop('ticket-network-preview');toolsTicketLinkContext=null;closeModal();toolsRenderTicketNetworkLinks();formTouchedByUser=true;return true;
 }
-function toolsShowNetworkPointOnMap(point){
-  if(!point)return false;closeModal();toolsView='map';toolsSelectedNetworkPointId=String(point.id);switchTab('tools');renderToolsScreen('map');requestAnimationFrame(()=>requestAnimationFrame(()=>{MTToolsMap.focusPoint(point,18);toolsHighlightNetworkPointInList(point.id);document.getElementById('toolsLeafletMap')?.scrollIntoView({behavior:'smooth',block:'center'});}));return true;
+function toolsShowNetworkPointOnMap(point,returnToLinking=false){
+  if(!point)return false;
+  if(returnToLinking){const state=toolsCaptureTicketLinkContext();appNavigationDrop('ticket-network-preview');appNavigationPush('ticket-network-map',()=>toolsOpenTicketNetworkPointPicker(state),state);}
+  closeModal();toolsView='map';toolsSelectedNetworkPointId=String(point.id);switchTab('tools');renderToolsScreen('map');requestAnimationFrame(()=>requestAnimationFrame(()=>{MTToolsMap.focusPoint(point,18);toolsHighlightNetworkPointInList(point.id);document.getElementById('toolsLeafletMap')?.scrollIntoView({behavior:'smooth',block:'center'});}));return true;
 }
 function toolsTicketNetworkPointPreviewHtml(point){
   const view=MTToolsCore.networkPointPreviewData(point),rows=[['Тип об’єкта',view.type],['Назва',view.name],['Ідентифікатор',view.id],['Коротка позначка',view.label],['Повна адреса',view.address],['Місто',view.city],['Вулиця',view.street],['Будинок / орієнтир',view.house],['Координати',view.coordinates]];
-  return `<div class="tools-network-preview"><div class="card">${rows.filter(row=>row[1]).map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join('')}${view.note?`<div class="tools-network-preview-note"><span>Примітка</span><div>${escapeHtml(view.note)}</div></div>`:''}</div><div id="ticketNetworkPointPreviewPhotos" class="tools-point-photo-grid"><span class="tools-network-preview-photo-empty">Фото недоступне</span></div><div class="row wrap tools-network-preview-actions"><button type="button" class="btn" id="ticketNetworkPointPreviewMapBtn">Показати на карті</button><button type="button" class="btn btn-accent" id="ticketNetworkPointPreviewLinkBtn">Прив’язати до заявки</button><button type="button" class="btn" id="ticketNetworkPointPreviewCloseBtn">Закрити</button></div></div>`;
+  return `<div class="tools-network-preview">${appBackButtonHtml('Назад до списку')}<div class="card">${rows.filter(row=>row[1]).map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join('')}${view.note?`<div class="tools-network-preview-note"><span>Примітка</span><div>${escapeHtml(view.note)}</div></div>`:''}</div><div id="ticketNetworkPointPreviewPhotos" class="tools-point-photo-grid"><span class="tools-network-preview-photo-empty">Фото недоступне</span></div><div class="row wrap tools-network-preview-actions"><button type="button" class="btn" id="ticketNetworkPointPreviewMapBtn">Показати на карті</button><button type="button" class="btn btn-accent" id="ticketNetworkPointPreviewLinkBtn">Прив’язати до заявки</button><button type="button" class="btn" id="ticketNetworkPointPreviewCloseBtn">Закрити</button></div></div>`;
 }
 async function toolsPopulateTicketNetworkPointPreviewPhotos(point){
   const root=document.getElementById('ticketNetworkPointPreviewPhotos'),keys=MTToolsCore.networkPointPreviewData(point).photoKeys;if(!root||!keys.length)return;
@@ -457,16 +466,30 @@ async function toolsPopulateTicketNetworkPointPreviewPhotos(point){
 }
 function toolsOpenTicketNetworkPointPreview(id){
   const point=toolsNetworkPoints.find(item=>String(item.id)===String(id));if(!point)return false;
-  openModal('Деталі об’єкта',toolsTicketNetworkPointPreviewHtml(point),{onOpen:()=>{
-    document.getElementById('ticketNetworkPointPreviewMapBtn').onclick=()=>toolsShowNetworkPointOnMap(point);
+  const context=toolsCaptureTicketLinkContext();appNavigationPush('ticket-network-preview',()=>toolsOpenTicketNetworkPointPicker(context),context);
+  const closePreview=()=>{appNavigationDrop('ticket-network-preview');toolsTicketLinkContext=null;closeModal();};
+  openModal('Деталі об’єкта',toolsTicketNetworkPointPreviewHtml(point),{onClose:closePreview,onOpen:()=>{
+    document.getElementById('ticketNetworkPointPreviewMapBtn').onclick=()=>toolsShowNetworkPointOnMap(point,true);
     document.getElementById('ticketNetworkPointPreviewLinkBtn').onclick=()=>toolsLinkNetworkPointToTicket(point.id);
-    document.getElementById('ticketNetworkPointPreviewCloseBtn').onclick=closeModal;
+    document.getElementById('ticketNetworkPointPreviewCloseBtn').onclick=closePreview;
     toolsPopulateTicketNetworkPointPreviewPhotos(point);
   }});return true;
 }
-function toolsOpenTicketNetworkPointPicker(){
+function toolsCaptureTicketLinkContext(){
+  const input=document.getElementById('ticketNetworkPointSearch'),list=document.getElementById('ticketNetworkPointChoices');
+  if(input)toolsTicketLinkContext={ticketId:String(editingTicketId||'draft'),query:input.value,scrollTop:list?.scrollTop||0};
+  return appNavigationState(toolsTicketLinkContext||{ticketId:String(editingTicketId||'draft'),query:'',scrollTop:0});
+}
+function toolsOpenTicketNetworkPointPicker(context=null){
+  toolsTicketLinkContext=appNavigationState(context||{ticketId:String(editingTicketId||'draft'),query:'',scrollTop:0});
   const rank=point=>{let score=0;if(String(point.city||'').toLocaleLowerCase('uk')===String(calcState.city||'').toLocaleLowerCase('uk'))score+=2;if(String(point.street||'').toLocaleLowerCase('uk')===String(calcState.street||'').toLocaleLowerCase('uk'))score+=4;return score;};
-  openModal('Прив’язати об’єкт',`<div class="field"><input type="search" role="searchbox" name="mt-internal-point-link-search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" id="ticketNetworkPointSearch" placeholder="Тип, місто, вулиця, адреса або примітка"></div><div id="ticketNetworkPointChoices" class="tools-network-point-choices"></div>`,{onOpen:()=>{const input=document.getElementById('ticketNetworkPointSearch'),root=document.getElementById('ticketNetworkPointChoices'),render=()=>{const list=MTToolsCore.searchNetworkPoints(toolsNetworkPoints,input.value).sort((a,b)=>rank(b)-rank(a)||String(a.city).localeCompare(String(b.city),'uk')).slice(0,150);root.innerHTML=list.map(point=>{const meta=MTToolsCore.networkPointPickerMeta(point);return `<div class="ticket-network-choice-row"><button type="button" class="btn ticket-network-choice" data-point-id="${escapeHtml(point.id)}"><span class="ticket-network-choice-copy"><span>${escapeHtml(point.type)} · ${escapeHtml(MTToolsCore.networkPointAddress(point)||point.name||point.id)}</span>${meta?`<small>${escapeHtml(meta)}</small>`:''}</span>${calcState.networkPointIds?.includes(String(point.id))?'<span>✅</span>':''}</button><button type="button" class="btn ticket-network-preview" data-point-id="${escapeHtml(point.id)}" aria-label="Переглянути деталі ${escapeHtml(point.name||point.type||point.id)}" title="Деталі">👁</button></div>`;}).join('')||'<div class="card">Нічого не знайдено.</div>';root.querySelectorAll('.ticket-network-choice').forEach(button=>button.onclick=()=>toolsLinkNetworkPointToTicket(button.dataset.pointId));root.querySelectorAll('.ticket-network-preview').forEach(button=>button.onclick=()=>toolsOpenTicketNetworkPointPreview(button.dataset.pointId));};input.oninput=render;render();}});
+  openModal('Прив’язати об’єкт',`<button type="button" class="btn btn-accent btn-block" id="ticketNetworkPointCreateBtn" style="margin-bottom:10px;">➕ Створити об’єкт</button><div class="field"><input type="search" role="searchbox" name="mt-internal-point-link-search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" id="ticketNetworkPointSearch" value="${escapeHtml(toolsTicketLinkContext.query||'')}" placeholder="Тип, місто, вулиця, адреса або примітка"></div><div id="ticketNetworkPointChoices" class="tools-network-point-choices"></div>`,{onClose:()=>{toolsTicketLinkContext=null;appNavigationDropPrefix('ticket-network-');closeModal();},onOpen:()=>{const input=document.getElementById('ticketNetworkPointSearch'),root=document.getElementById('ticketNetworkPointChoices'),render=()=>{const list=MTToolsCore.searchNetworkPoints(toolsNetworkPoints,input.value).sort((a,b)=>rank(b)-rank(a)||String(a.city).localeCompare(String(b.city),'uk')).slice(0,150);root.innerHTML=list.map(point=>{const meta=MTToolsCore.networkPointPickerMeta(point);return `<div class="ticket-network-choice-row" data-point-row="${escapeHtml(point.id)}"><button type="button" class="btn ticket-network-choice" data-point-id="${escapeHtml(point.id)}"><span class="ticket-network-choice-copy"><span>${escapeHtml(point.type)} · ${escapeHtml(MTToolsCore.networkPointAddress(point)||point.name||point.id)}</span>${meta?`<small>${escapeHtml(meta)}</small>`:''}</span>${calcState.networkPointIds?.includes(String(point.id))?'<span>✅</span>':''}</button><button type="button" class="btn ticket-network-preview" data-point-id="${escapeHtml(point.id)}" aria-label="Переглянути деталі ${escapeHtml(point.name||point.type||point.id)}" title="Деталі">👁</button></div>`;}).join('')||'<div class="card">Нічого не знайдено.</div>';root.querySelectorAll('.ticket-network-choice').forEach(button=>button.onclick=()=>toolsLinkNetworkPointToTicket(button.dataset.pointId));root.querySelectorAll('.ticket-network-preview').forEach(button=>button.onclick=()=>toolsOpenTicketNetworkPointPreview(button.dataset.pointId));requestAnimationFrame(()=>{root.scrollTop=Number(toolsTicketLinkContext?.scrollTop)||0;const selected=toolsTicketLinkContext?.newPointId&&[...root.querySelectorAll('[data-point-row]')].find(row=>row.dataset.pointRow===String(toolsTicketLinkContext.newPointId));selected?.classList.add('selected');selected?.scrollIntoView({block:'nearest'});});};input.oninput=()=>{toolsTicketLinkContext.query=input.value;toolsTicketLinkContext.scrollTop=0;render();};document.getElementById('ticketNetworkPointCreateBtn').onclick=toolsStartTicketNetworkPointCreation;render();}});
+}
+function toolsStartTicketNetworkPointCreation(){
+  const context=toolsCaptureTicketLinkContext();toolsLinkCreationContext=context;closeModal();appNavigationPush('ticket-network-create',()=>{toolsLinkCreationContext=null;toolsOpenTicketNetworkPointPicker(context);},context);toolsView='map';switchTab('tools');renderToolsScreen('map');requestAnimationFrame(()=>toolsStartMapAddMode());
+}
+function toolsReturnToTicketLinking(newPointId=''){
+  const context=appNavigationState(toolsLinkCreationContext||toolsTicketLinkContext||{});context.newPointId=String(newPointId||'');toolsLinkCreationContext=null;appNavigationDrop('ticket-network-create');switchTab('calculator');toolsOpenTicketNetworkPointPicker(context);
 }
 function toolsNetworkPointPhotoSignature(point){return JSON.stringify((point.photoKeys||[point.photoKey]).filter(Boolean));}
 function toolsNetworkPointTelegramText(point){
@@ -479,7 +502,8 @@ function toolsOpenNetworkPointEditor(id='',defaults={},options={}){
   const isNew=!existing.id;
   const cities=[...new Set([...(settings.cities||[]),...tickets.map(ticket=>ticket.city)].filter(Boolean))].sort();
   const streets=[...new Set([...Object.values(settings.streets||{}).flat(),...tickets.map(ticket=>ticket.street)].filter(Boolean))].sort();
-  const closePointEditor=()=>{document.getElementById('toolsScreenRoot')?.classList.remove('tools-map-editor-open');options.placement?.cancel?.();MTToolsMap.destroyPicker();closeModal();};
+  let pointEditorDirty=false;
+  const closePointEditor=()=>{if(pointEditorDirty&&!confirm('Повернутись назад? Незбережені дані об’єкта буде втрачено.'))return;document.getElementById('toolsScreenRoot')?.classList.remove('tools-map-editor-open');options.placement?.cancel?.();MTToolsMap.destroyPicker();closeModal();if(options.returnToLinking)toolsReturnToTicketLinking();};
   openModal(existing.id?'Редагувати точку':'Нова точка мережі',`
     <div class="field"><label>Тип</label><select id="toolsPointType">${MTToolsCore.NETWORK_POINT_TYPES.map(type=>`<option ${type===(existing.type||'FOB')?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select></div>
     <div class="field-row"><div class="field"><label>Місто</label><input id="toolsPointCity" name="mt-internal-point-city" autocomplete="off" autocorrect="off" spellcheck="false" list="toolsPointCities" value="${escapeHtml(existing.city||'')}"><datalist id="toolsPointCities">${cities.map(value=>`<option value="${escapeHtml(value)}">`).join('')}</datalist></div><div class="field"><label>Вулиця</label><input id="toolsPointStreet" name="mt-internal-point-street" autocomplete="off" autocorrect="off" spellcheck="false" list="toolsPointStreets" value="${escapeHtml(existing.street||'')}"><datalist id="toolsPointStreets">${streets.map(value=>`<option value="${escapeHtml(value)}">`).join('')}</datalist></div></div>
@@ -494,8 +518,10 @@ function toolsOpenNetworkPointEditor(id='',defaults={},options={}){
       const latInput=document.getElementById('toolsPointLat'),lngInput=document.getElementById('toolsPointLng'),panel=document.getElementById('toolsPointPickerPanel');
       let mapPicker=null;
       const inputPoint=()=>MTToolsCore.parseCoordinates(`${latInput.value.replace(',','.')},${lngInput.value.replace(',','.')}`);
-      const writePoint=point=>{latInput.value=Number(point.lat).toFixed(6);lngInput.value=Number(point.lng).toFixed(6);};
+      const writePoint=point=>{latInput.value=Number(point.lat).toFixed(6);lngInput.value=Number(point.lng).toFixed(6);pointEditorDirty=true;};
       options.placement?.onChange?.(writePoint);
+      document.getElementById('modalBody').addEventListener('input',()=>{pointEditorDirty=true;});
+      document.getElementById('modalBody').addEventListener('change',()=>{pointEditorDirty=true;});
       document.querySelectorAll('[data-photo-preview-key]').forEach(async image=>{const data=await resolvePhotoAsync(image.dataset.photoPreviewKey,null);if(data)image.src=data;});
       document.querySelectorAll('.tools-point-photo-remove').forEach(button=>button.onclick=async()=>{if(!confirm('Видалити це фото?'))return;button.disabled=true;await toolsRemoveNetworkPointPhoto(existing.id,button.dataset.photoKey);});
       if(options.placement){document.getElementById('toolsScreenRoot')?.classList.add('tools-map-editor-open');setTimeout(()=>document.getElementById('toolsLeafletMap')?.scrollIntoView({block:'start'}),0);}
@@ -524,7 +550,7 @@ function toolsOpenNetworkPointEditor(id='',defaults={},options={}){
         const files=[...document.getElementById('toolsPointPhoto').files].slice(0,3),keys=(existing.photoKeys||[existing.photoKey]).filter(Boolean);
         for(const file of files){const key=await toolsStoreCompressedPhoto(file);if(!key){showToast('Не вдалося зберегти фото');return;}keys.push(key);}normalized.photoKeys=[...new Set(keys)].slice(0,3);normalized.photoKey=normalized.photoKeys[0]||'';
         const at=toolsNetworkPoints.findIndex(point=>point.id===normalized.id);if(at>=0)toolsNetworkPoints[at]=normalized;else toolsNetworkPoints.push(normalized);
-        if(!toolsSaveNetworkPoints()){saveButton.disabled=false;return;}closePointEditor();renderToolsScreen(options.returnView||'map');showToast('Точку збережено локально');await toolsSendNetworkPointTelegram(normalized,{updateExisting:!isNew});
+        if(!toolsSaveNetworkPoints()){saveButton.disabled=false;return;}document.getElementById('toolsScreenRoot')?.classList.remove('tools-map-editor-open');options.placement?.cancel?.();MTToolsMap.destroyPicker();closeModal();if(options.returnToLinking)toolsReturnToTicketLinking(normalized.id);else renderToolsScreen(options.returnView||'map');showToast('Точку збережено локально');await toolsSendNetworkPointTelegram(normalized,{updateExisting:!isNew});
       };
       document.getElementById('toolsPointSaveBtn').onclick=savePoint;
     }});
@@ -602,7 +628,9 @@ function toolsMoveNetworkPoint(id){
 function toolsShowNetworkPoint(id){
   const point=toolsNetworkPoints.find(item=>item.id===id);if(!point)return;
   toolsSelectedNetworkPointId=String(point.id);toolsHighlightNetworkPointInList(point.id);
-  const address=MTToolsCore.networkPointAddress(point),telegramLink=telegramNetworkMessageLink(point.telegramChatId,point.telegramMessageId),telegramLabel=telegramLink?'✈️ Оновити в Telegram':point.telegramSendPending?'✈️ Повторити відправлення':'✈️ Надіслати в Telegram',linked=MTToolsCore.ticketsForNetworkPoint(tickets,point.id);openModal(point.name||point.type||'Точка мережі',`<div style="font-size:13px;line-height:1.6;"><strong>${escapeHtml(point.type)}</strong>${address?`<br>🏘 ${escapeHtml(address)}`:''}<br>📍 ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">Створено: ${escapeHtml(new Date(point.createdAt).toLocaleString('uk-UA'))}<br>Оновлено: ${escapeHtml(new Date(point.updatedAt).toLocaleString('uk-UA'))}</div>${point.note?`<div style="white-space:pre-wrap;margin-top:8px;">${escapeHtml(point.note)}</div>`:''}<div id="toolsPointPhotoPreview" class="tools-point-photo-grid" style="margin-top:8px;"></div>${linked.length?`<div class="card" style="margin-top:10px;"><strong>Пов’язані заявки: ${linked.length}</strong>${linked.map(ticket=>`<button class="btn btn-block tools-linked-ticket" data-ticket-id="${escapeHtml(ticket.id)}" style="margin-top:6px;">${escapeHtml(ticket.date||'')} — ${escapeHtml(ticket.type||'Заявка')}</button>`).join('')}</div>`:''}<div class="row wrap" style="margin-top:10px;"><button type="button" class="btn" id="toolsPointMapBtn" style="flex:1;">📍 Показати на карті</button><button type="button" class="btn" id="toolsPointMoveBtn" style="flex:1;">↔ Перемістити на карті</button><button type="button" class="btn" id="toolsPointRouteBtn" style="flex:1;">🗺 Маршрут</button><button type="button" class="btn" id="toolsPointEditBtn" style="flex:1;">✏️ Редагувати</button>${telegramLink?`<button type="button" class="btn btn-accent" id="toolsPointTelegramOpenBtn" style="flex:1 0 100%;">Відкрити в Telegram</button>`:''}<button type="button" class="btn" id="toolsPointTelegramBtn" style="flex:1 0 100%;">${telegramLabel}</button><button type="button" class="btn btn-danger" id="toolsPointDeleteBtn" style="flex:1 0 100%;">Видалити об’єкт</button></div></div>`,{onOpen:async()=>{
+  const modalNavigationKey=appNavigationPeek()?.key||'';
+  const closePointDetails=()=>{if(modalNavigationKey)appNavigationDrop(modalNavigationKey);closeModal();};
+  const address=MTToolsCore.networkPointAddress(point),telegramLink=telegramNetworkMessageLink(point.telegramChatId,point.telegramMessageId),telegramLabel=telegramLink?'✈️ Оновити в Telegram':point.telegramSendPending?'✈️ Повторити відправлення':'✈️ Надіслати в Telegram',linked=MTToolsCore.ticketsForNetworkPoint(tickets,point.id);openModal(point.name||point.type||'Точка мережі',`${appNavigationCanGoBack()?appBackButtonHtml():''}<div style="font-size:13px;line-height:1.6;"><strong>${escapeHtml(point.type)}</strong>${address?`<br>🏘 ${escapeHtml(address)}`:''}<br>📍 ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">Створено: ${escapeHtml(new Date(point.createdAt).toLocaleString('uk-UA'))}<br>Оновлено: ${escapeHtml(new Date(point.updatedAt).toLocaleString('uk-UA'))}</div>${point.note?`<div style="white-space:pre-wrap;margin-top:8px;">${escapeHtml(point.note)}</div>`:''}<div id="toolsPointPhotoPreview" class="tools-point-photo-grid" style="margin-top:8px;"></div>${linked.length?`<div class="card" style="margin-top:10px;"><strong>Пов’язані заявки: ${linked.length}</strong>${linked.map(ticket=>`<button class="btn btn-block tools-linked-ticket" data-ticket-id="${escapeHtml(ticket.id)}" style="margin-top:6px;">${escapeHtml(ticket.date||'')} — ${escapeHtml(ticket.type||'Заявка')}</button>`).join('')}</div>`:''}<div class="row wrap" style="margin-top:10px;"><button type="button" class="btn" id="toolsPointMapBtn" style="flex:1;">📍 Показати на карті</button><button type="button" class="btn" id="toolsPointMoveBtn" style="flex:1;">↔ Перемістити на карті</button><button type="button" class="btn" id="toolsPointRouteBtn" style="flex:1;">🗺 Маршрут</button><button type="button" class="btn" id="toolsPointEditBtn" style="flex:1;">✏️ Редагувати</button>${telegramLink?`<button type="button" class="btn btn-accent" id="toolsPointTelegramOpenBtn" style="flex:1 0 100%;">Відкрити в Telegram</button>`:''}<button type="button" class="btn" id="toolsPointTelegramBtn" style="flex:1 0 100%;">${telegramLabel}</button><button type="button" class="btn btn-danger" id="toolsPointDeleteBtn" style="flex:1 0 100%;">Видалити об’єкт</button></div></div>`,{onClose:closePointDetails,onOpen:async()=>{
     document.getElementById('toolsPointMapBtn').onclick=()=>toolsShowNetworkPointOnMap(point);
     document.getElementById('toolsPointRouteBtn').onclick=()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${point.lat},${point.lng}`)}`,'_blank','noopener');
     document.getElementById('toolsPointMoveBtn').onclick=()=>toolsMoveNetworkPoint(point.id);
@@ -639,7 +667,7 @@ function renderToolsScreen(view){
 function bindToolsScreen(){
   const root=document.getElementById('toolsScreenRoot');
   root.addEventListener('click',event=>{
-    const viewButton=event.target.closest('[data-tools-view]');if(viewButton){toolsView=viewButton.dataset.toolsView;renderToolsScreen();return;}
+    const viewButton=event.target.closest('[data-tools-view]');if(viewButton){toolsNavigate(viewButton.dataset.toolsView);return;}
     const router=event.target.closest('[data-router-ip]');if(router){window.open(`http://${router.dataset.routerIp}`,'_blank','noopener');return;}
     const point=event.target.closest('.tools-network-open');if(point){toolsShowNetworkPoint(point.dataset.pointId);return;}
     const groupedPoint=event.target.closest('.tools-network-object');if(groupedPoint){toolsFocusNetworkPoint(groupedPoint.dataset.pointId);return;}
@@ -669,7 +697,7 @@ function bindToolsScreen(){
     else if(action==='export-offline-area')toolsExportOfflineArea(event.target.closest('[data-area-id]')?.dataset.areaId);
     else if(action==='import-offline-map'){toolsOfflineImportAreaId='';document.getElementById('toolsOfflineMapFile')?.click();}
     else if(action==='delete-offline-map')toolsDeleteOfflineMap();
-    else if(action==='offline-settings-back'){toolsOfflineReturnSettings=false;switchTab('settings');}
+    else if(action==='offline-settings-back')appNavigationBack();
   });
   root.addEventListener('change',event=>{
     if(event.target.id==='toolsOfflineMapFile'){const file=event.target.files?.[0];event.target.value='';toolsPrepareOfflineMap(file);}
