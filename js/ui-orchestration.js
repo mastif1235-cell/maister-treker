@@ -86,6 +86,7 @@ function updateAppBackButton(){document.getElementById('appBackBtn')?.classList.
 
 const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулятор', shifts:'Зміни', tools:'Інструменти', settings:'Налаштування'};
 function switchTab(tab){
+  if(tab!=='tools'&&typeof toolsLeaveDiagnostics==='function')toolsLeaveDiagnostics();
   if(tab!=='tools'&&typeof toolsStopConnectionCheck==='function')toolsStopConnectionCheck(false);
   // NEW: якщо вкладка вже й так активна — не скидаємо скрол. Це прибирає
   // ефект "улетів на початок форми", який траплявся, якщо щось під час

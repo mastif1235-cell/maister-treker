@@ -69,7 +69,7 @@ function toolsNavigate(view){
 function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsOfflineReturnSettings=false;switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
 function toolsContextHtml(){
   return toolsDiagnosticContext?.address
-    ? `<div class="card" style="font-size:13px;"><strong>📍 ${escapeHtml(toolsDiagnosticContext.address)}</strong><div style="color:var(--text-dim);margin-top:3px;">Результат збережеться лише після вашого підтвердження.</div></div>`
+    ? `<div class="card" style="font-size:13px;"><div class="row wrap" style="justify-content:space-between;align-items:center;"><strong>📍 ${escapeHtml(toolsDiagnosticContext.address)}</strong><button type="button" class="btn btn-sm" data-tools-action="reset-diagnostic-address">✕ Скинути адресу</button></div><div style="color:var(--text-dim);margin-top:3px;">Результат збережеться лише після вашого підтвердження.</div></div>`
     : `<div class="card" style="font-size:13px;color:var(--text-dim);">Швидка діагностика без адреси. За замовчуванням результат ніде не зберігається.</div>`;
 }
 function toolsDiagnosticResultsHtml(){
@@ -173,10 +173,13 @@ async function runToolsDiagnostics(){
   toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
   renderToolsScreen('diagnostics');
 }
+function toolsClearDiagnosticAddress(){toolsDiagnosticContext=null;toolsDiagnosticSaved=false;}
+function toolsLeaveDiagnostics(){if(toolsView!=='diagnostics')return;toolsStopConnectionCheck(false);toolsClearDiagnosticAddress();toolsView='home';}
+function toolsResetDiagnosticAddress(){toolsClearDiagnosticAddress();renderToolsScreen('diagnostics');}
 function toolsOpenDiagnostics(context=null,returnTab='tools'){
-  if(returnTab==='tools')appNavigationPush('tools-diagnostics',()=>{toolsView='home';switchTab('tools');renderToolsScreen('home');});
+  if(returnTab==='tools')appNavigationPush('tools-diagnostics',()=>{toolsLeaveDiagnostics();switchTab('tools');renderToolsScreen('home');});
   else if(returnTab==='calculator')appNavigationPush('tools-diagnostics',toolsReturnToTicket);
-  else if(returnTab==='tickets')appNavigationPush('tools-diagnostics',()=>{switchTab('tickets');renderAddressNav();});
+  else if(returnTab==='tickets')appNavigationPush('tools-diagnostics',()=>{toolsLeaveDiagnostics();switchTab('tickets');renderAddressNav();});
   toolsDiagnosticContext=context;toolsDiagnosticResult=null;toolsDiagnosticRunAt=null;toolsDiagnosticSaved=false;toolsReturnTab=returnTab;toolsView='diagnostics';
   switchTab('tools');renderToolsScreen('diagnostics');
 }
@@ -189,6 +192,7 @@ function openToolsDiagnosticsFromCalculator(){
   toolsOpenDiagnostics(context,'calculator');
 }
 function toolsReturnToTicket(){
+  toolsLeaveDiagnostics();
   let draft=toolsCalculatorDraft;try{draft=draft||JSON.parse(localStorage.getItem(MT_TOOLS_DRAFT_KEY)||'null');}catch(_e){}
   if(!draft?.state){showToast('Чернетку заявки не знайдено');return;}
   calcState=JSON.parse(JSON.stringify(draft.state));editingTicketId=draft.editingTicketId??null;calcOriginalPhotoKeys=Array.isArray(draft.originalPhotoKeys)?draft.originalPhotoKeys.slice():[];
@@ -685,6 +689,7 @@ function bindToolsScreen(){
     else if(action==='copy-diagnostics')toolsCopyDiagnostic();
     else if(action==='attach-diagnostics')toolsAttachDiagnostics();
     else if(action==='save-diagnostics')toolsSaveCurrentDiagnostic();
+    else if(action==='reset-diagnostic-address')toolsResetDiagnosticAddress();
     else if(action==='external-speed-test')toolsOpenExternalSpeedTest();
     else if(action==='start-connection-check')toolsStartConnectionCheck();
     else if(action==='stop-connection-check')toolsStopConnectionCheck();
