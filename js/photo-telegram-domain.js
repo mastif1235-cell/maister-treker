@@ -257,7 +257,8 @@ async function deleteTicketTelegramMessages(t, token, chatId){
 function buildTelegramBackupText(t){
   const extra = [];
   if(t.masterNote) extra.push(`🔒 Тільки для вас: ${t.masterNote}`);
-  if(t.geoLink) extra.push(`📍 Геолокація: ${t.geoLink}`);
+  const geoUrl=typeof MTToolsCore!=='undefined' ? MTToolsCore.googleMapsUrl(t) : (t.geoLink||'');
+  if(geoUrl && !String(t.content||'').includes(geoUrl)) extra.push(`📍 Геолокація: ${geoUrl}`);
   if(t.login) extra.push(`👤 Логін: ${t.login}`);
   if(t.password) extra.push(`🔑 Пароль: ${t.password}`);
   if(!extra.length) return t.content || '';

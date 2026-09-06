@@ -18,7 +18,7 @@ function hasUnsavedChanges(){
   if(s.cloudImported && (s.content !== s._origContent || s.sum !== s._origSum)) return true;
   if(s.login || s.password) return true;
   if(s.type === 'Ремонт' && s.contractNumber) return true; // NEW: вручну введений номер договору для ремонту
-  if(s.geoLink) return true;
+  if(s.geoLink || (typeof MTToolsCore!=='undefined' && MTToolsCore.explicitCoordinates(s))) return true;
   if((s.callFee>0 && !feeIsAutoDefault) || (s.tariff>0 && !tariffIsAutoDefault)) return true; // NEW: авто-підставлена ціна за замовчуванням — не «зміна»
   if((s.cables||[]).some(c=> Number(c.meters)>0)) return true; // NEW: динамічний список кабелів
   if((s.equipment||[]).some(e=>e.checked)) return true;
@@ -736,11 +736,12 @@ function handlePhotoFile(file){
 /* ---- Геолокація ---- */
 
 function setGeoLink(link,coords=null){
-  calcState.geoLink = link;
+  calcState.geoLink = String(link||'');
   if(coords){calcState.geoLat=Number(coords.lat.toFixed(6));calcState.geoLng=Number(coords.lng.toFixed(6));}
+  else if(!link){calcState.geoLat=null;calcState.geoLng=null;}
   formTouchedByUser = true; // NEW: модалка геолокації живе поза #calcForm, тож звичайний input/change-делегат її не бачить — без цього рядка чернетка з самою лише геолокацією (без інших полів) не зберігалась
-  // Геолокація тепер НЕ потрапляє в текст примітки/заявки — вона лише
-  // для власного використання майстра (кнопка 📍 і бейдж з посиланням).
+  // Людиночитаний content перебудується з canonical coordinates під час
+  // збереження заявки; тут змінюємо лише стан форми та його saved-state UI.
   renderGeoBadge();
 }
 
@@ -750,7 +751,8 @@ function setGeoLink(link,coords=null){
    - якщо HTTPS і GPS доступні — визначає координати автоматично
    - якщо GPS заблокований або файл відкрито локально — одразу показує модалку «вставити посилання» */
 function handleGeoBtn(){
-  if((calcState.geoLink||MTToolsCore.explicitCoordinates(calcState))&&!confirm('Геолокація вже додана. Оновити?'))return;
+  if(MTToolsCore.explicitCoordinates(calcState)){openTicketGeoPointPicker();return;}
+  if(calcState.geoLink&&!confirm('Геолокація вже додана. Оновити?'))return;
   openGeoPasteModal();
 }
 
@@ -815,7 +817,7 @@ function openAbonentGeoEditModal(ids, currentLink){
     document.getElementById('abonentGeoRefineBtn').onclick = ()=> openAbonentMapPointPicker(ids);
     const clearBtn = document.getElementById('abonentGeoClearBtn');
     if(clearBtn) clearBtn.onclick = ()=>{
-      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t) t.geoLink=''; });
+      ids.forEach(id=>{ const t = tickets.find(x=>String(x.id)===String(id)); if(t){t.geoLink='';t.geoLat=null;t.geoLng=null;} });
       saveTickets();
       showToast('Геолокацію прибрано');
       renderAddressNav();

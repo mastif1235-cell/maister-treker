@@ -84,10 +84,12 @@ function buildWorkSummaryLines(t){
 }
 
 function buildTicketContent(s, total){
+  const geoUrl=typeof MTToolsCore!=='undefined' ? MTToolsCore.googleMapsUrl(s) : (/^https:\/\//i.test(String(s.geoLink||''))?String(s.geoLink):'');
   if(s.type === 'Інше'){
     const lines = [`📋 НОТАТКА`];
     if(s.date) lines.push(`📅 ${s.date}${s.time ? ' '+s.time : ''}`);
     if(s.otherNote) lines.push(s.otherNote);
+    if(geoUrl) lines.push(`🗺️ Геолокація: ${geoUrl}`);
     return lines.join('\n');
   }
   const lines = [];
@@ -96,6 +98,7 @@ function buildTicketContent(s, total){
   if((s.type === 'Підключення' || s.type === 'Ремонт') && s.contractNumber) lines.push(`📄 № дог.: ${s.contractNumber}`);
   if(s.city) lines.push(`🏙️ Місто: ${s.city}`);
   if(s.address) lines.push(`📍 Адреса: ${s.address}`);
+  if(geoUrl) lines.push(`🗺️ Геолокація: ${geoUrl}`);
   if(s.clientName) lines.push(`👤 Клієнт: ${s.clientName}`);
   if(s.phone) lines.push(`📞 Тел: ${s.phone}`);
   if(s.macAddress) lines.push(`🔧 MAC ONU: ${s.macAddress}`);

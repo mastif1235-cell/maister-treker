@@ -147,13 +147,16 @@
             </div>
           </div>
           <div class="field">
-            <label>Геолокація <span style="color:var(--text-dim); font-weight:400;">(тільки для вас)</span></label>
+            <label>Геолокація <span style="color:var(--text-dim); font-weight:400;">(необов’язково)</span></label>
             <div class="row">
               <button type="button" class="btn btn-block" id="geoBtn" title="Додати геолокацію">📍 Додати геолокацію</button>
             </div>
             <div id="geoBadge" class="geo-badge hidden">
-              <span id="geoLink" style="font-size:12px; word-break:break-all; color:var(--accent);"></span>
-              <button type="button" id="geoClearBtn" class="btn btn-sm btn-ghost" style="padding:0 6px; min-height:24px; font-size:12px;">✕ Видалити</button>
+              <div class="geo-saved-copy"><strong>✅ Геолокацію додано</strong><span id="geoCoordinates"></span></div>
+              <div class="row wrap geo-saved-actions">
+                <a id="geoLink" class="btn btn-sm" target="_blank" rel="noopener">🗺️ Відкрити в Google Maps</a>
+                <button type="button" id="geoClearBtn" class="btn btn-sm btn-ghost">✕ Видалити</button>
+              </div>
             </div>
           </div>
           <button type="button" class="btn btn-block" id="calcDiagnosticsBtn" style="margin-bottom:10px;">🛠 Діагностика за цією адресою</button>

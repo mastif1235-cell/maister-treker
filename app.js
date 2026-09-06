@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91 · 2026-09-05';
+const APP_VERSION = 'v91.1 · 2026-09-06';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -171,12 +171,12 @@ function ticketToSyncPayload(t){
   const safeId = (typeof t.id === 'number' || typeof t.id === 'string') ? String(t.id) : String(Date.now());
   const safeDate = (typeof t.date === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(t.date)) ? t.date : formatDate(new Date());
   const safeTime = (typeof t.time === 'string' && /^\d{2}:\d{2}$/.test(t.time)) ? t.time : formatTime(new Date());
-  // Геолокація та приватна примітка майстра НЕ входять у t.content (щоб не
-  // потрапляти диспетчеру при копіюванні/шерингу), але для повного бекапу в
-  // таблиці зберігаємо їх окремо — у службовому стовпці, який більше ніде в
-  // застосунку не використовується і не завантажується назад автоматично.
+  // Приватні поля зберігаємо окремо. Геолокацію також дублюємо тут у
+  // людиночитаному вигляді, щоб службовий стовпець Sheets не був порожнім
+  // для точки, створеної внутрішнім picker без legacy geoLink.
   const backupExtra = [];
-  if(t.geoLink) backupExtra.push(`Геолокація: ${t.geoLink}`);
+  const geoUrl = typeof MTToolsCore!=='undefined' ? MTToolsCore.googleMapsUrl(t) : (t.geoLink||'');
+  if(geoUrl) backupExtra.push(`Геолокація: ${geoUrl}`);
   if(t.masterNote) backupExtra.push(`Приватна примітка майстра: ${t.masterNote}`);
   if(t.login) backupExtra.push(`Логін: ${t.login}`);
   if(t.password) backupExtra.push(`Пароль: ${t.password}`);
@@ -193,7 +193,7 @@ function ticketToSyncPayload(t){
     payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, baseCallFee:t.baseCallFee, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
     note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones,
-    signal:t.signal, geoLat:t.geoLat, geoLng:t.geoLng,
+    signal:t.signal, geoLat:t.geoLat, geoLng:t.geoLng, geoLink:t.geoLink,
     networkPointIds:typeof MTToolsCore!=='undefined'?MTToolsCore.networkPointIds(t.networkPointIds):(Array.isArray(t.networkPointIds)?t.networkPointIds:[])
   };
   return {id:safeId, date:safeDate, time:safeTime, content:t.content, sum:t.sum, tags:t.tags||[], backupNote: backupExtra.join('\n'), fullDataJson: JSON.stringify(fullData)};

@@ -115,17 +115,24 @@ function updateCallFeeLabel(){
 function renderGeoBadge(){
   const badge = document.getElementById('geoBadge');
   const linkEl = document.getElementById('geoLink');
+  const coordsEl = document.getElementById('geoCoordinates');
   const btn = document.getElementById('geoBtn');
   const coords=typeof MTToolsCore!=='undefined'&&(MTToolsCore.explicitCoordinates(calcState)||MTToolsCore.parseCoordinates(calcState.geoLink));
   const mapsUrl=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(calcState):calcState.geoLink;
   if(mapsUrl){
-    const label=coords?`📍 ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`:'📍 Відкрити збережену геолокацію';
-    linkEl.innerHTML = `<a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:none;">${label}</a>`;
+    coordsEl.textContent=coords?`${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`:'Збережене посилання Google Maps';
+    linkEl.href=mapsUrl;
     badge.classList.remove('hidden');
+    btn.textContent='📍 Уточнити';
+    btn.title='Уточнити збережену геолокацію';
     btn.style.background = 'var(--success)';
     btn.style.color = '#fff';
   } else {
     badge.classList.add('hidden');
+    linkEl.removeAttribute('href');
+    coordsEl.textContent='';
+    btn.textContent='📍 Додати геолокацію';
+    btn.title='Додати геолокацію';
     btn.style.background = '';
     btn.style.color = '';
   }

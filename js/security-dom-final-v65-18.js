@@ -136,37 +136,26 @@ if(typeof renderGeoBadge==='function'){
   renderGeoBadge=function(){
     const badge=document.getElementById('geoBadge');
     const linkEl=document.getElementById('geoLink');
+    const coordsEl=document.getElementById('geoCoordinates');
     const btn=document.getElementById('geoBtn');
-    if(!badge || !linkEl || !btn) return;
-
-    const raw=String(calcState?.geoLink||'').trim();
-    let safeUrl='';
-    if(raw){
-      try{
-        const u=new URL(raw,location.href);
-        if(u.protocol==='https:') safeUrl=u.href;
-      }catch(e){}
-    }
-
-    linkEl.replaceChildren();
+    if(!badge || !linkEl || !coordsEl || !btn) return;
+    const coords=typeof MTToolsCore!=='undefined'&&(MTToolsCore.explicitCoordinates(calcState)||MTToolsCore.parseCoordinates(calcState?.geoLink));
+    const candidate=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(calcState):String(calcState?.geoLink||'').trim();
+    let safeUrl='';try{const u=new URL(candidate,location.href);if(u.protocol==='https:')safeUrl=u.href;}catch(e){}
     if(safeUrl){
-      const m=safeUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-      const label=m
-        ? `📍 ${Number(m[1]).toFixed(5)}, ${Number(m[2]).toFixed(5)}`
-        : `📍 ${safeUrl.slice(0,40)}${safeUrl.length>40?'…':''}`;
-      const a=document.createElement('a');
-      a.href=safeUrl;
-      a.target='_blank';
-      a.rel='noopener noreferrer';
-      a.style.color='var(--accent)';
-      a.style.textDecoration='none';
-      a.textContent=label;
-      linkEl.appendChild(a);
+      coordsEl.textContent=coords?`${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`:'Збережене посилання Google Maps';
+      linkEl.href=safeUrl;
       badge.classList.remove('hidden');
+      btn.textContent='📍 Уточнити';
+      btn.title='Уточнити збережену геолокацію';
       btn.style.background='var(--success)';
       btn.style.color='#fff';
     }else{
       badge.classList.add('hidden');
+      linkEl.removeAttribute('href');
+      coordsEl.textContent='';
+      btn.textContent='📍 Додати геолокацію';
+      btn.title='Додати геолокацію';
       btn.style.background='';
       btn.style.color='';
     }
