@@ -1,9 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),handlers={},deleted=[],added=[];let localTouches=0,idbTouches=0;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-36'/,'installed-PWA cache revision includes the v91.3 navigation release');
-assert.match(fs.readFileSync(path.join(root,'app.js'),'utf8'),/APP_VERSION\s*=\s*'v91\.3 · 2026-09-06'/,'canonical release identity is v91.3');
-assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v91\.3 · 2026-09-06'/,'final compatibility wrapper displays canonical v91.3 identity');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-37'/,'installed-PWA cache revision includes the v91.4 offline-map UX release');
+assert.match(fs.readFileSync(path.join(root,'app.js'),'utf8'),/APP_VERSION\s*=\s*'v91\.4 · 2026-09-06'/,'canonical release identity is v91.4');
+assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v91\.4 · 2026-09-06'/,'final compatibility wrapper displays canonical v91.4 identity');
 const cache={addAll:async assets=>added.push(...assets),match:async()=>null,put:async()=>{}};
 const context={URL,fetch:async()=>({ok:true,clone(){return this;}}),caches:{open:async()=>cache,keys:async()=>['maister-treker-v65-old','unrelated-cache'],delete:async key=>{deleted.push(key);return true;},match:async()=>null},clients:{matchAll:async()=>[],claim:async()=>{}},self:{addEventListener:(name,fn)=>{handlers[name]=fn;},skipWaiting:()=>{}},localStorage:new Proxy({},{get(){localTouches++;}}),indexedDB:new Proxy({},{get(){idbTouches++;}})};context.self.clients=context.clients;vm.createContext(context);vm.runInContext(source,context);
 async function fire(name){let promise;handlers[name]({waitUntil:p=>{promise=p;}});await promise;}

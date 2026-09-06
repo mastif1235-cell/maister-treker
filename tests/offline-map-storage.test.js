@@ -19,11 +19,11 @@ class FakeDirectory{
   async getFileHandle(name,{create}={}){if(!create&&!this.files.has(name))throw new Error('missing');return new FakeFileHandle(name,this.files,name===this.failSlot);}
   async removeEntry(name){this.files.delete(name);}
 }
-function loadModule(){
+function loadModule(options={}){
   const local=new Map(),directory=new FakeDirectory();
-  const storage={getDirectory:async()=>directory,estimate:async()=>({quota:10_000_000,usage:1000}),persist:async()=>true};
+  const storage={getDirectory:async()=>directory,estimate:async()=>options.storageEstimate||({quota:10_000_000,usage:1000}),persist:async()=>true};
   class Source{constructor(file){this.file=file;}}
-  class Archive{constructor(source){this.source=source;}async getHeader(){return{specVersion:3,tileType:2,minZoom:9,maxZoom:17,minLon:36,minLat:47,maxLon:39,maxLat:50,centerZoom:12,centerLon:37.5,centerLat:48.5};}async getMetadata(){return{name:'Test area',attribution:'OSM'};}}
+  class Archive{constructor(source){this.source=source;}async getHeader(){return options.header||{specVersion:3,tileType:2,minZoom:9,maxZoom:17,minLon:36,minLat:47,maxLon:39,maxLat:50,centerZoom:12,centerLon:37.5,centerLat:48.5};}async getMetadata(){return{name:'Test area',attribution:'OSM'};}}
   const context={module:{exports:{}},exports:{},console,Date,Number,Set,JSON,ArrayBuffer,localStorage:{getItem:key=>local.has(key)?local.get(key):null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)},navigator:{storage},pmtiles:{PMTiles:Archive,FileSource:Source}};
   context.globalThis=context;vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','js','offline-map-storage.js'),'utf8'),context);
@@ -38,6 +38,11 @@ function loadModule(){
   assert.equal(prepared.header.maxZoom,17);assert.equal(prepared.size,4096);
   await assert.rejects(()=>api.inspectFile(new FakeFile('wrong.txt')),/INVALID_PMTILES_EXTENSION/);
   const quota=await api.quotaFor(4096);assert.equal(quota.enough,true);
+  assert.equal(api.validBounds({minLon:10,minLat:10,maxLon:9,maxLat:11}),false,'invalid bounds are rejected');
+  const lowSpace=loadModule({storageEstimate:{quota:5000,usage:4900}}).api;
+  assert.equal((await lowSpace.quotaFor(4096)).enough,false,'insufficient browser quota is reported before install');
+  const invalidHeader=loadModule({header:{specVersion:3,tileType:2,minZoom:9,maxZoom:17,minLon:36,minLat:47,maxLon:35,maxLat:50}}).api;
+  await assert.rejects(()=>invalidHeader.inspectFile(new FakeFile('invalid.pmtiles')),/INVALID_PMTILES_HEADER/);
 
   const first=await api.install(new FakeFile('first.pmtiles',4096),prepared,{areaId:'area-a'});
   assert.equal(first.areaId,'area-a','installed PMTiles is linked to the selected saved area');
