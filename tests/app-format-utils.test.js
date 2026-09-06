@@ -2,4 +2,14 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');const context={};vm.createContext(context);vm.runInContext(fs.readFileSync('js/app-format-utils.js','utf8'),context);
 assert.equal(context.formatUaDate(new Date(2026,7,23)),'23 серпня 2026 р.');
 assert.deepEqual(JSON.parse(JSON.stringify(context.parseBackupNote('Геолокація: https://maps.example/x\nЛогін: user\nПароль: pass\nПовніДаніJSON: {"id":1}'))),{geoLink:'https://maps.example/x',masterNote:'',login:'user',password:'pass',fullData:{id:1}});
-assert.equal(context.parseBackupNote('ПовніДаніJSON: {bad').fullData,null);console.log('PASS pure date and backup-note parsing');
+assert.equal(context.parseBackupNote('Приватна примітка майстра: один рядок').masterNote,'один рядок','NOTE-1 single-line note remains compatible');
+const multiline='перший рядок\nдругий рядок\nтретій рядок';
+assert.equal(context.parseBackupNote(`Приватна примітка майстра: ${multiline}`).masterNote,multiline,'NOTE-2 three-line note is retained');
+assert.deepEqual(JSON.parse(JSON.stringify(context.parseBackupNote(`Приватна примітка майстра: ${multiline}\nГеолокація: https://maps.example/geo`))),{geoLink:'https://maps.example/geo',masterNote:multiline,login:'',password:'',fullData:null},'NOTE-3 geo section terminates note');
+assert.deepEqual(JSON.parse(JSON.stringify(context.parseBackupNote(`Приватна примітка майстра: ${multiline}\nЛогін: user\nПароль: pass`))),{geoLink:'',masterNote:multiline,login:'user',password:'pass',fullData:null},'NOTE-4 credentials remain separate sections');
+const withJson=context.parseBackupNote(`Приватна примітка майстра: ${multiline}\nПовніДаніJSON: {"masterNote":"structured"}`);
+assert.equal(withJson.masterNote,multiline);assert.equal(withJson.fullData.masterNote,'structured','NOTE-5 fullDataJson remains parseable after multiline note');
+assert.equal(context.parseBackupNote('Геолокація: https://maps.example/old').masterNote,'','NOTE-6 old note without masterNote remains compatible');
+assert.equal(context.parseBackupNote('Приватна примітка майстра: a\nГеолокація: x\nЛогін: y\nПароль: z').masterNote,'a','NOTE-7 service sections are not swallowed');
+assert.equal(context.parseBackupNote('Приватна примітка майстра: a\r\nb\r\nc').masterNote,'a\nb\nc','NOTE-8 only line endings are normalized');
+assert.equal(context.parseBackupNote('ПовніДаніJSON: {bad').fullData,null);console.log('PASS pure date and multiline backup-note parsing');

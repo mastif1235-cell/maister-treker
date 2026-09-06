@@ -5,8 +5,8 @@ const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),styles=read(
 const core=require('../js/tools-core.js');
 
 assert.doesNotMatch(domain,/＋ Додати об’єкт<\/button>/);assert.doesNotMatch(domain,/◎ Моє місце<\/button>/,'large map actions are removed');
-assert.match(domain,/tools-map-floating-controls/);assert.match(domain,/aria-label="Моє місце"/);assert.match(domain,/aria-label="Додати об’єкт"/);
-assert.match(styles,/\.tools-map-floating-controls\{[^}]*position:absolute;[^}]*z-index:1001;[^}]*right:12px;[^}]*top:12px/,'floating controls stay above Leaflet at top-right');
+assert.match(domain,/tools-map-service-controls/);assert.match(domain,/tools-map-fullscreen-control/);assert.match(domain,/aria-label="Моє місце"/);assert.match(domain,/aria-label="Додати об’єкт"/);
+assert.match(styles,/\.tools-map-service-controls\{[^}]*right:12px;[^}]*top:64px/,'desktop service controls stay below the layer switcher');
 assert.match(styles,/\.tools-map-floating-btn\{[^}]*width:46px;[^}]*height:46px/,'touch targets are mobile sized');
 assert.match(map,/OpenStreetMap<\/a> contributors/,'required OSM attribution remains');assert.match(domain,/<details class="tools-map-info"><summary>ⓘ Про карту<\/summary>/,'privacy text is collapsed by default');
 assert.match(domain,/toolsStartMapAddMode/);assert.match(domain,/MTToolsMap\.startPointPlacement/);assert.match(domain,/toolsLocateOnMap/);assert.match(domain,/MTToolsMap\.showUserLocation/,'existing add and GPS logic remain wired');

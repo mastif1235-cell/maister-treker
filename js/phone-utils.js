@@ -6,11 +6,17 @@
  * змінюваного стану застосунку.
  */
 
-const UA_PHONE_REGEX = /(?<!\d)(\+?38)?[\s(\-]*0\d{2}[\s)\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)/g;
+const UA_PHONE_REGEX = /(^|[^\d])((?:\+?38)?[\s(\-]*0\d{2}[\s)\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})(?!\d)/g;
+
+function phoneMatches(text){
+  const found=[];
+  String(text||'').replace(UA_PHONE_REGEX,(_whole,_prefix,phone)=>{found.push(phone);return _whole;});
+  return found;
+}
 
 function extractPhoneFromText(text){
-  const matches = String(text||'').match(UA_PHONE_REGEX);
-  return matches ? matches[0] : null;
+  const matches = phoneMatches(text);
+  return matches.length ? matches[0] : null;
 }
 
 function phoneDigitsToMask(raw){
@@ -36,7 +42,7 @@ function normalizePhoneKey(raw){
 
 function extractPhoneCandidatesFromText(text){
   const raw = String(text||'');
-  const found = raw.match(UA_PHONE_REGEX) || [];
+  const found = phoneMatches(raw);
   const keys = found.map(normalizePhoneKey).filter(Boolean);
   return [...new Set(keys)];
 }

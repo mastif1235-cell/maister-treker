@@ -73,11 +73,12 @@ function ticketFromConflictServer(serverTicket, current){
   const extra = parseBackupNote(serverTicket && serverTicket.backupNote);
   if(!fullData && extra.fullData) fullData=extra.fullData;
   if(fullData) Object.assign(next, fullData);
+  const structuredMasterNote=fullData&&Object.prototype.hasOwnProperty.call(fullData,'masterNote');
   Object.assign(next, {
     id:String(serverTicket.id), date:serverTicket.date, time:serverTicket.time,
     content:serverTicket.content || '', sum:Number(serverTicket.sum)||0,
     tags:Array.isArray(serverTicket.tags) ? serverTicket.tags.slice() : [],
-    geoLink:extra.geoLink || next.geoLink || '', masterNote:extra.masterNote || '',
+    geoLink:extra.geoLink || next.geoLink || '', masterNote:structuredMasterNote ? String(fullData.masterNote||'') : (extra.masterNote || ''),
     login:extra.login || next.login || '', password:extra.password || next.password || ''
   });
   return next;
