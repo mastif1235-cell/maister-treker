@@ -8,7 +8,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 
 (async()=>{
   const module=await import(`../js/tools-map-maplibre.js?test=${Date.now()}`);
-  const calls={controls:[],events:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[]};
+  const calls={controls:[],events:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[],protocols:{}};
   class FakeMap{
     constructor(options){this.options=options;this.touchZoomRotate={enable(){calls.rotation++;},enableRotation(){calls.rotation++;}};}
     addControl(control,position){calls.controls.push([control.constructor.name,position]);}
@@ -29,11 +29,12 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
     off(name,layerOrCallback){delete calls.events[typeof layerOrCallback==='string'?`${name}:${layerOrCallback}`:name];}
     resize(){calls.resizes++;}
     easeTo(options){calls.ease=options;}
+    fitBounds(bounds,options){calls.fitBounds={bounds,options};}
     remove(){calls.removed++;}
   }
   class FakeMarker{constructor(options){this.options=options;calls.markers.push(this);this.events={};}setLngLat(value){this.value={lng:value[0],lat:value[1]};return this;}getLngLat(){return this.value;}addTo(){return this;}on(name,callback){this.events[name]=callback;return this;}remove(){this.removed=true;}}
   class NavigationControl{} class FullscreenControl{} class AttributionControl{}
-  const fakeGl={Map:FakeMap,Marker:FakeMarker,NavigationControl,FullscreenControl,AttributionControl};
+  const fakeGl={Map:FakeMap,Marker:FakeMarker,NavigationControl,FullscreenControl,AttributionControl,addProtocol(name,handler){calls.protocols[name]=handler;},removeProtocol(name){delete calls.protocols[name];}};
   const makeElement=()=>({className:'',title:'',textContent:'',children:[],appendChild(child){this.children.push(child);},getContext:name=>name==='webgl2'?{}:null});
   const fakeRoot={document:{createElement:makeElement},requestAnimationFrame:callback=>callback()};
   const adapter=module.createMapLibreAdapter(fakeGl,fakeRoot);
@@ -56,8 +57,15 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
   const localKey=String.fromCharCode(107,101,121);
   fakeRoot.navigator={onLine:true};fakeRoot.MTMapTilerLocal={getKey:()=>localKey,saveLayer:value=>{calls.savedLayer=value;}};
-  assert.equal(adapter.switchBaseLayer('satellite'),true);assert.ok(calls.style.sources.satellite.tiles[0].startsWith('https://api.maptiler.com/'));assert.equal(calls.savedLayer,'satellite');calls.events['once:style.load']();assert.equal(calls.sources['mt-objects'].data.features.length,2);
-  assert.equal(adapter.switchBaseLayer('map'),true);calls.events['once:style.load']();assert.ok(calls.style.sources.osm);
+  assert.equal(await adapter.switchBaseLayer('satellite'),true);assert.ok(calls.style.sources.satellite.tiles[0].startsWith('https://api.maptiler.com/'));assert.equal(calls.savedLayer,'satellite');calls.events['once:style.load']();assert.equal(calls.sources['mt-objects'].data.features.length,2);
+  assert.equal(await adapter.switchBaseLayer('map'),true);calls.events['once:style.load']();assert.ok(calls.style.sources.osm);
+  let wholeFileRead=false;
+  class OfflineSource{constructor(file){this.file=file;}getKey(){return'original';}}
+  class OfflineArchive{constructor(source){this.source=source;}async getHeader(){return{tileType:1,minZoom:8,maxZoom:15,minLon:34.5,minLat:47.5,maxLon:36,maxLat:49};}async getMetadata(){return{attribution:'© OpenStreetMap contributors',vector_layers:[{id:'roads'},{id:'buildings'}]};}}
+  class OfflineProtocol{constructor(){this.tile=()=>{};}add(archive){calls.offlineArchive=archive;}}
+  fakeRoot.pmtiles={FileSource:OfflineSource,PMTiles:OfflineArchive,Protocol:OfflineProtocol};
+  fakeRoot.MTOfflineMap={archive:async()=>({file:{size:4096,slice(){return new ArrayBuffer(32);},arrayBuffer(){wholeFileRead=true;}},info:{}}),setMode:value=>{calls.offlineMode=value;}};
+  assert.equal(await adapter.switchBaseLayer('offline'),true);assert.equal(calls.style.sources['mt-offline'].type,'vector');assert.ok(calls.style.sources['mt-offline'].url.startsWith('pmtiles://'));assert.ok(calls.style.layers.some(layer=>layer['source-layer']==='roads'));assert.ok(calls.protocols.pmtiles);assert.equal(wholeFileRead,false,'offline archive is range-read through FileSource');calls.events['once:style.load']();assert.equal(calls.offlineMode,'offline');
   assert.deepEqual(adapter.captureView(),{lat:48.5,lng:35.1,zoom:9,bearing:27});
   assert.equal(adapter.focusPoint({lat:49,lng:36},16),true);
   assert.deepEqual(calls.ease,{center:[36,49],zoom:16});
@@ -87,5 +95,5 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   const adapterSource=read('js/tools-map-maplibre.js');
   assert.match(adapterSource,/setWorkerUrl\(WORKER_URL\)/);
   assert.doesNotMatch(adapterSource,/localStorage|indexedDB/);
-  console.log('PASS MapLibre stages 1-4 adapter, GPS/picker, objects/filters, OSM/Satellite switching and Leaflet fallback');
+  console.log('PASS MapLibre stages 1-5 adapter, GPS/picker, objects/filters, online layers, OPFS PMTiles and Leaflet fallback');
 })().catch(error=>{console.error(error);process.exitCode=1;});

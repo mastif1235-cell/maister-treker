@@ -43,6 +43,8 @@ function loadModule(options={}){
   assert.equal((await lowSpace.quotaFor(4096)).enough,false,'insufficient browser quota is reported before install');
   const invalidHeader=loadModule({header:{specVersion:3,tileType:2,minZoom:9,maxZoom:17,minLon:36,minLat:47,maxLon:35,maxLat:50}}).api;
   await assert.rejects(()=>invalidHeader.inspectFile(new FakeFile('invalid.pmtiles')),/INVALID_PMTILES_HEADER/);
+  const vector=loadModule({header:{specVersion:3,tileType:1,minZoom:9,maxZoom:17,minLon:34,minLat:47,maxLon:36,maxLat:49}}).api;
+  assert.equal((await vector.inspectFile(new FakeFile('vector.pmtiles'))).header.tileType,1,'vector PMTiles is accepted for MapLibre');
 
   const first=await api.install(new FakeFile('first.pmtiles',4096),prepared,{areaId:'area-a'});
   assert.equal(first.areaId,'area-a','installed PMTiles is linked to the selected saved area');

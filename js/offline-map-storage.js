@@ -10,6 +10,7 @@
   const SLOTS=['map-a.pmtiles','map-b.pmtiles'];
   const META_KEY='mtOfflineMapMetaV1';
   const MODE_KEY='mtOfflineMapModeV1';
+  const VECTOR_TILE_TYPE=1;
   const RASTER_TILE_TYPES=new Set([2,3,4,5]);
 
   function storage(){return root.navigator&&root.navigator.storage;}
@@ -55,7 +56,7 @@
     const archive=new pm.PMTiles(new pm.FileSource(file));
     const header=cleanHeader(await archive.getHeader());
     if(header.specVersion<3||!validBounds(header))throw new Error('INVALID_PMTILES_HEADER');
-    if(!RASTER_TILE_TYPES.has(header.tileType))throw new Error('PMTILES_RASTER_REQUIRED');
+    if(header.tileType!==VECTOR_TILE_TYPE&&!RASTER_TILE_TYPES.has(header.tileType))throw new Error('PMTILES_TILE_TYPE_UNSUPPORTED');
     let metadata={};try{metadata=await archive.getMetadata()||{};}catch(_e){}
     return {
       fileName:String(file.name||'region.pmtiles').slice(0,240),size:Number(file.size)||0,header,
@@ -111,5 +112,5 @@
     try{const directory=await getDirectory(false);await removeSlot(directory,meta.activeSlot);clearMeta();return true;}catch(_e){return false;}
   }
 
-  return{DIRECTORY,META_KEY,MODE_KEY,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,readMeta};
+  return{DIRECTORY,META_KEY,MODE_KEY,VECTOR_TILE_TYPE,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,readMeta};
 });
