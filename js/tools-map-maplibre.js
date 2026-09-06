@@ -5,6 +5,7 @@ const MAPTILER_TILE_URL='https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg
 const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
 const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
+const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
 
 export function createOsmStyle(){
   return{
@@ -40,6 +41,21 @@ export function accuracyPolygon(point,radius,steps=72){
     coordinates.push([point.lng+(radius*Math.cos(angle)/(earth*Math.cos(latRadians)))*180/Math.PI,point.lat+(radius*Math.sin(angle)/earth)*180/Math.PI]);
   }
   return{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coordinates]}};
+}
+
+function objectMarkerImage(category){
+  const width=48,height=58,data=new Uint8Array(width*height*4),color=CATEGORY_COLORS[category]||CATEGORY_COLORS['Інше'];
+  const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16));
+  const paint=(x,y,value=[255,255,255])=>{if(x<0||x>=width||y<0||y>=height)return;const at=(y*width+x)*4;data[at]=value[0];data[at+1]=value[1];data[at+2]=value[2];data[at+3]=255;};
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=20**2,tail=y>=28&&y<=55&&Math.abs(x-24)<=(55-y)*.58;if(circle||tail)paint(x,y,rgb);}
+  const line=(x1,y1,x2,y2,thickness=2)=>{const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));for(let step=0;step<=steps;step++){const x=Math.round(x1+(x2-x1)*step/steps),y=Math.round(y1+(y2-y1)*step/steps);for(let dy=-thickness;dy<=thickness;dy++)for(let dx=-thickness;dx<=thickness;dx++)paint(x+dx,y+dy);}};
+  if(category==='private'){line(14,23,24,14);line(24,14,34,23);line(17,22,17,32);line(31,22,31,32);line(17,32,31,32);}
+  else if(category==='apartment'){for(let y=13;y<=31;y++)for(let x=17;x<=31;x++)if(x<20||x>28||y<16||y>28||((x+y)%6<2))paint(x,y);}
+  else if(category==='FOB'){line(15,17,33,17);line(15,17,15,31);line(33,17,33,31);line(15,31,33,31);line(15,23,33,23,1);}
+  else if(category==='Муфта'){line(15,24,33,24);for(let y=17;y<=31;y++)for(let x=12;x<=36;x++){const left=(x-17)**2+(y-24)**2,right=(x-31)**2+(y-24)**2;if((left>=25&&left<=49)||(right>=25&&right<=49))paint(x,y);}}
+  else if(category==='Вузол'){for(let y=20;y<=28;y++)for(let x=20;x<=28;x++)if((x-24)**2+(y-24)**2<=14)paint(x,y);line(24,24,14,14,1);line(24,24,34,14,1);line(24,24,14,34,1);line(24,24,34,34,1);}
+  else{line(24,14,24,27);for(let y=31;y<=34;y++)for(let x=22;x<=26;x++)paint(x,y);}
+  return{width,height,data};
 }
 
 export function createMapLibreAdapter(gl,root=globalThis){
@@ -81,17 +97,18 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(userMarker)userMarker.setLngLat([userPoint.lng,userPoint.lat]);
     else userMarker=new gl.Marker({element:markerElement('Моє місце')}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
   };
-  const objectGeoJson=items=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше';return{type:'Feature',id:index,properties:{index,category,label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
+  const objectGeoJson=items=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше';return{type:'Feature',id:index,properties:{index,category,icon:OBJECT_ICON_IDS[category],label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
   const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};
   const applyObjectFilters=()=>{if(map?.getLayer?.('mt-objects')&&selectedCategories)map.setFilter('mt-objects',['in',['get','category'],['literal',[...selectedCategories]]]);updateFilterButtons();};
   const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
   const restoreObjects=options=>{
     if(!map||!map.isStyleLoaded?.())return;
+    Object.keys(CATEGORY_COLORS).forEach(category=>{const id=OBJECT_ICON_IDS[category];if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category),{pixelRatio:2});});
     const data=objectGeoJson(objectItems),existing=map.getSource?.('mt-objects');
     if(existing)existing.setData(data);
     else{
       map.addSource('mt-objects',{type:'geojson',data});
-      map.addLayer({id:'mt-objects',type:'circle',source:'mt-objects',paint:{'circle-radius':['interpolate',['linear'],['zoom'],5,4,17,9],'circle-color':['match',['get','category'],...Object.entries(CATEGORY_COLORS).flat(),'#59636d'],'circle-stroke-color':'#ffffff','circle-stroke-width':2}});
+      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,.45,17,.75],'icon-anchor':'bottom','icon-allow-overlap':false}});
       map.on('click','mt-objects',event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])options.onSelect?.(objectItems[index]);});
       map.on('mouseenter','mt-objects',()=>{map.getCanvas().style.cursor='pointer';});
       map.on('mouseleave','mt-objects',()=>{map.getCanvas().style.cursor='';});
@@ -156,7 +173,6 @@ export function createMapLibreAdapter(gl,root=globalThis){
       dragRotate:true,touchZoomRotate:true,attributionControl:false
     });
     map.addControl(new gl.NavigationControl({showCompass:true,showZoom:true,visualizePitch:true}),'top-right');
-    map.addControl(new gl.FullscreenControl({container}),'top-right');
     map.addControl(new gl.AttributionControl({compact:true}),'bottom-right');
     addBaseSwitcher();
     map.touchZoomRotate?.enable?.();

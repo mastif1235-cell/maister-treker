@@ -8,7 +8,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 
 (async()=>{
   const module=await import(`../js/tools-map-maplibre.js?test=${Date.now()}`);
-  const calls={controls:[],events:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[],protocols:{}};
+  const calls={controls:[],events:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[],protocols:{},images:{}};
   class FakeMap{
     constructor(options){this.options=options;this.touchZoomRotate={enable(){calls.rotation++;},enableRotation(){calls.rotation++;}};}
     addControl(control,position){calls.controls.push([control.constructor.name,position]);}
@@ -20,6 +20,8 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
     getSource(id){return calls.sources[id]||null;}
     addSource(id,source){calls.sources[id]={...source,setData(data){this.data=data;}};}
     addLayer(layer){calls.layers.push(layer);}
+    hasImage(id){return !!calls.images[id];}
+    addImage(id,image){calls.images[id]=image;}
     getLayer(id){return calls.layers.find(layer=>layer.id===id)||null;}
     setFilter(id,filter){calls.filters={...(calls.filters||{}),[id]:filter};}
     getCanvas(){return{style:{}};}
@@ -48,10 +50,14 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(mounted.options.bearing,12);
   assert.equal(mounted.options.style.sources.osm.tiles[0],'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
   assert.equal(calls.rotation,2);
-  assert.deepEqual(calls.controls.slice(0,3).map(item=>item[0]),['NavigationControl','FullscreenControl','AttributionControl']);
+  assert.deepEqual(calls.controls.slice(0,2).map(item=>item[0]),['NavigationControl','AttributionControl']);
   calls.events.load();
   assert.equal(calls.sources['mt-objects'].data.features.length,2);
   assert.equal(calls.sources['mt-objects'].data.features[1].properties.category,'FOB');
+  assert.equal(calls.sources['mt-objects'].data.features[0].properties.icon,'mt-object-private');
+  assert.equal(calls.sources['mt-objects'].data.features[1].properties.icon,'mt-object-FOB');
+  assert.equal(calls.layers.find(layer=>layer.id==='mt-objects').type,'symbol');
+  assert.equal(Object.keys(calls.images).length,6,'each object category has a local pin image');
   calls.events['click:mt-objects']({features:[{properties:{index:1}}]});assert.equal(calls.selected,objects[1]);
   calls.events.contextmenu({lngLat:{lat:48.9,lng:35.9}});assert.deepEqual(calls.addHere,{lat:48.9,lng:35.9});
   assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
