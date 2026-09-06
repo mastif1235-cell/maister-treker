@@ -182,7 +182,9 @@
   }
   function currentCenter(){if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.currentCenter();if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
   function showUserLocation(point,accuracy){
-    const valid=validPoint(point);if(!map||!valid)return false;
+    const valid=validPoint(point);if(!valid)return false;
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.showUserLocation(valid,accuracy);
+    if(!map)return false;
     if(userLayer)userLayer.remove();
     userLayer=root.L.layerGroup().addTo(map);
     root.L.circle([valid.lat,valid.lng],{radius:Math.max(1,Number(accuracy)||1),color:'#2a8cff',fillColor:'#2a8cff',fillOpacity:.12,weight:2}).addTo(userLayer);
@@ -190,12 +192,14 @@
     map.setView([valid.lat,valid.lng],Math.max(map.getZoom(),16));return true;
   }
   function cancelPointPlacement(){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())root.MTToolsMapLibreAdapter.cancelPointPlacement();
     if(!placement)return;
     if(map&&placement.clickHandler)map.off('click',placement.clickHandler);
     placement.layer?.remove();
     placement=null;
   }
   function startPointPlacement(options={}){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.startPointPlacement(options);
     if(!map)return null;
     cancelPointPlacement();
     const layer=root.L.layerGroup().addTo(map);
@@ -325,6 +329,7 @@
     return true;
   }
   function destroyPicker(){
+    if(root.MTToolsMapLibreAdapter?.isPickerMounted?.())root.MTToolsMapLibreAdapter.destroyPicker();
     if(!picker)return;
     picker.observer?.disconnect();
     baseStates.delete(picker.map);picker.map.remove();
@@ -332,6 +337,7 @@
   }
   function mountPicker(container,options={}){
     destroyPicker();
+    if(options.engine==='maplibre'&&root.MTToolsMapLibreAdapter?.mountPicker){const mounted=root.MTToolsMapLibreAdapter.mountPicker(container,options);if(mounted)return mounted;}
     if(!container||!hasLeaflet())return null;
     const initial=validPoint(options.initial);
     const pickerMap=root.L.map(container,{zoomControl:true,tap:true}).setView(initial?[initial.lat,initial.lng]:DEFAULT_CENTER,initial?17:6);
