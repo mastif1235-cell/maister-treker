@@ -3,6 +3,7 @@ import * as maplibregl from '../vendor/maplibre/maplibre-gl.mjs';
 const OSM_TILE_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
+const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
 
 export function createOsmStyle(){
   return{
@@ -28,6 +29,9 @@ export function createMapLibreAdapter(gl,root=globalThis){
   let userMarker=null;
   let userPoint=null;
   let userAccuracy=0;
+  let objectItems=[];
+  let selectedCategories=null;
+  let filterRoot=null;
   let savedView=null;
   const setStatus=(node,message='')=>{if(!node)return;node.textContent=message;node.classList?.toggle?.('hidden',!message);};
   const webgl2Available=()=>{try{return !!root.document?.createElement('canvas')?.getContext('webgl2');}catch(_error){return false;}};
@@ -51,6 +55,23 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(userMarker)userMarker.setLngLat([userPoint.lng,userPoint.lat]);
     else userMarker=new gl.Marker({element:markerElement('Моє місце')}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
   };
+  const objectGeoJson=items=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше';return{type:'Feature',id:index,properties:{index,category,label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
+  const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};
+  const applyObjectFilters=()=>{if(map?.getLayer?.('mt-objects')&&selectedCategories)map.setFilter('mt-objects',['in',['get','category'],['literal',[...selectedCategories]]]);updateFilterButtons();};
+  const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
+  const restoreObjects=options=>{
+    if(!map||!map.isStyleLoaded?.())return;
+    const data=objectGeoJson(objectItems),existing=map.getSource?.('mt-objects');
+    if(existing)existing.setData(data);
+    else{
+      map.addSource('mt-objects',{type:'geojson',data});
+      map.addLayer({id:'mt-objects',type:'circle',source:'mt-objects',paint:{'circle-radius':['interpolate',['linear'],['zoom'],5,4,17,9],'circle-color':['match',['get','category'],...Object.entries(CATEGORY_COLORS).flat(),'#59636d'],'circle-stroke-color':'#ffffff','circle-stroke-width':2}});
+      map.on('click','mt-objects',event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])options.onSelect?.(objectItems[index]);});
+      map.on('mouseenter','mt-objects',()=>{map.getCanvas().style.cursor='pointer';});
+      map.on('mouseleave','mt-objects',()=>{map.getCanvas().style.cursor='';});
+    }
+    applyObjectFilters();
+  };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
   const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;};
   const destroy=()=>{destroyPicker();cancelPointPlacement();userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;captureView();map.remove();map=null;};
@@ -60,6 +81,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
       setStatus(options.statusNode,'MapLibre потребує WebGL2. Використано резервну карту Leaflet.');
       return null;
     }
+    objectItems=Array.isArray(_objects)?_objects:[];selectedCategories=options.selectedCategories||new Set(Object.keys(CATEGORY_COLORS));filterRoot=options.filterRoot||null;bindObjectFilters();
     const view=options.initialView||savedView||DEFAULT_VIEW;
     map=new gl.Map({
       container,style:createOsmStyle(),center:[Number(view.lng),Number(view.lat)],zoom:Number(view.zoom),bearing:Number(view.bearing)||0,pitch:0,
@@ -71,7 +93,8 @@ export function createMapLibreAdapter(gl,root=globalThis){
     map.touchZoomRotate?.enable?.();
     map.touchZoomRotate?.enableRotation?.();
     map.on('moveend',captureView);
-    map.on('load',()=>{setStatus(options.statusNode,'');restoreUserLocation();});
+    map.on('load',()=>{setStatus(options.statusNode,'');restoreUserLocation();restoreObjects(options);});
+    map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
     map.on('error',event=>setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`));
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());
     return map;
@@ -102,7 +125,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     picker={map:pickerMap,getPoint,setPoint,hasChanged:()=>changed,invalidateSize:()=>{pickerMap.resize();return true;},destroy:destroyPicker};
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>pickerMap.resize());return picker;
   };
-  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
+  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
 }
 
 maplibregl.setWorkerUrl(WORKER_URL);

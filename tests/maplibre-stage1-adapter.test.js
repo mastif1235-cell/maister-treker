@@ -12,7 +12,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   class FakeMap{
     constructor(options){this.options=options;this.touchZoomRotate={enable(){calls.rotation++;},enableRotation(){calls.rotation++;}};}
     addControl(control,position){calls.controls.push([control.constructor.name,position]);}
-    on(name,callback){calls.events[name]=callback;}
+    on(name,layerOrCallback,callback){calls.events[callback?`${name}:${layerOrCallback}`:name]=callback||layerOrCallback;}
     getCenter(){return{lat:48.5,lng:35.1};}
     getZoom(){return 9;}
     getBearing(){return 27;}
@@ -20,8 +20,11 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
     getSource(id){return calls.sources[id]||null;}
     addSource(id,source){calls.sources[id]={...source,setData(data){this.data=data;}};}
     addLayer(layer){calls.layers.push(layer);}
+    getLayer(id){return calls.layers.find(layer=>layer.id===id)||null;}
+    setFilter(id,filter){calls.filters={...(calls.filters||{}),[id]:filter};}
+    getCanvas(){return{style:{}};}
     panTo(center){calls.pan=center;}
-    off(name){delete calls.events[name];}
+    off(name,layerOrCallback){delete calls.events[typeof layerOrCallback==='string'?`${name}:${layerOrCallback}`:name];}
     resize(){calls.resizes++;}
     easeTo(options){calls.ease=options;}
     remove(){calls.removed++;}
@@ -32,7 +35,9 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   const makeElement=()=>({className:'',title:'',textContent:'',children:[],appendChild(child){this.children.push(child);},getContext:name=>name==='webgl2'?{}:null});
   const fakeRoot={document:{createElement:makeElement},requestAnimationFrame:callback=>callback()};
   const adapter=module.createMapLibreAdapter(fakeGl,fakeRoot);
-  const mounted=adapter.mount({id:'map'},[],{initialView:{lat:48,lng:35,zoom:8,bearing:12}});
+  const objects=[{id:'house-1',category:'private',lat:48.2,lng:35.2,profiles:[{address:'Адреса'}]},{id:'fob-1',kind:'network',category:'FOB',type:'FOB',name:'FOB-1',lat:48.3,lng:35.3}];
+  const selectedCategories=new Set(['private','FOB']);
+  const mounted=adapter.mount({id:'map'},objects,{initialView:{lat:48,lng:35,zoom:8,bearing:12},selectedCategories,onSelect:item=>{calls.selected=item;},onAddHere:point=>{calls.addHere=point;}});
   assert.ok(mounted);
   assert.equal(mounted.options.dragRotate,true);
   assert.equal(mounted.options.touchZoomRotate,true);
@@ -41,6 +46,12 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(mounted.options.style.sources.osm.tiles[0],'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
   assert.equal(calls.rotation,2);
   assert.deepEqual(calls.controls.map(item=>item[0]),['NavigationControl','FullscreenControl','AttributionControl']);
+  calls.events.load();
+  assert.equal(calls.sources['mt-objects'].data.features.length,2);
+  assert.equal(calls.sources['mt-objects'].data.features[1].properties.category,'FOB');
+  calls.events['click:mt-objects']({features:[{properties:{index:1}}]});assert.equal(calls.selected,objects[1]);
+  calls.events.contextmenu({lngLat:{lat:48.9,lng:35.9}});assert.deepEqual(calls.addHere,{lat:48.9,lng:35.9});
+  assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
   assert.deepEqual(adapter.captureView(),{lat:48.5,lng:35.1,zoom:9,bearing:27});
   assert.equal(adapter.focusPoint({lat:49,lng:36},16),true);
   assert.deepEqual(calls.ease,{center:[36,49],zoom:16});
@@ -69,5 +80,5 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   const adapterSource=read('js/tools-map-maplibre.js');
   assert.match(adapterSource,/setWorkerUrl\(WORKER_URL\)/);
   assert.doesNotMatch(adapterSource,/MapTiler|apiKey|localStorage|indexedDB/);
-  console.log('PASS MapLibre stage-1/2 adapter, OSM, native controls, GPS accuracy, placement, picker and Leaflet fallback');
+  console.log('PASS MapLibre stages 1-3 adapter, controls, GPS/picker, GeoJSON objects/filters and Leaflet fallback');
 })().catch(error=>{console.error(error);process.exitCode=1;});

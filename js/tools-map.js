@@ -287,7 +287,7 @@
     if(!container)return null;
     destroyMap();
     if(options.engine==='maplibre'&&root.MTToolsMapLibreAdapter?.mount){
-      const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,options);
+      const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,{...options,selectedCategories:selected});
       if(mounted)return mounted;
     }
     const statusNode=options.statusNode||null;
