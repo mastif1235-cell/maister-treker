@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.4 · 2026-09-06';
+const APP_VERSION = 'v91.5 · 2026-09-06';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -386,8 +386,17 @@ document.addEventListener('DOMContentLoaded', init);
    при цьому все одно вимагає мережі — це стосується лише завантаження
    самого інтерфейсу. */
 if('serviceWorker' in navigator){
+  let serviceWorkerRefreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(serviceWorkerRefreshing) return;
+    serviceWorkerRefreshing=true;
+    try{ saveDraftToLocalStorage(); }catch(e){}
+    window.location.reload();
+  });
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(err=>console.error('SW registration failed', err));
+    navigator.serviceWorker.register('sw.js',{updateViaCache:'none'})
+      .then((registration)=>registration.update())
+      .catch(err=>console.error('SW registration failed', err));
   });
 }
 

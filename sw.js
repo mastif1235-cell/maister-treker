@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v66-runtime-41';
+const CACHE_NAME = 'maister-treker-v66-runtime-42';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',
   './js/core-utils.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/settings-core.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
@@ -11,7 +11,9 @@ const CORE_ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)));
+  e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(
+    CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'}))
+  )));
   self.skipWaiting();
 });
 
@@ -42,6 +44,21 @@ self.addEventListener('fetch', (e) => {
       }catch(e){}
       if(!chosen) chosen = await caches.match(e.request) || await caches.match('./index.html');
       return chosen;
+    })());
+    return;
+  }
+  if(/\.(?:js|mjs|css)$/.test(url.pathname)){
+    e.respondWith((async()=>{
+      try{
+        const fresh = await fetch(e.request,{cache:'no-store'});
+        if(fresh && fresh.status === 200){
+          const clone = fresh.clone();
+          e.waitUntil(caches.open(CACHE_NAME).then((cache)=>cache.put(e.request,clone)));
+        }
+        return fresh;
+      }catch(e){
+        return await caches.match(e.request);
+      }
     })());
     return;
   }
