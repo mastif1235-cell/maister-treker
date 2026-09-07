@@ -12,7 +12,7 @@ assert.match(form,/diagnosticHistory:\[\]/,'new and legacy-compatible tickets de
 assert.match(app,/diagnosticHistory:typeof MTToolsCore[^\n]+sanitizeDiagnostics/,'ticket sync fullDataJson carries sanitized history');
 assert.match(security,/sanitizeDiagnostics\(t\.diagnosticHistory\|\|\[\]\)\.slice\(-200\)/,'imported/restored history is bounded and sanitized');
 assert.match(ui,/Історія діагностик/);assert.match(ui,/Діагностика ще не виконувалась/);
-assert.match(domain,/async function toolsSaveCurrentDiagnostic/);assert.match(domain,/appendDiagnosticHistory\(previous,record\)/);assert.match(domain,/if\(await saveTickets\(\)\)/,'saving history reuses canonical ticket persistence and sync flow');
+assert.match(domain,/async function toolsSaveCurrentDiagnostic/);assert.match(domain,/draft\.state\.diagnosticHistory=MTToolsCore\.appendDiagnosticHistory\(previousDraft,record\)/);assert.match(domain,/!ticket\|\|await saveTickets\(\)/,'saving history keeps the active draft and reuses canonical ticket persistence when one exists');
 assert.doesNotMatch(domain,/toolsDiagnostics\.push\(record\)/,'new diagnostics are no longer written only to the legacy profile store');
 assert.match(share,/Історія\\s\+діагностик/,'dispatcher sanitizer excludes diagnostic history labels');
 assert.doesNotMatch(share,/JSON\.stringify\([^\n]*diagnosticHistory/,'dispatcher never serializes ticket history');

@@ -32,6 +32,6 @@ assert.match(html,/name="mt-internal-ticket-city"/);assert.match(html,/name="mt-
 assert.match(domain,/options\.placement\?'tools-point-editor-overlay':'tools-point-editor-modal'/);
 assert.match(styles,/tools-point-editor-modal #modalBody\{[^}]*padding:2px 6px[^}]*overflow-x:hidden/);
 assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v91\.7 · 2026-09-07/);assert.match(sw,/maister-treker-v66-runtime-44/);
+assert.match(app,/v91\.8 · 2026-09-07/);assert.match(sw,/maister-treker-v66-runtime-45/);
 
 console.log('PASS v85 viewer, Telegram media refs, profile coordinate flow, autofill semantics and mobile editor regressions');

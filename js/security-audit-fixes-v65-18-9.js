@@ -7,7 +7,7 @@
    before it can reach an HTML attribute.
    ===================================================================== */
 
-  const SECURITY_AUDIT_RELEASE_LABEL = 'v91.7 · 2026-09-07';
+  const SECURITY_AUDIT_RELEASE_LABEL = 'v91.8 · 2026-09-07';
 
 function securityAuditSafePhotoUrl(value){
   if(typeof value !== 'string') return null;

@@ -20,7 +20,7 @@ const points=[
   core.normalizeNetworkPoint({id:'c',type:'Вузол',city:'',street:'',house:'',lat:46,lng:33},new Date('2026-09-01'))
 ];
 const grouped=core.groupNetworkPoints(points);
-assert.deepEqual(grouped.map(group=>group.city),['Апостолове','Без адреси / Не визначено','Жовті Води']);
+assert.deepEqual(grouped.map(group=>group.city),['Без адреси / Не визначено','Апостолове','Жовті Води'],'equal timestamps use stable newest insertion order instead of alphabet');
 assert.equal(grouped.find(group=>group.city==='Жовті Води').count,1);
 assert.equal(core.groupNetworkPoints(points,'опора')[0].streets[0].points[0].id,'point-b-unique');
 assert.equal(core.groupNetworkPoints(points,'point-b-unique')[0].streets[0].points[0].id,'point-b-unique','ID participates in search');
@@ -70,6 +70,6 @@ assert.match(domain,/state\.log=state\.log\.slice\(0,20\)/);
 assert.match(domain,/toolsStopConnectionCheck/);assert.match(read('js/ui-orchestration.js'),/if\(tab!=='tools'/);
 assert.doesNotMatch(domain,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
 
-assert.match(sw,/maister-treker-v66-runtime-44/);
-assert.match(read('app.js'),/v91\.7 · 2026-09-07/);
+assert.match(sw,/maister-treker-v66-runtime-45/);
+assert.match(read('app.js'),/v91\.8 · 2026-09-07/);
 console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and honest availability check');

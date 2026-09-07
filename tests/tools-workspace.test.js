@@ -44,7 +44,7 @@ assert.equal(backup.validatePayload({...oldPayload,networkPoints:{}}),false,'new
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),domain=fs.readFileSync(path.join(root,'js','tools-domain.js'),'utf8'),backupSource=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
 assert.match(html,/data-tab="tools"/);assert.match(html,/id="calcDiagnosticsBtn"/);assert.match(html,/https:\/\/api64\.ipify\.org/);
 assert.match(domain,/toolsDiagnosticResult=null/,'opening diagnostics starts without a saved result');
-assert.match(domain,/appendDiagnosticHistory\(previous,record\)/,'only explicit save path appends ticket history');
+assert.match(domain,/appendDiagnosticHistory\(previousDraft,record\)/,'only explicit save path appends ticket history to the active draft');
 assert.match(domain,/navigator\.clipboard\.writeText\(report\)/,'copy path is present');
 assert.doesNotMatch(domain,/syncEngine\.|syncAll/,'tools never trigger bulk or direct sync-engine operations');
 assert.match(domain,/await saveTickets\(\)/,'address coordinates persist only after explicit confirmation');

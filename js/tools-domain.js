@@ -86,7 +86,7 @@ function toolsDiagnosticResultsHtml(){
   rows.push(['Відгук інтернету',r.latencyMs!==null?`${r.latencyMs} мс`:'Недоступно в браузері']);
   rows.push(['Стабільність відгуку',r.jitterMs!==null?`${r.jitterMs} мс`:'Недоступно в браузері']);
   const resourcesHtml=r.resources.map(item=>`<div class="tools-result-row"><span>${escapeHtml(item.label)}</span><strong style="text-align:right;">${resourceText(item)}</strong></div>`).join('');
-  const actions=toolsDiagnosticContext?.ticketId
+  const actions=toolsDiagnosticContext?.ticketId||toolsDiagnosticContext?.editorContext
     ? `<button type="button" class="btn btn-accent" data-tools-action="save-diagnostics" style="flex:1;" ${toolsDiagnosticSaved?'disabled':''}>${toolsDiagnosticSaved?'✅ Збережено':'Зберегти в заявку'}</button>`
     : `<button type="button" class="btn" data-tools-action="attach-diagnostics" style="flex:1;">Прив'язати до адреси</button>`;
   return `<div class="card"><strong>${summary}</strong><div style="font-size:11.5px;color:var(--text-dim);margin-top:5px;">DNS перевіряється непрямо через HTTPS: браузер не надає прямий DNS lookup.</div>${rows.map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong style="text-align:right;">${row[1]}</strong></div>`).join('')}<div style="font-size:12px;font-weight:700;margin-top:9px;">Контрольні ресурси</div>${resourcesHtml}</div>
@@ -104,7 +104,7 @@ function toolsDiagnosticsHtml(){
     <div class="card" style="margin-top:12px;"><strong>Роутер</strong><div style="font-size:12px;color:var(--text-dim);margin:5px 0 9px;">Автоперевірка локальних адресів ненадійна через HTTPS, CORS і Private Network Access. Відкриття — тільки вручну.</div>
       <div class="row wrap">${['192.168.0.1','192.168.1.1','192.168.100.1'].map(ip=>`<button type="button" class="btn btn-sm" data-router-ip="${ip}">${ip}</button>`).join('')}</div></div>
     <div class="card" id="toolsConnectionCheckRoot" style="margin-top:12px;"><strong>Безперервна перевірка доступності</strong><div style="font-size:12px;color:var(--text-dim);margin:5px 0 9px;">Це браузерні HTTPS-запити, не ICMP ping. CORS/браузерне блокування рахується окремо й не видається за втрату пакетів.</div>
-      <div class="field"><label>Адреса або хост</label><input id="toolsConnectionTarget" value="${escapeHtml(toolsConnectionCheck?.target||'')}" placeholder="https://api.ipify.org"></div>
+      <div class="field"><label>HTTPS URL або хост</label><input id="toolsConnectionTarget" name="mt-internal-diagnostic-host" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" value="${escapeHtml(toolsConnectionCheck?.target||'')}" placeholder="https://api.ipify.org"></div>
       <div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="start-connection-check" style="flex:1;">▶ Запустити</button><button type="button" class="btn" data-tools-action="stop-connection-check" style="flex:1;">■ Зупинити</button></div>
       <div id="toolsConnectionCheckStats" class="tools-connection-stats">${toolsConnectionStatsHtml()}</div>
       <div id="toolsConnectionCheckLog" class="tools-connection-log">${toolsConnectionLogHtml()}</div>
@@ -170,9 +170,10 @@ function toolsOpenDiagnostics(context=null,returnTab='tools'){
 function openToolsDiagnosticsFromCalculator(){
   syncFormToState();
   if(!calcState.city||!calcState.street){showToast('Спочатку вкажіть місто та вулицю');return;}
+  document.activeElement?.blur?.();
   toolsCalculatorDraft={state:JSON.parse(JSON.stringify(calcState)),editingTicketId,originalPhotoKeys:(calcOriginalPhotoKeys||[]).slice()};
   try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(toolsCalculatorDraft));}catch(_e){}
-  const context={id:MTToolsCore.profileId(calcState),...MTToolsCore.profileParts(calcState),address:MTToolsCore.addressLabel(calcState),ticketId:editingTicketId||''};
+  const context={id:MTToolsCore.profileId(calcState),...MTToolsCore.profileParts(calcState),address:MTToolsCore.addressLabel(calcState),ticketId:editingTicketId||'',editorContext:true};
   toolsOpenDiagnostics(context,'calculator');
 }
 function toolsReturnToTicket(){
@@ -183,6 +184,7 @@ function toolsReturnToTicket(){
   fillFormFromState();document.getElementById('saveTicketBtn').textContent=editingTicketId?'Оновити заявку':'Зберегти заявку';document.getElementById('cancelEditBtn').classList.toggle('hidden',!editingTicketId);
   switchTab('calculator');showToast('Чернетку заявки відновлено');
 }
+function toolsClearCalculatorDraft(){toolsCalculatorDraft=null;try{localStorage.removeItem(MT_TOOLS_DRAFT_KEY);}catch(_e){}}
 function openToolsDiagnosticsFromProfile(ids=[]){
   const list=tickets.filter(ticket=>ids.some(id=>String(id)===String(ticket.id)));
   if(!list.length){showToast('Профіль не знайдено');return;}
@@ -211,12 +213,17 @@ function toolsAttachDiagnostics(){
   }});
 }
 async function toolsSaveCurrentDiagnostic(){
-  if(!toolsDiagnosticResult||!toolsDiagnosticContext?.ticketId||toolsDiagnosticSaved)return;
-  const ticket=tickets.find(item=>String(item.id)===String(toolsDiagnosticContext.ticketId));if(!ticket){showToast('Заявку для збереження не знайдено');return;}
+  if(!toolsDiagnosticResult||toolsDiagnosticSaved)return;
+  const ticketId=String(toolsDiagnosticContext?.ticketId||''),ticket=ticketId?tickets.find(item=>String(item.id)===ticketId):null;
+  const draft=toolsDiagnosticContext?.editorContext?toolsCalculatorDraft:null;
+  if(!ticket&&!draft?.state){showToast('Заявку для збереження не знайдено');return;}
   const record=MTToolsCore.makeDiagnosticRecord(toolsDiagnosticResult,toolsDiagnosticContext,toolsDiagnosticRunAt||new Date());
-  const previous=Array.isArray(ticket.diagnosticHistory)?ticket.diagnosticHistory.slice():[];ticket.diagnosticHistory=MTToolsCore.appendDiagnosticHistory(previous,record);
-  if(await saveTickets()){toolsDiagnosticSaved=true;showToast('Діагностику збережено в заявку');renderToolsScreen('diagnostics');}
-  else ticket.diagnosticHistory=previous;
+  const previousTicket=ticket&&Array.isArray(ticket.diagnosticHistory)?ticket.diagnosticHistory.slice():[];
+  const previousDraft=draft?.state&&Array.isArray(draft.state.diagnosticHistory)?draft.state.diagnosticHistory.slice():[];
+  if(ticket)ticket.diagnosticHistory=MTToolsCore.appendDiagnosticHistory(previousTicket,record);
+  if(draft?.state){draft.state.diagnosticHistory=MTToolsCore.appendDiagnosticHistory(previousDraft,record);try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(draft));}catch(_e){if(ticket)ticket.diagnosticHistory=previousTicket;draft.state.diagnosticHistory=previousDraft;showToast('Не вдалося зберегти діагностику в чернетку');return;}}
+  if(!ticket||await saveTickets()){toolsDiagnosticSaved=true;showToast('Діагностику збережено в заявку');renderToolsScreen('diagnostics');}
+  else{ticket.diagnosticHistory=previousTicket;if(draft?.state){draft.state.diagnosticHistory=previousDraft;try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(draft));}catch(_e){}}}
 }
 async function toolsCopyDiagnostic(){
   if(!toolsDiagnosticResult)return;
@@ -489,7 +496,7 @@ function toolsCaptureTicketLinkContext(){
 function toolsOpenTicketNetworkPointPicker(context=null){
   toolsTicketLinkContext=appNavigationState(context||{ticketId:String(editingTicketId||'draft'),query:'',scrollTop:0});
   const rank=point=>{let score=0;if(String(point.city||'').toLocaleLowerCase('uk')===String(calcState.city||'').toLocaleLowerCase('uk'))score+=2;if(String(point.street||'').toLocaleLowerCase('uk')===String(calcState.street||'').toLocaleLowerCase('uk'))score+=4;return score;};
-  openModal('Прив’язати об’єкт',`<button type="button" class="btn btn-accent btn-block" id="ticketNetworkPointCreateBtn" style="margin-bottom:10px;">➕ Створити об’єкт</button><div class="field"><input type="search" role="searchbox" name="mt-internal-point-link-search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" id="ticketNetworkPointSearch" value="${escapeHtml(toolsTicketLinkContext.query||'')}" placeholder="Тип, місто, вулиця, адреса або примітка"></div><div id="ticketNetworkPointChoices" class="tools-network-point-choices"></div>`,{onClose:()=>{toolsTicketLinkContext=null;appNavigationDropPrefix('ticket-network-');closeModal();},onOpen:()=>{const input=document.getElementById('ticketNetworkPointSearch'),root=document.getElementById('ticketNetworkPointChoices'),render=()=>{const list=MTToolsCore.searchNetworkPoints(toolsNetworkPoints,input.value).sort((a,b)=>rank(b)-rank(a)||String(a.city).localeCompare(String(b.city),'uk')).slice(0,150);root.innerHTML=list.map(point=>{const meta=MTToolsCore.networkPointPickerMeta(point);return `<div class="ticket-network-choice-row" data-point-row="${escapeHtml(point.id)}"><button type="button" class="btn ticket-network-choice" data-point-id="${escapeHtml(point.id)}"><span class="ticket-network-choice-copy"><span>${escapeHtml(point.type)} · ${escapeHtml(MTToolsCore.networkPointAddress(point)||point.name||point.id)}</span>${meta?`<small>${escapeHtml(meta)}</small>`:''}</span>${calcState.networkPointIds?.includes(String(point.id))?'<span>✅</span>':''}</button><button type="button" class="btn ticket-network-preview" data-point-id="${escapeHtml(point.id)}" aria-label="Переглянути деталі ${escapeHtml(point.name||point.type||point.id)}" title="Деталі">👁</button></div>`;}).join('')||'<div class="card">Нічого не знайдено.</div>';root.querySelectorAll('.ticket-network-choice').forEach(button=>button.onclick=()=>toolsLinkNetworkPointToTicket(button.dataset.pointId));root.querySelectorAll('.ticket-network-preview').forEach(button=>button.onclick=()=>toolsOpenTicketNetworkPointPreview(button.dataset.pointId));requestAnimationFrame(()=>{root.scrollTop=Number(toolsTicketLinkContext?.scrollTop)||0;const selected=toolsTicketLinkContext?.newPointId&&[...root.querySelectorAll('[data-point-row]')].find(row=>row.dataset.pointRow===String(toolsTicketLinkContext.newPointId));selected?.classList.add('selected');selected?.scrollIntoView({block:'nearest'});});};input.oninput=()=>{toolsTicketLinkContext.query=input.value;toolsTicketLinkContext.scrollTop=0;render();};document.getElementById('ticketNetworkPointCreateBtn').onclick=toolsStartTicketNetworkPointCreation;render();}});
+  openModal('Прив’язати об’єкт',`<button type="button" class="btn btn-accent btn-block" id="ticketNetworkPointCreateBtn" style="margin-bottom:10px;">➕ Створити об’єкт</button><div class="field"><input type="search" role="searchbox" name="mt-internal-point-link-search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" id="ticketNetworkPointSearch" value="${escapeHtml(toolsTicketLinkContext.query||'')}" placeholder="Тип, місто, вулиця, адреса або примітка"></div><div id="ticketNetworkPointChoices" class="tools-network-point-choices"></div>`,{onClose:()=>{toolsTicketLinkContext=null;appNavigationDropPrefix('ticket-network-');closeModal();},onOpen:()=>{const input=document.getElementById('ticketNetworkPointSearch'),root=document.getElementById('ticketNetworkPointChoices'),render=()=>{const list=MTToolsCore.sortNewestFirst(MTToolsCore.searchNetworkPoints(toolsNetworkPoints,input.value)).sort((a,b)=>rank(b)-rank(a)).slice(0,150);root.innerHTML=list.map(point=>{const meta=MTToolsCore.networkPointPickerMeta(point);return `<div class="ticket-network-choice-row" data-point-row="${escapeHtml(point.id)}"><button type="button" class="btn ticket-network-choice" data-point-id="${escapeHtml(point.id)}"><span class="ticket-network-choice-copy"><span>${escapeHtml(point.type)} · ${escapeHtml(MTToolsCore.networkPointAddress(point)||point.name||point.id)}</span>${meta?`<small>${escapeHtml(meta)}</small>`:''}</span>${calcState.networkPointIds?.includes(String(point.id))?'<span>✅</span>':''}</button><button type="button" class="btn ticket-network-preview" data-point-id="${escapeHtml(point.id)}" aria-label="Переглянути деталі ${escapeHtml(point.name||point.type||point.id)}" title="Деталі">👁</button></div>`;}).join('')||'<div class="card">Нічого не знайдено.</div>';root.querySelectorAll('.ticket-network-choice').forEach(button=>button.onclick=()=>toolsLinkNetworkPointToTicket(button.dataset.pointId));root.querySelectorAll('.ticket-network-preview').forEach(button=>button.onclick=()=>toolsOpenTicketNetworkPointPreview(button.dataset.pointId));requestAnimationFrame(()=>{root.scrollTop=Number(toolsTicketLinkContext?.scrollTop)||0;const selected=toolsTicketLinkContext?.newPointId&&[...root.querySelectorAll('[data-point-row]')].find(row=>row.dataset.pointRow===String(toolsTicketLinkContext.newPointId));selected?.classList.add('selected');selected?.scrollIntoView({block:'nearest'});});};input.oninput=()=>{toolsTicketLinkContext.query=input.value;toolsTicketLinkContext.scrollTop=0;render();};document.getElementById('ticketNetworkPointCreateBtn').onclick=toolsStartTicketNetworkPointCreation;render();}});
 }
 function toolsStartTicketNetworkPointCreation(){
   const context=toolsCaptureTicketLinkContext();toolsLinkCreationContext=context;closeModal();appNavigationPush('ticket-network-create',()=>{toolsLinkCreationContext=null;toolsOpenTicketNetworkPointPicker(context);},context);toolsView='map';switchTab('tools');renderToolsScreen('map');requestAnimationFrame(()=>toolsStartMapAddMode());
@@ -661,7 +668,7 @@ function renderToolsScreen(view){
   else if(toolsView==='map'){
     root.innerHTML=toolsMapHtml();
     requestAnimationFrame(()=>MTToolsMap.mount(document.getElementById('toolsLeafletMap'),MTToolsCore.mapObjects(tickets,toolsNetworkPoints),{
-      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),emptyStateNode:document.getElementById('toolsMapEmptyState'),onSelect:toolsOpenMapObject,onAddHere:point=>toolsStartMapAddMode(point)
+      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),emptyStateNode:document.getElementById('toolsMapEmptyState'),markerPreset:settings.mapMarkerPreset,onSelect:toolsOpenMapObject,onAddHere:point=>toolsStartMapAddMode(point)
     }));
   }
   else if(toolsView==='network')root.innerHTML=toolsNetworkHtml();

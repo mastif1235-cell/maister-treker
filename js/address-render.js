@@ -55,14 +55,10 @@ function addrNavBreadcrumbHtml(){
 }
 
 function addrNavSearchResultsHtml(query){
-  // NEW: тут і в трьох місцях нижче раніше сортування йшло як текстове
-  // порівняння "ДД.ММ.РРРР ГГ:ХХ" (localeCompare) — через формат дати з
-  // числом дня ПЕРШИМ це фактично сортувало здебільшого за днем місяця, а
-  // не за реальною хронологією (наприклад, "01.12.2025" опинялось б ПЕРЕД
-  // "15.01.2026", хоча хронологічно все навпаки). Тепер — числовий ключ
-  // ticketSortKey (справжня дата+час у мілісекундах), як і в решті коду.
+  // Адресні профілі впорядковуються за фактичним порядком додавання заявок:
+  // нова адреса одразу з'являється зверху навіть із датою роботи заднім числом.
   const list = tickets.filter(t=>ticketMatchesSearchQuery(t, query))
-    .sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
+    .sort((a,b)=> ticketInsertionKey(b) - ticketInsertionKey(a));
   const header = `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено профілів:</div>`;
   if(!list.length) return `<div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">Знайдено: 0</div><div class="empty-state" style="padding:24px 10px;">Нічого не знайдено</div>`;
 
@@ -86,9 +82,7 @@ function addrNavSearchResultsHtml(query){
 
   const groupsHtml = [...groups.values()]
     .sort((a,b)=>{
-      const aLatest = a.list.slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
-      const bLatest = b.list.slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
-      return ticketSortKey(bLatest) - ticketSortKey(aLatest); // NEW: числовий ключ замість текстового порівняння дати
+      return newestTicketInsertion(b.list)-newestTicketInsertion(a.list);
     })
     .map(g=>{
       const sorted = g.list.slice().sort((a,b)=> ticketSortKey(b) - ticketSortKey(a));
@@ -99,6 +93,10 @@ function addrNavSearchResultsHtml(query){
   const looseHtml = loose.length ? `<div style="font-size:12px; color:var(--text-dim); margin:14px 0 4px;">Без структурованої адреси:</div><div class="ticket-list">${loose.map(renderTicketCard).join('')}</div>` : '';
   return header + groupsHtml + looseHtml;
 }
+
+function ticketInsertionKey(ticket){return tickets.indexOf(ticket);}
+function newestTicketInsertion(list=[]){return list.reduce((latest,ticket)=>Math.max(latest,ticketInsertionKey(ticket)),-1);}
+function newestAddressPartIndex(match){for(let index=tickets.length-1;index>=0;index--)if(match(tickets[index]))return index;return-1;}
 
 function addrNavTitle(){
   if(addrNavSearchQuery.trim()) return `Пошук: «${addrNavSearchQuery.trim()}»`;
@@ -267,21 +265,21 @@ function addrNavResultsAreaHtml(){
   let bodyHtml = addrNavBreadcrumbHtml();
 
   if(addrNavState.level==='city'){
-    const cities = naturalSortStrings([...tree.keys()]);
+    const cities = [...tree.keys()].sort((a,b)=>newestAddressPartIndex(t=>(t.city||'').trim()===b)-newestAddressPartIndex(t=>(t.city||'').trim()===a));
     bodyHtml += cities.length ? cities.map(city=>`
       <button type="button" class="btn btn-block addr-nav-city-btn" data-city="${escapeHtml(city)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>${escapeHtml(city)}</span><span style="opacity:.6; font-weight:400;">${tree.get(city).size} вул. ›</span>
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;"><div class="es-icon">🗺️</div>Ще немає заявок зі структурованою адресою</div>`;
   } else if(addrNavState.level==='street'){
     const streetsMap = tree.get(addrNavState.city) || new Map();
-    const streets = naturalSortStrings([...streetsMap.keys()]);
+    const streets = [...streetsMap.keys()].sort((a,b)=>newestAddressPartIndex(t=>(t.city||'').trim()===addrNavState.city&&(t.street||'').trim()===b)-newestAddressPartIndex(t=>(t.city||'').trim()===addrNavState.city&&(t.street||'').trim()===a));
     bodyHtml += streets.length ? streets.map(street=>`
       <button type="button" class="btn btn-block addr-nav-street-btn" data-street="${escapeHtml(street)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>${escapeHtml(street)}</span><span style="opacity:.6; font-weight:400;">${streetsMap.get(street).size} буд. ›</span>
       </button>`).join('') : `<div class="empty-state" style="padding:24px 10px;">Вулиць не знайдено</div>`;
   } else if(addrNavState.level==='house'){
     const streetsMap = tree.get(addrNavState.city) || new Map();
-    const houses = naturalSortStrings([...(streetsMap.get(addrNavState.street) || new Set())]);
+    const houses = [...(streetsMap.get(addrNavState.street) || new Set())].sort((a,b)=>newestAddressPartIndex(t=>(t.city||'').trim()===addrNavState.city&&(t.street||'').trim()===addrNavState.street&&((t.house||'').trim()||'(без номера)')===b)-newestAddressPartIndex(t=>(t.city||'').trim()===addrNavState.city&&(t.street||'').trim()===addrNavState.street&&((t.house||'').trim()||'(без номера)')===a));
     bodyHtml += houses.length ? houses.map(house=>`
       <button type="button" class="btn btn-block addr-nav-house-btn" data-house="${escapeHtml(house)}" style="justify-content:space-between; margin-bottom:6px;">
         <span>буд. ${escapeHtml(house)}</span><span style="opacity:.6;">›</span>
@@ -291,9 +289,7 @@ function addrNavResultsAreaHtml(){
     // профілів (не одразу картки), тап на профіль веде всередину до нього.
     const groups = getApartmentGroupsForHouse(addrNavState.city, addrNavState.street, addrNavState.house);
     const entries = [...groups.entries()].sort((a,b)=>{
-      const aLatest = a[1].slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
-      const bLatest = b[1].slice().sort((x,y)=>ticketSortKey(y) - ticketSortKey(x))[0];
-      return ticketSortKey(bLatest) - ticketSortKey(aLatest); // NEW: числовий ключ замість текстового порівняння дати
+      return newestTicketInsertion(b[1])-newestTicketInsertion(a[1]);
     });
     bodyHtml += entries.length ? entries.map(([aptKey, aptList])=>{
       const addrLabel = aptKey!=='(без кв.)' ? `кв. ${aptKey}` : `буд. ${addrNavState.house}`;

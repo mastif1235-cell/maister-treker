@@ -41,12 +41,14 @@
     const profile=item?.profiles?.[0];
     return profile?.address||[item?.city,item?.street,item?.house].filter(Boolean).join(', ')||'Будинок';
   }
-  function iconFor(category,pickerMode=false){
+  const MARKER_PRESETS={classic:{size:36,border:3},large:{size:40,border:3},compact:{size:30,border:2},contrast:{size:36,border:4}};
+  function iconFor(category,pickerMode=false,presetKey='classic'){
     const meta=pickerMode?{icon:'◎',className:'picker'}:CATEGORY_META[category]||CATEGORY_META['Інше'];
+    const preset=pickerMode?{size:46,border:4}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
     return root.L.divIcon({
       className:'tools-leaflet-icon-shell',
-      html:`<span class="tools-leaflet-pin ${meta.className}"><span>${meta.icon}</span></span>`,
-      iconSize:[38,38],iconAnchor:[19,36],tooltipAnchor:[0,-30]
+      html:`<span class="tools-leaflet-pin ${meta.className} marker-${presetKey}" style="--mt-pin-size:${preset.size}px;--mt-pin-border:${preset.border}px"><span>${meta.icon}</span></span>`,
+      iconSize:[size,size],iconAnchor:[anchor,size-2],tooltipAnchor:[0,-size+8]
     });
   }
   function setStatus(statusNode,message=''){
@@ -312,7 +314,7 @@
     const bounds=[];
     objects.forEach(item=>{
       const point=validPoint(item);if(!point)return;
-      const category=categoryFor(item),marker=root.L.marker([point.lat,point.lng],{icon:iconFor(category),keyboard:true,title:markerLabel(item)});
+      const category=categoryFor(item),marker=root.L.marker([point.lat,point.lng],{icon:iconFor(category,false,options.markerPreset),keyboard:true,title:markerLabel(item)});
       marker.bindTooltip(markerLabel(item),{direction:'top',offset:[0,-25]});
       marker.on('click',()=>options.onSelect?.(item));
       marker.addTo(groups.get(category));

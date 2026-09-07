@@ -74,13 +74,13 @@
   }
   function listProfiles(tickets=[]){
     const groups=new Map();
-    tickets.forEach(ticket=>{
+    tickets.forEach((ticket,index)=>{
       if(!ticket||!text(ticket.city)||!text(ticket.street))return;
       const id=profileId(ticket);
-      if(!groups.has(id))groups.set(id,{id,...profileParts(ticket),address:addressLabel(ticket),tickets:[]});
-      groups.get(id).tickets.push(ticket);
+      if(!groups.has(id))groups.set(id,{id,...profileParts(ticket),address:addressLabel(ticket),tickets:[],newestIndex:index});
+      const group=groups.get(id);group.tickets.push(ticket);group.newestIndex=Math.max(group.newestIndex,index);
     });
-    return [...groups.values()].sort((a,b)=>a.address.localeCompare(b.address,'uk'));
+    return [...groups.values()].sort((a,b)=>b.newestIndex-a.newestIndex||a.address.localeCompare(b.address,'uk'));
   }
   function profileFromTickets(items=[]){
     const first=items[0]||{};
@@ -237,14 +237,22 @@
     if(!needle)return points.slice();
     return points.filter(point=>[point.id,point.type,point.name,point.label,point.city,point.street,point.house,point.note].some(value=>text(value).toLocaleLowerCase('uk').includes(needle)));
   }
+  function sortNewestFirst(items=[]){
+    return items.map((item,index)=>({item,index,time:Date.parse(text(item?.createdAt))})).sort((a,b)=>{
+      const aTimed=Number.isFinite(a.time),bTimed=Number.isFinite(b.time);
+      if(aTimed!==bTimed)return bTimed-aTimed;
+      if(aTimed&&a.time!==b.time)return b.time-a.time;
+      return b.index-a.index||text(a.item?.id).localeCompare(text(b.item?.id),'uk',{numeric:true,sensitivity:'base'});
+    }).map(entry=>entry.item);
+  }
   function groupNetworkPoints(points=[],query=''){
-    const source=searchNetworkPoints(points,query),cities=new Map(),compare=(a,b)=>text(a).localeCompare(text(b),'uk',{numeric:true,sensitivity:'base'});
-    source.forEach((point,index)=>{
+    const source=sortNewestFirst(searchNetworkPoints(points,query)),cities=new Map();
+    source.forEach(point=>{
       const city=text(point.city)||'Без адреси / Не визначено',street=text(point.street)||'Без адреси / Не визначено';
       if(!cities.has(city))cities.set(city,new Map());
-      const streets=cities.get(city);if(!streets.has(street))streets.set(street,[]);streets.get(street).push({point,index});
+      const streets=cities.get(city);if(!streets.has(street))streets.set(street,[]);streets.get(street).push(point);
     });
-    return [...cities.entries()].sort((a,b)=>compare(a[0],b[0])).map(([city,streets])=>({city,count:[...streets.values()].reduce((sum,list)=>sum+list.length,0),streets:[...streets.entries()].sort((a,b)=>compare(a[0],b[0])).map(([street,list])=>({street,count:list.length,points:list.sort((a,b)=>compare(a.point.house,b.point.house)||compare(a.point.name||a.point.type,b.point.name||b.point.type)||a.index-b.index).map(item=>item.point)}))}));
+    return [...cities.entries()].map(([city,streets])=>({city,count:[...streets.values()].reduce((sum,list)=>sum+list.length,0),streets:[...streets.entries()].map(([street,list])=>({street,count:list.length,points:list}))}));
   }
   function removeNetworkPoint(points=[],id=''){
     const targetId=text(id),removed=points.find(point=>text(point?.id)===targetId)||null;
@@ -287,8 +295,8 @@
   }
   function sanitizeNetworkPoints(value){
     if(!Array.isArray(value))return[];
-    return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
+    return value.slice(0,5000).flatMap((item,index)=>{const known=Date.parse(text(item?.createdAt)||text(item?.updatedAt)),fallback=new Date(Number.isFinite(known)?known:index);const point=normalizeNetworkPoint(item,fallback);return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,runBrowserDiagnostics,makeDiagnosticRecord,appendDiagnosticHistory,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,runBrowserDiagnostics,makeDiagnosticRecord,appendDiagnosticHistory,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,sortNewestFirst,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

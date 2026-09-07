@@ -162,6 +162,9 @@ function bindSettingsScreen(){
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
   document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
   document.getElementById('openOfflineMapSettingsBtn').addEventListener('click', openOfflineMapSettings);
+  document.getElementById('mapMarkerPresetSelect').addEventListener('change', event=>{
+    settings.mapMarkerPreset=['classic','large','compact','contrast'].includes(event.target.value)?event.target.value:'classic';saveSettings();showToast('Вигляд міток збережено');
+  });
   document.getElementById('mapTilerKeyToggleBtn').addEventListener('click', ()=>{
     const input=document.getElementById('mapTilerKeyInput');
     input.type=input.type==='password'?'text':'password';

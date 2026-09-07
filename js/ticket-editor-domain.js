@@ -1041,6 +1041,7 @@ async function saveTicketFromForm(e){
 
   currentTicketDate = calcState.date;
   clearDraft();
+  if(typeof toolsClearCalculatorDraft==='function')toolsClearCalculatorDraft();
   resetCalcForm();
   appNavigationDrop('ticket-editor');
   returnAfterTicketEdit();

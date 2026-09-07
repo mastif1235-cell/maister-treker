@@ -7,6 +7,7 @@ const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta
 const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
 export const OBJECT_ICON_SCALE={min:.78,max:1.35};
+export const OBJECT_MARKER_PRESETS={classic:OBJECT_ICON_SCALE,large:{min:.9,max:1.45},compact:{min:.62,max:1.08},contrast:{min:.78,max:1.35}};
 
 export function createOsmStyle(){
   return{
@@ -44,14 +45,15 @@ export function accuracyPolygon(point,radius,steps=72){
   return{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coordinates]}};
 }
 
-export function objectMarkerImage(category){
+export function objectMarkerImage(category,presetKey='classic'){
   const width=48,height=58,data=new Uint8Array(width*height*4),color=CATEGORY_COLORS[category]||CATEGORY_COLORS['Інше'];
   const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16));
   const paint=(x,y,value=[255,255,255])=>{if(x<0||x>=width||y<0||y>=height)return;const at=(y*width+x)*4;data[at]=value[0];data[at+1]=value[1];data[at+2]=value[2];data[at+3]=255;};
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=21**2,tail=y>=27&&y<=56&&Math.abs(x-24)<=(56-y)*.58;if(circle||tail)paint(x,y);}
   // A true white rim (3 CSS px at pixelRatio 2) and a narrower coloured drop
   // mirror the established Leaflet pin while keeping the performant symbol layer.
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=15**2,tail=y>=29&&y<=50&&Math.abs(x-24)<=(50-y)*.43;if(circle||tail)paint(x,y,rgb);}
+  const innerRadius=presetKey==='contrast'?13:15,tailWidth=presetKey==='contrast'?.34:.43;
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=innerRadius**2,tail=y>=29&&y<=50&&Math.abs(x-24)<=(50-y)*tailWidth;if(circle||tail)paint(x,y,rgb);}
   const line=(x1,y1,x2,y2,thickness=2)=>{const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));for(let step=0;step<=steps;step++){const x=Math.round(x1+(x2-x1)*step/steps),y=Math.round(y1+(y2-y1)*step/steps);for(let dy=-thickness;dy<=thickness;dy++)for(let dx=-thickness;dx<=thickness;dx++)paint(x+dx,y+dy);}};
   if(category==='private'){line(14,23,24,14);line(24,14,34,23);line(17,22,17,32);line(31,22,31,32);line(17,32,31,32);}
   else if(category==='apartment'){for(let y=13;y<=31;y++)for(let x=17;x<=31;x++)if(x<20||x>28||y<16||y>28||((x+y)%6<2))paint(x,y);}
@@ -117,11 +119,12 @@ export function createMapLibreAdapter(gl,root=globalThis){
   const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
   const restoreObjects=options=>{
     if(!map||!map.isStyleLoaded?.())return;
-    Object.keys(CATEGORY_COLORS).forEach(category=>{const id=OBJECT_ICON_IDS[category];if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category),{pixelRatio:2});});
+    const presetKey=OBJECT_MARKER_PRESETS[options.markerPreset]?options.markerPreset:'classic',scale=OBJECT_MARKER_PRESETS[presetKey];
+    Object.keys(CATEGORY_COLORS).forEach(category=>{const id=OBJECT_ICON_IDS[category];if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category,presetKey),{pixelRatio:2});});
     const data=objectGeoJson(objectItems),existing=map.getSource?.('mt-objects');
     if(existing)existing.setData(data);else map.addSource('mt-objects',{type:'geojson',data});
     if(!map.getLayer?.('mt-objects')){
-      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,OBJECT_ICON_SCALE.min,17,OBJECT_ICON_SCALE.max],'icon-anchor':'bottom','icon-allow-overlap':false}});
+      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,scale.min,17,scale.max],'icon-anchor':'bottom','icon-allow-overlap':false}});
     }
     bindObjectEvents();
     applyObjectFilters();
@@ -198,7 +201,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const addBaseSwitcher=()=>{
     const control={onAdd(){const wrap=root.document.createElement('div');wrap.className='maplibregl-ctrl tools-map-layer-switcher';wrap.innerHTML='<button type="button" data-mt-base-layer="map">🗺️ Карта</button><button type="button" data-mt-base-layer="satellite">🛰️ Супутник</button><button type="button" data-mt-base-layer="offline">📦 Офлайн</button>';wrap.addEventListener('click',event=>{const button=event.target.closest('[data-mt-base-layer]');if(button)switchBaseLayer(button.dataset.mtBaseLayer);});baseControl=wrap;updateBaseButtons();return wrap;},onRemove(){baseControl?.remove();baseControl=null;}};
-    map.addControl(control,'top-left');
+    map.addControl(control,'top-right');
   };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
   const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;pickerStatusNode=null;if(!map&&offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}};
@@ -218,7 +221,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
       container,style:useOffline?blankStyle():preferred?createSatelliteStyle(preferred):createOsmStyle(),center:[Number(view.lng),Number(view.lat)],zoom:Number(view.zoom),bearing:Number(view.bearing)||0,pitch:0,
       dragRotate:true,touchZoomRotate:true,attributionControl:false
     });
-    map.addControl(new gl.NavigationControl({showCompass:true,showZoom:true,visualizePitch:true}),'top-right');
+    map.addControl(new gl.NavigationControl({showCompass:true,showZoom:true,visualizePitch:true}),'top-left');
     map.addControl(new gl.AttributionControl({compact:true}),'bottom-right');
     addBaseSwitcher();
     map.touchZoomRotate?.enable?.();

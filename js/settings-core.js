@@ -149,8 +149,9 @@ function loadSettings(){
     // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)
-    appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:''};
+    appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:'', mapMarkerPreset:'classic'};
   const merged = migrateSyncSettingsV66(s, s ? Object.assign(base, s) : base);
+  if(!['classic','large','compact','contrast'].includes(merged.mapMarkerPreset))merged.mapMarkerPreset='classic';
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
   if(s && !s.cableTypes && (s.utpPriceDefault!==undefined || s.opticPriceDefault!==undefined)){

@@ -40,6 +40,7 @@ function renderSettingsScreen(){
   const offlineStatus=document.getElementById('offlineMapSettingsStatus'),offlineMeta=window.MTOfflineMap?.readMeta?.();
   if(offlineStatus)offlineStatus.textContent=offlineMeta?`✅ Офлайн-карта встановлена · ${MTOfflineMap.formatBytes(offlineMeta.size)}`:'Офлайн-карта не встановлена';
   const mapTilerStatus=document.getElementById('mapTilerKeyStatus'),mapTilerClear=document.getElementById('mapTilerKeyClearBtn');
+  const markerPreset=document.getElementById('mapMarkerPresetSelect');if(markerPreset)markerPreset.value=['classic','large','compact','contrast'].includes(settings.mapMarkerPreset)?settings.mapMarkerPreset:'classic';
   if(mapTilerStatus)mapTilerStatus.textContent=window.MTMapTilerLocal?.hasKey?.()?'✅ MapTiler API key збережено на цьому пристрої':'Ключ ще не збережено';
   if(mapTilerClear)mapTilerClear.disabled=!window.MTMapTilerLocal?.hasKey?.();
   void renderBackupPasswordStatus();
