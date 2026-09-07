@@ -38,6 +38,17 @@ function splitTicketContentForTechnicalDetails(content){
   return {before:lines.slice(0,splitAt).join('\n'),after:lines.slice(splitAt).join('\n')};
 }
 
+function ticketDiagnosticHistoryHtml(ticket){
+  const history=typeof MTToolsCore!=='undefined'?MTToolsCore.sanitizeDiagnostics(ticket?.diagnosticHistory||[]):(Array.isArray(ticket?.diagnosticHistory)?ticket.diagnosticHistory:[]);
+  const statusLabel=status=>status==='ok'?'✅ Успішно':status==='offline'?'❌ Немає інтернету':'⚠ Часткова проблема';
+  const records=history.slice().sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))).map(item=>{
+    const r=item.result||{},resources=(r.resources||[]).map(resource=>`${resource.label}: ${resource.ok?'HTTP '+(resource.status||'OK'):resource.state==='timeout'?'таймаут':'обмежено'}`).join(' · ');
+    const summary=[r.publicIp?`Public IP: ${r.publicIp}`:'Public IP: недоступно',r.latencyMs!==null&&r.latencyMs!==undefined?`Відгук: ${r.latencyMs} мс`:'',resources].filter(Boolean).join(' · ');
+    return `<details style="margin-top:6px;"><summary>${escapeHtml(new Date(item.timestamp).toLocaleString('uk-UA'))} · ${escapeHtml(statusLabel(item.summaryStatus||r.summaryStatus))}</summary><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">${escapeHtml(summary)}</div></details>`;
+  }).join('');
+  return `<div class="tc-diagnostic-history" style="margin-top:9px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;"><strong>🛠 Історія діагностик</strong>${records||'<div style="font-size:12px;color:var(--text-faint);margin-top:5px;">Діагностика ще не виконувалась</div>'}</div>`;
+}
+
 // NEW: стислий опис виконаної роботи (обладнання/кабелі/роботи/нотатка) БЕЗ
 // імені, телефону, адреси — для картки під "профілем абонента", де ці дані
 // вже показані один раз вище, а не в кожній заявці окремо.
@@ -108,6 +119,7 @@ function renderTicketCard(t, opts={}){
       </div>` : ''}
       ${(!opts.workOnly&&linkedPoints.length)?`<div class="tc-network-links"><strong>📡 Об’єкти мережі</strong>${linkedPoints.map(point=>`<div class="row between"><button type="button" class="btn btn-sm ticket-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml((typeof MTToolsCore!=='undefined'&&MTToolsCore.networkPointAddress(point))||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger ticket-network-unlink" data-ticket-id="${escapeHtml(t.id)}" data-point-id="${escapeHtml(point.id)}">Відв’язати</button></div>`).join('')}</div>`:''}
       ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : (!hasContent && opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
+      ${!opts.workOnly?ticketDiagnosticHistoryHtml(t):''}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}

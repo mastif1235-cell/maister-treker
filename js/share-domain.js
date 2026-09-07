@@ -3,7 +3,7 @@
 /* Canonical Web Share, photo picker and clipboard workflows. */
 
 function dispatcherForwardText(text){
-  const internal=/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностики|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
+  const internal=/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
   return String(text||'').split('\n').filter(line=>!internal.test(line)).join('\n').trim();
 }
 

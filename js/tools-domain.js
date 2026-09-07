@@ -76,18 +76,20 @@ function toolsContextHtml(){
 function toolsDiagnosticResultsHtml(){
   if(!toolsDiagnosticResult)return `<div class="card" style="text-align:center;color:var(--text-dim);">Натисніть «Запустити». Перевірка не змінює заявки чи профілі.</div>`;
   const r=MTToolsCore.sanitizeDiagnosticResult(toolsDiagnosticResult);
+  const summary=r.summaryStatus==='ok'?'✅ Основні перевірки успішні':r.summaryStatus==='offline'?'❌ Немає інтернет-з’єднання':'⚠ Є обмеження або часткова проблема';
+  const resourceText=item=>item.ok?`✅ HTTP ${item.status||'—'} · ${item.httpMs??'—'} мс`:item.state==='timeout'?'⏳ Таймаут':item.state==='http'?`⚠ HTTP ${item.status||'помилка'}`:'⚠ Обмеження мережі/браузера';
   const rows=[
-    ['Інтернет',r.online?'✅ Доступний':'❌ Немає з’єднання'],
-    ['Public IP',r.publicIp?escapeHtml(r.publicIp.split(' / ')[0]):'Недоступно'],
-    ['IPv4',r.ipv4?'✅ Доступний':'Недоступно / не підтверджено']
+    ['Інтернет',r.online?'✅ Доступний':r.internetStatus==='offline'?'❌ Немає з’єднання':'⚠ Не підтверджено'],
+    ['Публічна IP',r.publicIp?escapeHtml(r.publicIp.split(' / ')[0]):'Недоступно'],
+    ['DNS',r.dnsStatus==='indirect'?'✅ Працює для HTTPS':'Недоступно / не підтверджено']
   ];
-  r.resources.forEach(item=>rows.push([item.label,item.ok?`✅ HTTP ${item.httpMs??'—'} мс`:'❌ Недоступний']));
   rows.push(['Відгук інтернету',r.latencyMs!==null?`${r.latencyMs} мс`:'Недоступно в браузері']);
   rows.push(['Стабільність відгуку',r.jitterMs!==null?`${r.jitterMs} мс`:'Недоступно в браузері']);
-  const actions=toolsDiagnosticContext
-    ? `<button type="button" class="btn btn-accent" data-tools-action="save-diagnostics" style="flex:1;" ${toolsDiagnosticSaved?'disabled':''}>${toolsDiagnosticSaved?'✅ Збережено':'Зберегти в профіль'}</button>`
+  const resourcesHtml=r.resources.map(item=>`<div class="tools-result-row"><span>${escapeHtml(item.label)}</span><strong style="text-align:right;">${resourceText(item)}</strong></div>`).join('');
+  const actions=toolsDiagnosticContext?.ticketId
+    ? `<button type="button" class="btn btn-accent" data-tools-action="save-diagnostics" style="flex:1;" ${toolsDiagnosticSaved?'disabled':''}>${toolsDiagnosticSaved?'✅ Збережено':'Зберегти в заявку'}</button>`
     : `<button type="button" class="btn" data-tools-action="attach-diagnostics" style="flex:1;">Прив'язати до адреси</button>`;
-  return `<div class="card">${rows.map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong style="text-align:right;">${row[1]}</strong></div>`).join('')}</div>
+  return `<div class="card"><strong>${summary}</strong><div style="font-size:11.5px;color:var(--text-dim);margin-top:5px;">DNS перевіряється непрямо через HTTPS: браузер не надає прямий DNS lookup.</div>${rows.map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong style="text-align:right;">${row[1]}</strong></div>`).join('')}<div style="font-size:12px;font-weight:700;margin-top:9px;">Контрольні ресурси</div>${resourcesHtml}</div>
     <button type="button" class="btn btn-block" data-tools-action="external-speed-test" style="margin-bottom:10px;">⚡ Перевірити швидкість</button>
     <div style="font-size:11.5px;color:var(--text-dim);margin:-4px 0 12px;">Відкриється офіційний Cloudflare Speed Test у новій вкладці. Тест може використати значний обсяг мобільного трафіку.</div>
     <details class="tools-map-info" style="margin-top:10px;"><summary>Що означають ці показники?</summary><div><strong>Відгук інтернету</strong> — час відповіді на браузерний HTTPS-запит. <strong>Стабільність відгуку</strong> — наскільки змінюється цей час між перевірками. Менше — краще. Це не звичайний ICMP Ping.</div></details>
@@ -96,7 +98,7 @@ function toolsDiagnosticResultsHtml(){
 function toolsOpenExternalSpeedTest(){window.open('https://speed.cloudflare.com/','_blank','noopener');}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
-    <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">🛠 Запустити діагностику</button>
+    <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">▶ Запустити діагностику</button>
     <div id="toolsDiagnosticsResults" style="margin-top:12px;">${toolsDiagnosticResultsHtml()}</div>
     ${toolsReturnTab==='calculator'?'<button type="button" class="btn btn-accent btn-block" data-tools-action="return-to-ticket" style="margin-top:12px;">← Повернутися до заявки</button>':''}
     <div class="card" style="margin-top:12px;"><strong>Роутер</strong><div style="font-size:12px;color:var(--text-dim);margin:5px 0 9px;">Автоперевірка локальних адресів ненадійна через HTTPS, CORS і Private Network Access. Відкриття — тільки вручну.</div>
@@ -151,26 +153,7 @@ async function toolsFetchIp(url){
 async function runToolsDiagnostics(){
   const button=document.getElementById('toolsRunDiagnosticsBtn');
   if(button){button.disabled=true;button.textContent='⏳ Перевіряю…';}
-  const online=navigator.onLine;
-  const result={online,resources:[],publicIp:'',ipFamily:'',ipv4:false,ipv6:false,latencyMs:null,jitterMs:null,downloadMbps:null,uploadMbps:null};
-  if(online){
-    const appCheck=await toolsTimedFetch(`./index.html?mt_diag=${Date.now()}`,5000);
-    result.resources.push({label:'Майстер-Трекер HTTPS',ok:appCheck.ok,httpMs:appCheck.httpMs,status:appCheck.status});
-    const [v4,v6]=await Promise.all([toolsFetchIp('https://api.ipify.org'),toolsFetchIp('https://api6.ipify.org')]);
-    result.ipv4=!!v4.ip;result.ipv6=!!v6.ip;
-    result.publicIp=[v4.ip,v6.ip].filter(Boolean).join(' / ');
-    result.ipFamily=result.ipv4&&result.ipv6?'IPv4/IPv6':result.ipv6?'IPv6':result.ipv4?'IPv4':'';
-    const samples=[];
-    for(let i=0;i<3;i++){
-      const sample=await toolsFetchIp('https://api64.ipify.org');
-      if(sample.ok&&sample.httpMs!==null)samples.push(sample.httpMs);
-      if(i===0)result.resources.push({label:'Public IP HTTPS',ok:sample.ok,httpMs:sample.httpMs,status:sample.status});
-    }
-    if(samples.length){
-      result.latencyMs=Math.round(samples.reduce((sum,value)=>sum+value,0)/samples.length);
-      result.jitterMs=samples.length>1?Math.round(samples.slice(1).reduce((sum,value,index)=>sum+Math.abs(value-samples[index]),0)/(samples.length-1)):0;
-    }
-  }
+  const result=await MTToolsCore.runBrowserDiagnostics({fetch,timeoutMs:5000,now:()=>performance.now(),navigatorOnline:navigator.onLine});
   toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
   renderToolsScreen('diagnostics');
 }
@@ -189,7 +172,7 @@ function openToolsDiagnosticsFromCalculator(){
   if(!calcState.city||!calcState.street){showToast('Спочатку вкажіть місто та вулицю');return;}
   toolsCalculatorDraft={state:JSON.parse(JSON.stringify(calcState)),editingTicketId,originalPhotoKeys:(calcOriginalPhotoKeys||[]).slice()};
   try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(toolsCalculatorDraft));}catch(_e){}
-  const context={id:MTToolsCore.profileId(calcState),...MTToolsCore.profileParts(calcState),address:MTToolsCore.addressLabel(calcState)};
+  const context={id:MTToolsCore.profileId(calcState),...MTToolsCore.profileParts(calcState),address:MTToolsCore.addressLabel(calcState),ticketId:editingTicketId||''};
   toolsOpenDiagnostics(context,'calculator');
 }
 function toolsReturnToTicket(){
@@ -203,10 +186,10 @@ function toolsReturnToTicket(){
 function openToolsDiagnosticsFromProfile(ids=[]){
   const list=tickets.filter(ticket=>ids.some(id=>String(id)===String(ticket.id)));
   if(!list.length){showToast('Профіль не знайдено');return;}
-  toolsOpenDiagnostics(MTToolsCore.profileFromTickets(list),'tickets');
+  toolsOpenDiagnostics({...MTToolsCore.profileFromTickets(list),ticketId:String(list[0].id)},'tickets');
 }
 function toolsProfileDiagnosticsHtml(list=[]){
-  const profile=MTToolsCore.profileFromTickets(list),history=toolsDiagnostics.filter(item=>item.profileId===profile.id).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
+  const profile=MTToolsCore.profileFromTickets(list),combined=[...toolsDiagnostics.filter(item=>item.profileId===profile.id),...list.flatMap(ticket=>MTToolsCore.sanitizeDiagnostics(ticket.diagnosticHistory||[]))],history=[...new Map(combined.map(item=>[item.id,item])).values()].sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
   const latest=history[0],previous=history[1],comparison=latest&&previous?MTToolsCore.diagnosticComparison(latest,previous):[];
   const historyHtml=history.slice(0,5).map(item=>{
     const result=item.result||{},metrics=[result.latencyMs!==null&&result.latencyMs!==undefined?`Відгук ${result.latencyMs} мс`:'',result.downloadMbps!==null&&result.downloadMbps!==undefined?`${result.downloadMbps} Mbps`:''].filter(Boolean).join(' · ');
@@ -224,14 +207,16 @@ function toolsAttachDiagnostics(){
   openModal('Прив’язати діагностику',`<div class="field"><label>Пошук існуючої адреси</label><input type="search" id="toolsDiagnosticsProfileSearch" name="mt-internal-profile-search" role="searchbox" inputmode="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Місто, вулиця, будинок, квартира або адреса"></div><div id="toolsDiagnosticsProfileChoices" style="max-height:52vh;overflow:auto;"></div>`,{onOpen:root=>{
     const input=document.getElementById('toolsDiagnosticsProfileSearch'),choices=document.getElementById('toolsDiagnosticsProfileChoices');
     const render=query=>{const needle=String(query||'').trim().toLocaleLowerCase('uk'),matches=profiles.filter(profile=>!needle||[profile.city,profile.street,profile.house,profile.apartment,profile.address].some(value=>String(value||'').toLocaleLowerCase('uk').includes(needle))).slice(0,100);choices.innerHTML=matches.map(profile=>`<button type="button" class="btn btn-block tools-profile-choice" data-profile-id="${escapeHtml(profile.id)}" style="margin-bottom:8px;text-align:left;justify-content:flex-start;">📍 ${escapeHtml(profile.address)}</button>`).join('')||'<div class="card">Нічого не знайдено.</div>';};
-    render('');input.addEventListener('input',()=>render(input.value));root.addEventListener('click',event=>{const button=event.target.closest('.tools-profile-choice');if(!button)return;toolsDiagnosticContext=profiles.find(profile=>profile.id===button.dataset.profileId)||null;closeModal();renderToolsScreen('diagnostics');});
+    render('');input.addEventListener('input',()=>render(input.value));root.addEventListener('click',event=>{const button=event.target.closest('.tools-profile-choice');if(!button)return;const profile=profiles.find(item=>item.id===button.dataset.profileId);toolsDiagnosticContext=profile?{...profile,ticketId:String(profile.tickets?.[0]?.id||'')}:null;closeModal();renderToolsScreen('diagnostics');});
   }});
 }
-function toolsSaveCurrentDiagnostic(){
-  if(!toolsDiagnosticResult||!toolsDiagnosticContext||toolsDiagnosticSaved)return;
+async function toolsSaveCurrentDiagnostic(){
+  if(!toolsDiagnosticResult||!toolsDiagnosticContext?.ticketId||toolsDiagnosticSaved)return;
+  const ticket=tickets.find(item=>String(item.id)===String(toolsDiagnosticContext.ticketId));if(!ticket){showToast('Заявку для збереження не знайдено');return;}
   const record=MTToolsCore.makeDiagnosticRecord(toolsDiagnosticResult,toolsDiagnosticContext,toolsDiagnosticRunAt||new Date());
-  toolsDiagnostics.push(record);
-  if(toolsSaveDiagnostics()){toolsDiagnosticSaved=true;showToast('Діагностику збережено в профіль');renderToolsScreen('diagnostics');}
+  const previous=Array.isArray(ticket.diagnosticHistory)?ticket.diagnosticHistory.slice():[];ticket.diagnosticHistory=MTToolsCore.appendDiagnosticHistory(previous,record);
+  if(await saveTickets()){toolsDiagnosticSaved=true;showToast('Діагностику збережено в заявку');renderToolsScreen('diagnostics');}
+  else ticket.diagnosticHistory=previous;
 }
 async function toolsCopyDiagnostic(){
   if(!toolsDiagnosticResult)return;

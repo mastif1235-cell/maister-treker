@@ -5,7 +5,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
 
-  const DIAGNOSTIC_VERSION='browser-v1';
+  const DIAGNOSTIC_VERSION='browser-v2';
   const NETWORK_POINT_TYPES=['FOB','Муфта','Вузол','Інше'];
   const MAP_CATEGORIES=['private','apartment','FOB','Муфта','Вузол','Інше'];
 
@@ -90,12 +90,17 @@
     const resources=Array.isArray(result.resources)?result.resources.slice(0,10).map(item=>({
       label:text(item?.label).slice(0,80),ok:!!item?.ok,
       httpMs:Number.isFinite(Number(item?.httpMs))?Math.round(Number(item.httpMs)):null,
-      status:Number.isFinite(Number(item?.status))?Number(item.status):null
+      status:Number.isFinite(Number(item?.status))?Number(item.status):null,
+      state:['ok','http','timeout','blocked','offline','unavailable'].includes(item?.state)?item.state:(item?.ok?'ok':'unavailable'),
+      detail:text(item?.detail).slice(0,160)
     })):[];
     return {
       online:!!result.online,publicIp:text(result.publicIp).slice(0,80),
       ipFamily:['IPv4','IPv6','IPv4/IPv6'].includes(result.ipFamily)?result.ipFamily:'',
       ipv4:result.ipv4===true,ipv6:result.ipv6===true,
+      summaryStatus:['ok','warning','offline'].includes(result.summaryStatus)?result.summaryStatus:(result.online?'warning':'offline'),
+      internetStatus:['ok','offline','limited'].includes(result.internetStatus)?result.internetStatus:(result.online?'ok':'offline'),
+      dnsStatus:['indirect','limited','unavailable'].includes(result.dnsStatus)?result.dnsStatus:'unavailable',
       latencyMs:Number.isFinite(Number(result.latencyMs))?Math.round(Number(result.latencyMs)):null,
       jitterMs:Number.isFinite(Number(result.jitterMs))?Math.round(Number(result.jitterMs)):null,
       downloadMbps:Number.isFinite(Number(result.downloadMbps))?Number(result.downloadMbps):null,
@@ -103,14 +108,48 @@
       resources
     };
   }
+  async function runBrowserDiagnostics(options={}){
+    const fetchFn=options.fetch||globalThis.fetch,timeoutMs=Math.max(100,Number(options.timeoutMs)||5000),clock=options.now||(()=>Date.now());
+    const endpoints=options.endpoints||[
+      {label:'Public IP HTTPS',url:'https://api.ipify.org?format=json',ip:true},
+      {label:'Internet HTTPS',url:'https://tile.openstreetmap.org/0/0/0.png'}
+    ];
+    async function check(endpoint){
+      const controller=typeof AbortController==='function'?new AbortController():null,started=clock();let timer;
+      const timeout=new Promise(resolve=>{timer=setTimeout(()=>{controller?.abort();resolve({timeout:true});},timeoutMs);});
+      try{
+        const request=Promise.resolve().then(async()=>{
+          const response=await fetchFn(endpoint.url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:controller?.signal});
+          let ip='';if(endpoint.ip&&response?.ok){const body=await response.json();ip=text(body?.ip).slice(0,80);}
+          return{response,ip};
+        }).catch(error=>({error}));
+        const outcome=await Promise.race([request,timeout]);
+        const httpMs=Math.max(0,Math.round(clock()-started));
+        if(outcome.timeout)return{label:endpoint.label,ok:false,state:'timeout',status:null,httpMs:null,detail:'Час очікування вичерпано'};
+        if(outcome.error)return{label:endpoint.label,ok:false,state:'blocked',status:null,httpMs:null,detail:'Мережа або браузер не дозволили HTTPS-перевірку'};
+        const response=outcome.response,status=Number(response?.status)||0;
+        if(!response?.ok)return{label:endpoint.label,ok:false,state:'http',status,httpMs,detail:`HTTP ${status||'помилка'}`};
+        return{label:endpoint.label,ok:true,state:'ok',status,httpMs,detail:'',ip:outcome.ip||''};
+      }finally{clearTimeout(timer);}
+    }
+    const checked=await Promise.all(endpoints.map(check)),successes=checked.filter(item=>item.ok),ips=checked.map(item=>item.ip).filter(Boolean),publicIp=[...new Set(ips)].join(' / ');
+    const ipv4=ips.some(ip=>/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)),ipv6=ips.some(ip=>ip.includes(':'));
+    const online=successes.length>0,browserOffline=options.navigatorOnline===false,internetStatus=online?'ok':browserOffline?'offline':'limited',dnsStatus=online?'indirect':browserOffline?'unavailable':'limited',samples=successes.map(item=>item.httpMs).filter(Number.isFinite);
+    const latencyMs=samples.length?Math.round(samples.reduce((sum,value)=>sum+value,0)/samples.length):null;
+    const jitterMs=samples.length>1?Math.round(samples.slice(1).reduce((sum,value,index)=>sum+Math.abs(value-samples[index]),0)/(samples.length-1)):null;
+    const resources=checked.map(({ip,...item})=>item),summaryStatus=!online?(browserOffline?'offline':'warning'):resources.some(item=>!item.ok)||!publicIp?'warning':'ok';
+    return sanitizeDiagnosticResult({online,internetStatus,dnsStatus,summaryStatus,publicIp,ipv4,ipv6,ipFamily:ipv4&&ipv6?'IPv4/IPv6':ipv6?'IPv6':ipv4?'IPv4':'',latencyMs,jitterMs,resources});
+  }
   function makeDiagnosticRecord(result,profile=null,now=new Date()){
+    const sanitized=sanitizeDiagnosticResult(result);
     return {
       id:`diag-${now.getTime()}-${Math.random().toString(36).slice(2,8)}`,
       timestamp:now.toISOString(),version:DIAGNOSTIC_VERSION,
       profileId:profile?.id||'',address:profile?.address||'',
-      result:sanitizeDiagnosticResult(result)
+      summaryStatus:sanitized.summaryStatus,result:sanitized
     };
   }
+  function appendDiagnosticHistory(history=[],record){return sanitizeDiagnostics([...(Array.isArray(history)?history:[]),record]).slice(-200);}
   function previousDiagnostic(history=[],profileIdValue,beforeTimestamp){
     return history.filter(item=>item?.profileId===profileIdValue&&item?.timestamp!==beforeTimestamp)
       .sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)))[0]||null;
@@ -126,10 +165,11 @@
   function diagnosticReport(result,context=null,at=new Date()){
     const r=sanitizeDiagnosticResult(result),lines=['Діагностика',at.toLocaleString('uk-UA')];
     if(context?.address)lines.push(`Адреса: ${context.address}`);
-    lines.push(`Інтернет: ${r.online?'доступний':'немає з’єднання'}`);
+    lines.push(`Інтернет: ${r.online?'доступний':r.internetStatus==='offline'?'немає з’єднання':'не підтверджено через обмеження браузера/мережі'}`);
     if(r.publicIp)lines.push(`External IP: ${r.publicIp}${r.ipFamily?` (${r.ipFamily})`:''}`);
+    lines.push(`DNS: ${r.dnsStatus==='indirect'?'працює для HTTPS (непряма перевірка)':r.dnsStatus==='limited'?'не підтверджено через обмеження браузера':'недоступно'}`);
     if(r.ipv4||r.ipv6)lines.push(`IP: ${r.ipv4?'IPv4 ':''}${r.ipv6?'IPv6':''}`.trim());
-    r.resources.forEach(item=>lines.push(`${item.label}: ${item.ok?'доступний':'недоступний'}${item.httpMs!==null?`, HTTP ${item.httpMs} мс`:''}`));
+    r.resources.forEach(item=>lines.push(`${item.label}: ${item.ok?'доступний':item.state==='timeout'?'таймаут':item.state==='http'?`HTTP ${item.status||'помилка'}`:'обмеження мережі/браузера'}${item.ok&&item.httpMs!==null?`, HTTP ${item.httpMs} мс`:''}`));
     if(r.downloadMbps!==null)lines.push(`Download: ${r.downloadMbps} Mbps`);
     if(r.uploadMbps!==null)lines.push(`Upload: ${r.uploadMbps} Mbps`);
     if(r.latencyMs!==null)lines.push(`Відгук інтернету: ${r.latencyMs} мс`);
@@ -242,7 +282,7 @@
     if(!Array.isArray(value))return[];
     return value.slice(0,5000).flatMap(item=>{
       if(!item||typeof item!=='object'||!text(item.id)||!text(item.timestamp))return[];
-      return [{id:text(item.id),timestamp:text(item.timestamp),version:text(item.version)||DIAGNOSTIC_VERSION,profileId:text(item.profileId),address:text(item.address),result:sanitizeDiagnosticResult(item.result)}];
+      const result=sanitizeDiagnosticResult(item.result);return [{id:text(item.id),timestamp:text(item.timestamp),version:text(item.version)||DIAGNOSTIC_VERSION,profileId:text(item.profileId),address:text(item.address),summaryStatus:['ok','warning','offline'].includes(item.summaryStatus)?item.summaryStatus:result.summaryStatus,result}];
     });
   }
   function sanitizeNetworkPoints(value){
@@ -250,5 +290,5 @@
     return value.slice(0,5000).flatMap(item=>{const point=normalizeNetworkPoint(item,new Date(item?.updatedAt||Date.now()));return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,makeDiagnosticRecord,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,runBrowserDiagnostics,makeDiagnosticRecord,appendDiagnosticHistory,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
 });

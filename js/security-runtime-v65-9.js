@@ -103,10 +103,11 @@ function securityRuntimeSanitizeTicket(ticket,index=0){
   if('geoLat' in t)t.geoLat=t.geoLat===null||t.geoLat===''?null:securityRuntimeSafeNumber(t.geoLat,null,-90,90);
   if('geoLng' in t)t.geoLng=t.geoLng===null||t.geoLng===''?null:securityRuntimeSafeNumber(t.geoLng,null,-180,180);
 
-  ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork','networkPointIds'].forEach(k=>{
+  ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork','networkPointIds','diagnosticHistory'].forEach(k=>{
     if(k in t && !Array.isArray(t[k])) t[k]=[];
     if(Array.isArray(t[k]) && t[k].length>500) t[k]=t[k].slice(0,500);
   });
+  if(typeof MTToolsCore!=='undefined'&&typeof MTToolsCore.sanitizeDiagnostics==='function')t.diagnosticHistory=MTToolsCore.sanitizeDiagnostics(t.diagnosticHistory||[]).slice(-200);
   return t;
 }
 

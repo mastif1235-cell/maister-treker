@@ -5,7 +5,10 @@ const adapter=read('js/tools-map-maplibre.js'),map=read('js/tools-map.js'),domai
 
 assert.match(adapter,/type:'symbol',source:'mt-objects'/,'objects use a symbol layer, not anonymous circles');
 assert.match(adapter,/OBJECT_ICON_SCALE=\{min:\.78,max:1\.35\}/,'object marker scale reaches Leaflet-like readability while staying below GPS');
-assert.match(adapter,/map\.on\('style\.load',restoreApplicationOverlays\)/,'one persistent style lifecycle hook restores application overlays');
+assert.match(adapter,/map\.on\('style\.load',handleStyleLifecycle\)/,'one persistent style lifecycle hook restores application overlays');
+assert.match(adapter,/map\.on\('styledata',handleStyleLifecycle\)/,'style-data races are recovered without reopening settings');
+assert.match(adapter,/map\.on\('idle',handleStyleLifecycle\)/,'idle lifecycle completes partial overlay restoration');
+assert.match(adapter,/scheduleOverlayRestore/,'overlay restoration is retried safely after style replacement');
 assert.doesNotMatch(adapter,/map\.once\('style\.load'/,'base switches do not accumulate one-shot overlay callbacks');
 for(const category of ['private','apartment','FOB','Муфта','Вузол','Інше'])assert.ok(adapter.includes(category),`marker type ${category} remains represented`);
 assert.doesNotMatch(adapter,/new gl\.FullscreenControl/,'the app owns the single fullscreen control');
