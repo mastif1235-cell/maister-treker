@@ -2,6 +2,11 @@
 
 /* Canonical Web Share, photo picker and clipboard workflows. */
 
+function dispatcherForwardText(text){
+  const internal=/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностики|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
+  return String(text||'').split('\n').filter(line=>!internal.test(line)).join('\n').trim();
+}
+
 async function sharePickerBuildItems(ticket){
   const refs = (ticket && Array.isArray(ticket.photos) && ticket.photos.length)
     ? ticket.photos.slice(0,3)
@@ -168,7 +173,7 @@ async function openTicketSharePicker(text, ticket){
 async function shareTicket(id){
   const ticket = tickets.find(x=>String(x.id)===String(id));
   if(!ticket) return;
-  await openTicketSharePicker(ticket.content || '', ticket);
+  await openTicketSharePicker(dispatcherForwardText(ticket.content), ticket);
 }
 
 async function copyTicketText(){
@@ -217,7 +222,7 @@ async function sharePhoto(){
 
 async function shareCurrentTicket(){
   syncFormToState();
-  const text = getCurrentTicketText();
+  const text = dispatcherForwardText(getCurrentTicketText());
   if(!text){ showToast('Немає що надсилати — заповніть заявку'); return; }
   const refs = (calcState.photos && calcState.photos.length) ? calcState.photos.slice(0,3) : (calcState.photo ? [calcState.photo] : []);
   await openTicketSharePicker(text, {

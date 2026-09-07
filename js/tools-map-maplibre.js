@@ -6,7 +6,7 @@ const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
 const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
-const OBJECT_ICON_SCALE={min:.59,max:.98};
+export const OBJECT_ICON_SCALE={min:.78,max:1.35};
 
 export function createOsmStyle(){
   return{
@@ -44,11 +44,12 @@ export function accuracyPolygon(point,radius,steps=72){
   return{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coordinates]}};
 }
 
-function objectMarkerImage(category){
+export function objectMarkerImage(category){
   const width=48,height=58,data=new Uint8Array(width*height*4),color=CATEGORY_COLORS[category]||CATEGORY_COLORS['Інше'];
   const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16));
   const paint=(x,y,value=[255,255,255])=>{if(x<0||x>=width||y<0||y>=height)return;const at=(y*width+x)*4;data[at]=value[0];data[at+1]=value[1];data[at+2]=value[2];data[at+3]=255;};
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=20**2,tail=y>=28&&y<=55&&Math.abs(x-24)<=(55-y)*.58;if(circle||tail)paint(x,y,rgb);}
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=21**2,tail=y>=27&&y<=56&&Math.abs(x-24)<=(56-y)*.58;if(circle||tail)paint(x,y);}
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=17**2,tail=y>=28&&y<=52&&Math.abs(x-24)<=(52-y)*.5;if(circle||tail)paint(x,y,rgb);}
   const line=(x1,y1,x2,y2,thickness=2)=>{const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));for(let step=0;step<=steps;step++){const x=Math.round(x1+(x2-x1)*step/steps),y=Math.round(y1+(y2-y1)*step/steps);for(let dy=-thickness;dy<=thickness;dy++)for(let dx=-thickness;dx<=thickness;dx++)paint(x+dx,y+dy);}};
   if(category==='private'){line(14,23,24,14);line(24,14,34,23);line(17,22,17,32);line(31,22,31,32);line(17,32,31,32);}
   else if(category==='apartment'){for(let y=13;y<=31;y++)for(let x=17;x<=31;x++)if(x<20||x>28||y<16||y>28||((x+y)%6<2))paint(x,y);}
@@ -79,6 +80,9 @@ export function createMapLibreAdapter(gl,root=globalThis){
   let selectionBounds=null;
   let selectionClickHandler=null;
   let pickerStatusNode=null;
+  let objectEventsBound=false;
+  let styleStatusNode=null;
+  let styleStatusMessage='';
   const setStatus=(node,message='')=>{if(!node)return;node.textContent=message;node.classList?.toggle?.('hidden',!message);};
   const setEmptyState=visible=>currentOptions.emptyStateNode?.classList?.toggle?.('hidden',!visible);
   const webgl2Available=()=>{try{return !!root.document?.createElement('canvas')?.getContext('webgl2');}catch(_error){return false;}};
@@ -105,6 +109,10 @@ export function createMapLibreAdapter(gl,root=globalThis){
   const objectGeoJson=items=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше';return{type:'Feature',id:index,properties:{index,category,icon:OBJECT_ICON_IDS[category],label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
   const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};
   const applyObjectFilters=()=>{if(map?.getLayer?.('mt-objects')&&selectedCategories)map.setFilter('mt-objects',['in',['get','category'],['literal',[...selectedCategories]]]);updateFilterButtons();};
+  const handleObjectClick=event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])currentOptions.onSelect?.(objectItems[index]);};
+  const handleObjectEnter=()=>{map.getCanvas().style.cursor='pointer';};
+  const handleObjectLeave=()=>{map.getCanvas().style.cursor='';};
+  const bindObjectEvents=()=>{if(objectEventsBound)return;map.on('click','mt-objects',handleObjectClick);map.on('mouseenter','mt-objects',handleObjectEnter);map.on('mouseleave','mt-objects',handleObjectLeave);objectEventsBound=true;};
   const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
   const restoreObjects=options=>{
     if(!map||!map.isStyleLoaded?.())return;
@@ -114,9 +122,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     else{
       map.addSource('mt-objects',{type:'geojson',data});
       map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,OBJECT_ICON_SCALE.min,17,OBJECT_ICON_SCALE.max],'icon-anchor':'bottom','icon-allow-overlap':false}});
-      map.on('click','mt-objects',event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])options.onSelect?.(objectItems[index]);});
-      map.on('mouseenter','mt-objects',()=>{map.getCanvas().style.cursor='pointer';});
-      map.on('mouseleave','mt-objects',()=>{map.getCanvas().style.cursor='';});
+      bindObjectEvents();
     }
     applyObjectFilters();
   };
@@ -133,6 +139,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const center=map.getCenter(),inside=center.lng>=offlineBounds.minLon&&center.lng<=offlineBounds.maxLon&&center.lat>=offlineBounds.minLat&&center.lat<=offlineBounds.maxLat;
     setStatus(currentOptions.statusNode,inside?'Офлайн-карта активна.':'Центр карти поза межами встановленої офлайн-області.');
   };
+  const restoreApplicationOverlays=()=>{restoreUserLocation();restoreObjects(currentOptions);restoreSelection();updateBaseButtons();if(currentBase==='offline')updateOfflineCoverage();else setStatus(styleStatusNode||currentOptions.statusNode,styleStatusMessage);};
   const offlineStyle=async()=>{
     const pm=root.pmtiles,stored=await root.MTOfflineMap?.archive?.();
     if(!stored?.file||!pm?.PMTiles||!pm?.FileSource||!pm?.Protocol)throw new Error('OFFLINE_MAP_UNAVAILABLE');
@@ -150,6 +157,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const switchBaseLayer=async(kind,statusNode=currentOptions.statusNode,options={})=>{
     if(!map)return false;
+    styleStatusNode=statusNode;styleStatusMessage=options.message||'';
     if(kind==='offline'){
       try{const prepared=await offlineStyle();currentBase='offline';map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
       catch(_error){setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
@@ -159,7 +167,6 @@ export function createMapLibreAdapter(gl,root=globalThis){
       currentBase='satellite';map.setStyle(createSatelliteStyle(key));
     }else{currentBase='map';offlineBounds=null;map.setStyle(createOsmStyle());}
     setEmptyState(false);
-    map.once('style.load',()=>{restoreUserLocation();restoreObjects(currentOptions);restoreSelection();updateBaseButtons();if(currentBase==='offline')updateOfflineCoverage();else setStatus(statusNode,options.message||'');});
     if(options.remember!==false){if(currentBase==='offline')root.MTOfflineMap?.setMode?.('offline');else root.MTMapTilerLocal?.saveLayer?.(currentBase);}
     updateBaseButtons();return true;
   };
@@ -180,7 +187,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
   const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;pickerStatusNode=null;if(!map&&offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}};
-  const destroy=()=>{destroyPicker();cancelPointPlacement();if(map&&selectionClickHandler)map.off('click',selectionClickHandler);selectionClickHandler=null;selectionBounds=null;userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
+  const destroy=()=>{destroyPicker();cancelPointPlacement();if(map&&selectionClickHandler)map.off('click',selectionClickHandler);selectionClickHandler=null;selectionBounds=null;userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;if(objectEventsBound){map.off('click','mt-objects',handleObjectClick);map.off('mouseenter','mt-objects',handleObjectEnter);map.off('mouseleave','mt-objects',handleObjectLeave);objectEventsBound=false;}map.off('style.load',restoreApplicationOverlays);captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
   const mount=(container,_objects=[],options={})=>{
     destroy();
     if(!container||!webgl2Available()){
@@ -201,8 +208,9 @@ export function createMapLibreAdapter(gl,root=globalThis){
     addBaseSwitcher();
     map.touchZoomRotate?.enable?.();
     map.touchZoomRotate?.enableRotation?.();
+    map.on('style.load',restoreApplicationOverlays);
     map.on('moveend',()=>{captureView();updateOfflineCoverage();});
-    map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');restoreUserLocation();restoreObjects(options);restoreSelection();}});
+    map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');restoreApplicationOverlays();}});
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
     map.on('error',event=>{if(currentBase==='satellite'){root.MTMapTilerLocal?.saveLayer?.('map');switchBaseLayer('map',options.statusNode,{remember:false,message:'Супутниковий шар недоступний. Відкрито звичайну карту.'});}else setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`);});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());

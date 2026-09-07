@@ -8,11 +8,11 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 
 (async()=>{
   const module=await import(`../js/tools-map-maplibre.js?test=${Date.now()}`);
-  const calls={controls:[],events:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[],protocols:{},images:{}};
+  const calls={controls:[],events:{},eventRegistrations:{},rotation:0,resizes:0,removed:0,ease:null,sources:{},layers:[],markers:[],protocols:{},images:{}};
   class FakeMap{
     constructor(options){this.options=options;this.touchZoomRotate={enable(){calls.rotation++;},enableRotation(){calls.rotation++;}};}
     addControl(control,position){calls.controls.push([control.constructor.name,position]);}
-    on(name,layerOrCallback,callback){calls.events[callback?`${name}:${layerOrCallback}`:name]=callback||layerOrCallback;}
+    on(name,layerOrCallback,callback){const key=callback?`${name}:${layerOrCallback}`:name;calls.events[key]=callback||layerOrCallback;calls.eventRegistrations[key]=(calls.eventRegistrations[key]||0)+1;}
     getCenter(){return{lat:48.5,lng:35.1};}
     getZoom(){return 9;}
     getBearing(){return 27;}
@@ -25,10 +25,10 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
     getLayer(id){return calls.layers.find(layer=>layer.id===id)||null;}
     setFilter(id,filter){calls.filters={...(calls.filters||{}),[id]:filter};}
     getCanvas(){return{style:{}};}
-    setStyle(style){this.options.style=style;calls.style=style;calls.sources={};calls.layers=[];}
+    setStyle(style){this.options.style=style;calls.style=style;calls.sources={};calls.layers=[];calls.images={};}
     once(name,callback){calls.events[`once:${name}`]=callback;}
     panTo(center){calls.pan=center;}
-    off(name,layerOrCallback){delete calls.events[typeof layerOrCallback==='string'?`${name}:${layerOrCallback}`:name];}
+    off(name,layerOrCallback,callback){delete calls.events[callback?`${name}:${layerOrCallback}`:name];}
     resize(){calls.resizes++;}
     easeTo(options){calls.ease=options;}
     fitBounds(bounds,options){calls.fitBounds={bounds,options};}
@@ -63,10 +63,11 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   calls.events.contextmenu({lngLat:{lat:48.9,lng:35.9}});assert.deepEqual(calls.addHere,{lat:48.9,lng:35.9});
   let selectedBounds=null;assert.equal(adapter.selectBounds(value=>{selectedBounds=value;}),true);calls.events.click({lngLat:{lat:48,lng:35}});calls.events.click({lngLat:{lat:49,lng:36}});assert.deepEqual(selectedBounds,{minLat:48,minLng:35,maxLat:49,maxLng:36});assert.equal(calls.sources['mt-selection-bounds'].data.geometry.type,'Polygon');assert.equal(adapter.drawBounds({minLat:47,minLng:34,maxLat:48,maxLng:35}),true);assert.deepEqual(calls.fitBounds.bounds,[[34,47],[35,48]]);
   assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]]);
+  assert.equal(adapter.showUserLocation({lat:48.7,lng:35.2},25),true);
+  const assertOverlays=label=>{assert.equal(calls.sources['mt-objects'].data.features.length,2,`${label}: objects restored`);assert.ok(calls.sources['mt-user-accuracy'],`${label}: GPS accuracy restored`);assert.ok(calls.sources['mt-selection-bounds'],`${label}: selection restored`);assert.equal(Object.keys(calls.images).length,6,`${label}: marker images restored once`);assert.deepEqual(calls.filters['mt-objects'],['in',['get','category'],['literal',['private','FOB']]],`${label}: filters restored`);};
   const localKey=String.fromCharCode(107,101,121);
   fakeRoot.navigator={onLine:true};fakeRoot.MTMapTilerLocal={getKey:()=>localKey,saveLayer:value=>{calls.savedLayer=value;}};
-  assert.equal(await adapter.switchBaseLayer('satellite'),true);assert.ok(calls.style.sources.satellite.tiles[0].startsWith('https://api.maptiler.com/'));assert.equal(calls.savedLayer,'satellite');calls.events['once:style.load']();assert.equal(calls.sources['mt-objects'].data.features.length,2);
-  assert.equal(await adapter.switchBaseLayer('map'),true);calls.events['once:style.load']();assert.ok(calls.style.sources.osm);
+  assert.equal(await adapter.switchBaseLayer('satellite'),true);assert.ok(calls.style.sources.satellite.tiles[0].startsWith('https://api.maptiler.com/'));assert.equal(calls.savedLayer,'satellite');calls.events['style.load']();assertOverlays('OSM to Satellite');
   let wholeFileRead=false;
   class OfflineSource{constructor(file){this.file=file;}getKey(){return'original';}}
   class OfflineArchive{constructor(source){this.source=source;}async getHeader(){return{tileType:1,minZoom:8,maxZoom:15,minLon:34.5,minLat:47.5,maxLon:36,maxLat:49};}async getMetadata(){return{attribution:'© OpenStreetMap contributors',vector_layers:[{id:'roads'},{id:'buildings'}]};}}
@@ -75,12 +76,13 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(await adapter.switchBaseLayer('offline'),false);assert.match(statusNode.textContent,/Офлайн-карта не встановлена/);assert.equal(calls.emptyHidden,false,'missing offline map has a visible empty state');
   fakeRoot.pmtiles={FileSource:OfflineSource,PMTiles:OfflineArchive,Protocol:OfflineProtocol};
   fakeRoot.MTOfflineMap={archive:async()=>({file:{size:4096,slice(){return new ArrayBuffer(32);},arrayBuffer(){wholeFileRead=true;}},info:{}}),setMode:value=>{calls.offlineMode=value;}};
-  assert.equal(await adapter.switchBaseLayer('offline'),true);assert.equal(calls.style.sources['mt-offline'].type,'vector');assert.ok(calls.style.sources['mt-offline'].url.startsWith('pmtiles://'));assert.ok(calls.style.layers.some(layer=>layer['source-layer']==='roads'));assert.ok(calls.protocols.pmtiles);assert.equal(wholeFileRead,false,'offline archive is range-read through FileSource');calls.events['once:style.load']();assert.equal(calls.offlineMode,'offline');
+  assert.equal(await adapter.switchBaseLayer('offline'),true);assert.equal(calls.style.sources['mt-offline'].type,'vector');assert.ok(calls.style.sources['mt-offline'].url.startsWith('pmtiles://'));assert.ok(calls.style.layers.some(layer=>layer['source-layer']==='roads'));assert.ok(calls.protocols.pmtiles);assert.equal(wholeFileRead,false,'offline archive is range-read through FileSource');calls.events['style.load']();assert.equal(calls.offlineMode,'offline');assertOverlays('Satellite to Offline');
+  assert.equal(await adapter.switchBaseLayer('map'),true);calls.events['style.load']();assert.ok(calls.style.sources.osm);assertOverlays('Offline to OSM');
+  assert.equal(calls.eventRegistrations['style.load'],1,'one persistent style lifecycle handler restores overlays');assert.equal(calls.eventRegistrations['click:mt-objects'],1,'style reloads never duplicate object click handlers');
   assert.deepEqual(adapter.captureView(),{lat:48.5,lng:35.1,zoom:9,bearing:27});
   assert.equal(adapter.focusPoint({lat:49,lng:36},16),true);
   assert.deepEqual(calls.ease,{center:[36,49],zoom:16});
   assert.equal(adapter.resize(),true);
-  assert.equal(adapter.showUserLocation({lat:48.7,lng:35.2},25),true);
   assert.ok(calls.sources['mt-user-accuracy']);
   assert.ok(calls.layers.some(layer=>layer.id==='mt-user-accuracy-fill'));
   const placement=adapter.startPointPlacement({onPlace:point=>{calls.placed=point;}});calls.events.click({lngLat:{lat:48.8,lng:35.3}});assert.deepEqual(placement.getPoint(),{lat:48.8,lng:35.3});assert.deepEqual(calls.placed,{lat:48.8,lng:35.3});placement.cancel();

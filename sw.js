@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v66-runtime-42';
+const CACHE_NAME = 'maister-treker-v66-runtime-43';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',
   './js/core-utils.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/settings-core.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
@@ -32,34 +32,17 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
   if(e.request.mode === 'navigate'){
-    e.respondWith((async()=>{
-      let chosen = null;
-      try{
-        const fresh = await fetch(e.request, {cache:'no-store'});
-        if(fresh && fresh.status === 200){
-          chosen = fresh;
-          const clone = fresh.clone();
-          caches.open(CACHE_NAME).then((cache)=>cache.put(e.request, clone));
-        }
-      }catch(e){}
-      if(!chosen) chosen = await caches.match(e.request) || await caches.match('./index.html');
-      return chosen;
-    })());
+    const cached=caches.match(e.request,{ignoreSearch:true}).then(value=>value||caches.match('./index.html'));
+    const refresh=fetch(e.request,{cache:'no-store'}).then(async fresh=>{if(fresh&&fresh.status===200)await (await caches.open(CACHE_NAME)).put(e.request,fresh.clone());return fresh;}).catch(()=>null);
+    e.waitUntil(refresh);
+    e.respondWith((async()=>await cached||await refresh||await caches.match('./index.html'))());
     return;
   }
   if(/\.(?:js|mjs|css)$/.test(url.pathname)){
-    e.respondWith((async()=>{
-      try{
-        const fresh = await fetch(e.request,{cache:'no-store'});
-        if(fresh && fresh.status === 200){
-          const clone = fresh.clone();
-          e.waitUntil(caches.open(CACHE_NAME).then((cache)=>cache.put(e.request,clone)));
-        }
-        return fresh;
-      }catch(e){
-        return await caches.match(e.request);
-      }
-    })());
+    const cached=caches.match(e.request,{ignoreSearch:true});
+    const refresh=fetch(e.request,{cache:'no-store'}).then(async fresh=>{if(fresh&&fresh.status===200)await (await caches.open(CACHE_NAME)).put(e.request,fresh.clone());return fresh;}).catch(()=>null);
+    e.waitUntil(refresh);
+    e.respondWith((async()=>await cached||await refresh)());
     return;
   }
   e.respondWith(caches.match(e.request).then(async (cached) => {

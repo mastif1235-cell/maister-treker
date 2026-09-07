@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const shareSource=fs.readFileSync('js/share-domain.js','utf8'),context={console};vm.createContext(context);vm.runInContext(shareSource,context);
+const original={id:'ticket-1',geoLat:48.45,geoLng:35.05,geoLink:'https://maps.app.goo.gl/legacy',signal:'-23',diagnostics:[{ok:true}],content:['🔧 Заявка: Підключення','👤 Клієнт: Іван','📞 Тел: 0500000000','🏠 Адреса: Дніпро, Центральна 1','🗺️ Геолокація: https://www.google.com/maps?q=48.45,35.05','geoLat: 48.45','geoLng: 35.05','geoLink: https://maps.app.goo.gl/legacy','📶 Сигнал ONU: -23 dBm','Технічна діагностика: ping=12','Diagnostic history: internal','mapDebug: bearing=20','💰 Разом: 300 грн'].join('\n')};
+const before=JSON.stringify(original),forward=context.dispatcherForwardText(original.content);
+for(const forbidden of ['geoLat','geoLng','geoLink','Геолокація','dBm','Сигнал ONU','Технічна діагностика','Diagnostic history','mapDebug'])assert.doesNotMatch(forward,new RegExp(forbidden,'i'),`${forbidden} is private/internal`);
+for(const needed of ['Заявка: Підключення','Клієнт: Іван','Тел: 0500000000','Адреса: Дніпро','Разом: 300 грн'])assert.match(forward,new RegExp(needed),`${needed} remains useful to dispatcher`);
+assert.equal(JSON.stringify(original),before,'sanitizing forward text does not mutate the ticket or its canonical/backup fields');
+assert.match(shareSource,/openTicketSharePicker\(dispatcherForwardText\(ticket\.content\), ticket\)/,'saved-ticket ordinary share uses the sanitizer');
+assert.match(shareSource,/const text = dispatcherForwardText\(getCurrentTicketText\(\)\)/,'current-form ordinary share uses the sanitizer');
+const telegramSource=fs.readFileSync('js/photo-telegram-domain.js','utf8');assert.match(telegramSource,/typeof dispatcherForwardText===['"]function['"]/,'Telegram dispatcher uses the same canonical sanitizer');assert.match(telegramSource,/function buildTelegramBackupText\(t\)/);assert.doesNotMatch(telegramSource,/buildTelegramBackupText\(t\)[\s\S]{0,300}dispatcherForwardText/,'private Telegram backup remains unsanitized');
+console.log('PASS ordinary dispatcher forward removes geo/signal/diagnostics/debug fields while canonical ticket and backup data remain intact');
