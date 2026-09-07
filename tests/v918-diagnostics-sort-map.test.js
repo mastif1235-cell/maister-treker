@@ -27,6 +27,7 @@ const r={online:true,summaryStatus:'ok',resources:[]},a=core.makeDiagnosticRecor
 assert.deepEqual(core.appendDiagnosticHistory(core.appendDiagnosticHistory([],a),b).map(x=>x.id),[a.id,b.id],'multiple diagnostics append without overwrite');
 
 assert.match(html,/Вигляд міток карти/);for(const key of ['classic','large','compact','contrast'])assert.match(html,new RegExp(`value="${key}"`));
+assert.match(settingsRender,/match:\[[^\]]*'Вигляд міток карти'/,'marker settings are discoverable in the existing map/data settings hub');
 assert.match(settings,/mapMarkerPreset:'classic'/);assert.match(settings,/includes\(merged\.mapMarkerPreset\).*='classic'/,'invalid stored preset falls back');assert.match(settingsUi,/settings\.mapMarkerPreset=.*event\.target\.value/);assert.match(settingsRender,/markerPreset\.value=/,'preset is restored after reload');
 assert.match(map,/iconFor\(category,false,options\.markerPreset\)/,'Leaflet applies the shared preference');assert.match(maplibre,/OBJECT_MARKER_PRESETS\[options\.markerPreset\]/,'MapLibre OSM, satellite and offline styles use the same current option');
 assert.match(maplibre,/private[\s\S]*Муфта/);assert.match(styles,/marker-contrast/);assert.ok(40<46,'largest object marker remains smaller than GPS marker');
