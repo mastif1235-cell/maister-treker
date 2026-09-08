@@ -283,7 +283,7 @@ if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocomplete
     const option=event.target.closest('[data-address-suggestion]');if(!option)return;
     event.preventDefault();const kind=option.dataset.addressSuggestion,input=document.getElementById(`f_${kind}`),value=option.dataset.value;
     if(kind==='city'){
-      const street=document.getElementById('f_street');input.value=value;street.value=MTAddressSuggestions.streetAfterCitySelection(settings,tickets,value,street.value);closeAddressSuggestionMenus();street.focus();renderAddressSuggestionMenu('street');
+      const street=document.getElementById('f_street');input.value=value;street.value=MTAddressSuggestions.streetAfterCitySelection(settings,tickets,value,street.value);closeAddressSuggestionMenus();
     }else{input.value=value;closeAddressSuggestionMenus();input.focus();}
   });
   document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field')&&!event.target.closest('.address-suggestions'))closeAddressSuggestionMenus();});

@@ -402,13 +402,13 @@ function renderAddressSuggestionMenu(kind){
 function positionAddressSuggestionMenu(menu){
   if(!menu||menu.classList.contains('hidden'))return;
   const input=document.querySelector(`[aria-controls="${menu.id}"]`),viewport=window.visualViewport;
-  if(!input||!globalThis.MTAddressSuggestions)return;
-  const visibleTop=viewport?.offsetTop||0,visibleBottom=visibleTop+(viewport?.height||window.innerHeight),initial=input.getBoundingClientRect();
-  if(initial.top<visibleTop+8||initial.bottom>visibleBottom-8)input.scrollIntoView({block:'center',inline:'nearest'});
-  const placement=MTAddressSuggestions.menuPlacement(input.getBoundingClientRect(),{offsetTop:viewport?.offsetTop||0,height:viewport?.height||window.innerHeight});
-  menu.dataset.placement=placement.side;
-  menu.style.setProperty('--address-suggestions-top',`${Math.round(placement.top)}px`);
-  menu.style.setProperty('--address-suggestions-max-height',`${Math.round(placement.maxHeight)}px`);
+  if(!input)return;
+  const height=viewport?.height||window.innerHeight,visibleTop=viewport?.offsetTop||0,visibleBottom=visibleTop+height;
+  const keyboardInset=Math.max(0,window.innerHeight-visibleBottom),maxHeight=Math.max(120,Math.min(320,height*.34));
+  menu.style.setProperty('--address-suggestions-bottom',`${Math.round(keyboardInset+8)}px`);
+  menu.style.setProperty('--address-suggestions-max-height',`${Math.round(maxHeight)}px`);
+  const inputRect=input.getBoundingClientRect(),trayTop=visibleBottom-maxHeight-8;
+  if(inputRect.top<visibleTop+8||inputRect.bottom>trayTop-8)input.scrollIntoView({block:'center',inline:'nearest'});
 }
 function repositionAddressSuggestionMenus(){document.querySelectorAll('.address-suggestions:not(.hidden)').forEach(positionAddressSuggestionMenu);}
 function closeAddressSuggestionMenus(){['city','street'].forEach(kind=>{const input=document.getElementById(`f_${kind}`),menu=document.getElementById(`${kind}Suggestions`);menu?.classList.add('hidden');input?.setAttribute('aria-expanded','false');});}
