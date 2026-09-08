@@ -15,12 +15,14 @@
   function validatePayload(data){
     if(!isPlainObject(data)||hasUnsafeKeys(data))return false;
     if(data.app&&data.app!=='master-tracker')return false;
-    if(data.tickets!==undefined&&(!Array.isArray(data.tickets)||data.tickets.length>MAX_ITEMS))return false;
-    if(data.shifts!==undefined&&(!Array.isArray(data.shifts)||data.shifts.length>MAX_ITEMS))return false;
-    if(data.diagnostics!==undefined&&(!Array.isArray(data.diagnostics)||data.diagnostics.length>MAX_ITEMS))return false;
-    if(data.networkPoints!==undefined&&(!Array.isArray(data.networkPoints)||data.networkPoints.length>MAX_ITEMS))return false;
+    const validCollection=value=>Array.isArray(value)&&value.length<=MAX_ITEMS&&value.every(isPlainObject);
+    if(data.tickets!==undefined&&!validCollection(data.tickets))return false;
+    if(data.shifts!==undefined&&!validCollection(data.shifts))return false;
+    if(data.diagnostics!==undefined&&!validCollection(data.diagnostics))return false;
+    if(data.networkPoints!==undefined&&!validCollection(data.networkPoints))return false;
     if(data.settings!==undefined&&!isPlainObject(data.settings))return false;
     if(data.photoData!==undefined){if(!isPlainObject(data.photoData)||Object.keys(data.photoData).length>MAX_PHOTOS)return false;for(const [key,value] of Object.entries(data.photoData)){if(!String(key).startsWith('idb:')||typeof value!=='string'||!value.startsWith('data:image/')||value.length>MAX_PHOTO_CHARS)return false;}}
+    try{if(enc.encode(JSON.stringify(data)).byteLength>MAX_PLAIN_BYTES)return false;}catch(_e){return false;}
     return Array.isArray(data.tickets)||Array.isArray(data.shifts)||isPlainObject(data.settings)||Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
   }
   function validateEnvelope(value){
@@ -61,11 +63,16 @@ if(typeof window!=='undefined'){
   async function mtBackupRestore(data){
     if(!MTBackupSystem.validatePayload(data))throw new Error('BAD_PAYLOAD');
     const hasTickets=Array.isArray(data.tickets),hasShifts=Array.isArray(data.shifts),hasSettings=data.settings&&typeof data.settings==='object',hasTools=Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
+    const nextTickets=hasTickets?data.tickets.map((ticket,index)=>mtBackupCleanTicket(JSON.parse(JSON.stringify(ticket)),index)):null;
+    const nextShifts=hasShifts?data.shifts.map(s=>({id:String(s.id||MTSyncEngineRuntime.uuid()),date:String(s.date||''),hours:Number(s.hours)||0,coworker:String(s.coworker||'Сам')})):null;
+    const nextSettings=hasSettings?(typeof securityMergeImportedSettings==='function'?securityMergeImportedSettings(JSON.parse(JSON.stringify(data.settings)),settings):settings):null;
+    const nextTools=hasTools?{diagnostics:Array.isArray(data.diagnostics)?JSON.parse(JSON.stringify(data.diagnostics)):undefined,networkPoints:Array.isArray(data.networkPoints)?JSON.parse(JSON.stringify(data.networkPoints)):undefined}:null;
+    const photoEntries=data.photoData?Object.entries(data.photoData):[];
     if(!confirm(`Відновити ${[hasTickets?'заявки':'',hasShifts?'зміни':'',hasSettings?'налаштування':'',hasTools?'інструменти':''].filter(Boolean).join(', ')}? Поточні дані відповідного типу буде замінено; локальні secrets/lock залишаться.`))return false;
-    if(hasTickets){const next=data.tickets.map(mtBackupCleanTicket);if(data.photoData){for(const [key,value] of Object.entries(data.photoData))if(!await photoDbPut(key,value))throw new Error('PHOTO_WRITE_FAILED');}tickets=next;syncTicketsSnapshot=JSON.parse(JSON.stringify(next));if(!await saveTicketsLocalOnly())throw new Error('TICKET_WRITE_FAILED');await migrateLegacyPhotosToIdb();}
-    if(hasShifts){shifts=data.shifts.map(s=>({id:String(s?.id||MTSyncEngineRuntime.uuid()),date:String(s?.date||''),hours:Number(s?.hours)||0,coworker:String(s?.coworker||'Сам')}));syncShiftsSnapshot=JSON.parse(JSON.stringify(shifts));if(!await saveShiftsLocalOnly())throw new Error('SHIFT_WRITE_FAILED');}
-    if(hasSettings){settings=typeof securityMergeImportedSettings==='function'?securityMergeImportedSettings(data.settings,settings):settings;saveSettings();}
-    if(hasTools&&typeof toolsRestoreData==='function')toolsRestoreData({diagnostics:data.diagnostics,networkPoints:data.networkPoints});
+    if(hasTickets){for(const [key,value] of photoEntries)if(!await photoDbPut(key,value))throw new Error('PHOTO_WRITE_FAILED');tickets=nextTickets;syncTicketsSnapshot=JSON.parse(JSON.stringify(nextTickets));if(!await saveTicketsLocalOnly())throw new Error('TICKET_WRITE_FAILED');await migrateLegacyPhotosToIdb();}
+    if(hasShifts){shifts=nextShifts;syncShiftsSnapshot=JSON.parse(JSON.stringify(nextShifts));if(!await saveShiftsLocalOnly())throw new Error('SHIFT_WRITE_FAILED');}
+    if(hasSettings){settings=nextSettings;saveSettings();}
+    if(hasTools&&typeof toolsRestoreData==='function')toolsRestoreData(nextTools);
     renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();showToast('Відновлені дані збережено локально й не відправлено в хмару');return true;
   }
   async function mtBackupMigrateLegacySlots(){
