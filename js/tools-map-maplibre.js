@@ -6,7 +6,7 @@ const MAPTILER_TILE_URL='https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg
 const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
 const MARKER_RENDERER=globalThis.MTMapMarkerRenderer;
-const CATEGORY_COLORS=Object.fromEntries(Object.entries(MARKER_RENDERER.CATEGORIES).map(([key,value])=>[key,value.color]));
+const CATEGORY_COLORS=Object.fromEntries(Object.entries(MARKER_RENDERER.CATEGORIES).filter(([key])=>key!=='gps').map(([key,value])=>[key,value.color]));
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
 export const OBJECT_ICON_SCALE={min:.78,max:1.35};
 export const OBJECT_MARKER_PRESETS={classic:OBJECT_ICON_SCALE,large:{min:.9,max:1.45},compact:{min:.62,max:1.08},contrast:{min:.78,max:1.35}};
@@ -89,7 +89,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     savedView={lat:center.lat,lng:center.lng,zoom:map.getZoom(),bearing:map.getBearing()};
     return savedView;
   };
-  const markerElement=(title='Обрана точка')=>{const shell=root.document.createElement('div'),pin=root.document.createElement('span'),icon=root.document.createElement('span');shell.className='tools-leaflet-icon-shell';pin.className='tools-leaflet-pin picker';if(pin.style)pin.style.cssText='--mt-pin-size:64px;--mt-pin-border:4px';else pin.style={cssText:'--mt-pin-size:64px;--mt-pin-border:4px'};icon.textContent='◎';pin.appendChild(icon);shell.appendChild(pin);shell.title=title;return shell;};
+  const markerElement=(title='Обрана точка',gps=false)=>{const shell=root.document.createElement('div');shell.className='tools-leaflet-icon-shell';if(gps){const preference=MARKER_RENDERER.preference(currentOptions.markerPreferences?.gps,'classic'),descriptor=MARKER_RENDERER.descriptor('gps',preference,'classic'),image=root.document.createElement('img');image.className='tools-canonical-map-marker';image.src=MARKER_RENDERER.dataUrl('gps',preference,'classic',root.document);image.alt='◎';image.style.width=`${descriptor.width}px`;image.style.height=`${descriptor.height}px`;shell.appendChild(image);}else{const pin=root.document.createElement('span'),icon=root.document.createElement('span');pin.className='tools-leaflet-pin picker';if(pin.style)pin.style.cssText='--mt-pin-size:40px;--mt-pin-border:3px';else pin.style={cssText:'--mt-pin-size:40px;--mt-pin-border:3px'};icon.textContent='◎';pin.appendChild(icon);shell.appendChild(pin);}shell.title=title;return shell;};
   const restoreUserLocation=()=>{
     if(!map||!userPoint||!map.isStyleLoaded?.())return;
     const area=accuracyPolygon(userPoint,Math.max(1,userAccuracy));
@@ -98,7 +98,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(!map.getLayer?.('mt-user-accuracy-fill'))map.addLayer({id:'mt-user-accuracy-fill',type:'fill',source:'mt-user-accuracy',paint:{'fill-color':'#2a8cff','fill-opacity':.14}});
     if(!map.getLayer?.('mt-user-accuracy-line'))map.addLayer({id:'mt-user-accuracy-line',type:'line',source:'mt-user-accuracy',paint:{'line-color':'#2a8cff','line-width':2}});
     if(userMarker)userMarker.setLngLat([userPoint.lng,userPoint.lat]);
-    else userMarker=new gl.Marker({element:markerElement('Моє місце')}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
+    else userMarker=new gl.Marker({element:markerElement('Моє місце',true)}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
   };
   const objectGeoJson=(items,options=currentOptions)=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше',preference=markerPreference(category,options),descriptor=MARKER_RENDERER.descriptor(category,preference,options.markerPreset);return{type:'Feature',id:index,properties:{index,category,icon:descriptor.id,label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
   const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};

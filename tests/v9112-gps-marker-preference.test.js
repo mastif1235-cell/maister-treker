@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const renderer=require('../js/map-marker-renderer.js');
+assert.deepEqual(renderer.GPS_SIZES,{small:32,medium:40,large:48});
+assert.equal(renderer.descriptor('gps',{}).width,40,'legacy settings use medium GPS marker');
+assert.equal(renderer.descriptor('gps',{size:'small'}).width,32);
+assert.equal(renderer.descriptor('gps',{size:'large'}).width,48);
+assert.equal(renderer.descriptor('private',{size:'medium'}).width,48,'object marker preferences stay independent');
+const settings=fs.readFileSync(path.join(__dirname,'..','js','settings-render.js'),'utf8');
+assert.match(settings,/MAP_MARKER_CATEGORIES\.map/);
+const maplibre=fs.readFileSync(path.join(__dirname,'..','js','tools-map-maplibre.js'),'utf8');
+assert.match(maplibre,/markerElement\('Моє місце',true\)/);
+assert.match(maplibre,/currentOptions\.markerPreferences\?\.gps/,'MapLibre actual marker uses the same preference as preview');
+const leaflet=fs.readFileSync(path.join(__dirname,'..','js','tools-map.js'),'utf8');
+assert.match(leaflet,/iconFor\('gps',false,'classic',settings\?\.mapMarkerPreferences\)/,'Leaflet fallback uses GPS preference');
+console.log('PASS GPS marker has independent 32/40/48 settings with preview and engine parity');

@@ -13,5 +13,5 @@ assert.match(leaflet,/MTMapMarkerRenderer\.dataUrl/,'Leaflet fallback uses canon
 assert.doesNotMatch(settings,/shape-badge|border-radius:24%/,'Settings does not duplicate marker geometry');
 assert.match(maplibre,/icon-image[^\n]+\['get','icon'\]/);assert.doesNotMatch(maplibre,/markerScale/,'size is baked into the complete canonical geometry');
 assert.match(maplibre,/createOsmStyle/);assert.match(maplibre,/createSatelliteStyle/);assert.match(maplibre,/currentBase==='offline'/);assert.match(maplibre,/restoreApplicationOverlays=.*restoreObjects/);assert.match(maplibre,/map\.on\('style\.load',handleStyleLifecycle\)/,'canonical overlay is restored after every basemap style change');
-assert.match(maplibre,/--mt-pin-size:64px/);assert.match(leaflet,/pickerMode\?\{size:64,border:4\}/,'GPS/current-position marker remains larger than the largest object marker');
+assert.match(maplibre,/currentOptions\.markerPreferences\?\.gps/);assert.match(leaflet,/iconFor\('gps',false,'classic',settings\?\.mapMarkerPreferences\)/,'GPS/current-position marker uses its independent configurable preference');
 console.log('PASS canonical marker geometry is shared by preview, MapLibre all basemaps and Leaflet fallback');

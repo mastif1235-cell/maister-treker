@@ -47,7 +47,7 @@
     const meta=pickerMode?{icon:'◎',className:'picker'}:CATEGORY_META[category]||CATEGORY_META['Інше'];
     if(!pickerMode&&root.MTMapMarkerRenderer){const preference=root.MTMapMarkerRenderer.preference(preferences?.[category],presetKey),descriptor=root.MTMapMarkerRenderer.descriptor(category,preference,presetKey),src=root.MTMapMarkerRenderer.dataUrl(category,preference,presetKey,root.document),size=descriptor.width+4;return root.L.divIcon({className:'tools-leaflet-icon-shell',html:`<img class="tools-canonical-map-marker" src="${src}" alt="${meta.icon}">`,iconSize:[size,descriptor.height+4],iconAnchor:[Math.round(size/2),descriptor.height+2],tooltipAnchor:[0,-descriptor.height+8]});}
     const preference=preferences?.[category]||{},shape=MARKER_SHAPES.includes(preference.shape)?preference.shape:(presetKey==='contrast'?'contrast':'drop');
-    const markerSize=MARKER_SIZES[preference.size]||null,preset=pickerMode?{size:64,border:4}:markerSize?{size:markerSize,border:shape==='contrast'?4:3}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
+    const markerSize=MARKER_SIZES[preference.size]||null,preset=pickerMode?{size:40,border:3}:markerSize?{size:markerSize,border:shape==='contrast'?4:3}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
     return root.L.divIcon({
       className:'tools-leaflet-icon-shell',
       html:`<span class="tools-leaflet-pin ${meta.className} marker-${presetKey} shape-${shape}" style="--mt-pin-size:${preset.size}px;--mt-pin-border:${preset.border}px"><span>${meta.icon}</span></span>`,
@@ -198,7 +198,7 @@
     if(userLayer)userLayer.remove();
     userLayer=root.L.layerGroup().addTo(map);
     root.L.circle([valid.lat,valid.lng],{radius:Math.max(1,Number(accuracy)||1),color:'#2a8cff',fillColor:'#2a8cff',fillOpacity:.12,weight:2}).addTo(userLayer);
-    root.L.marker([valid.lat,valid.lng],{icon:iconFor(null,true),title:'Моє місце'}).bindTooltip(`Моє місце${accuracy?` · точність ≈ ${Math.round(accuracy)} м`:''}`).addTo(userLayer);
+    root.L.marker([valid.lat,valid.lng],{icon:iconFor('gps',false,'classic',settings?.mapMarkerPreferences),title:'Моє місце'}).bindTooltip(`Моє місце${accuracy?` · точність ≈ ${Math.round(accuracy)} м`:''}`).addTo(userLayer);
     map.setView([valid.lat,valid.lng],Math.max(map.getZoom(),16));return true;
   }
   function cancelPointPlacement(){

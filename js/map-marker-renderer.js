@@ -11,9 +11,10 @@
     FOB:{label:'FOB',icon:'📦',color:'#e1922c',className:'fob'},
     'Муфта':{label:'Муфта',icon:'🔗',color:'#a368dc',className:'splice'},
     'Вузол':{label:'Вузол',icon:'📡',color:'#d94a4a',className:'node'},
-    'Інше':{label:'Інше',icon:'📍',color:'#59636d',className:'other'}
+    'Інше':{label:'Інше',icon:'📍',color:'#59636d',className:'other'},
+    gps:{label:'Моє місцезнаходження',icon:'◎',color:'#2a8cff',className:'gps'}
   };
-  const SHAPES=['drop','pin','badge','contrast'],SIZES={small:42,medium:48,large:56};
+  const SHAPES=['drop','pin','badge','contrast'],SIZES={small:42,medium:48,large:56},GPS_SIZES={small:32,medium:40,large:48};
   const category=value=>CATEGORIES[value]?value:'Інше';
   function preference(value={},legacyPreset='classic'){
     const shape=SHAPES.includes(value?.shape)?value.shape:(legacyPreset==='contrast'?'contrast':'drop');
@@ -21,7 +22,7 @@
     return{shape,size:SIZES[value?.size]?value.size:legacySize};
   }
   function descriptor(categoryValue,value={},legacyPreset='classic'){
-    const key=category(categoryValue),selected=preference(value,legacyPreset),width=SIZES[selected.size];
+    const key=category(categoryValue),selected=preference(value,legacyPreset),width=(key==='gps'?GPS_SIZES:SIZES)[selected.size];
     return{category:key,...CATEGORIES[key],...selected,width,height:Math.round(width*58/48),pixelRatio:2,id:`mt-object-${key}-${selected.shape}-${selected.size}`};
   }
   function baseImageData(categoryValue,shape='drop',scale=4){
@@ -39,6 +40,7 @@
     else if(key==='FOB'){line(15,17,33,17);line(15,17,15,31);line(33,17,33,31);line(15,31,33,31);line(15,23,33,23,1);}
     else if(key==='Муфта'){line(15,24,33,24,1);for(let y=17;y<=31;y++)for(let x=12;x<=36;x++){const left=(x-17)**2+(y-24)**2,right=(x-31)**2+(y-24)**2;if((left>=25&&left<=43)||(right>=25&&right<=43))dot(x,y);}}
     else if(key==='Вузол'){for(let y=20;y<=28;y++)for(let x=20;x<=28;x++)if((x-24)**2+(y-24)**2<=12)dot(x,y);line(24,24,14,14,1);line(24,24,34,14,1);line(24,24,14,34,1);line(24,24,34,34,1);}
+    else if(key==='gps'){for(let y=14;y<=34;y++)for(let x=14;x<=34;x++){const radius=(x-24)**2+(y-24)**2;if(radius>=70&&radius<=105)dot(x,y);}line(24,17,24,31,1);line(17,24,31,24,1);}
     else{line(24,14,24,27,1.5);for(let y=31;y<=34;y++)for(let x=22;x<=26;x++)dot(x,y);}
     return{width,height,data};
   }
@@ -51,5 +53,5 @@
   function dataUrl(categoryValue,value={},legacyPreset='classic',doc=globalThis.document){
     if(!doc?.createElement)return'';const image=imageData(categoryValue,value,legacyPreset),canvas=doc.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const context=canvas.getContext('2d');if(!context)return'';const pixels=context.createImageData(image.width,image.height);pixels.data.set(image.data);context.putImageData(pixels,0,0);return canvas.toDataURL('image/png');
   }
-  return{CATEGORIES,SHAPES,SIZES,preference,descriptor,imageData,dataUrl};
+  return{CATEGORIES,SHAPES,SIZES,GPS_SIZES,preference,descriptor,imageData,dataUrl};
 });
