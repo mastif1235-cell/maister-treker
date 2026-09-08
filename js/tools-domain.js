@@ -68,6 +68,11 @@ function toolsNavigate(view){
   const from=toolsView;if(from===view)return renderToolsScreen(view);
   appNavigationPush(`tools-${view}`,()=>{toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
 }
+function toolsOpenRootFromTab(){
+  toolsStopConnectionCheck(false);toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();MTToolsMap?.destroyMap?.();
+  toolsMapFullscreen=false;document.body.classList.remove('tools-map-fullscreen-open');
+  toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';
+}
 function toolsLeaveOfflineSettings(dropNavigation=true){if(toolsView!=='offline'&&!toolsOfflineReturnSettings)return;MTToolsMap?.destroyMap?.();toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';if(dropNavigation)appNavigationDrop('tools-offline-settings');}
 function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsLeaveOfflineSettings(false);switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
 function toolsContextHtml(){
@@ -79,7 +84,7 @@ function toolsDiagnosticResultsHtml(){
   if(!toolsDiagnosticResult)return `<div class="card" style="text-align:center;color:var(--text-dim);">Натисніть «Запустити». Перевірка не змінює заявки чи профілі.</div>`;
   const r=MTToolsCore.sanitizeDiagnosticResult(toolsDiagnosticResult);
   const summary=r.summaryStatus==='ok'?'✅ Основні перевірки успішні':r.summaryStatus==='offline'?'❌ Немає інтернет-з’єднання':'⚠ Є обмеження або часткова проблема';
-  const resourceText=item=>item.ok?`✅ HTTP ${item.status||'—'} · ${item.httpMs??'—'} мс`:item.state==='timeout'?'⏳ Таймаут':item.state==='http'?`⚠ HTTP ${item.status||'помилка'}`:'⚠ Обмеження мережі/браузера';
+  const resourceText=item=>item.ok?(item.status||item.httpMs!==null?`✅ HTTP ${item.status||'—'} · ${item.httpMs??'—'} мс`:`✅ ${item.detail||'Доступно'}`):item.state==='timeout'?'⏳ Таймаут':item.state==='http'?`⚠ HTTP ${item.status||'помилка'}`:'⚠ Обмеження мережі/браузера';
   const rows=[
     ['Інтернет',r.online?'✅ Доступний':r.internetStatus==='offline'?'❌ Немає з’єднання':'⚠ Не підтверджено'],
     ['Публічна IP',r.publicIp?escapeHtml(r.publicIp.split(' / ')[0]):'Недоступно'],
@@ -97,7 +102,7 @@ function toolsDiagnosticResultsHtml(){
     <details class="tools-map-info" style="margin-top:10px;"><summary>Що означають ці показники?</summary><div><strong>Відгук інтернету</strong> — час відповіді на браузерний HTTPS-запит. <strong>Стабільність відгуку</strong> — наскільки змінюється цей час між перевірками. Менше — краще. Це не звичайний ICMP Ping.</div></details>
     <div class="row wrap"><button type="button" class="btn" data-tools-action="copy-diagnostics" style="flex:1;">📋 Скопіювати</button>${actions}</div>`;
 }
-function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Перевірка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Адаптивний HTTPS-тест, приблизно 8–15 с. Трафік залежить від швидкості, максимум близько 240 МБ.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
+function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Браузерна оцінка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Паралельний HTTPS-тест Cloudflare, приблизно 8–15 с. Результат може відрізнятися від системних застосунків; максимум близько 240 МБ.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
     <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">▶ Запустити діагностику</button>
@@ -171,7 +176,7 @@ async function toolsRunSpeedTest(){
   finally{toolsSpeedController=null;if(toolsView==='diagnostics')renderToolsScreen('diagnostics');}
   if(toolsView==='diagnostics'&&toolsDiagnosticResult?.speedStatus!=='cancelled'&&(toolsDiagnosticContext?.ticketId||toolsDiagnosticContext?.editorContext))await toolsSaveCurrentDiagnostic();
 }
-function toolsCancelSpeedTest(){toolsSpeedController?.abort();toolsSpeedStatus='Тест скасовується…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}
+function toolsCancelSpeedTest(){if(!toolsSpeedController)return;toolsSpeedController?.abort();toolsSpeedStatus='Тест скасовується…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}
 function toolsClearDiagnosticAddress(){toolsDiagnosticContext=null;toolsDiagnosticSaved=false;}
 function toolsResumeTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input)input.disabled=false;});}
 function toolsSuspendTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input){input.value='';input.disabled=true;}});}

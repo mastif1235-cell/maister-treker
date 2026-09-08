@@ -9,6 +9,7 @@ async function measure(config){const h=harness(config),result=await core.runBrow
   const timedOut=await measure({downMbps:100,upMbps:20,timeoutDownload:true});assert.equal(timedOut.result.speedStatus,'partial');assert.equal(timedOut.result.downloadMbps,null);assert.ok(timedOut.result.uploadMbps>0,'a timed-out direction stays unavailable instead of producing a fake number');
   const wrong=await measure({downMbps:100,upMbps:50,actualRatio:.5});assert.ok(wrong.result.downloadMbps>=49&&wrong.result.downloadMbps<=51,'download uses actual response byteLength, not requested bytes');
   const controller=new AbortController(),cancelled=await measure({downMbps:100,upMbps:50,cancelController:controller});assert.equal(cancelled.result.speedStatus,'cancelled');
-  for(const call of fast.h.calls){assert.equal(call.cache,'no-store');assert.match(call.url,/_=/);}assert.match(fast.result.speedMethod,/adaptive browser test v2/);assert.ok(fast.h.calls.reduce((sum,c)=>sum+c.requested,0)<=236000000,'traffic stays bounded');
-  console.log('PASS Cloudflare adaptive multi-sample speed methodology, actual bytes, partial/cancel/outlier handling');
+  for(const call of fast.h.calls){assert.equal(call.cache,'no-store');assert.match(call.url,/_=/);}assert.match(fast.result.speedMethod,/parallel browser estimate v3/);assert.ok(fast.h.calls.reduce((sum,c)=>sum+c.requested,0)<=236000000,'traffic stays bounded');
+  assert.ok(fast.h.calls.some((call,index,calls)=>call.requested>=10000000&&calls[index+1]?.requested===call.requested),'fast connections use concurrent equal-size streams');
+  console.log('PASS Cloudflare parallel adaptive speed estimate, actual bytes, partial/cancel/outlier handling');
 })().catch(error=>{console.error(error);process.exitCode=1;});

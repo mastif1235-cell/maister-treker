@@ -131,7 +131,9 @@ function bindTabBar(){
         calcState.date = currentTicketDate;
         setDateFieldValue(calcState.date);
       }
-      appNavigationClear();switchTab(tab);
+      appNavigationClear();
+      if(tab==='tools'&&typeof toolsOpenRootFromTab==='function')toolsOpenRootFromTab();
+      switchTab(tab);
     });
   });
 }

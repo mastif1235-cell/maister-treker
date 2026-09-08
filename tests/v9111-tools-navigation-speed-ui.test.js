@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const ui=read('js/ui-orchestration.js'),tools=read('js/tools-domain.js'),core=read('js/tools-core.js');
+assert.match(ui,/appNavigationClear\(\);\s*if\(tab==='tools'&&typeof toolsOpenRootFromTab==='function'\)toolsOpenRootFromTab\(\);\s*switchTab\(tab\)/,'bottom Tools tab resets nested Tools state before rendering');
+assert.match(tools,/function toolsOpenRootFromTab\(\)[\s\S]*toolsView='home'/,'Tools tab has an explicit root transition');
+assert.match(tools,/toolsOpenRootFromTab[\s\S]*MTToolsMap\?\.destroyMap\?\.\(\)[\s\S]*tools-map-fullscreen-open/,'root transition releases map/fullscreen state');
+assert.match(tools,/Браузерна оцінка швидкості/);assert.match(core,/parallelRound[\s\S]*Promise\.all/,'speed estimate uses parallel streams');
+assert.match(core,/transferred\*8\/elapsed\/1000/,'parallel throughput uses aggregate actual bytes over wall time');
+assert.doesNotMatch(tools,/item\.ok\?`✅ HTTP \$\{item\.status\|\|'—'\} · \$\{item\.httpMs\?\?'—'\}/,'non-HTTP speed result is not rendered as HTTP dash/zero');
+console.log('PASS Tools tab root navigation, map cleanup and honest parallel speed-test UI');

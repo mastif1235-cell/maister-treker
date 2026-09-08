@@ -18,7 +18,7 @@ assert.match(domain,/toolsSendNetworkPointTelegram[\s\S]*sendToTelegramChat\(cha
 assert.match(domain,/Точку збережено локально[\s\S]*await toolsSendNetworkPointTelegram\(normalized/,'9 Telegram failure cannot remove the locally saved point');
 assert.match(domain,/toolsPointPhotoPreview/);assert.match(domain,/resolvePhotoAsync/,'10 saved point photos can be opened later');
 assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/);assert.doesNotMatch(domain,/result\.ipFamily\|\|''/,'11 IPv6 is hidden from results and profile history');
-assert.match(domain,/Перевірка швидкості/);assert.match(coreSource,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/Мбіт\/с[^`]*0/,'12 speed UX has no fake empty metrics');
+assert.match(domain,/Браузерна оцінка швидкості/);assert.match(coreSource,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/Мбіт\/с[^`]*0/,'12 speed UX has no fake empty metrics');
 assert.match(domain,/Офлайн-підкладка для цієї області не встановлена/);assert.match(domain,/toolsMapEmptyState/,'13 missing basemap has an honest empty state');
 assert.match(domain,/Карта не встановлена/);assert.match(domain,/Офлайн-карта встановлена/,'14 multiple areas expose honest installation status');
 assert.match(map,/function addOnlineBaseLayer/);assert.match(map,/tile\.openstreetmap\.org/,'15 online map path remains intact');

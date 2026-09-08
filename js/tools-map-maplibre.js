@@ -89,7 +89,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     savedView={lat:center.lat,lng:center.lng,zoom:map.getZoom(),bearing:map.getBearing()};
     return savedView;
   };
-  const markerElement=(title='Обрана точка')=>{const shell=root.document.createElement('div'),pin=root.document.createElement('span'),icon=root.document.createElement('span');shell.className='tools-leaflet-icon-shell';pin.className='tools-leaflet-pin picker';icon.textContent='◎';pin.appendChild(icon);shell.appendChild(pin);shell.title=title;return shell;};
+  const markerElement=(title='Обрана точка')=>{const shell=root.document.createElement('div'),pin=root.document.createElement('span'),icon=root.document.createElement('span');shell.className='tools-leaflet-icon-shell';pin.className='tools-leaflet-pin picker';if(pin.style)pin.style.cssText='--mt-pin-size:64px;--mt-pin-border:4px';else pin.style={cssText:'--mt-pin-size:64px;--mt-pin-border:4px'};icon.textContent='◎';pin.appendChild(icon);shell.appendChild(pin);shell.title=title;return shell;};
   const restoreUserLocation=()=>{
     if(!map||!userPoint||!map.isStyleLoaded?.())return;
     const area=accuracyPolygon(userPoint,Math.max(1,userAccuracy));

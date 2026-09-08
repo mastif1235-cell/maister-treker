@@ -47,7 +47,7 @@
     const meta=pickerMode?{icon:'◎',className:'picker'}:CATEGORY_META[category]||CATEGORY_META['Інше'];
     if(!pickerMode&&root.MTMapMarkerRenderer){const preference=root.MTMapMarkerRenderer.preference(preferences?.[category],presetKey),descriptor=root.MTMapMarkerRenderer.descriptor(category,preference,presetKey),src=root.MTMapMarkerRenderer.dataUrl(category,preference,presetKey,root.document),size=descriptor.width+4;return root.L.divIcon({className:'tools-leaflet-icon-shell',html:`<img class="tools-canonical-map-marker" src="${src}" alt="${meta.icon}">`,iconSize:[size,descriptor.height+4],iconAnchor:[Math.round(size/2),descriptor.height+2],tooltipAnchor:[0,-descriptor.height+8]});}
     const preference=preferences?.[category]||{},shape=MARKER_SHAPES.includes(preference.shape)?preference.shape:(presetKey==='contrast'?'contrast':'drop');
-    const markerSize=MARKER_SIZES[preference.size]||null,preset=pickerMode?{size:46,border:4}:markerSize?{size:markerSize,border:shape==='contrast'?4:3}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
+    const markerSize=MARKER_SIZES[preference.size]||null,preset=pickerMode?{size:64,border:4}:markerSize?{size:markerSize,border:shape==='contrast'?4:3}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
     return root.L.divIcon({
       className:'tools-leaflet-icon-shell',
       html:`<span class="tools-leaflet-pin ${meta.className} marker-${presetKey} shape-${shape}" style="--mt-pin-size:${preset.size}px;--mt-pin-border:${preset.border}px"><span>${meta.icon}</span></span>`,
