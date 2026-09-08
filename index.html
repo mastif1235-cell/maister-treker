@@ -127,15 +127,17 @@
             <input type="number" id="f_rawSum" min="0" value="0">
           </div>
           <div id="fullFormFields">
-          <div class="field">
+          <div class="field address-suggest-field">
             <label>Місто</label>
-            <input type="text" id="f_city" name="mt-f-a" list="cityDatalist" placeholder="Місто / селище" autocomplete="one-time-code" autocorrect="off" spellcheck="false">
+            <input type="text" id="f_city" name="mt-f-a" list="cityDatalist" placeholder="Місто / селище" autocomplete="one-time-code" autocorrect="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="citySuggestions" aria-expanded="false">
             <datalist id="cityDatalist"></datalist>
+            <div id="citySuggestions" class="address-suggestions hidden" role="listbox"></div>
           </div>
-          <div class="field">
+          <div class="field address-suggest-field">
             <label>Вулиця</label>
-            <input type="text" id="f_street" name="mt-f-b" list="streetDatalist" placeholder="вулиця" autocomplete="one-time-code" autocorrect="off" spellcheck="false">
+            <input type="text" id="f_street" name="mt-f-b" list="streetDatalist" placeholder="вулиця" autocomplete="one-time-code" autocorrect="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="streetSuggestions" aria-expanded="false">
             <datalist id="streetDatalist"></datalist>
+            <div id="streetSuggestions" class="address-suggestions hidden" role="listbox"></div>
           </div>
           <div class="row" style="gap:10px;">
             <div class="field" style="flex:1;">
@@ -831,6 +833,7 @@
 <script src="js/phone-utils.js"></script>
 <script src="js/data-utils.js"></script>
 <script src="js/map-marker-renderer.js"></script>
+<script src="js/address-suggestions.js"></script>
 <script src="js/ticket-time-utils.js"></script>
 <script src="js/settings-core.js"></script>
 <script src="js/finance-utils.js"></script>

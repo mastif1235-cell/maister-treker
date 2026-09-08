@@ -271,7 +271,13 @@ function maybeSuggestClientFromAddress(){
 document.getElementById('f_house').addEventListener('blur', maybeSuggestClientFromAddress);
 document.getElementById('f_apartment').addEventListener('blur', maybeSuggestClientFromAddress); // NEW: якщо адресу вже вбито, а квартиру дописали останньою
 
-document.getElementById('f_city').addEventListener('input', e=>{ renderStreetDatalist(e.target.value.trim()); });
+const cityAddressInput=document.getElementById('f_city'),streetAddressInput=document.getElementById('f_street');
+cityAddressInput.addEventListener('input', e=>{renderStreetDatalist(e.target.value.trim());renderAddressSuggestionMenu('city');});
+streetAddressInput.addEventListener('input',()=>renderAddressSuggestionMenu('street'));
+cityAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('city'));
+streetAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('street'));
+document.getElementById('calcForm').addEventListener('pointerdown',event=>{const option=event.target.closest('[data-address-suggestion]');if(!option)return;event.preventDefault();const kind=option.dataset.addressSuggestion,input=document.getElementById(`f_${kind}`);input.value=option.dataset.value;closeAddressSuggestionMenus();if(kind==='city'){renderStreetDatalist(input.value);document.getElementById('f_street').focus();renderAddressSuggestionMenu('street');}else input.focus();});
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field'))closeAddressSuggestionMenus();});
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', event=>{
     feeIsAutoDefault = false;

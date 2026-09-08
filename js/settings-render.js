@@ -391,3 +391,11 @@ function closeSettingsHubSection(){
   const screens = document.querySelector('main.screens');
   if(screens) screens.scrollTop = 0;
 }
+function renderAddressSuggestionMenu(kind){
+  const cityInput=document.getElementById('f_city'),input=document.getElementById(kind==='city'?'f_city':'f_street'),menu=document.getElementById(kind==='city'?'citySuggestions':'streetSuggestions');
+  if(!input||!menu||!globalThis.MTAddressSuggestions)return;
+  const values=kind==='city'?MTAddressSuggestions.cities(settings,tickets,input.value):MTAddressSuggestions.streets(settings,tickets,cityInput?.value,input.value);
+  menu.innerHTML=values.map(value=>`<button type="button" role="option" data-address-suggestion="${kind}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join('');
+  menu.classList.toggle('hidden',!values.length);input.setAttribute('aria-expanded',String(values.length>0));
+}
+function closeAddressSuggestionMenus(){['city','street'].forEach(kind=>{const input=document.getElementById(`f_${kind}`),menu=document.getElementById(`${kind}Suggestions`);menu?.classList.add('hidden');input?.setAttribute('aria-expanded','false');});}
