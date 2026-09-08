@@ -27,18 +27,40 @@ export function createSatelliteStyle(key){
   return{version:8,sources:{satellite:{type:'raster',tiles:[`${MAPTILER_TILE_URL}?key=${encodeURIComponent(key)}`],tileSize:512,minzoom:1,maxzoom:22,attribution:'© MapTiler © OpenStreetMap contributors'}},layers:[{id:'satellite',type:'raster',source:'satellite'}]};
 }
 
-function blankStyle(){return{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#182329'}}]};}
-function vectorGeometryLayers(sourceId,vectorLayers){
-  const result=[];
-  vectorLayers.forEach((layer,index)=>{
-    const sourceLayer=String(layer?.id||'');if(!sourceLayer)return;
-    const hue=(index*47)%360;
-    result.push(
-      {id:`mt-offline-fill-${index}`,type:'fill',source:sourceId,'source-layer':sourceLayer,filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':`hsl(${hue},35%,48%)`,'fill-opacity':.38,'fill-outline-color':'#6f8997'}},
-      {id:`mt-offline-line-${index}`,type:'line',source:sourceId,'source-layer':sourceLayer,filter:['==',['geometry-type'],'LineString'],paint:{'line-color':`hsl(${hue},65%,68%)`,'line-width':['interpolate',['linear'],['zoom'],5,.5,16,3]}},
-      {id:`mt-offline-point-${index}`,type:'circle',source:sourceId,'source-layer':sourceLayer,filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':4,'circle-color':`hsl(${hue},75%,58%)`,'circle-stroke-color':'#111','circle-stroke-width':1}}
-    );
-  });
+function blankStyle(){return{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#eef1ed'}}]};}
+const OFFLINE_TEXT_FONT=['Arial','Roboto','Noto Sans','sans-serif'];
+const offlineTextField=['coalesce',['get','name:uk'],['get','name'],['get','name:en']];
+const sourceLayer=(sourceId,name,layer)=>({id:`mt-offline-${name}`,source:sourceId,'source-layer':layer});
+export function createOfflineVectorLayers(sourceId,vectorLayers){
+  const available=new Set((vectorLayers||[]).map(layer=>String(layer?.id||'')).filter(Boolean)),result=[];
+  const add=(layer,...styles)=>{if(available.has(layer))result.push(...styles.map(style=>({...sourceLayer(sourceId,style.id,layer),...style,id:`mt-offline-${style.id}`})));};
+  add('earth',{id:'earth',type:'fill',paint:{'fill-color':'#f2f0e9'}});
+  add('landcover',
+    {id:'landcover-forest',type:'fill',filter:['in',['get','kind'],['literal',['forest','scrub']]],paint:{'fill-color':'#d4e6ce','fill-opacity':.8}},
+    {id:'landcover-grass',type:'fill',filter:['in',['get','kind'],['literal',['grassland','farmland']]],paint:{'fill-color':'#e5edd6','fill-opacity':.72}}
+  );
+  add('landuse',
+    {id:'landuse-residential',type:'fill',filter:['==',['get','kind'],'residential'],paint:{'fill-color':'#e8e7e2','fill-opacity':.7}},
+    {id:'landuse-industrial',type:'fill',filter:['in',['get','kind'],['literal',['industrial','commercial','railway']]],paint:{'fill-color':'#e3dfdf','fill-opacity':.72}},
+    {id:'landuse-green',type:'fill',filter:['in',['get','kind'],['literal',['park','garden','forest','wood','grass','meadow','recreation_ground','nature_reserve','national_park','cemetery']]],paint:{'fill-color':'#dbe9d2','fill-opacity':.86}}
+  );
+  add('water',
+    {id:'water-fill',type:'fill',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':'#b8d8ea'}},
+    {id:'water-line',type:'line',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#9cc8e1','line-width':['interpolate',['linear'],['zoom'],8,.7,16,2.3]}}
+  );
+  add('boundaries',{id:'boundaries',type:'line',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#9b9c9a','line-width':['interpolate',['linear'],['zoom'],4,.5,12,1.3],'line-dasharray':[3,2]}});
+  add('buildings',
+    {id:'buildings',type:'fill',minzoom:13,filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':'#d6d2c9','fill-outline-color':'#bdb8ad','fill-opacity':.9}}
+  );
+  add('roads',
+    {id:'roads-rail',type:'line',filter:['==',['get','kind'],'rail'],paint:{'line-color':'#aaa49c','line-width':['interpolate',['linear'],['zoom'],8,.6,16,2],'line-dasharray':[2,2]}},
+    {id:'roads-casing',type:'line',filter:['in',['get','kind'],['literal',['highway','major_road','minor_road']]],paint:{'line-color':'#c5c1b8','line-width':['interpolate',['linear'],['zoom'],7,1.2,12,3.2,16,8.5]}},
+    {id:'roads-highway',type:'line',filter:['==',['get','kind'],'highway'],paint:{'line-color':'#efb77f','line-width':['interpolate',['linear'],['zoom'],7,.8,12,2.4,16,7]}},
+    {id:'roads-major',type:'line',filter:['==',['get','kind'],'major_road'],paint:{'line-color':'#f6d8a7','line-width':['interpolate',['linear'],['zoom'],8,.7,12,2.1,16,6.4]}},
+    {id:'roads-minor',type:'line',filter:['in',['get','kind'],['literal',['minor_road','path']]],paint:{'line-color':['match',['get','kind'],'path','#dedbd3','#ffffff'],'line-width':['interpolate',['linear'],['zoom'],11,.5,14,1.8,17,4.6]}},
+    {id:'road-labels',type:'symbol',minzoom:14,filter:['all',['==',['geometry-type'],'LineString'],['has','name']],layout:{'symbol-placement':'line','text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],14,10,17,13],'text-max-angle':35,'text-padding':3},paint:{'text-color':'#55534f','text-halo-color':'#ffffff','text-halo-width':1.2}}
+  );
+  add('places',{id:'place-labels',type:'symbol',filter:['all',['==',['geometry-type'],'Point'],['has','name']],layout:{'text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],6,11,12,15],'text-padding':4,'text-allow-overlap':false},paint:{'text-color':'#3d4547','text-halo-color':'#f7f8f4','text-halo-width':1.4}});
   return result;
 }
 
@@ -156,7 +178,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const sourceId='mt-offline',url=`pmtiles://${key}`,attribution=String(metadata?.attribution||stored.info?.attribution||'© OpenStreetMap contributors');
     if(Number(header.tileType)===1){
       const vectorLayers=Array.isArray(metadata?.vector_layers)?metadata.vector_layers:[];if(!vectorLayers.length)throw new Error('VECTOR_LAYERS_METADATA_MISSING');
-      return{style:{version:8,sources:{[sourceId]:{type:'vector',url,attribution}},layers:[...blankStyle().layers,...vectorGeometryLayers(sourceId,vectorLayers)]},header};
+      return{style:{version:8,sources:{[sourceId]:{type:'vector',url,attribution}},layers:[...blankStyle().layers,...createOfflineVectorLayers(sourceId,vectorLayers)]},header};
     }
     if([2,3,4,5].includes(Number(header.tileType)))return{style:{version:8,sources:{[sourceId]:{type:'raster',url,tileSize:256,attribution}},layers:[...blankStyle().layers,{id:'mt-offline-raster',type:'raster',source:sourceId}]},header};
     throw new Error(`UNSUPPORTED_TILE_TYPE_${header.tileType}`);
