@@ -289,6 +289,7 @@ if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocomplete
   document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field')&&!event.target.closest('.address-suggestions'))closeAddressSuggestionMenus();});
   window.visualViewport?.addEventListener('resize',repositionAddressSuggestionMenus);
   window.visualViewport?.addEventListener('scroll',repositionAddressSuggestionMenus);
+  window.addEventListener('resize',repositionAddressSuggestionMenus);
 }
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', event=>{

@@ -401,9 +401,14 @@ function renderAddressSuggestionMenu(kind){
 }
 function positionAddressSuggestionMenu(menu){
   if(!menu||menu.classList.contains('hidden'))return;
-  const viewport=window.visualViewport,height=viewport?.height||window.innerHeight,keyboardInset=Math.max(0,window.innerHeight-((viewport?.offsetTop||0)+height));
-  menu.style.setProperty('--address-suggestions-bottom',`${Math.round(keyboardInset+8)}px`);
-  menu.style.setProperty('--address-suggestions-max-height',`${Math.round(Math.max(150,Math.min(360,height*.44)))}px`);
+  const input=document.querySelector(`[aria-controls="${menu.id}"]`),viewport=window.visualViewport;
+  if(!input||!globalThis.MTAddressSuggestions)return;
+  const visibleTop=viewport?.offsetTop||0,visibleBottom=visibleTop+(viewport?.height||window.innerHeight),initial=input.getBoundingClientRect();
+  if(initial.top<visibleTop+8||initial.bottom>visibleBottom-8)input.scrollIntoView({block:'center',inline:'nearest'});
+  const placement=MTAddressSuggestions.menuPlacement(input.getBoundingClientRect(),{offsetTop:viewport?.offsetTop||0,height:viewport?.height||window.innerHeight});
+  menu.dataset.placement=placement.side;
+  menu.style.setProperty('--address-suggestions-top',`${Math.round(placement.top)}px`);
+  menu.style.setProperty('--address-suggestions-max-height',`${Math.round(placement.maxHeight)}px`);
 }
 function repositionAddressSuggestionMenus(){document.querySelectorAll('.address-suggestions:not(.hidden)').forEach(positionAddressSuggestionMenu);}
 function closeAddressSuggestionMenus(){['city','street'].forEach(kind=>{const input=document.getElementById(`f_${kind}`),menu=document.getElementById(`${kind}Suggestions`);menu?.classList.add('hidden');input?.setAttribute('aria-expanded','false');});}
