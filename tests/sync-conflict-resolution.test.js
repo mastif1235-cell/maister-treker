@@ -12,6 +12,30 @@ const baseRecord=(id)=>({entity:'ticket',id,committedRevision:1,tombstone:false,
 const enqueueEdit=(state,id,content)=>core.enqueue(state,{entity:'ticket',id,payload:payload(id,content)},()=>`request_${id}_${content}_abcdefghijkl`);
 
 (async()=>{
+  const sharedId='4f84d40d-49ee-4c90-8f31-a5817e9c8ef1';
+  const common={records:{[`ticket:${sharedId}`]:baseRecord(sharedId)}};
+  const deviceA=enqueueEdit(common,sharedId,'device-A-newer');
+  const deviceB=enqueueEdit(common,sharedId,'device-B-newer');
+  assert.equal(deviceA.records[`ticket:${sharedId}`].head.revision,2,'device A edits shared revision');
+  assert.equal(deviceB.records[`ticket:${sharedId}`].head.revision,2,'device B edits shared revision');
+  assert.notDeepEqual(deviceA.records[`ticket:${sharedId}`].head.body,deviceB.records[`ticket:${sharedId}`].head.body,'offline edits remain distinct');
+  for(const pair of [[deviceA,deviceB],[deviceB,deviceA]]){
+    const winner=core.acknowledge(pair[0],'ticket',sharedId,2);
+    const loser=core.markConflict(pair[1],'ticket',sharedId,{revision:2,tombstone:false,ticket:pair[0].records[`ticket:${sharedId}`].head?.body});
+    assert.equal(winner.records[`ticket:${sharedId}`].committedRevision,2,'first reconnect commits revision 2');
+    assert.equal(loser.records[`ticket:${sharedId}`].head.revision,2,'losing local edit remains available');
+    assert.equal(loser.records[`ticket:${sharedId}`].conflict.server.revision,2,'winning server revision remains available');
+    const roundTrip=JSON.parse(JSON.stringify(loser));
+    assert.doesNotThrow(()=>core.assertInvariants(roundTrip),'conflict survives durable journal reload');
+    const accepted=core.acceptServerConflict(roundTrip,'ticket',sharedId,{revision:2,tombstone:false});
+    assert.equal(core.pending(accepted).length,0,'explicit server choice resolves once');
+    assert.throws(()=>core.acceptServerConflict(accepted,'ticket',sharedId,{revision:2,tombstone:false}),/NO_CONFLICT/,'resolved conflict cannot resurface from repeat action');
+  }
+
+  let unknownTime=enqueueEdit(common,sharedId,'more-complete-local-without-timestamp');
+  unknownTime=core.markConflict(unknownTime,'ticket',sharedId,{revision:2,tombstone:false});
+  assert.equal(unknownTime.records[`ticket:${sharedId}`].head.body.content,'more-complete-local-without-timestamp','missing timestamps do not silently pick a winner');
+
   let state={records:{'ticket:A':baseRecord('A'),'ticket:B':baseRecord('B')}};
   state=enqueueEdit(state,'A','device-B');
   state=enqueueEdit(state,'B','independent');
