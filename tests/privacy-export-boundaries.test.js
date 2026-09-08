@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const hardening=read('js/security-hardening.js');
+const slice=hardening.slice(hardening.indexOf('const SECURITY_SENSITIVE_SETTING_KEYS'),hardening.indexOf('function securityValidateBackupEnvelope'));
+const context={URL,location:{href:'https://example.test',origin:'https://example.test'}};vm.createContext(context);vm.runInContext(slice,context);
+const source={theme:'dark',syncHmacSecret:'hmac',tgBotToken:'bot',tgBackupChatId:'chat',nested:{mapTilerApiKey:'map',accessToken:'access',authorizationHeader:'Bearer secret',callbackUrl:'https://callback.test/?token=secret',safe:'kept'}};
+const clean=context.securitySanitizeSettingsForBackup(source),json=JSON.stringify(clean);
+for(const secret of ['hmac','bot','chat','map','access','Bearer secret','callback.test'])assert.equal(json.includes(secret),false,`export excludes ${secret}`);
+assert.equal(clean.nested.safe,'kept','non-secret settings remain exportable');
+
+const backup=read('js/backup-system.js'),telegram=read('js/photo-telegram-domain.js'),tools=read('js/tools-domain.js'),share=read('js/share-domain.js'),app=read('app.js');
+assert.match(backup,/tickets:mtBackupSafeExport\(tickets\)/,'full backup strips injected system secrets from tickets');
+assert.match(backup,/diagnostics:mtBackupSafeExport/,'diagnostic export strips injected system secrets');
+assert.match(telegram,/jsonTicket = typeof securityStripSystemSecrets/,'Telegram JSON strips injected system secrets');
+assert.match(tools,/toolsExportData\(\)\{return\{diagnostics:MTToolsCore\.sanitizeDiagnostics/,'diagnostic export uses canonical sanitizer');
+assert.match(share,/dispatcherForwardText/);assert.doesNotMatch(share,/diagnosticHistory|syncHmacSecret|tgBotToken/,'dispatcher path contains no internal fields');
+const payload=app.slice(app.indexOf('function ticketToSyncPayload'),app.indexOf('function shiftToSyncPayload'));
+for(const forbidden of ['syncHmacSecret','tgBotToken','tgBackupChatId','mapTilerApiKey','authorizationHeader','callbackUrl'])assert.doesNotMatch(payload,new RegExp(forbidden,'i'),`sync payload excludes ${forbidden}`);
+assert.doesNotMatch(app+'\n'+backup+'\n'+telegram,/console\.(?:log|warn|error|debug)\([^\n]*(?:syncHmacSecret|tgBotToken|authorizationHeader|accessToken)/i,'error paths do not log secrets');
+console.log('PASS backup, Telegram, diagnostics, dispatcher and sync privacy boundaries');

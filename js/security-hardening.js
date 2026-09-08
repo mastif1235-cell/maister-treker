@@ -47,8 +47,17 @@ function securityIsSafeHttpsUrl(value){
     return u.protocol === 'https:';
   }catch(e){ return false; }
 }
+function securityStripSystemSecrets(value,depth=0){
+  if(depth>24)return null;
+  if(Array.isArray(value))return value.map(item=>securityStripSystemSecrets(item,depth+1));
+  if(!value||typeof value!=='object')return value;
+  const clean={};
+  const secretName=/^(?:syncHmacSecret|syncSecret|tgBotToken|tgBackupChatId|tgDispatcherChatId|tgDispatchers|tgMyChatId|tgShiftsMsgId|mapTiler(?:Api)?Key|authorization(?:Header)?|accessToken|refreshToken|apiToken|callbackUrl)$/i;
+  Object.keys(value).forEach(key=>{if(!secretName.test(key))clean[key]=securityStripSystemSecrets(value[key],depth+1);});
+  return clean;
+}
 function securitySanitizeSettingsForBackup(source){
-  const clean = JSON.parse(JSON.stringify(source || {}));
+  const clean = securityStripSystemSecrets(JSON.parse(JSON.stringify(source || {})));
   SECURITY_SENSITIVE_SETTING_KEYS.forEach(key=>{ if(key in clean) clean[key] = ''; });
   // Локальний lock не переносимо між пристроями: WebAuthn credential
   // прив'язаний до конкретного браузера/пристрою, а hash пароля є секретом.

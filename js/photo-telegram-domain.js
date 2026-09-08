@@ -496,7 +496,7 @@ async function backupTicketToTelegramNow(t){
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
     let jsonOk = false;
     try{
-      const jsonTicket = {...t};
+      const jsonTicket = typeof securityStripSystemSecrets==='function' ? securityStripSystemSecrets(t) : {...t};
       delete jsonTicket.tgBackupPending;
       const jsonBlob = new Blob([JSON.stringify(jsonTicket, null, 2)], {type:'application/json'});
       const form = new FormData();
