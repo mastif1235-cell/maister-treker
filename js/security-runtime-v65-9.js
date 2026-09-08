@@ -33,9 +33,10 @@ function securityRuntimeString(value,max=20000){
 }
 
 function securityRuntimeSafeTicketId(value,index=0){
-  const raw=String(value ?? '');
+  const raw=String(value ?? '').trim();
   if(/^\d{1,18}$/.test(raw)) return Number(raw);
-  return Date.now()+Number(index||0);
+  if(/^[A-Za-z0-9._:-]{1,128}$/.test(raw)) return raw;
+  return `legacy-ticket-${Math.max(0,Number(index)||0)}`;
 }
 
 // Last-line defense for links generated from imported/user data. This blocks
