@@ -102,7 +102,7 @@ function toolsDiagnosticResultsHtml(){
     <details class="tools-map-info" style="margin-top:10px;"><summary>Що означають ці показники?</summary><div><strong>Відгук інтернету</strong> — час відповіді на браузерний HTTPS-запит. <strong>Стабільність відгуку</strong> — наскільки змінюється цей час між перевірками. Менше — краще. Це не звичайний ICMP Ping.</div></details>
     <div class="row wrap"><button type="button" class="btn" data-tools-action="copy-diagnostics" style="flex:1;">📋 Скопіювати</button>${actions}</div>`;
 }
-function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Браузерна оцінка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Паралельний HTTPS-тест Cloudflare, приблизно 8–15 с. Результат може відрізнятися від системних застосунків; максимум близько 240 МБ.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
+function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Браузерна оцінка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 0;">${escapeHtml(toolsSpeedStatus||'Входить до повної діагностики. Це приблизна браузерна оцінка, а не системний тест швидкості.')}</div>${toolsSpeedController?'<button type="button" class="btn btn-block" data-tools-action="cancel-speed-test" style="margin-top:9px;">Скасувати діагностику</button>':''}</div>`;}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
     <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">▶ Запустити діагностику</button>
@@ -159,11 +159,21 @@ async function toolsFetchIp(url){
   try{const body=await measured.response.json();return{...measured,ip:String(body?.ip||'').slice(0,80)};}catch(_e){return{...measured,ok:false,ip:''};}
 }
 async function runToolsDiagnostics(){
+  if(toolsSpeedController)return;
   const button=document.getElementById('toolsRunDiagnosticsBtn');
-  if(button){button.disabled=true;button.textContent='⏳ Перевіряю…';}
-  const result=await MTToolsCore.runBrowserDiagnostics({fetch,timeoutMs:5000,now:()=>performance.now(),navigatorOnline:navigator.onLine});
-  toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
-  renderToolsScreen('diagnostics');
+  toolsSpeedController=new AbortController();toolsSpeedStatus='Перевірка інтернету…';toolsDiagnosticSaved=false;
+  if(button){button.disabled=true;button.textContent='⏳ Повна діагностика…';}
+  try{
+    const network=await MTToolsCore.runBrowserDiagnostics({fetch,timeoutMs:5000,now:()=>performance.now(),navigatorOnline:navigator.onLine});
+    if(toolsSpeedController.signal.aborted)return;
+    const labels={prepare:'Підготовка оцінки швидкості…',latency:'Відгук…',download:'Швидкість завантаження…',upload:'Швидкість відвантаження…',processing:'Обробка результатів…'};
+    let speed;
+    try{speed=await MTToolsCore.runBrowserSpeedTest({fetch,signal:toolsSpeedController.signal,requestTimeoutMs:7000,totalTimeoutMs:20000,onProgress:stage=>{toolsSpeedStatus=labels[stage]||'Браузерна оцінка швидкості…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}});}
+    catch(_error){speed={speedStatus:'error',summaryStatus:'warning',resources:[{label:'Браузерна оцінка швидкості',ok:false,state:'unavailable',detail:'Вимірювання недоступне'}]};}
+    if(toolsSpeedController.signal.aborted||speed.speedStatus==='cancelled')return;
+    toolsDiagnosticResult=MTToolsCore.mergeDiagnosticResults(network,speed);toolsDiagnosticRunAt=new Date();toolsSpeedStatus=speed.speedStatus==='success'?'✅ Повну діагностику завершено':'⚠ Діагностику збережено без частини даних швидкості';
+  }finally{toolsSpeedController=null;if(toolsView==='diagnostics')renderToolsScreen('diagnostics');}
+  if(toolsDiagnosticResult&&(toolsDiagnosticContext?.ticketId||toolsDiagnosticContext?.editorContext))await toolsSaveCurrentDiagnostic();
 }
 async function toolsRunSpeedTest(){
   if(toolsSpeedController)return;toolsSpeedController=new AbortController();toolsSpeedStatus='Підготовка…';renderToolsScreen('diagnostics');
