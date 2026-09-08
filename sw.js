@@ -11,16 +11,17 @@ const CORE_ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(
-    CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'}))
-  )));
-  self.skipWaiting();
+  e.waitUntil((async()=>{
+    const cache=await caches.open(CACHE_NAME);
+    await cache.addAll(CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'})));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async()=>{
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+    await Promise.all(keys.filter((k) => k.startsWith('maister-treker-') && k !== CACHE_NAME).map((k) => caches.delete(k)));
     await self.clients.claim();
     const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
     clients.forEach((client)=>client.postMessage({type:'MT_SW_ACTIVATED', cacheName:CACHE_NAME}));
