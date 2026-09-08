@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const domain=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
+const map=fs.readFileSync(path.join(__dirname,'..','js','tools-map-maplibre.js'),'utf8');
+assert.match(domain,/mountPicker\([^\n]+\{engine:'maplibre',initial/,'ticket picker explicitly requests shared MapLibre adapter');
+for(const label of ['🗺️ Карта','🛰️ Супутник','📦 Офлайн'])assert.ok(map.includes(label),`picker exposes ${label}`);
+assert.match(map,/data-mt-picker-base/);
+assert.match(map,/if\(root\.navigator\?\.onLine===false\|\|!key\)/,'satellite safely falls back without BYOK or network');
+assert.match(map,/catch\(_error\)\{picker\.map\.setStyle\(createOsmStyle\(\)\)/,'missing offline archive keeps picker usable');
+assert.match(domain,/const draft=MTToolsCore\.createGeoDraft\(calcState\)/);
+assert.match(domain,/draft\.commit\(\)/);
+assert.match(domain,/ticketGeoPointCancel'\)\.onclick=closePicker/,'cancel closes without commit');
+console.log('PASS ticket geo picker reuses MapLibre layers with draft-only save semantics and safe fallbacks');
