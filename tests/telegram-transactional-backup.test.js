@@ -22,9 +22,10 @@ function makeHarness({photo=true,failAt=''}){
   };
   vm.createContext(context);vm.runInContext(source,context);
   context.resolvePhotoAsync=async()=>photo?'data:image/jpeg;base64,AA==':null;
-  context.fetchWithRetry=async url=>{
-    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendDocument)$/)?.[1];
+  context.fetchWithRetry=async (url,opts)=>{
+    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendDocument|editMessageText)$/)?.[1];
     if(endpoint===failAt) return response({ok:false,description:'planned failure'});
+    if(endpoint==='editMessageText')return response({ok:true,result:{message_id:JSON.parse(opts?.body||'{}').message_id}});
     const id=++nextId;live.add(id);
     const result={message_id:id};
     if(endpoint==='sendPhoto') result.photo=[{file_id:`file-${id}`}];
@@ -47,8 +48,8 @@ function makeHarness({photo=true,failAt=''}){
 
   const c=makeHarness({});
   assert.equal(await c.context.backupTicketToTelegramNow(c.ticket),true,'TG-C complete attempt succeeds');
-  assert.equal(c.oldIds.some(id=>c.live.has(id)),false,'TG-C old confirmed copy is removed only after success');
-  assert.equal(c.live.size,4,'TG-C separator/text/photo/JSON from the new copy remain');
+  assert.deepEqual(c.oldIds.filter(id=>c.live.has(id)),[11,12],'TG-C reuses editable separator/text and removes replaced photo/JSON only after success');
+  assert.equal(c.live.size,4,'TG-C keeps one logical separator/text/photo/JSON set');
   assert.equal(c.ticket.tgBackedUp,true);assert.equal(c.ticket.tgBackupPending,false);
 
   const d=makeHarness({failAt:'sendDocument'});

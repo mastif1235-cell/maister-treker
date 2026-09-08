@@ -9,31 +9,10 @@
 
 const TELEGRAM_BACKUP_RELIABILITY_LABEL = 'v65.0-security.13 · 2026-08-18';
 
-try{
-  const telegramReliabilityFetch = window.fetch.bind(window);
-  window.fetch = async function(input, init){
-    const url = typeof input === 'string' ? input : (input && input.url) || '';
-    const isTelegramPhoto = /https:\/\/api\.telegram\.org\/bot[^/]+\/sendPhoto(?:\?|$)/i.test(url);
-    if(!isTelegramPhoto) return telegramReliabilityFetch(input, init);
-
-    let lastError = null;
-    for(let attempt=1; attempt<=3; attempt++){
-      try{
-        const response = await telegramReliabilityFetch(input, init);
-        return response;
-      }catch(err){
-        lastError = err;
-        if(attempt < 3) await new Promise(resolve=>setTimeout(resolve, 450 * attempt));
-      }
-    }
-
-    console.error('Telegram sendPhoto failed after retries');
-    return new Response(JSON.stringify({ok:false, description:'sendPhoto network failure after retries'}), {
-      status: 599,
-      headers: {'Content-Type':'application/json'}
-    });
-  };
-}catch(e){ /* старий WebView — не ламаємо штатний fetch */ }
+// Non-idempotent sendPhoto/sendMessage/sendDocument are intentionally not
+// retried here: a lost response can mean that Telegram accepted the message.
+// The canonical backup lifecycle records that state as ambiguous instead of
+// blindly creating a duplicate.
 
 if(typeof renderSettingsScreen === 'function'){
   const telegramReliabilityPreviousRenderSettings = renderSettingsScreen;
