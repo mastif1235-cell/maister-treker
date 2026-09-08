@@ -29,7 +29,7 @@
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
   function requestedEngine(options={}){
     if(options.engine)return options.engine;
-    try{return root.URLSearchParams&&new root.URLSearchParams(root.location?.search||'').get('mapEngine')==='maplibre'?'maplibre':'leaflet';}catch(_error){return'leaflet';}
+    try{return root.URLSearchParams&&new root.URLSearchParams(root.location?.search||'').get('mapEngine')==='leaflet'?'leaflet':'maplibre';}catch(_error){return'maplibre';}
   }
   function validPoint(value){
     const lat=Number(value?.lat),lng=Number(value?.lng);
