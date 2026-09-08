@@ -60,5 +60,14 @@ function makeHarness({photo=true,failAt=''}){
   const e=makeHarness({photo:false});
   assert.equal(await e.context.backupTicketToTelegramNow(e.ticket),true,'TG-E no-photo backup succeeds');
   assert.equal(e.ticket.tgBackedUp,true);assert.equal(e.ticket.tgBackupPending,false);
+
+  const lost=makeHarness({photo:false});let lostPosts=0;
+  lost.context.fetchWithRetry=async()=>{lostPosts++;const error=new Error('lost response');error.telegramAmbiguous=true;throw error;};
+  assert.equal(await lost.context.backupTicketToTelegramNow(lost.ticket),false,'lost response is not acknowledged or blindly retried');
+  assert.equal(lostPosts,1,'non-idempotent send has one attempt after an ambiguous response');
+  assert.deepEqual(lost.oldIds.filter(id=>lost.live.has(id)),lost.oldIds,'confirmed previous backup remains intact after ambiguous delivery');
+  assert.equal(lost.ticket.tgBackupAmbiguous,true,'ambiguous delivery is durably parked for manual review');
+  assert.equal(lost.ticket.tgBackupPending,false,'ambiguous delivery is excluded from automatic retry to avoid duplicates');
+  assert.equal(await lost.context.backupTicketToTelegram(lost.ticket),false,'parked ambiguous backup cannot create a duplicate on another retry path');
   console.log('PASS transactional Telegram backup cleans known partial messages without touching confirmed copies');
 })().catch(error=>{console.error(error);process.exitCode=1;});
