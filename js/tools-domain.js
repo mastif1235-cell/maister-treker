@@ -97,7 +97,7 @@ function toolsDiagnosticResultsHtml(){
     <details class="tools-map-info" style="margin-top:10px;"><summary>Що означають ці показники?</summary><div><strong>Відгук інтернету</strong> — час відповіді на браузерний HTTPS-запит. <strong>Стабільність відгуку</strong> — наскільки змінюється цей час між перевірками. Менше — краще. Це не звичайний ICMP Ping.</div></details>
     <div class="row wrap"><button type="button" class="btn" data-tools-action="copy-diagnostics" style="flex:1;">📋 Скопіювати</button>${actions}</div>`;
 }
-function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Перевірка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Вимірює реальні HTTPS download/upload. До 6 МБ трафіку.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
+function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Перевірка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Адаптивний HTTPS-тест, приблизно 8–15 с. Трафік залежить від швидкості, максимум близько 240 МБ.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
     <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">▶ Запустити діагностику</button>
@@ -162,9 +162,9 @@ async function runToolsDiagnostics(){
 }
 async function toolsRunSpeedTest(){
   if(toolsSpeedController)return;toolsSpeedController=new AbortController();toolsSpeedStatus='Підготовка…';renderToolsScreen('diagnostics');
-  const labels={latency:'Вимірюю відгук…',download:'Вимірюю завантаження…',upload:'Вимірюю відвантаження…'};
+  const labels={prepare:'Підготовка…',latency:'Відгук…',download:'Завантаження…',upload:'Відвантаження…',processing:'Обробка результатів…'};
   try{
-    const result=await MTToolsCore.runBrowserSpeedTest({fetch,signal:toolsSpeedController.signal,timeoutMs:20000,onProgress:stage=>{toolsSpeedStatus=labels[stage]||'Вимірювання…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}});
+    const result=await MTToolsCore.runBrowserSpeedTest({fetch,signal:toolsSpeedController.signal,requestTimeoutMs:7000,totalTimeoutMs:20000,onProgress:stage=>{toolsSpeedStatus=labels[stage]||'Вимірювання…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}});
     toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
     toolsSpeedStatus=result.speedStatus==='success'?'✅ Вимірювання завершено':result.speedStatus==='cancelled'?'Тест скасовано':'⚠ Частина вимірювань недоступна';
   }catch(_error){toolsSpeedStatus='Не вдалося виконати тест швидкості';}

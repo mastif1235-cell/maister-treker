@@ -975,13 +975,8 @@ async function saveTicketFromForm(e){
   // Захист від дублів: якщо за останні 3 години вже є заявка з такою ж
   // адресою (і вона не та, що зараз редагується) — попереджаємо.
   if(!editingTicketId && calcState.address){
-    const threeHoursMs = 3*60*60*1000;
     const nowMs = Date.now();
-    const similar = tickets.find(t=>
-      t.address && t.address.trim().toLowerCase() === calcState.address.trim().toLowerCase() &&
-      t.city === calcState.city &&
-      (nowMs - Number(t.id||0)) < threeHoursMs
-    );
+    const similar = tickets.find(t=>MTTicketTime.isRecentDuplicateCandidate(t,{city:calcState.city,address:calcState.address,now:nowMs,windowMs:3*60*60*1000}));
     if(similar && !confirm(`Схожа заявка вже є (${similar.date} ${similar.time}, ${similar.city||''} ${similar.address}).\nЗберегти ще одну?`)){
       cleanupUnsavedNewPhotos(); // NEW: якщо скасували через дубль — не лишати щойно зроблені фото сиротами в IndexedDB
       return;
@@ -1002,6 +997,8 @@ async function saveTicketFromForm(e){
     if(idx>-1) savedTicketRef = tickets[idx];
     successMessage = 'Заявку оновлено';
   } else {
+    const createdAtMs=Date.now();calcState.createdAtMs=createdAtMs;calcState.createdAt=new Date(createdAtMs).toISOString();
+    // UUID identifies the ticket; creation/order time is stored separately above.
     calcState.id = MTSyncEngineRuntime.uuid();
     const newTicket = JSON.parse(JSON.stringify(calcState));
     tickets.push(newTicket);

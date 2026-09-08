@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8'),core=require('../js/tools-core.js');
-const domain=read('js/tools-domain.js'),addressUi=read('js/address-render.js'),map=read('js/tools-map.js'),maplibre=read('js/tools-map-maplibre.js'),settings=read('js/settings-core.js'),settingsUi=read('js/settings-domain.js'),settingsRender=read('js/settings-render.js'),html=read('index.html'),styles=read('styles.css');
+const domain=read('js/tools-domain.js'),addressUi=read('js/address-render.js'),map=read('js/tools-map.js'),maplibre=read('js/tools-map-maplibre.js'),marker=read('js/map-marker-renderer.js'),settings=read('js/settings-core.js'),settingsUi=read('js/settings-domain.js'),settingsRender=read('js/settings-render.js'),html=read('index.html'),styles=read('styles.css');
 
 const points=[
   {id:'old-z',type:'Муфта',city:'Я',street:'Я',lat:48,lng:35,createdAt:'2026-09-01T10:00:00Z'},
@@ -30,7 +30,7 @@ assert.match(html,/Вигляд міток карти/);assert.match(html,/id="m
 assert.match(settingsRender,/match:\[[^\]]*'Вигляд міток карти'/,'marker settings are discoverable in the existing map/data settings hub');
 assert.match(settings,/mapMarkerPreset:'classic'/);assert.match(settings,/normalizeMapMarkerPreferences/,'legacy preset safely migrates into per-category preferences');assert.match(settingsUi,/settings\.mapMarkerPreferences=prefs/);assert.match(settingsRender,/renderMapMarkerPreferences/,'preferences are restored after reload');
 assert.match(map,/iconFor\(category,false,options\.markerPreset,options\.markerPreferences\)/,'Leaflet applies shared per-category preferences');assert.match(maplibre,/options\.markerPreferences/,'MapLibre OSM, satellite and offline styles use the same preferences');
-assert.match(maplibre,/private[\s\S]*Муфта/);assert.match(styles,/marker-contrast/);assert.ok(40<46,'largest object marker remains smaller than GPS marker');
+assert.match(marker,/private[\s\S]*Муфта/);assert.match(styles,/marker-contrast/);assert.ok(40<46,'largest object marker remains smaller than GPS marker');
 assert.match(maplibre,/addControl\(new gl\.NavigationControl[^\n]+,'top-left'\)/);assert.match(maplibre,/map\.addControl\(control,'top-right'\)/,'MapLibre controls match Leaflet zones');
 assert.equal((domain.match(/class="tools-map-floating-btn" data-tools-action="map-my-location"/g)||[]).length,1);assert.equal((domain.match(/class="tools-map-floating-btn" data-tools-action="map-toggle-fullscreen"/g)||[]).length,1,'GPS/fullscreen app controls are not duplicated');
 assert.match(map,/requestedEngine[\s\S]*'leaflet'/,'Leaflet remains the default fallback');

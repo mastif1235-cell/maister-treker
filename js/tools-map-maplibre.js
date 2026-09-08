@@ -1,16 +1,18 @@
 import * as maplibregl from '../vendor/maplibre/maplibre-gl.mjs';
+import './map-marker-renderer.js';
 
 const OSM_TILE_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const MAPTILER_TILE_URL='https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg';
 const DEFAULT_VIEW={lat:48.45,lng:31.2,zoom:6,bearing:0};
 const WORKER_URL=new URL('../vendor/maplibre/maplibre-gl-worker.mjs',import.meta.url).href;
-const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Муфта':'#a368dc','Вузол':'#d94a4a','Інше':'#59636d'};
+const MARKER_RENDERER=globalThis.MTMapMarkerRenderer;
+const CATEGORY_COLORS=Object.fromEntries(Object.entries(MARKER_RENDERER.CATEGORIES).map(([key,value])=>[key,value.color]));
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
 export const OBJECT_ICON_SCALE={min:.78,max:1.35};
 export const OBJECT_MARKER_PRESETS={classic:OBJECT_ICON_SCALE,large:{min:.9,max:1.45},compact:{min:.62,max:1.08},contrast:{min:.78,max:1.35}};
-const OBJECT_SHAPES=['drop','pin','badge','contrast'];
-const OBJECT_SIZE_SCALE={small:.82,medium:1,large:1.16};
-const markerPreference=(category,options={})=>{const item=options.markerPreferences?.[category]||{};return{shape:OBJECT_SHAPES.includes(item.shape)?item.shape:(options.markerPreset==='contrast'?'contrast':'drop'),size:OBJECT_SIZE_SCALE[item.size]?item.size:(options.markerPreset==='compact'?'small':options.markerPreset==='large'?'large':'medium')};};
+const OBJECT_SHAPES=MARKER_RENDERER.SHAPES;
+const OBJECT_SIZES=Object.keys(MARKER_RENDERER.SIZES);
+const markerPreference=(category,options={})=>MARKER_RENDERER.preference(options.markerPreferences?.[category],options.markerPreset);
 export const navigationControlOptions=root=>({showCompass:true,showZoom:root.matchMedia?.('(max-width: 600px)')?.matches!==true,visualizePitch:true});
 
 export function createOsmStyle(){
@@ -50,29 +52,7 @@ export function accuracyPolygon(point,radius,steps=72){
 }
 
 export function objectMarkerImage(category,shape='drop'){
-  const width=48,height=58,data=new Uint8Array(width*height*4),color=CATEGORY_COLORS[category]||CATEGORY_COLORS['Інше'];
-  const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16));
-  const paint=(x,y,value=[255,255,255])=>{if(x<0||x>=width||y<0||y>=height)return;const at=(y*width+x)*4;data[at]=value[0];data[at+1]=value[1];data[at+2]=value[2];data[at+3]=255;};
-  const mask=(x,y,inner=false)=>{
-    const inset=inner?6:0,radius=inner?(shape==='contrast'?13:15):21;
-    if(shape==='badge')return (x-24)**2+(y-25)**2<=radius**2;
-    if(shape==='contrast'){const diamond=Math.abs(x-24)+Math.abs(y-21)<=radius+5;const tail=y>=25+inset/2&&y<=52-inset&&Math.abs(x-24)<=(52-y)*(inner?.28:.48);return diamond||tail;}
-    const circle=(x-24)**2+(y-21)**2<=radius**2;
-    const tailEnd=shape==='pin'?55:56,tailStart=shape==='pin'?25:27,ratio=shape==='pin'?(inner?.28:.48):(inner?.43:.58);
-    return circle||(y>=tailStart+inset/3&&y<=tailEnd-inset&&Math.abs(x-24)<=(tailEnd-y)*ratio);
-  };
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(mask(x,y,false))paint(x,y);
-  // A true white rim (3 CSS px at pixelRatio 2) and a narrower coloured drop
-  // mirror the established Leaflet pin while keeping the performant symbol layer.
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(mask(x,y,true))paint(x,y,rgb);
-  const line=(x1,y1,x2,y2,thickness=2)=>{const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));for(let step=0;step<=steps;step++){const x=Math.round(x1+(x2-x1)*step/steps),y=Math.round(y1+(y2-y1)*step/steps);for(let dy=-thickness;dy<=thickness;dy++)for(let dx=-thickness;dx<=thickness;dx++)paint(x+dx,y+dy);}};
-  if(category==='private'){line(14,23,24,14);line(24,14,34,23);line(17,22,17,32);line(31,22,31,32);line(17,32,31,32);}
-  else if(category==='apartment'){for(let y=13;y<=31;y++)for(let x=17;x<=31;x++)if(x<20||x>28||y<16||y>28||((x+y)%6<2))paint(x,y);}
-  else if(category==='FOB'){line(15,17,33,17);line(15,17,15,31);line(33,17,33,31);line(15,31,33,31);line(15,23,33,23,1);}
-  else if(category==='Муфта'){line(15,24,33,24);for(let y=17;y<=31;y++)for(let x=12;x<=36;x++){const left=(x-17)**2+(y-24)**2,right=(x-31)**2+(y-24)**2;if((left>=25&&left<=49)||(right>=25&&right<=49))paint(x,y);}}
-  else if(category==='Вузол'){for(let y=20;y<=28;y++)for(let x=20;x<=28;x++)if((x-24)**2+(y-24)**2<=14)paint(x,y);line(24,24,14,14,1);line(24,24,34,14,1);line(24,24,14,34,1);line(24,24,34,34,1);}
-  else{line(24,14,24,27);for(let y=31;y<=34;y++)for(let x=22;x<=26;x++)paint(x,y);}
-  return{width,height,data};
+  return MARKER_RENDERER.imageData(category,{shape,size:'medium'});
 }
 
 export function createMapLibreAdapter(gl,root=globalThis){
@@ -120,7 +100,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(userMarker)userMarker.setLngLat([userPoint.lng,userPoint.lat]);
     else userMarker=new gl.Marker({element:markerElement('Моє місце')}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
   };
-  const objectGeoJson=(items,options=currentOptions)=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше',preference=markerPreference(category,options);return{type:'Feature',id:index,properties:{index,category,icon:`${OBJECT_ICON_IDS[category]}-${preference.shape}`,markerScale:OBJECT_SIZE_SCALE[preference.size],label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
+  const objectGeoJson=(items,options=currentOptions)=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше',preference=markerPreference(category,options),descriptor=MARKER_RENDERER.descriptor(category,preference,options.markerPreset);return{type:'Feature',id:index,properties:{index,category,icon:descriptor.id,label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
   const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};
   const applyObjectFilters=()=>{if(map?.getLayer?.('mt-objects')&&selectedCategories)map.setFilter('mt-objects',['in',['get','category'],['literal',[...selectedCategories]]]);updateFilterButtons();};
   const handleObjectClick=event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])currentOptions.onSelect?.(objectItems[index]);};
@@ -130,11 +110,11 @@ export function createMapLibreAdapter(gl,root=globalThis){
   const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
   const restoreObjects=options=>{
     if(!map||!map.isStyleLoaded?.())return;
-    Object.keys(CATEGORY_COLORS).forEach(category=>OBJECT_SHAPES.forEach(shape=>{const id=`${OBJECT_ICON_IDS[category]}-${shape}`;if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category,shape),{pixelRatio:2});}));
+    Object.keys(CATEGORY_COLORS).forEach(category=>OBJECT_SHAPES.forEach(shape=>OBJECT_SIZES.forEach(size=>{const image=MARKER_RENDERER.imageData(category,{shape,size}),id=image.descriptor.id;if(!map.hasImage?.(id))map.addImage?.(id,image,{pixelRatio:2});})));
     const data=objectGeoJson(objectItems,options),existing=map.getSource?.('mt-objects');
     if(existing)existing.setData(data);else map.addSource('mt-objects',{type:'geojson',data});
     if(!map.getLayer?.('mt-objects')){
-      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,['*',['get','markerScale'],.78],17,['*',['get','markerScale'],1.35]],'icon-anchor':'bottom','icon-allow-overlap':false}});
+      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,.78,17,1.35],'icon-anchor':'bottom','icon-allow-overlap':false}});
     }
     bindObjectEvents();
     applyObjectFilters();

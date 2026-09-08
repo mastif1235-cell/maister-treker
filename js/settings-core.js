@@ -2,15 +2,15 @@
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
-const MAP_MARKER_CATEGORIES = ['private','apartment','FOB','Муфта','Вузол','Інше'];
-const MAP_MARKER_SHAPES = ['drop','pin','badge','contrast'];
-const MAP_MARKER_SIZES = ['small','medium','large'];
+const MAP_MARKER_CATEGORIES = Object.keys(globalThis.MTMapMarkerRenderer?.CATEGORIES||{private:1,apartment:1,FOB:1,'Муфта':1,'Вузол':1,'Інше':1});
+const MAP_MARKER_SHAPES = globalThis.MTMapMarkerRenderer?.SHAPES||['drop','pin','badge','contrast'];
+const MAP_MARKER_SIZES = Object.keys(globalThis.MTMapMarkerRenderer?.SIZES||{small:1,medium:1,large:1});
 function normalizeMapMarkerPreferences(value,legacyPreset='classic'){
-  const legacySize=legacyPreset==='compact'?'small':legacyPreset==='large'?'large':'medium';
-  const legacyShape=legacyPreset==='contrast'?'contrast':'drop',source=value&&typeof value==='object'?value:{};
+  const source=value&&typeof value==='object'?value:{};
   return Object.fromEntries(MAP_MARKER_CATEGORIES.map(category=>{
     const item=source[category]&&typeof source[category]==='object'?source[category]:{};
-    return[category,{shape:MAP_MARKER_SHAPES.includes(item.shape)?item.shape:legacyShape,size:MAP_MARKER_SIZES.includes(item.size)?item.size:legacySize}];
+    const selected=globalThis.MTMapMarkerRenderer?.preference?.(item,legacyPreset);
+    return[category,selected||{shape:MAP_MARKER_SHAPES.includes(item.shape)?item.shape:(legacyPreset==='contrast'?'contrast':'drop'),size:MAP_MARKER_SIZES.includes(item.size)?item.size:(legacyPreset==='compact'?'small':legacyPreset==='large'?'large':'medium')}];
   }));
 }
 const DEFAULT_MASTERS = [

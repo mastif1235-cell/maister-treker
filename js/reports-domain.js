@@ -68,31 +68,12 @@ function openImportModal(){
 async function dedupTickets(){
   if(!confirm('Знайти заявки з однаковою датою, часом і текстом та залишити тільки одну копію кожної?')) return;
   backupLocalData();
-  const seen = new Map();
-  const toRemove = new Set();
-  tickets.forEach(t=>{
-    const key = `${t.date}|${t.time}|${t.content}`;
-    if(seen.has(key)){
-      // залишаємо запис з меншим id (він, як правило, старіший/оригінальний),
-      // а новіший дублікат прибираємо
-      const existing = seen.get(key);
-      const existingIdNum = Number(existing.id) || 0;
-      const currentIdNum = Number(t.id) || 0;
-      if(currentIdNum < existingIdNum){
-        toRemove.add(existing.id);
-        seen.set(key, t);
-      } else {
-        toRemove.add(t.id);
-      }
-    } else {
-      seen.set(key, t);
-    }
-  });
-  if(toRemove.size === 0){ showToast('Дублікатів не знайдено'); return; }
-  tickets = tickets.filter(t=>!toRemove.has(t.id));
+  const result=MTTicketTime.deduplicateTickets(tickets,Date.now());
+  if(result.removedIds.length === 0){ showToast(result.ambiguousCount?'Неоднозначні дублікати залишено без змін':'Дублікатів не знайдено'); return; }
+  tickets = result.tickets;
   saveTickets();
   renderTicketsScreen();
-  showToast(`Видалено дублікатів: ${toRemove.size}. Синхронізація з хмарою...`);
+  showToast(`Видалено дублікатів: ${result.removedIds.length}${result.ambiguousCount?`; неоднозначних залишено: ${result.ambiguousCount}`:''}. Синхронізація з хмарою...`);
   if(getScriptUrl()){
     const ok = await syncEngine.flush();
     renderTicketsScreen();
