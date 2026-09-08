@@ -397,5 +397,13 @@ function renderAddressSuggestionMenu(kind){
   const values=kind==='city'?MTAddressSuggestions.cities(settings,tickets,input.value):MTAddressSuggestions.streets(settings,tickets,cityInput?.value,input.value);
   menu.innerHTML=values.map(value=>`<button type="button" role="option" data-address-suggestion="${kind}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join('');
   menu.classList.toggle('hidden',!values.length);input.setAttribute('aria-expanded',String(values.length>0));
+  if(values.length)positionAddressSuggestionMenu(menu);
 }
+function positionAddressSuggestionMenu(menu){
+  if(!menu||menu.classList.contains('hidden'))return;
+  const viewport=window.visualViewport,height=viewport?.height||window.innerHeight,keyboardInset=Math.max(0,window.innerHeight-((viewport?.offsetTop||0)+height));
+  menu.style.setProperty('--address-suggestions-bottom',`${Math.round(keyboardInset+8)}px`);
+  menu.style.setProperty('--address-suggestions-max-height',`${Math.round(Math.max(150,Math.min(360,height*.44)))}px`);
+}
+function repositionAddressSuggestionMenus(){document.querySelectorAll('.address-suggestions:not(.hidden)').forEach(positionAddressSuggestionMenu);}
 function closeAddressSuggestionMenus(){['city','street'].forEach(kind=>{const input=document.getElementById(`f_${kind}`),menu=document.getElementById(`${kind}Suggestions`);menu?.classList.add('hidden');input?.setAttribute('aria-expanded','false');});}

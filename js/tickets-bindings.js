@@ -272,12 +272,24 @@ document.getElementById('f_house').addEventListener('blur', maybeSuggestClientFr
 document.getElementById('f_apartment').addEventListener('blur', maybeSuggestClientFromAddress); // NEW: якщо адресу вже вбито, а квартиру дописали останньою
 
 const cityAddressInput=document.getElementById('f_city'),streetAddressInput=document.getElementById('f_street');
-cityAddressInput.addEventListener('input', e=>{renderStreetDatalist(e.target.value.trim());renderAddressSuggestionMenu('city');});
-streetAddressInput.addEventListener('input',()=>renderAddressSuggestionMenu('street'));
-cityAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('city'));
-streetAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('street'));
-document.getElementById('calcForm').addEventListener('pointerdown',event=>{const option=event.target.closest('[data-address-suggestion]');if(!option)return;event.preventDefault();const kind=option.dataset.addressSuggestion,input=document.getElementById(`f_${kind}`);input.value=option.dataset.value;closeAddressSuggestionMenus();if(kind==='city'){renderStreetDatalist(input.value);document.getElementById('f_street').focus();renderAddressSuggestionMenu('street');}else input.focus();});
-document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field'))closeAddressSuggestionMenus();});
+const addressAutocompleteForm=document.getElementById('calcForm');
+if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocompleteBound){
+  addressAutocompleteForm.dataset.addressAutocompleteBound='1';
+  cityAddressInput.addEventListener('input',()=>renderAddressSuggestionMenu('city'));
+  streetAddressInput.addEventListener('input',()=>renderAddressSuggestionMenu('street'));
+  cityAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('city'));
+  streetAddressInput.addEventListener('focus',()=>renderAddressSuggestionMenu('street'));
+  addressAutocompleteForm.addEventListener('pointerdown',event=>{
+    const option=event.target.closest('[data-address-suggestion]');if(!option)return;
+    event.preventDefault();const kind=option.dataset.addressSuggestion,input=document.getElementById(`f_${kind}`),value=option.dataset.value;
+    if(kind==='city'){
+      const street=document.getElementById('f_street');input.value=value;street.value=MTAddressSuggestions.streetAfterCitySelection(settings,tickets,value,street.value);closeAddressSuggestionMenus();street.focus();renderAddressSuggestionMenu('street');
+    }else{input.value=value;closeAddressSuggestionMenus();input.focus();}
+  });
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field')&&!event.target.closest('.address-suggestions'))closeAddressSuggestionMenus();});
+  window.visualViewport?.addEventListener('resize',repositionAddressSuggestionMenus);
+  window.visualViewport?.addEventListener('scroll',repositionAddressSuggestionMenus);
+}
   // NEW: як тільки майстер сам щось ввів у поле ціни виклику — більше не чіпаємо його автоматично
   document.getElementById('f_callFee').addEventListener('input', event=>{
     feeIsAutoDefault = false;

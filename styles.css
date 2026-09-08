@@ -79,7 +79,7 @@ nav.tabbar{
 @media (max-width:430px){.tab-btn{font-size:9.5px}.tab-btn .icon{font-size:19px}}
 
 .tools-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
-.address-suggest-field{position:relative}.address-suggestions{position:absolute;z-index:1300;left:0;right:0;top:100%;max-height:min(42vh,280px);overflow-y:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 10px 28px rgba(0,0,0,.35);overscroll-behavior:contain}.address-suggestions button{display:block;width:100%;min-height:42px;padding:9px 12px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font:inherit;text-align:left}.address-suggestions button:last-child{border-bottom:0}.address-suggestions button:active{background:var(--surface-2)}
+.address-suggest-field{position:relative}.address-suggestions{position:fixed;z-index:2400;left:10px;right:10px;bottom:var(--address-suggestions-bottom,8px);max-height:var(--address-suggestions-max-height,min(44vh,360px));overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 10px 28px rgba(0,0,0,.45);overscroll-behavior:contain}.address-suggestions button{display:block;width:100%;min-height:48px;padding:11px 14px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font:inherit;text-align:left;touch-action:manipulation}.address-suggestions button:last-child{border-bottom:0}.address-suggestions button:active{background:var(--surface-2)}
 .tools-grid .btn{min-height:88px; flex-direction:column; font-size:15px;}
 .tools-grid .btn .tools-icon{font-size:28px;}
 .tools-map-shell{position:relative;}

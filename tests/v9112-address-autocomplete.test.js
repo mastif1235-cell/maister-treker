@@ -4,6 +4,14 @@ const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,f
 const settings={cities:['Таромське','Дніпро'],streets:{Таромське:['Центральна','Шевченка']}},tickets=[{city:'таромське',street:'Польова'},{city:'Кам’янське',street:'Нова'}],snapshot=JSON.stringify({settings,tickets});
 assert.deepEqual(suggest.cities(settings,tickets,'Та'),['Таромське']);assert.deepEqual(suggest.cities(settings,tickets,'дНі'),['Дніпро']);
 assert.deepEqual(suggest.streets(settings,tickets,'ТАРОМСЬКЕ',''),['Центральна','Шевченка','Польова']);assert.deepEqual(suggest.streets(settings,tickets,'Таромське','пол'),['Польова']);
+assert.equal(suggest.streetAfterCitySelection(settings,tickets,'Таромське','Шевченка'),'Шевченка','valid existing street is preserved');
+assert.equal(suggest.streetAfterCitySelection(settings,tickets,'Дніпро','Шевченка'),'','street from another city is cleared');
 assert.deepEqual(suggest.streets(settings,tickets,'Unknown',''),[]);assert.deepEqual(suggest.streets(settings,tickets,'Кам’янське','x'),[]);assert.equal(JSON.stringify({settings,tickets}),snapshot,'source address data is not mutated');
-const html=read('index.html'),bindings=read('js/tickets-bindings.js'),sw=read('sw.js');assert.match(html,/autocomplete="one-time-code"[^>]*role="combobox"/,'anti-browser-address-autofill semantics remain');assert.match(html,/citySuggestions[\s\S]*streetSuggestions/);assert.match(bindings,/renderAddressSuggestionMenu\('city'\)/);assert.match(sw,/address-suggestions\.js/,'offline app shell includes custom autocomplete');
-console.log('PASS offline custom city/street autocomplete, selection wiring and anti-browser-autofill semantics');
+const html=read('index.html'),bindings=read('js/tickets-bindings.js'),render=read('js/settings-render.js'),styles=read('styles.css'),sw=read('sw.js');
+assert.match(html,/autocomplete="one-time-code"[^>]*role="combobox"/,'anti-browser-address-autofill semantics remain');assert.doesNotMatch(html,/\slist="(?:city|street)Datalist"/,'native datalist cannot auto-fill a suggestion');assert.match(html,/citySuggestions[\s\S]*streetSuggestions/);
+assert.match(bindings,/data-address-suggestion/);assert.match(bindings,/if\(kind==='city'\)/);assert.match(bindings,/streetAfterCitySelection/);assert.doesNotMatch(bindings,/input\.value=values\[0\]|street\.value=values\[0\]/,'first suggestion is never selected automatically');
+assert.match(bindings,/addressAutocompleteBound/,'repeat screen binding does not duplicate listeners');assert.match(bindings,/visualViewport\?\.addEventListener\('resize'/);assert.match(bindings,/visualViewport\?\.addEventListener\('scroll'/);
+assert.match(render,/window\.innerHeight-\(\(viewport\?\.offsetTop\|\|0\)\+height\)/,'keyboard inset uses visualViewport');assert.match(render,/height\*\.44/);
+assert.match(styles,/\.address-suggestions\{position:fixed;z-index:2400/);assert.match(styles,/max-height:var\(--address-suggestions-max-height/);assert.match(styles,/overflow-y:auto/);assert.match(styles,/min-height:48px/);
+assert.match(sw,/address-suggestions\.js/,'offline app shell includes custom autocomplete');
+console.log('PASS explicit-tap-only offline autocomplete, city-safe street lifecycle, keyboard-aware panel and anti-autofill semantics');
