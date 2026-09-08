@@ -13,7 +13,7 @@ assert.match(tickets,/masterNote:structuredMasterNote \? String\(fullData\.maste
 
 assert.match(domain,/tools-map-service-controls[\s\S]*map-my-location[\s\S]*map-add-object/,'MAP-UI-4 service controls share the left mobile column');
 assert.match(domain,/tools-map-fullscreen-control[\s\S]*map-toggle-fullscreen/,'MAP-UI-2 fullscreen owns a separate control position');
-assert.match(styles,/@media \(max-width:430px\)\{[\s\S]*\.tools-map-service-controls\{left:10px;right:auto;top:82px;\}[\s\S]*\.tools-map-fullscreen-control\{right:10px;bottom:/,'MAP-UI-1 mobile controls use non-overlapping corners');
+assert.match(styles,/@media \(max-width:430px\)\{[\s\S]*\.tools-map-service-controls\{left:calc\(10px \+ env\(safe-area-inset-left,0px\)\);right:auto;top:58px;\}[\s\S]*\.tools-map-fullscreen-control\{right:10px;bottom:/,'MAP-UI-1 mobile controls use non-overlapping safe-area-aware corners');
 assert.match(styles,/\.tools-map-layer-switcher\{display:flex/,'MAP-UI-3 Map/Satellite remains the Leaflet top-right switcher');
 assert.equal((styles.match(/@media \(max-width:430px\)\{/g)||[]).length,2,'MAP-UI-5 only the existing nav rule and one map rule target 430px');
 

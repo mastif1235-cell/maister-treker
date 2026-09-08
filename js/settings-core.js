@@ -2,6 +2,17 @@
 const DEFAULT_SCRIPT_URL = ''; // якщо settings.scriptUrl порожній — синхронізація вимкнена
 const DEFAULT_TAGS = ['ремонт','монтаж','діагностика','підключення','перенесення','аварія'];
 const DEFAULT_COWORKERS = ['Сам'];
+const MAP_MARKER_CATEGORIES = ['private','apartment','FOB','Муфта','Вузол','Інше'];
+const MAP_MARKER_SHAPES = ['drop','pin','badge','contrast'];
+const MAP_MARKER_SIZES = ['small','medium','large'];
+function normalizeMapMarkerPreferences(value,legacyPreset='classic'){
+  const legacySize=legacyPreset==='compact'?'small':legacyPreset==='large'?'large':'medium';
+  const legacyShape=legacyPreset==='contrast'?'contrast':'drop',source=value&&typeof value==='object'?value:{};
+  return Object.fromEntries(MAP_MARKER_CATEGORIES.map(category=>{
+    const item=source[category]&&typeof source[category]==='object'?source[category]:{};
+    return[category,{shape:MAP_MARKER_SHAPES.includes(item.shape)?item.shape:legacyShape,size:MAP_MARKER_SIZES.includes(item.size)?item.size:legacySize}];
+  }));
+}
 const DEFAULT_MASTERS = [
   {name:'Женя', letter:'G'},
   {name:'Артем', letter:'V'},
@@ -149,9 +160,10 @@ function loadSettings(){
     // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)
-    appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:'', mapMarkerPreset:'classic'};
+    appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:'', mapMarkerPreset:'classic',mapMarkerPreferences:null};
   const merged = migrateSyncSettingsV66(s, s ? Object.assign(base, s) : base);
   if(!['classic','large','compact','contrast'].includes(merged.mapMarkerPreset))merged.mapMarkerPreset='classic';
+  merged.mapMarkerPreferences=normalizeMapMarkerPreferences(merged.mapMarkerPreferences,merged.mapMarkerPreset);
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
   // якщо вони колись були збережені, а нового списку cableTypes ще нема, переносимо ціни
   if(s && !s.cableTypes && (s.utpPriceDefault!==undefined || s.opticPriceDefault!==undefined)){

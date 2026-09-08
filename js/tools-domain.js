@@ -18,6 +18,8 @@ let toolsLastUserLocation=null;
 let toolsMapReturnContext=null;
 let toolsSelectedNetworkPointId='';
 let toolsConnectionCheck=null;
+let toolsSpeedController=null;
+let toolsSpeedStatus='';
 let toolsOfflineReturnSettings=false;
 let toolsMapFullscreen=false;
 let toolsTicketLinkContext=null;
@@ -85,21 +87,22 @@ function toolsDiagnosticResultsHtml(){
   ];
   rows.push(['Відгук інтернету',r.latencyMs!==null?`${r.latencyMs} мс`:'Недоступно в браузері']);
   rows.push(['Стабільність відгуку',r.jitterMs!==null?`${r.jitterMs} мс`:'Недоступно в браузері']);
+  if(r.downloadMbps!==null)rows.push(['Завантаження',`${r.downloadMbps} Мбіт/с`]);
+  if(r.uploadMbps!==null)rows.push(['Відвантаження',`${r.uploadMbps} Мбіт/с`]);
   const resourcesHtml=r.resources.map(item=>`<div class="tools-result-row"><span>${escapeHtml(item.label)}</span><strong style="text-align:right;">${resourceText(item)}</strong></div>`).join('');
   const actions=toolsDiagnosticContext?.ticketId||toolsDiagnosticContext?.editorContext
     ? `<button type="button" class="btn btn-accent" data-tools-action="save-diagnostics" style="flex:1;" ${toolsDiagnosticSaved?'disabled':''}>${toolsDiagnosticSaved?'✅ Збережено':'Зберегти в заявку'}</button>`
     : `<button type="button" class="btn" data-tools-action="attach-diagnostics" style="flex:1;">Прив'язати до адреси</button>`;
   return `<div class="card"><strong>${summary}</strong><div style="font-size:11.5px;color:var(--text-dim);margin-top:5px;">DNS перевіряється непрямо через HTTPS: браузер не надає прямий DNS lookup.</div>${rows.map(row=>`<div class="tools-result-row"><span>${escapeHtml(row[0])}</span><strong style="text-align:right;">${row[1]}</strong></div>`).join('')}<div style="font-size:12px;font-weight:700;margin-top:9px;">Контрольні ресурси</div>${resourcesHtml}</div>
-    <button type="button" class="btn btn-block" data-tools-action="external-speed-test" style="margin-bottom:10px;">⚡ Перевірити швидкість</button>
-    <div style="font-size:11.5px;color:var(--text-dim);margin:-4px 0 12px;">Відкриється офіційний Cloudflare Speed Test у новій вкладці. Тест може використати значний обсяг мобільного трафіку.</div>
     <details class="tools-map-info" style="margin-top:10px;"><summary>Що означають ці показники?</summary><div><strong>Відгук інтернету</strong> — час відповіді на браузерний HTTPS-запит. <strong>Стабільність відгуку</strong> — наскільки змінюється цей час між перевірками. Менше — краще. Це не звичайний ICMP Ping.</div></details>
     <div class="row wrap"><button type="button" class="btn" data-tools-action="copy-diagnostics" style="flex:1;">📋 Скопіювати</button>${actions}</div>`;
 }
-function toolsOpenExternalSpeedTest(){window.open('https://speed.cloudflare.com/','_blank','noopener');}
+function toolsSpeedTestHtml(){return `<div class="card" style="margin-top:12px;"><strong>Перевірка швидкості</strong><div id="toolsSpeedStatus" style="font-size:12px;color:var(--text-dim);margin:6px 0 9px;">${escapeHtml(toolsSpeedStatus||'Вимірює реальні HTTPS download/upload. До 6 МБ трафіку.')}</div><div class="row wrap"><button type="button" class="btn btn-accent" data-tools-action="run-speed-test" ${toolsSpeedController?'disabled':''} style="flex:1;">⚡ ${toolsSpeedController?'Тест виконується…':'Запустити'}</button>${toolsSpeedController?'<button type="button" class="btn" data-tools-action="cancel-speed-test">Скасувати</button>':''}</div></div>`;}
 function toolsDiagnosticsHtml(){
   return `${toolsBackButton()}${toolsContextHtml()}
     <button type="button" class="btn btn-accent btn-block" data-tools-action="run-diagnostics" id="toolsRunDiagnosticsBtn">▶ Запустити діагностику</button>
     <div id="toolsDiagnosticsResults" style="margin-top:12px;">${toolsDiagnosticResultsHtml()}</div>
+    ${toolsSpeedTestHtml()}
     ${toolsReturnTab==='calculator'?'<button type="button" class="btn btn-accent btn-block" data-tools-action="return-to-ticket" style="margin-top:12px;">← Повернутися до заявки</button>':''}
     <div class="card" style="margin-top:12px;"><strong>Роутер</strong><div style="font-size:12px;color:var(--text-dim);margin:5px 0 9px;">Автоперевірка локальних адресів ненадійна через HTTPS, CORS і Private Network Access. Відкриття — тільки вручну.</div>
       <div class="row wrap">${['192.168.0.1','192.168.1.1','192.168.100.1'].map(ip=>`<button type="button" class="btn btn-sm" data-router-ip="${ip}">${ip}</button>`).join('')}</div></div>
@@ -157,14 +160,28 @@ async function runToolsDiagnostics(){
   toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
   renderToolsScreen('diagnostics');
 }
+async function toolsRunSpeedTest(){
+  if(toolsSpeedController)return;toolsSpeedController=new AbortController();toolsSpeedStatus='Підготовка…';renderToolsScreen('diagnostics');
+  const labels={latency:'Вимірюю відгук…',download:'Вимірюю завантаження…',upload:'Вимірюю відвантаження…'};
+  try{
+    const result=await MTToolsCore.runBrowserSpeedTest({fetch,signal:toolsSpeedController.signal,timeoutMs:20000,onProgress:stage=>{toolsSpeedStatus=labels[stage]||'Вимірювання…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}});
+    toolsDiagnosticResult=result;toolsDiagnosticRunAt=new Date();toolsDiagnosticSaved=false;
+    toolsSpeedStatus=result.speedStatus==='success'?'✅ Вимірювання завершено':result.speedStatus==='cancelled'?'Тест скасовано':'⚠ Частина вимірювань недоступна';
+  }catch(_error){toolsSpeedStatus='Не вдалося виконати тест швидкості';}
+  finally{toolsSpeedController=null;if(toolsView==='diagnostics')renderToolsScreen('diagnostics');}
+  if(toolsView==='diagnostics'&&toolsDiagnosticResult?.speedStatus!=='cancelled'&&(toolsDiagnosticContext?.ticketId||toolsDiagnosticContext?.editorContext))await toolsSaveCurrentDiagnostic();
+}
+function toolsCancelSpeedTest(){toolsSpeedController?.abort();toolsSpeedStatus='Тест скасовується…';const node=document.getElementById('toolsSpeedStatus');if(node)node.textContent=toolsSpeedStatus;}
 function toolsClearDiagnosticAddress(){toolsDiagnosticContext=null;toolsDiagnosticSaved=false;}
-function toolsLeaveDiagnostics(){if(toolsView!=='diagnostics')return;toolsStopConnectionCheck(false);toolsClearDiagnosticAddress();toolsView='home';}
+function toolsResumeTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input)input.disabled=false;});}
+function toolsSuspendTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input){input.value='';input.disabled=true;}});}
+function toolsLeaveDiagnostics(){if(toolsView!=='diagnostics')return;toolsStopConnectionCheck(false);toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();toolsView='home';}
 function toolsResetDiagnosticAddress(){toolsClearDiagnosticAddress();renderToolsScreen('diagnostics');}
 function toolsOpenDiagnostics(context=null,returnTab='tools'){
   if(returnTab==='tools')appNavigationPush('tools-diagnostics',()=>{toolsLeaveDiagnostics();switchTab('tools');renderToolsScreen('home');});
   else if(returnTab==='calculator')appNavigationPush('tools-diagnostics',toolsReturnToTicket);
   else if(returnTab==='tickets')appNavigationPush('tools-diagnostics',()=>{toolsLeaveDiagnostics();switchTab('tickets');renderAddressNav();});
-  toolsDiagnosticContext=context;toolsDiagnosticResult=null;toolsDiagnosticRunAt=null;toolsDiagnosticSaved=false;toolsReturnTab=returnTab;toolsView='diagnostics';
+  toolsDiagnosticContext=context;toolsDiagnosticResult=null;toolsDiagnosticRunAt=null;toolsDiagnosticSaved=false;toolsSpeedStatus='';toolsReturnTab=returnTab;toolsView='diagnostics';
   switchTab('tools');renderToolsScreen('diagnostics');
 }
 function openToolsDiagnosticsFromCalculator(){
@@ -173,6 +190,7 @@ function openToolsDiagnosticsFromCalculator(){
   document.activeElement?.blur?.();
   toolsCalculatorDraft={state:JSON.parse(JSON.stringify(calcState)),editingTicketId,originalPhotoKeys:(calcOriginalPhotoKeys||[]).slice()};
   try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(toolsCalculatorDraft));}catch(_e){}
+  toolsSuspendTicketAddressInputs();
   const context={id:MTToolsCore.profileId(calcState),...MTToolsCore.profileParts(calcState),address:MTToolsCore.addressLabel(calcState),ticketId:editingTicketId||'',editorContext:true};
   toolsOpenDiagnostics(context,'calculator');
 }
@@ -668,7 +686,7 @@ function renderToolsScreen(view){
   else if(toolsView==='map'){
     root.innerHTML=toolsMapHtml();
     requestAnimationFrame(()=>MTToolsMap.mount(document.getElementById('toolsLeafletMap'),MTToolsCore.mapObjects(tickets,toolsNetworkPoints),{
-      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),emptyStateNode:document.getElementById('toolsMapEmptyState'),markerPreset:settings.mapMarkerPreset,onSelect:toolsOpenMapObject,onAddHere:point=>toolsStartMapAddMode(point)
+      filterRoot:document.getElementById('toolsMapFilters'),statusNode:document.getElementById('toolsMapStatus'),emptyStateNode:document.getElementById('toolsMapEmptyState'),markerPreset:settings.mapMarkerPreset,markerPreferences:settings.mapMarkerPreferences,onSelect:toolsOpenMapObject,onAddHere:point=>toolsStartMapAddMode(point)
     }));
   }
   else if(toolsView==='network')root.innerHTML=toolsNetworkHtml();
@@ -691,7 +709,8 @@ function bindToolsScreen(){
     else if(action==='attach-diagnostics')toolsAttachDiagnostics();
     else if(action==='save-diagnostics')toolsSaveCurrentDiagnostic();
     else if(action==='reset-diagnostic-address')toolsResetDiagnosticAddress();
-    else if(action==='external-speed-test')toolsOpenExternalSpeedTest();
+    else if(action==='run-speed-test')toolsRunSpeedTest();
+    else if(action==='cancel-speed-test')toolsCancelSpeedTest();
     else if(action==='start-connection-check')toolsStartConnectionCheck();
     else if(action==='stop-connection-check')toolsStopConnectionCheck();
     else if(action==='return-to-ticket')toolsReturnToTicket();

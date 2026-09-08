@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),styles=read('styles.css'),address=read('js/address-render.js'),addressDomain=read('js/ticket-address-domain.js'),telegram=read('js/photo-telegram-domain.js');
+const map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),coreSource=read('js/tools-core.js'),styles=read('styles.css'),address=read('js/address-render.js'),addressDomain=read('js/ticket-address-domain.js'),telegram=read('js/photo-telegram-domain.js');
 const core=require('../js/tools-core.js');
 
 assert.match(styles,/\.modal-overlay\{[\s\S]*?z-index:2000/,'1 form bottom-sheet stays above all Leaflet panes');
@@ -18,7 +18,7 @@ assert.match(domain,/toolsSendNetworkPointTelegram[\s\S]*sendToTelegramChat\(cha
 assert.match(domain,/Точку збережено локально[\s\S]*await toolsSendNetworkPointTelegram\(normalized/,'9 Telegram failure cannot remove the locally saved point');
 assert.match(domain,/toolsPointPhotoPreview/);assert.match(domain,/resolvePhotoAsync/,'10 saved point photos can be opened later');
 assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/);assert.doesNotMatch(domain,/result\.ipFamily\|\|''/,'11 IPv6 is hidden from results and profile history');
-assert.match(domain,/Перевірити швидкість/);assert.match(domain,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/rows\.push\(\['Download'/,'12 speed UX has no fake empty metrics');
+assert.match(domain,/Перевірка швидкості/);assert.match(coreSource,/speed\.cloudflare\.com/);assert.doesNotMatch(domain,/Мбіт\/с[^`]*0/,'12 speed UX has no fake empty metrics');
 assert.match(domain,/Офлайн-підкладка для цієї області не встановлена/);assert.match(domain,/toolsMapEmptyState/,'13 missing basemap has an honest empty state');
 assert.match(domain,/Карта не встановлена/);assert.match(domain,/Офлайн-карта встановлена/,'14 multiple areas expose honest installation status');
 assert.match(map,/function addOnlineBaseLayer/);assert.match(map,/tile\.openstreetmap\.org/,'15 online map path remains intact');

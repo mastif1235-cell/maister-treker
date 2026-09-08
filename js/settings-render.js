@@ -40,10 +40,18 @@ function renderSettingsScreen(){
   const offlineStatus=document.getElementById('offlineMapSettingsStatus'),offlineMeta=window.MTOfflineMap?.readMeta?.();
   if(offlineStatus)offlineStatus.textContent=offlineMeta?`✅ Офлайн-карта встановлена · ${MTOfflineMap.formatBytes(offlineMeta.size)}`:'Офлайн-карта не встановлена';
   const mapTilerStatus=document.getElementById('mapTilerKeyStatus'),mapTilerClear=document.getElementById('mapTilerKeyClearBtn');
-  const markerPreset=document.getElementById('mapMarkerPresetSelect');if(markerPreset)markerPreset.value=['classic','large','compact','contrast'].includes(settings.mapMarkerPreset)?settings.mapMarkerPreset:'classic';
+  renderMapMarkerPreferences();
   if(mapTilerStatus)mapTilerStatus.textContent=window.MTMapTilerLocal?.hasKey?.()?'✅ MapTiler API key збережено на цьому пристрої':'Ключ ще не збережено';
   if(mapTilerClear)mapTilerClear.disabled=!window.MTMapTilerLocal?.hasKey?.();
   void renderBackupPasswordStatus();
+}
+
+function renderMapMarkerPreferences(){
+  const root=document.getElementById('mapMarkerPreferencesEditor');if(!root)return;
+  const labels={private:['🏠','Приватний будинок'],apartment:['🏢','Багатоквартирний будинок'],FOB:['📦','FOB'],'Муфта':['🔗','Муфта'],'Вузол':['📡','Вузол'],'Інше':['📍','Інше']};
+  const shapes=[['drop','Крапля'],['pin','Класичний pin'],['badge','Круглий'],['contrast','Контрастний']];
+  const sizes=[['small','Малий'],['medium','Середній'],['large','Великий']],prefs=normalizeMapMarkerPreferences(settings.mapMarkerPreferences,settings.mapMarkerPreset);
+  root.innerHTML=MAP_MARKER_CATEGORIES.map(category=>{const current=prefs[category],meta=labels[category];return `<section class="map-marker-category"><strong>${meta[0]} ${escapeHtml(meta[1])}</strong><div class="map-marker-shapes" aria-label="Вигляд мітки ${escapeHtml(meta[1])}">${shapes.map(([shape,label])=>`<button type="button" class="map-marker-shape ${current.shape===shape?'active':''}" data-marker-category="${escapeHtml(category)}" data-marker-shape="${shape}" aria-pressed="${current.shape===shape}" title="${label}"><span class="map-marker-preview shape-${shape}"><span>${meta[0]}</span></span><small>${label}</small></button>`).join('')}</div><div class="map-marker-sizes" aria-label="Розмір мітки ${escapeHtml(meta[1])}">${sizes.map(([size,label])=>`<button type="button" class="btn btn-sm ${current.size===size?'btn-accent':''}" data-marker-category="${escapeHtml(category)}" data-marker-size="${size}" aria-pressed="${current.size===size}">${label}</button>`).join('')}</div></section>`;}).join('');
 }
 
 function renderTagMgmtList(){

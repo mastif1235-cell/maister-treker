@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14181C">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://api.maptiler.com; connect-src 'self' https://tile.openstreetmap.org https://api.maptiler.com https://api.telegram.org https://script.google.com https://script.googleusercontent.com https://api.ipify.org https://api6.ipify.org https://api64.ipify.org; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://api.maptiler.com; connect-src 'self' https://tile.openstreetmap.org https://api.maptiler.com https://api.telegram.org https://script.google.com https://script.googleusercontent.com https://api.ipify.org https://api6.ipify.org https://api64.ipify.org https://speed.cloudflare.com; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Майстер-Трекер</title>
@@ -129,22 +129,22 @@
           <div id="fullFormFields">
           <div class="field">
             <label>Місто</label>
-            <input type="text" id="f_city" name="mt-internal-ticket-city" list="cityDatalist" placeholder="Місто / селище" autocomplete="off" autocorrect="off" spellcheck="false">
+            <input type="text" id="f_city" name="mt-f-a" list="cityDatalist" placeholder="Місто / селище" autocomplete="one-time-code" autocorrect="off" spellcheck="false">
             <datalist id="cityDatalist"></datalist>
           </div>
           <div class="field">
             <label>Вулиця</label>
-            <input type="text" id="f_street" name="mt-internal-ticket-street" list="streetDatalist" placeholder="вулиця" autocomplete="off" autocorrect="off" spellcheck="false">
+            <input type="text" id="f_street" name="mt-f-b" list="streetDatalist" placeholder="вулиця" autocomplete="one-time-code" autocorrect="off" spellcheck="false">
             <datalist id="streetDatalist"></datalist>
           </div>
           <div class="row" style="gap:10px;">
             <div class="field" style="flex:1;">
               <label>Будинок</label>
-              <input type="text" id="f_house" name="mt-internal-ticket-location" placeholder="буд." autocomplete="off" autocorrect="off" spellcheck="false">
+              <input type="text" id="f_house" name="mt-f-c" placeholder="буд." autocomplete="one-time-code" autocorrect="off" spellcheck="false">
             </div>
             <div class="field" style="flex:1;">
               <label>Квартира</label>
-              <input type="text" id="f_apartment" placeholder="кв." autocomplete="off">
+              <input type="text" id="f_apartment" name="mt-f-d" placeholder="кв." autocomplete="one-time-code">
             </div>
           </div>
           <div class="field">
@@ -160,7 +160,8 @@
               </div>
             </div>
           </div>
-          <button type="button" class="btn btn-block" id="calcDiagnosticsBtn" style="margin-bottom:10px;">🛠 Діагностика за цією адресою</button>
+          <button type="button" class="btn btn-block" id="calcDiagnosticsBtn">🛠 Діагностика за цією адресою</button>
+          <div id="calcDiagnosticsStatus" class="calc-diagnostics-status"></div>
           <div class="card calc-network-links" id="calcNetworkPointCard">
             <div class="row between"><strong>📡 Об’єкт мережі</strong><button type="button" class="btn btn-sm" id="calcNetworkPointAddBtn">Прив’язати об’єкт</button></div>
             <div id="calcNetworkPointLinks" style="margin-top:8px;"></div>
@@ -771,7 +772,7 @@
       <details class="card acc-card">
         <summary>📍 Вигляд міток карти <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
-          <div class="field"><label for="mapMarkerPresetSelect">Стиль міток об’єктів</label><select id="mapMarkerPresetSelect"><option value="classic">Класичні</option><option value="large">Великі</option><option value="compact">Компактні</option><option value="contrast">Контрастні</option></select></div>
+          <div id="mapMarkerPreferencesEditor" class="map-marker-preferences"></div>
           <div style="font-size:12px;color:var(--text-dim);">Застосовується до звичайної, супутникової та офлайн-карти. GPS-мітка залишається більшою.</div>
         </div>
       </details>

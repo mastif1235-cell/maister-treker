@@ -42,12 +42,14 @@
     return profile?.address||[item?.city,item?.street,item?.house].filter(Boolean).join(', ')||'Будинок';
   }
   const MARKER_PRESETS={classic:{size:36,border:3},large:{size:40,border:3},compact:{size:30,border:2},contrast:{size:36,border:4}};
-  function iconFor(category,pickerMode=false,presetKey='classic'){
+  const MARKER_SIZES={small:30,medium:36,large:40},MARKER_SHAPES=['drop','pin','badge','contrast'];
+  function iconFor(category,pickerMode=false,presetKey='classic',preferences=null){
     const meta=pickerMode?{icon:'◎',className:'picker'}:CATEGORY_META[category]||CATEGORY_META['Інше'];
-    const preset=pickerMode?{size:46,border:4}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
+    const preference=preferences?.[category]||{},shape=MARKER_SHAPES.includes(preference.shape)?preference.shape:(presetKey==='contrast'?'contrast':'drop');
+    const markerSize=MARKER_SIZES[preference.size]||null,preset=pickerMode?{size:46,border:4}:markerSize?{size:markerSize,border:shape==='contrast'?4:3}:MARKER_PRESETS[presetKey]||MARKER_PRESETS.classic,size=preset.size+4,anchor=Math.round(size/2);
     return root.L.divIcon({
       className:'tools-leaflet-icon-shell',
-      html:`<span class="tools-leaflet-pin ${meta.className} marker-${presetKey}" style="--mt-pin-size:${preset.size}px;--mt-pin-border:${preset.border}px"><span>${meta.icon}</span></span>`,
+      html:`<span class="tools-leaflet-pin ${meta.className} marker-${presetKey} shape-${shape}" style="--mt-pin-size:${preset.size}px;--mt-pin-border:${preset.border}px"><span>${meta.icon}</span></span>`,
       iconSize:[size,size],iconAnchor:[anchor,size-2],tooltipAnchor:[0,-size+8]
     });
   }
@@ -314,7 +316,7 @@
     const bounds=[];
     objects.forEach(item=>{
       const point=validPoint(item);if(!point)return;
-      const category=categoryFor(item),marker=root.L.marker([point.lat,point.lng],{icon:iconFor(category,false,options.markerPreset),keyboard:true,title:markerLabel(item)});
+      const category=categoryFor(item),marker=root.L.marker([point.lat,point.lng],{icon:iconFor(category,false,options.markerPreset,options.markerPreferences),keyboard:true,title:markerLabel(item)});
       marker.bindTooltip(markerLabel(item),{direction:'top',offset:[0,-25]});
       marker.on('click',()=>options.onSelect?.(item));
       marker.addTo(groups.get(category));

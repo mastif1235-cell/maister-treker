@@ -8,6 +8,10 @@ const CATEGORY_COLORS={private:'#3aa76d',apartment:'#5666d8',FOB:'#e1922c','Му
 const OBJECT_ICON_IDS=Object.fromEntries(Object.keys(CATEGORY_COLORS).map(category=>[category,`mt-object-${category}`]));
 export const OBJECT_ICON_SCALE={min:.78,max:1.35};
 export const OBJECT_MARKER_PRESETS={classic:OBJECT_ICON_SCALE,large:{min:.9,max:1.45},compact:{min:.62,max:1.08},contrast:{min:.78,max:1.35}};
+const OBJECT_SHAPES=['drop','pin','badge','contrast'];
+const OBJECT_SIZE_SCALE={small:.82,medium:1,large:1.16};
+const markerPreference=(category,options={})=>{const item=options.markerPreferences?.[category]||{};return{shape:OBJECT_SHAPES.includes(item.shape)?item.shape:(options.markerPreset==='contrast'?'contrast':'drop'),size:OBJECT_SIZE_SCALE[item.size]?item.size:(options.markerPreset==='compact'?'small':options.markerPreset==='large'?'large':'medium')};};
+export const navigationControlOptions=root=>({showCompass:true,showZoom:root.matchMedia?.('(max-width: 600px)')?.matches!==true,visualizePitch:true});
 
 export function createOsmStyle(){
   return{
@@ -45,15 +49,22 @@ export function accuracyPolygon(point,radius,steps=72){
   return{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[coordinates]}};
 }
 
-export function objectMarkerImage(category,presetKey='classic'){
+export function objectMarkerImage(category,shape='drop'){
   const width=48,height=58,data=new Uint8Array(width*height*4),color=CATEGORY_COLORS[category]||CATEGORY_COLORS['Інше'];
   const rgb=[1,3,5].map(offset=>parseInt(color.slice(offset,offset+2),16));
   const paint=(x,y,value=[255,255,255])=>{if(x<0||x>=width||y<0||y>=height)return;const at=(y*width+x)*4;data[at]=value[0];data[at+1]=value[1];data[at+2]=value[2];data[at+3]=255;};
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=21**2,tail=y>=27&&y<=56&&Math.abs(x-24)<=(56-y)*.58;if(circle||tail)paint(x,y);}
+  const mask=(x,y,inner=false)=>{
+    const inset=inner?6:0,radius=inner?(shape==='contrast'?13:15):21;
+    if(shape==='badge')return (x-24)**2+(y-25)**2<=radius**2;
+    if(shape==='contrast'){const diamond=Math.abs(x-24)+Math.abs(y-21)<=radius+5;const tail=y>=25+inset/2&&y<=52-inset&&Math.abs(x-24)<=(52-y)*(inner?.28:.48);return diamond||tail;}
+    const circle=(x-24)**2+(y-21)**2<=radius**2;
+    const tailEnd=shape==='pin'?55:56,tailStart=shape==='pin'?25:27,ratio=shape==='pin'?(inner?.28:.48):(inner?.43:.58);
+    return circle||(y>=tailStart+inset/3&&y<=tailEnd-inset&&Math.abs(x-24)<=(tailEnd-y)*ratio);
+  };
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(mask(x,y,false))paint(x,y);
   // A true white rim (3 CSS px at pixelRatio 2) and a narrower coloured drop
   // mirror the established Leaflet pin while keeping the performant symbol layer.
-  const innerRadius=presetKey==='contrast'?13:15,tailWidth=presetKey==='contrast'?.34:.43;
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const circle=(x-24)**2+(y-21)**2<=innerRadius**2,tail=y>=29&&y<=50&&Math.abs(x-24)<=(50-y)*tailWidth;if(circle||tail)paint(x,y,rgb);}
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(mask(x,y,true))paint(x,y,rgb);
   const line=(x1,y1,x2,y2,thickness=2)=>{const steps=Math.max(Math.abs(x2-x1),Math.abs(y2-y1));for(let step=0;step<=steps;step++){const x=Math.round(x1+(x2-x1)*step/steps),y=Math.round(y1+(y2-y1)*step/steps);for(let dy=-thickness;dy<=thickness;dy++)for(let dx=-thickness;dx<=thickness;dx++)paint(x+dx,y+dy);}};
   if(category==='private'){line(14,23,24,14);line(24,14,34,23);line(17,22,17,32);line(31,22,31,32);line(17,32,31,32);}
   else if(category==='apartment'){for(let y=13;y<=31;y++)for(let x=17;x<=31;x++)if(x<20||x>28||y<16||y>28||((x+y)%6<2))paint(x,y);}
@@ -109,7 +120,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(userMarker)userMarker.setLngLat([userPoint.lng,userPoint.lat]);
     else userMarker=new gl.Marker({element:markerElement('Моє місце')}).setLngLat([userPoint.lng,userPoint.lat]).addTo(map);
   };
-  const objectGeoJson=items=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше';return{type:'Feature',id:index,properties:{index,category,icon:OBJECT_ICON_IDS[category],label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
+  const objectGeoJson=(items,options=currentOptions)=>({type:'FeatureCollection',features:items.map((item,index)=>{const lat=Number(item?.lat),lng=Number(item?.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;const category=CATEGORY_COLORS[item?.category]?item.category:'Інше',preference=markerPreference(category,options);return{type:'Feature',id:index,properties:{index,category,icon:`${OBJECT_ICON_IDS[category]}-${preference.shape}`,markerScale:OBJECT_SIZE_SCALE[preference.size],label:item.name||item.type||item.profiles?.[0]?.address||'Об’єкт'},geometry:{type:'Point',coordinates:[lng,lat]}};}).filter(Boolean)});
   const updateFilterButtons=()=>{if(!filterRoot||!selectedCategories)return;const allSelected=selectedCategories.size===Object.keys(CATEGORY_COLORS).length;filterRoot.querySelectorAll('[data-map-filter]').forEach(button=>{const key=button.dataset.mapFilter,active=key==='all'?allSelected:key==='none'?selectedCategories.size===0:selectedCategories.has(key);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});};
   const applyObjectFilters=()=>{if(map?.getLayer?.('mt-objects')&&selectedCategories)map.setFilter('mt-objects',['in',['get','category'],['literal',[...selectedCategories]]]);updateFilterButtons();};
   const handleObjectClick=event=>{const index=Number(event.features?.[0]?.properties?.index);if(Number.isInteger(index)&&objectItems[index])currentOptions.onSelect?.(objectItems[index]);};
@@ -119,12 +130,11 @@ export function createMapLibreAdapter(gl,root=globalThis){
   const bindObjectFilters=()=>{if(!filterRoot||!selectedCategories)return;filterRoot.onclick=event=>{const button=event.target.closest('[data-map-filter]');if(!button)return;const key=button.dataset.mapFilter;if(key==='all'){selectedCategories.clear();Object.keys(CATEGORY_COLORS).forEach(category=>selectedCategories.add(category));}else if(key==='none')selectedCategories.clear();else if(selectedCategories.has(key))selectedCategories.delete(key);else selectedCategories.add(key);applyObjectFilters();};updateFilterButtons();};
   const restoreObjects=options=>{
     if(!map||!map.isStyleLoaded?.())return;
-    const presetKey=OBJECT_MARKER_PRESETS[options.markerPreset]?options.markerPreset:'classic',scale=OBJECT_MARKER_PRESETS[presetKey];
-    Object.keys(CATEGORY_COLORS).forEach(category=>{const id=OBJECT_ICON_IDS[category];if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category,presetKey),{pixelRatio:2});});
-    const data=objectGeoJson(objectItems),existing=map.getSource?.('mt-objects');
+    Object.keys(CATEGORY_COLORS).forEach(category=>OBJECT_SHAPES.forEach(shape=>{const id=`${OBJECT_ICON_IDS[category]}-${shape}`;if(!map.hasImage?.(id))map.addImage?.(id,objectMarkerImage(category,shape),{pixelRatio:2});}));
+    const data=objectGeoJson(objectItems,options),existing=map.getSource?.('mt-objects');
     if(existing)existing.setData(data);else map.addSource('mt-objects',{type:'geojson',data});
     if(!map.getLayer?.('mt-objects')){
-      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,scale.min,17,scale.max],'icon-anchor':'bottom','icon-allow-overlap':false}});
+      map.addLayer({id:'mt-objects',type:'symbol',source:'mt-objects',layout:{'icon-image':['get','icon'],'icon-size':['interpolate',['linear'],['zoom'],5,['*',['get','markerScale'],.78],17,['*',['get','markerScale'],1.35]],'icon-anchor':'bottom','icon-allow-overlap':false}});
     }
     bindObjectEvents();
     applyObjectFilters();
@@ -221,7 +231,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
       container,style:useOffline?blankStyle():preferred?createSatelliteStyle(preferred):createOsmStyle(),center:[Number(view.lng),Number(view.lat)],zoom:Number(view.zoom),bearing:Number(view.bearing)||0,pitch:0,
       dragRotate:true,touchZoomRotate:true,attributionControl:false
     });
-    map.addControl(new gl.NavigationControl({showCompass:true,showZoom:true,visualizePitch:true}),'top-left');
+    map.addControl(new gl.NavigationControl(navigationControlOptions(root)),'top-left');
     map.addControl(new gl.AttributionControl({compact:true}),'bottom-right');
     addBaseSwitcher();
     map.touchZoomRotate?.enable?.();
@@ -263,7 +273,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const initial=options.initial&&{lat:Number(options.initial.lat),lng:Number(options.initial.lng)};
     const validInitial=initial&&[initial.lat,initial.lng].every(Number.isFinite)?initial:null;
     const pickerMap=new gl.Map({container,style:useOffline?blankStyle():createOsmStyle(),center:validInitial?[validInitial.lng,validInitial.lat]:[DEFAULT_VIEW.lng,DEFAULT_VIEW.lat],zoom:validInitial?17:6,bearing:0,pitch:0,dragRotate:true,touchZoomRotate:true,attributionControl:false});
-    pickerMap.addControl(new gl.NavigationControl({showCompass:true,showZoom:true}),'top-right');pickerMap.addControl(new gl.AttributionControl({compact:true}),'bottom-right');pickerMap.touchZoomRotate?.enable?.();pickerMap.touchZoomRotate?.enableRotation?.();
+    pickerMap.addControl(new gl.NavigationControl(navigationControlOptions(root)),'top-right');pickerMap.addControl(new gl.AttributionControl({compact:true}),'bottom-right');pickerMap.touchZoomRotate?.enable?.();pickerMap.touchZoomRotate?.enableRotation?.();
     let marker=null,changed=false;
     const getPoint=()=>{if(!marker)return null;const value=marker.getLngLat();return{lat:value.lat,lng:value.lng};};
     const setPoint=(value,center=true,notify=true)=>{const lat=Number(value?.lat),lng=Number(value?.lng);if(![lat,lng].every(Number.isFinite))return null;if(!marker){marker=new gl.Marker({element:markerElement(),draggable:true}).setLngLat([lng,lat]).addTo(pickerMap);marker.on('dragend',()=>{changed=true;options.onChange?.(getPoint());});}else marker.setLngLat([lng,lat]);if(center)pickerMap.easeTo({center:[lng,lat],zoom:Math.max(pickerMap.getZoom(),17)});if(notify){changed=true;options.onChange?.({lat,lng});}return{lat,lng};};

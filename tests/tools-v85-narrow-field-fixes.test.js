@@ -28,10 +28,10 @@ assert.match(picker,/if\(!await saveTickets\(\)\)/);assert.match(picker,/showToa
 assert.match(domain,/name="mt-internal-point-city" autocomplete="off"/);assert.match(domain,/name="mt-internal-point-street" autocomplete="off"/);
 assert.match(domain,/name="mt-internal-map-profile-search"/);assert.match(domain,/name="mt-internal-network-search"/);
 assert.match(address,/type="search" role="searchbox" name="mt-internal-profile-search"/);
-assert.match(html,/name="mt-internal-ticket-city"/);assert.match(html,/name="mt-internal-ticket-street"/);
+assert.match(html,/id="f_city" name="mt-f-a"[^>]+autocomplete="one-time-code"/);assert.match(html,/id="f_street" name="mt-f-b"[^>]+autocomplete="one-time-code"/);
 assert.match(domain,/options\.placement\?'tools-point-editor-overlay':'tools-point-editor-modal'/);
 assert.match(styles,/tools-point-editor-modal #modalBody\{[^}]*padding:2px 6px[^}]*overflow-x:hidden/);
 assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v91\.8 · 2026-09-07/);assert.match(sw,/maister-treker-v66-runtime-45/);
+assert.match(app,/v91\.9 · 2026-09-07/);assert.match(sw,/maister-treker-v66-runtime-46/);
 
 console.log('PASS v85 viewer, Telegram media refs, profile coordinate flow, autofill semantics and mobile editor regressions');

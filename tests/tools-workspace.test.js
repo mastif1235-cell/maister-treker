@@ -41,7 +41,7 @@ assert.equal(backup.validatePayload(oldPayload),true,'legacy backup remains vali
 assert.equal(backup.validatePayload(newPayload),true,'backup accepts diagnostics and network points');
 assert.equal(backup.validatePayload({...oldPayload,networkPoints:{}}),false,'new collections have bounded array schema');
 
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),domain=fs.readFileSync(path.join(root,'js','tools-domain.js'),'utf8'),backupSource=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),domain=fs.readFileSync(path.join(root,'js','tools-domain.js'),'utf8'),coreSource=fs.readFileSync(path.join(root,'js','tools-core.js'),'utf8'),backupSource=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
 assert.match(html,/data-tab="tools"/);assert.match(html,/id="calcDiagnosticsBtn"/);assert.match(html,/https:\/\/api64\.ipify\.org/);
 assert.match(domain,/toolsDiagnosticResult=null/,'opening diagnostics starts without a saved result');
 assert.match(domain,/appendDiagnosticHistory\(previousDraft,record\)/,'only explicit save path appends ticket history to the active draft');
@@ -55,6 +55,7 @@ assert.match(backupSource,/diagnostics:tools\.diagnostics/);assert.match(backupS
 assert.match(backupSource,/toolsRestoreData/,'restore includes optional local tools data');
 assert.match(backupSource,/toolsPhotoOwnerRecords/,'full backup collects network-point photos from the shared photo store');
 assert.match(backupSource,/photoDbPut\(key,value\)/,'full restore writes shared photos before restoring points');
-assert.match(domain,/https:\/\/speed\.cloudflare\.com\//,'unsupported speed values open a real external test instead of fabricating metrics');
+assert.match(coreSource,/runBrowserSpeedTest/,'browser speed test has a canonical implementation');
+assert.match(coreSource,/https:\/\/speed\.cloudflare\.com\/__down/);assert.match(coreSource,/https:\/\/speed\.cloudflare\.com\/__up/,'official Cloudflare endpoints provide real bounded measurements');
 assert.doesNotMatch(domain,/\['IPv6',r\.ipv6/,'IPv6 is not shown in the primary diagnostics UI');
 console.log('PASS tools diagnostics/profile/map/network-point/backup compatibility');

@@ -137,3 +137,11 @@ function renderGeoBadge(){
     btn.style.color = '';
   }
 }
+
+function renderCalcDiagnosticsStatus(){
+  const root=document.getElementById('calcDiagnosticsStatus');if(!root)return;
+  const summary=typeof MTToolsCore!=='undefined'?MTToolsCore.diagnosticStatus(calcState.diagnosticHistory||[]):{latest:null,count:0,status:'none'};
+  if(!summary.latest){root.textContent='Діагностика ще не виконувалась';return;}
+  const label=summary.status==='ok'?'✅ Діагностику виконано':summary.status==='offline'?'❌ Діагностика: немає інтернету':'⚠ Діагностика: є зауваження',when=new Date(summary.latest.timestamp);
+  root.innerHTML=`<strong>${label}</strong>${escapeHtml(Number.isNaN(when.getTime())?'':when.toLocaleString('uk-UA',{dateStyle:'short',timeStyle:'short'}))}${summary.count>1?` · Історія: ${summary.count} перевірки`:''}`;
+}

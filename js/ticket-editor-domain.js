@@ -291,6 +291,7 @@ function fillFormFromState(){
   renderPresetWorksList();
   renderAdditionalWorkList();
   renderCalcTagChips();
+  renderCalcDiagnosticsStatus();
   renderPhotoPreview();
   renderGeoBadge();
   if(typeof toolsRenderTicketNetworkLinks==='function')toolsRenderTicketNetworkLinks();

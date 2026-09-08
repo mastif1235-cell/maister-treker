@@ -162,8 +162,12 @@ function bindSettingsScreen(){
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
   document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
   document.getElementById('openOfflineMapSettingsBtn').addEventListener('click', openOfflineMapSettings);
-  document.getElementById('mapMarkerPresetSelect').addEventListener('change', event=>{
-    settings.mapMarkerPreset=['classic','large','compact','contrast'].includes(event.target.value)?event.target.value:'classic';saveSettings();showToast('Вигляд міток збережено');
+  document.getElementById('mapMarkerPreferencesEditor').addEventListener('click', event=>{
+    const button=event.target.closest('[data-marker-category]');if(!button)return;
+    const category=button.dataset.markerCategory,prefs=normalizeMapMarkerPreferences(settings.mapMarkerPreferences,settings.mapMarkerPreset),item=prefs[category];if(!item)return;
+    if(button.dataset.markerShape)item.shape=MAP_MARKER_SHAPES.includes(button.dataset.markerShape)?button.dataset.markerShape:item.shape;
+    if(button.dataset.markerSize)item.size=MAP_MARKER_SIZES.includes(button.dataset.markerSize)?button.dataset.markerSize:item.size;
+    settings.mapMarkerPreferences=prefs;saveSettings();renderMapMarkerPreferences();showToast('Вигляд мітки збережено');
   });
   document.getElementById('mapTilerKeyToggleBtn').addEventListener('click', ()=>{
     const input=document.getElementById('mapTilerKeyInput');

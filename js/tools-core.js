@@ -87,6 +87,7 @@
     return {id:profileId(first),...profileParts(first),address:addressLabel(first)};
   }
   function sanitizeDiagnosticResult(result={}){
+    const metric=(value,round=false)=>value===null||value===undefined||value===''?null:Number.isFinite(Number(value))?(round?Math.round(Number(value)):Number(value)):null;
     const resources=Array.isArray(result.resources)?result.resources.slice(0,10).map(item=>({
       label:text(item?.label).slice(0,80),ok:!!item?.ok,
       httpMs:Number.isFinite(Number(item?.httpMs))?Math.round(Number(item.httpMs)):null,
@@ -101,10 +102,13 @@
       summaryStatus:['ok','warning','offline'].includes(result.summaryStatus)?result.summaryStatus:(result.online?'warning':'offline'),
       internetStatus:['ok','offline','limited'].includes(result.internetStatus)?result.internetStatus:(result.online?'ok':'offline'),
       dnsStatus:['indirect','limited','unavailable'].includes(result.dnsStatus)?result.dnsStatus:'unavailable',
-      latencyMs:Number.isFinite(Number(result.latencyMs))?Math.round(Number(result.latencyMs)):null,
-      jitterMs:Number.isFinite(Number(result.jitterMs))?Math.round(Number(result.jitterMs)):null,
-      downloadMbps:Number.isFinite(Number(result.downloadMbps))?Number(result.downloadMbps):null,
-      uploadMbps:Number.isFinite(Number(result.uploadMbps))?Number(result.uploadMbps):null,
+      latencyMs:metric(result.latencyMs,true),
+      jitterMs:metric(result.jitterMs,true),
+      downloadMbps:metric(result.downloadMbps),
+      uploadMbps:metric(result.uploadMbps),
+      speedProvider:text(result.speedProvider).slice(0,80),
+      speedMethod:text(result.speedMethod).slice(0,120),
+      speedStatus:['success','partial','error','cancelled'].includes(result.speedStatus)?result.speedStatus:'',
       resources
     };
   }
@@ -140,6 +144,15 @@
     const resources=checked.map(({ip,...item})=>item),summaryStatus=!online?(browserOffline?'offline':'warning'):resources.some(item=>!item.ok)||!publicIp?'warning':'ok';
     return sanitizeDiagnosticResult({online,internetStatus,dnsStatus,summaryStatus,publicIp,ipv4,ipv6,ipFamily:ipv4&&ipv6?'IPv4/IPv6':ipv6?'IPv6':ipv4?'IPv4':'',latencyMs,jitterMs,resources});
   }
+  async function runBrowserSpeedTest(options={}){
+    const fetchFn=options.fetch||globalThis.fetch,clock=options.now||(()=>Date.now()),signal=options.signal,timeoutMs=Math.max(1000,Number(options.timeoutMs)||20000),downloadBytes=Math.min(10000000,Math.max(250000,Number(options.downloadBytes)||5000000)),uploadBytes=Math.min(5000000,Math.max(100000,Number(options.uploadBytes)||1000000));
+    const request=async(url,init={},bytes=0)=>{const controller=typeof AbortController==='function'?new AbortController():null,timer=setTimeout(()=>controller?.abort(),timeoutMs),abort=()=>controller?.abort();signal?.addEventListener?.('abort',abort,{once:true});const started=clock();try{const response=await fetchFn(url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',...init,signal:controller?.signal});if(!response?.ok)throw new Error(`HTTP_${response?.status||0}`);await response.arrayBuffer();const elapsed=Math.max(1,clock()-started);return{ok:true,elapsed,mbps:bytes?Number((bytes*8/elapsed/1000).toFixed(1)):null};}catch(error){return{ok:false,cancelled:signal?.aborted===true,error:String(error?.name||error?.message||'ERROR')};}finally{clearTimeout(timer);signal?.removeEventListener?.('abort',abort);}};
+    options.onProgress?.('latency');const latency=[];for(let index=0;index<3&&!signal?.aborted;index++){const sample=await request(`https://speed.cloudflare.com/__down?bytes=0&_=${clock()}-${index}`);if(sample.ok)latency.push(sample.elapsed);}
+    options.onProgress?.('download');const down=signal?.aborted?{ok:false,cancelled:true}:await request(`https://speed.cloudflare.com/__down?bytes=${downloadBytes}&_=${clock()}`,{},downloadBytes);
+    options.onProgress?.('upload');const body=new Uint8Array(uploadBytes),up=signal?.aborted?{ok:false,cancelled:true}:await request(`https://speed.cloudflare.com/__up?_=${clock()}`,{method:'POST',body},uploadBytes);
+    const latencyMs=latency.length?Math.round(latency.reduce((sum,value)=>sum+value,0)/latency.length):null,jitterMs=latency.length>1?Math.round(latency.slice(1).reduce((sum,value,index)=>sum+Math.abs(value-latency[index]),0)/(latency.length-1)):null,available=[down.ok,up.ok,latency.length>0].filter(Boolean).length,cancelled=signal?.aborted||down.cancelled||up.cancelled;
+    return sanitizeDiagnosticResult({online:available>0,internetStatus:available>0?'ok':'limited',dnsStatus:available>0?'indirect':'limited',summaryStatus:down.ok&&up.ok?'ok':available?'warning':'offline',downloadMbps:down.ok?down.mbps:null,uploadMbps:up.ok?up.mbps:null,latencyMs,jitterMs,speedProvider:'Cloudflare',speedMethod:`browser HTTPS · download ${downloadBytes} bytes · upload ${uploadBytes} bytes`,speedStatus:cancelled?'cancelled':down.ok&&up.ok?'success':available?'partial':'error',resources:[{label:'Cloudflare Speed',ok:down.ok||up.ok,state:cancelled?'unavailable':down.ok||up.ok?'ok':'blocked',detail:cancelled?'Скасовано користувачем':down.ok&&up.ok?'Download і upload виміряно':'Частина вимірювань недоступна'}]});
+  }
   function makeDiagnosticRecord(result,profile=null,now=new Date()){
     const sanitized=sanitizeDiagnosticResult(result);
     return {
@@ -161,6 +174,10 @@
       const from=Number(previous.result?.[key]),to=Number(current.result?.[key]);
       return Number.isFinite(from)&&Number.isFinite(to)?[{key,label,unit,from,to}]:[];
     });
+  }
+  function diagnosticStatus(history=[]){
+    const items=sanitizeDiagnostics(history).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))),latest=items[0]||null;
+    return{latest,count:items.length,status:latest?(latest.summaryStatus||latest.result?.summaryStatus||'warning'):'none'};
   }
   function diagnosticReport(result,context=null,at=new Date()){
     const r=sanitizeDiagnosticResult(result),lines=['Діагностика',at.toLocaleString('uk-UA')];
@@ -298,5 +315,5 @@
     return value.slice(0,5000).flatMap((item,index)=>{const known=Date.parse(text(item?.createdAt)||text(item?.updatedAt)),fallback=new Date(Number.isFinite(known)?known:index);const point=normalizeNetworkPoint(item,fallback);return point?[point]:[];});
   }
 
-  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,runBrowserDiagnostics,makeDiagnosticRecord,appendDiagnosticHistory,previousDiagnostic,diagnosticComparison,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,sortNewestFirst,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
+  return {DIAGNOSTIC_VERSION,NETWORK_POINT_TYPES,MAP_CATEGORIES,profileParts,profileId,houseId,addressLabel,parseCoordinates,explicitCoordinates,googleMapsUrl,requestCurrentPosition,createGeoDraft,listProfiles,profileFromTickets,sanitizeDiagnosticResult,runBrowserDiagnostics,runBrowserSpeedTest,makeDiagnosticRecord,appendDiagnosticHistory,previousDiagnostic,diagnosticComparison,diagnosticStatus,diagnosticReport,mapObjects,filterMapObjects,normalizeNetworkPoint,networkPointAddress,networkPointPickerMeta,networkPointPreviewData,searchNetworkPoints,sortNewestFirst,groupNetworkPoints,removeNetworkPoint,networkPointIds,linkNetworkPoint,unlinkNetworkPoint,ticketsForNetworkPoint,removeNetworkPointLinks,estimateOfflineArea,normalizeOfflineArea,sanitizeOfflineAreas,offlineBoundsOverlap,offlineAreaDuplicate,sanitizeDiagnostics,sanitizeNetworkPoints};
 });
