@@ -1,12 +1,11 @@
 /* ---- Нейтральні операції localStorage для локального стану ---- */
 function loadJSON(key, fallback){
-  try{ const v = JSON.parse(localStorage.getItem(key)); return (v===null||v===undefined) ? fallback : v; }
-  catch(e){ return fallback; }
+  return MTStorageRegistry.safeJsonGet(localStorage,key,fallback,value=>value!==null&&value!==undefined);
 }
 
 function loadDailyBackupIndex(){
-  try{ return JSON.parse(localStorage.getItem('dailyBackupIndex')) || []; }catch(e){ return []; }
+  return MTStorageRegistry.safeJsonGet(localStorage,MTStorageRegistry.key('dailyBackupIndex'),[],Array.isArray);
 }
 function saveDailyBackupIndex(index){
-  try{ localStorage.setItem('dailyBackupIndex', JSON.stringify(index)); }catch(e){ /* сховище повне — не критично */ }
+  try{ localStorage.setItem(MTStorageRegistry.key('dailyBackupIndex'), JSON.stringify(index)); }catch(e){ /* сховище повне — не критично */ }
 }
