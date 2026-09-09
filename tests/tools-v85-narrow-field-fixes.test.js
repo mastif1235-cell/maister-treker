@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const core=require('../js/tools-core.js'),domain=read('js/tools-domain.js'),telegram=read('js/photo-telegram-domain.js'),address=read('js/ticket-address-domain.js'),styles=read('styles.css'),html=read('index.html'),app=read('app.js'),sw=read('sw.js');
+const core=require('../js/tools-core.js'),domain=require('./helpers/tools-source').readToolsSource(),telegram=read('js/photo-telegram-domain.js'),address=read('js/ticket-address-domain.js'),styles=read('styles.css'),html=read('index.html'),app=read('app.js'),sw=read('sw.js');
 
 // A-C: zoom changes real layout size; reset/next return to 100%, swipe is enabled only at 100%.
 const viewer=domain.slice(domain.indexOf('async function toolsOpenNetworkPhotoViewer'),domain.indexOf('function toolsMoveNetworkPoint'));

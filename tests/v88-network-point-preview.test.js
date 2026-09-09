@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const core=require('../js/tools-core.js'),domain=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
+const core=require('../js/tools-core.js'),domain=require('./helpers/tools-source').readToolsSource();
 const point={id:'fob-03',type:'FOB',name:'FOB-03',label:'Шафа 3',city:'Таромське',street:'вул. Генерала Волівача',house:'12',note:'біля білого паркану',lat:48.123456,lng:37.654321,photoKeys:['idb:p1']};
 const preview=core.networkPointPreviewData(point);
 assert.deepEqual(preview,{id:'fob-03',type:'FOB',name:'FOB-03',label:'Шафа 3',address:'Таромське, вул. Генерала Волівача, 12',city:'Таромське',street:'вул. Генерала Волівача',house:'12',note:'біля білого паркану',coordinates:'48.123456, 37.654321',photoKeys:['idb:p1']});
@@ -19,6 +19,6 @@ assert.match(domain,/function toolsOpenTicketNetworkPointPreview/);
 assert.match(domain,/id="ticketNetworkPointPreviewMapBtn"[\s\S]*id="ticketNetworkPointPreviewLinkBtn"[\s\S]*id="ticketNetworkPointPreviewCloseBtn"/);
 assert.match(domain,/ticketNetworkPointPreviewLinkBtn'[\s\S]*toolsLinkNetworkPointToTicket\(point\.id\)/);
 assert.match(domain,/ticketNetworkPointPreviewMapBtn'[\s\S]*toolsShowNetworkPointOnMap\(point,true\)/);
-const previewBody=domain.slice(domain.indexOf('function toolsOpenTicketNetworkPointPreview'),domain.indexOf('function toolsNetworkPointPhotoSignature'));
+const previewBody=domain.slice(domain.indexOf('function toolsOpenTicketNetworkPointPreview'),domain.indexOf('function renderToolsScreen'));
 assert.doesNotMatch(previewBody,/toolsSaveNetworkPoints|toolsOpenNetworkPointEditor|toolsDeleteNetworkPoint/);
 console.log('PASS read-only network-point preview reuses link, map and photo lifecycles');

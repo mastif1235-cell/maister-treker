@@ -12,7 +12,7 @@ const clean=context.securitySanitizeSettingsForBackup(source),json=JSON.stringif
 for(const secret of ['hmac','bot','chat','map','access','Bearer secret','callback.test'])assert.equal(json.includes(secret),false,`export excludes ${secret}`);
 assert.equal(clean.nested.safe,'kept','non-secret settings remain exportable');
 
-const backup=read('js/backup-system.js'),telegram=read('js/photo-telegram-domain.js'),tools=read('js/tools-domain.js'),share=read('js/share-domain.js'),app=read('app.js');
+const backup=read('js/backup-system.js'),telegram=read('js/photo-telegram-domain.js'),tools=require('./helpers/tools-source').readToolsSource(),share=read('js/share-domain.js'),app=read('app.js');
 assert.match(backup,/tickets:mtBackupSafeExport\(tickets\)/,'full backup strips injected system secrets from tickets');
 assert.match(backup,/diagnostics:mtBackupSafeExport/,'diagnostic export strips injected system secrets');
 assert.match(telegram,/jsonTicket = typeof securityStripSystemSecrets/,'Telegram JSON strips injected system secrets');

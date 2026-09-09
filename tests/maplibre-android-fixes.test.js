@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const adapter=read('js/tools-map-maplibre.js'),marker=read('js/map-marker-renderer.js'),map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),ui=read('js/ui-orchestration.js');
+const adapter=read('js/tools-map-maplibre.js'),marker=read('js/map-marker-renderer.js'),map=read('js/tools-map.js'),domain=require('./helpers/tools-source').readToolsSource(),ui=read('js/ui-orchestration.js');
 
 assert.match(adapter,/type:'symbol',source:'mt-objects'/,'objects use a symbol layer, not anonymous circles');
 assert.match(adapter,/OBJECT_ICON_SCALE=\{min:\.78,max:1\.35\}/,'object marker scale reaches Leaflet-like readability while staying below GPS');

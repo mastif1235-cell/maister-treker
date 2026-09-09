@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const data=read('js/data-utils.js'),editor=read('js/ticket-editor-domain.js'),tools=read('js/tools-domain.js'),core=require('../js/tools-core.js');
+const data=read('js/data-utils.js'),editor=read('js/ticket-editor-domain.js'),tools=require('./helpers/tools-source').readToolsSource(),core=require('../js/tools-core.js');
 const context={URL};vm.createContext(context);vm.runInContext(data,context);
 
 const raw='48.4501, 34.9833',direct=context.prepareGeoInput(raw);

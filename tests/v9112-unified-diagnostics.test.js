@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const merged=core.mergeDiagnosticResults({online:true,summaryStatus:'ok',internetStatus:'ok',dnsStatus:'indirect',publicIp:'1.2.3.4',latencyMs:20,jitterMs:3,resources:[{label:'Internet',ok:true,state:'ok'}]},{downloadMbps:120,uploadMbps:45,speedStatus:'success',speedProvider:'Cloudflare',speedMethod:'browser estimate',summaryStatus:'ok',resources:[{label:'Speed',ok:true,state:'ok'}]});
 assert.equal(merged.publicIp,'1.2.3.4');assert.equal(merged.downloadMbps,120);assert.equal(merged.uploadMbps,45);assert.equal(merged.resources.length,2);
 const partial=core.mergeDiagnosticResults({online:true,summaryStatus:'ok',internetStatus:'ok',dnsStatus:'indirect'},{speedStatus:'error',summaryStatus:'warning'});assert.equal(partial.summaryStatus,'warning');assert.equal(partial.speedStatus,'error');
-const domain=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
+const domain=require('./helpers/tools-source').readToolsSource();
 const network=fs.readFileSync(path.join(__dirname,'..','js','tools-diagnostics-network.js'),'utf8');
 const run=network.slice(network.indexOf('async function runToolsDiagnostics()'),network.indexOf('async function toolsRunSpeedTest()'));
 assert.match(run,/runBrowserDiagnostics/);assert.match(run,/runBrowserSpeedTest/);assert.match(run,/mergeDiagnosticResults/);assert.match(run,/toolsSaveCurrentDiagnostic\(\)/,'combined run saves once');assert.equal((run.match(/toolsSaveCurrentDiagnostic\(\)/g)||[]).length,1);

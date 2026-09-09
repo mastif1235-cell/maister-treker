@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8'),core=require('../js/tools-core.js');
-const domain=read('js/tools-domain.js'),addressUi=read('js/address-render.js'),map=read('js/tools-map.js'),maplibre=read('js/tools-map-maplibre.js'),marker=read('js/map-marker-renderer.js'),settings=read('js/settings-core.js'),settingsUi=read('js/settings-domain.js'),settingsRender=read('js/settings-render.js'),html=read('index.html'),styles=read('styles.css');
+const domain=require('./helpers/tools-source').readToolsSource(),addressUi=read('js/address-render.js'),map=read('js/tools-map.js'),maplibre=read('js/tools-map-maplibre.js'),marker=read('js/map-marker-renderer.js'),settings=read('js/settings-core.js'),settingsUi=read('js/settings-domain.js'),settingsRender=read('js/settings-render.js'),html=read('index.html'),styles=read('styles.css');
 
 const points=[
   {id:'old-z',type:'Муфта',city:'Я',street:'Я',lat:48,lng:35,createdAt:'2026-09-01T10:00:00Z'},

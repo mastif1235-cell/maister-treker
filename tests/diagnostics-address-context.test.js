@@ -1,7 +1,7 @@
 const assert=require('assert');
 const fs=require('fs');
 
-const tools=fs.readFileSync('js/tools-domain.js','utf8');
+const tools=require('./helpers/tools-source').readToolsSource();
 const ui=fs.readFileSync('js/ui-orchestration.js','utf8');
 
 assert.match(tools,/function toolsClearDiagnosticAddress\(\)\{toolsDiagnosticContext=null;toolsDiagnosticSaved=false;\}/);

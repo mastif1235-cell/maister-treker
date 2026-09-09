@@ -57,7 +57,7 @@ vm.createContext(backupContext);vm.runInContext(read('js/backup-system.js'),back
   assert.equal(restored.tickets[0].geoLng,34.812238,'GEO-DATA-8 backup/restore keeps longitude');
   assert.equal(restored.tickets[0].geoLink,legacy,'backup/restore keeps legacy link');
 
-  const editor=read('js/ticket-editor-domain.js'),calculator=read('js/calculator-render.js'),tools=read('js/tools-domain.js'),html=read('index.html'),styles=read('styles.css'),securityDom=read('js/security-dom-final-v65-18.js');
+  const editor=read('js/ticket-editor-domain.js'),calculator=read('js/calculator-render.js'),tools=require('./helpers/tools-source').readToolsSource(),html=read('index.html'),styles=read('styles.css'),securityDom=read('js/security-dom-final-v65-18.js');
   const setGeoSource=editor.slice(editor.indexOf('function setGeoLink'),editor.indexOf('/* Розпізнає координати'));
   const editorContext={calcState:{},formTouchedByUser:false,renderGeoBadge(){}};vm.createContext(editorContext);vm.runInContext(setGeoSource,editorContext);
   editorContext.setGeoLink('',{lat:48.4323894,lng:34.8122384});assert.equal(editorContext.calcState.geoLat,48.432389);assert.equal(editorContext.calcState.geoLng,34.812238,'GEO-DATA-1 Save commits canonical numeric coordinates');

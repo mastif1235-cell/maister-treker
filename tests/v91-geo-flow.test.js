@@ -11,7 +11,7 @@ assert.equal(core.googleMapsUrl({geoLink:'javascript:alert(1)'}),'');
   const calls=[];const gps={getCurrentPosition(ok,_fail,options){calls.push(options);ok({coords:{latitude:48.45,longitude:34.98,accuracy:7}});}};
   const gpsPoint=await core.requestCurrentPosition(gps);assert.deepEqual(gpsPoint,{lat:48.45,lng:34.98,accuracy:7});assert.equal(calls.length,1,'MAP-4 GPS runs only after explicit helper invocation');assert.equal(calls[0].enableHighAccuracy,true);const gpsTicket={geoLat:1,geoLng:2},gpsDraft=core.createGeoDraft(gpsTicket);gpsDraft.set(gpsPoint);assert.deepEqual(gpsTicket,{geoLat:1,geoLng:2});
   await assert.rejects(()=>core.requestCurrentPosition(null),/UNSUPPORTED/);const deniedTicket={geoLat:1,geoLng:2};await assert.rejects(()=>core.requestCurrentPosition({getCurrentPosition(_ok,fail){fail({code:1});}}));assert.deepEqual(deniedTicket,{geoLat:1,geoLng:2},'MAP-5 GPS error leaves ticket untouched');
-  const editor=read('js/ticket-editor-domain.js'),domain=read('js/tools-domain.js'),map=read('js/tools-map.js');
+  const editor=read('js/ticket-editor-domain.js'),domain=require('./helpers/tools-source').readToolsSource(),map=read('js/tools-map.js');
   assert.match(editor,/openInternalMapBtn[\s\S]*openTicketGeoPointPicker/,'internal map is the primary geo action');
   assert.doesNotMatch(editor,/calcState\.geoLink=''[\s\S]{0,120}openGeoPasteModal/,'opening picker no longer clears saved geo state');
   assert.match(domain,/ticketGeoPointGps[\s\S]*requestCurrentPosition[\s\S]*picker\?\.setPoint/,'explicit GPS moves only the draft marker');

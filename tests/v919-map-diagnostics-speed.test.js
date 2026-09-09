@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8'),core=require('../js/tools-core.js');
-const html=read('index.html'),styles=read('styles.css'),domain=read('js/tools-domain.js'),diagnosticNetwork=read('js/tools-diagnostics-network.js'),settingsSource=read('js/settings-core.js'),settingsRender=read('js/settings-render.js'),settingsDomain=read('js/settings-domain.js'),mapSource=read('js/tools-map.js'),mapLibreSource=read('js/tools-map-maplibre.js'),editor=read('js/ticket-editor-domain.js'),calculator=read('js/calculator-render.js'),share=read('js/share-domain.js'),backup=read('js/backup-system.js');
+const html=read('index.html'),styles=read('styles.css'),domain=require('./helpers/tools-source').readToolsSource(),diagnosticNetwork=read('js/tools-diagnostics-network.js'),settingsSource=read('js/settings-core.js'),settingsRender=read('js/settings-render.js'),settingsDomain=read('js/settings-domain.js'),mapSource=read('js/tools-map.js'),mapLibreSource=read('js/tools-map-maplibre.js'),editor=read('js/ticket-editor-domain.js'),calculator=read('js/calculator-render.js'),share=read('js/share-domain.js'),backup=read('js/backup-system.js');
 
 (async()=>{
   const mapModule=await import(`../js/tools-map-maplibre.js?v919=${Date.now()}`);assert.equal(mapModule.navigationControlOptions({matchMedia:()=>({matches:true})}).showZoom,false);assert.equal(mapModule.navigationControlOptions({matchMedia:()=>({matches:false})}).showZoom,true);assert.equal(mapModule.navigationControlOptions({matchMedia:()=>({matches:true})}).showCompass,true);

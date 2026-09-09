@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8'),source=read('js/tools-domain.js'),coreSource=read('js/tools-core.js'),adapter=read('js/tools-map-maplibre.js'),styles=read('styles.css');
+const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8'),source=require('./helpers/tools-source').readToolsSource(),coreSource=read('js/tools-core.js'),adapter=read('js/tools-map-maplibre.js'),styles=read('styles.css');
 assert.match(source,/Вибрати файл \.pmtiles і встановити/);
 assert.match(source,/✅ Офлайн-карта встановлена/);
 assert.match(source,/Технічна інформація/);

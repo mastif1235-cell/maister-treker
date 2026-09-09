@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const ui=read('js/ui-orchestration.js'),tools=read('js/tools-domain.js'),core=read('js/tools-core.js');
+const ui=read('js/ui-orchestration.js'),tools=require('./helpers/tools-source').readToolsSource(),core=read('js/tools-core.js');
 assert.match(ui,/appNavigationClear\(\);\s*if\(tab==='tools'&&typeof toolsOpenRootFromTab==='function'\)toolsOpenRootFromTab\(\);\s*switchTab\(tab\)/,'bottom Tools tab resets nested Tools state before rendering');
 assert.match(tools,/function toolsOpenRootFromTab\(\)[\s\S]*toolsView='home'/,'Tools tab has an explicit root transition');
 assert.match(tools,/toolsOpenRootFromTab[\s\S]*MTToolsMap\?\.destroyMap\?\.\(\)[\s\S]*tools-map-fullscreen-open/,'root transition releases map/fullscreen state');

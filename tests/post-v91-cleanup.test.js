@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const read=file=>fs.readFileSync(file,'utf8');
 
-const app=read('app.js'),tickets=read('js/tickets-domain.js'),domain=read('js/tools-domain.js'),styles=read('styles.css'),phone=read('js/phone-utils.js');
+const app=read('app.js'),tickets=read('js/tickets-domain.js'),domain=require('./helpers/tools-source').readToolsSource(),styles=read('styles.css'),phone=read('js/phone-utils.js');
 const payloadSource=app.slice(app.indexOf('function ticketToSyncPayload'),app.indexOf('function shiftToSyncPayload'));
 const payloadContext={MTToolsCore:{googleMapsUrl:()=>'',networkPointIds:value=>value||[]},formatDate:()=>'',formatTime:()=>'',Date};vm.createContext(payloadContext);vm.runInContext(payloadSource,payloadContext);
 const masterNote='рядок 1\nрядок 2\nрядок 3';

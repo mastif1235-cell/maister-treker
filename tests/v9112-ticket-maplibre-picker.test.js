@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const domain=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
+const domain=require('./helpers/tools-source').readToolsSource();
 const map=fs.readFileSync(path.join(__dirname,'..','js','tools-map-maplibre.js'),'utf8');
 assert.match(domain,/mountPicker\([^\n]+\{engine:'maplibre',initial/,'ticket picker explicitly requests shared MapLibre adapter');
 for(const label of ['🗺️ Карта','🛰️ Супутник','📦 Офлайн'])assert.ok(map.includes(label),`picker exposes ${label}`);

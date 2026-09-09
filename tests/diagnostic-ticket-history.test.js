@@ -7,7 +7,7 @@ const second=core.makeDiagnosticRecord({...result,summaryStatus:'warning',public
 const initial=[];const once=core.appendDiagnosticHistory(initial,first),twice=core.appendDiagnosticHistory(once,second);
 assert.equal(initial.length,0);assert.equal(once.length,1);assert.equal(twice.length,2);assert.equal(twice[1].summaryStatus,'warning');
 assert.doesNotThrow(()=>core.sanitizeDiagnostics([null,{},first,{id:'bad',timestamp:'now',result:{resources:'bad'}}]));
-const form=read('js/ticket-form-domain.js'),app=read('app.js'),security=read('js/security-runtime-v65-9.js'),ui=read('js/tickets-render.js'),domain=read('js/tools-domain.js'),share=read('js/share-domain.js');
+const form=read('js/ticket-form-domain.js'),app=read('app.js'),security=read('js/security-runtime-v65-9.js'),ui=read('js/tickets-render.js'),domain=require('./helpers/tools-source').readToolsSource(),share=read('js/share-domain.js');
 assert.match(form,/diagnosticHistory:\[\]/,'new and legacy-compatible tickets default to an empty history');
 assert.match(app,/diagnosticHistory:typeof MTToolsCore[^\n]+sanitizeDiagnostics/,'ticket sync fullDataJson carries sanitized history');
 assert.match(security,/sanitizeDiagnostics\(t\.diagnosticHistory\|\|\[\]\)\.slice\(-200\)/,'imported/restored history is bounded and sanitized');

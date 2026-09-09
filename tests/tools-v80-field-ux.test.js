@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),core=require('../js/tools-core.js');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),editor=read('js/ticket-editor-domain.js'),address=read('js/address-render.js');
+const domain=require('./helpers/tools-source').readToolsSource(),map=read('js/tools-map.js'),editor=read('js/ticket-editor-domain.js'),address=read('js/address-render.js');
 const styles=read('styles.css'),ticketsRender=read('js/tickets-render.js');
 
 assert.match(domain,/MT_TOOLS_DRAFT_KEY/);assert.match(domain,/toolsCalculatorDraft=\{state:JSON\.parse/);assert.match(domain,/Повернутися до заявки/);assert.match(domain,/fillFormFromState\(\)/,'calculator draft is restored into the same form');

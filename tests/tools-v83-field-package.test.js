@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),styles=read('styles.css'),html=read('index.html'),settings=read('js/settings-domain.js'),core=read('js/tools-core.js');
+const domain=require('./helpers/tools-source').readToolsSource(),map=read('js/tools-map.js'),styles=read('styles.css'),html=read('index.html'),settings=read('js/settings-domain.js'),core=read('js/tools-core.js');
 
 const home=domain.slice(domain.indexOf('function toolsHomeHtml'),domain.indexOf('function toolsBackButton'));
 const mapHtml=domain.slice(domain.indexOf('function toolsMapHtml'),domain.indexOf('function toolsNetworkGroupsHtml'));

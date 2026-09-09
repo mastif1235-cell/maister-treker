@@ -41,7 +41,7 @@ assert.equal(backup.validatePayload(oldPayload),true,'legacy backup remains vali
 assert.equal(backup.validatePayload(newPayload),true,'backup accepts diagnostics and network points');
 assert.equal(backup.validatePayload({...oldPayload,networkPoints:{}}),false,'new collections have bounded array schema');
 
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),domain=fs.readFileSync(path.join(root,'js','tools-domain.js'),'utf8'),coreSource=fs.readFileSync(path.join(root,'js','tools-core.js'),'utf8'),backupSource=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),domain=require('./helpers/tools-source').readToolsSource(),coreSource=fs.readFileSync(path.join(root,'js','tools-core.js'),'utf8'),backupSource=fs.readFileSync(path.join(root,'js','backup-system.js'),'utf8');
 assert.match(html,/data-tab="tools"/);assert.match(html,/id="calcDiagnosticsBtn"/);assert.match(html,/https:\/\/api64\.ipify\.org/);
 assert.match(domain,/toolsDiagnosticResult=null/,'opening diagnostics starts without a saved result');
 assert.match(domain,/appendDiagnosticHistory\(previousDraft,record\)/,'only explicit save path appends ticket history to the active draft');

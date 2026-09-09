@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),coreSource=read('js/tools-core.js'),styles=read('styles.css'),address=read('js/address-render.js'),addressDomain=read('js/ticket-address-domain.js'),telegram=read('js/photo-telegram-domain.js');
+const map=read('js/tools-map.js'),domain=require('./helpers/tools-source').readToolsSource(),coreSource=read('js/tools-core.js'),styles=read('styles.css'),address=read('js/address-render.js'),addressDomain=read('js/ticket-address-domain.js'),telegram=read('js/photo-telegram-domain.js');
 const core=require('../js/tools-core.js');
 
 assert.match(styles,/\.modal-overlay\{[\s\S]*?z-index:2000/,'1 form bottom-sheet stays above all Leaflet panes');

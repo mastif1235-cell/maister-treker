@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8'),core=require('../js/tools-core.js'),backup=require('../js/backup-system.js');
-const domain=read('js/tools-domain.js'),diagnosticNetwork=read('js/tools-diagnostics-network.js'),map=read('js/tools-map.js'),styles=read('styles.css'),naryad=read('js/ticket-address-domain.js'),backupSource=read('js/backup-system.js'),sw=read('sw.js');
+const domain=require('./helpers/tools-source').readToolsSource(),diagnosticNetwork=read('js/tools-diagnostics-network.js'),map=read('js/tools-map.js'),styles=read('styles.css'),naryad=read('js/ticket-address-domain.js'),backupSource=read('js/backup-system.js'),sw=read('sw.js');
 
 // Map-first layout, compact presentation filters and a single network-point store.
 const mapHtml=domain.slice(domain.indexOf('function toolsMapHtml'),domain.indexOf('function toolsOpenPointEditorFromMap'));

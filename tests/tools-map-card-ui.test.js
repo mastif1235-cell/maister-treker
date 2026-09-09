@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const html=read('index.html'),map=read('js/tools-map.js'),domain=read('js/tools-domain.js'),render=read('js/tickets-render.js'),styles=read('styles.css'),sw=read('sw.js'),leaflet=read('vendor/leaflet/leaflet.js'),offline=read('js/offline-map-storage.js'),address=read('js/address-render.js');
+const html=read('index.html'),map=read('js/tools-map.js'),domain=require('./helpers/tools-source').readToolsSource(),render=read('js/tickets-render.js'),styles=read('styles.css'),sw=read('sw.js'),leaflet=read('vendor/leaflet/leaflet.js'),offline=read('js/offline-map-storage.js'),address=read('js/address-render.js');
 
 assert.match(leaflet,/version="1\.9\.4"/,'stable Leaflet 1.9.4 is vendored locally');
 assert.match(html,/vendor\/leaflet\/leaflet\.css/);assert.match(html,/vendor\/leaflet\/leaflet\.js/);assert.match(html,/js\/tools-map\.js/);

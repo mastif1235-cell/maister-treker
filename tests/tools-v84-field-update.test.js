@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const core=require('../js/tools-core.js'),domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),telegram=read('js/photo-telegram-domain.js'),editor=read('js/ticket-editor-domain.js'),render=read('js/tickets-render.js'),html=read('index.html'),styles=read('styles.css'),app=read('app.js'),backup=read('js/backup-system.js');
+const core=require('../js/tools-core.js'),domain=require('./helpers/tools-source').readToolsSource(),map=read('js/tools-map.js'),telegram=read('js/photo-telegram-domain.js'),editor=read('js/ticket-editor-domain.js'),render=read('js/tickets-render.js'),html=read('index.html'),styles=read('styles.css'),app=read('app.js'),backup=read('js/backup-system.js');
 
 // A/B: empty search hierarchy is complete and toggle never destroys the tapped details node.
 const groups=domain.slice(domain.indexOf('function toolsNetworkGroupsHtml'),domain.indexOf('function toolsOpenPointEditorFromMap'));

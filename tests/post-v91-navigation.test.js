@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const ui=read('js/ui-orchestration.js'),tools=read('js/tools-domain.js'),tickets=read('js/tickets-domain.js'),bindings=read('js/tickets-bindings.js'),editor=read('js/ticket-editor-domain.js'),address=read('js/ticket-address-domain.js'),map=read('js/tools-map.js'),html=read('index.html');
+const ui=read('js/ui-orchestration.js'),tools=require('./helpers/tools-source').readToolsSource(),tickets=read('js/tickets-domain.js'),bindings=read('js/tickets-bindings.js'),editor=read('js/ticket-editor-domain.js'),address=read('js/ticket-address-domain.js'),map=read('js/tools-map.js'),html=read('index.html');
 
 const navSource=ui.slice(ui.indexOf('const appNavigationStack=[];'),ui.indexOf('const SCREEN_TITLES'));
 const backNode={classList:{hidden:true,toggle(_name,value){this.hidden=value;}}};

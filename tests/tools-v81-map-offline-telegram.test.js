@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),styles=read('styles.css'),telegram=read('js/photo-telegram-domain.js'),offline=read('js/offline-map-storage.js');
+const domain=require('./helpers/tools-source').readToolsSource(),map=read('js/tools-map.js'),styles=read('styles.css'),telegram=read('js/photo-telegram-domain.js'),offline=read('js/offline-map-storage.js');
 const core=require('../js/tools-core.js');
 
 assert.doesNotMatch(domain,/＋ Додати об’єкт<\/button>/);assert.doesNotMatch(domain,/◎ Моє місце<\/button>/,'large map actions are removed');
