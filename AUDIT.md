@@ -1,8 +1,10 @@
-# Майстер-Трекер: implementation audit
+# Майстер-Трекер: historical implementation audit
+
+> This document preserves the evidence and decisions from the original stabilization audit. It is not a description of the current production runtime. Current ownership, map, offline, recovery, privacy, and update boundaries are documented in `docs/ARCHITECTURE.md` and `docs/STORAGE.md`.
 
 Audit baseline: GitHub `mastif1235-cell/maister-treker`, `main`, `9ae763a7a262a56d99efb4bfaaf1360b2d4c39b5`.
 
-## Production inventory
+## Historical production inventory
 
 | Component | Proven state |
 |---|---|
@@ -19,7 +21,7 @@ Unknown infrastructure does not block isolated development. No production deploy
 
 ## Confirmed critical architecture
 
-`index.html` loads the baseline scripts and `app.js`. `sw.js` then rewrites navigation HTML and injects 24 versioned security/hotfix scripts. Those scripts replace global owners including `fetch`, `postToUrl`, `retrySyncQueue`, delete/verify, backup and lock functions. Runtime therefore depends on Service Worker control/cache state and injection order.
+At this historical baseline, `index.html` loaded the baseline scripts and `app.js`, while `sw.js` rewrote navigation HTML and injected versioned security/hotfix scripts. The current Service Worker is cache/update-only and does not inject runtime modules; see `docs/ARCHITECTURE.md`.
 
 Baseline `Code.gs` is legacy secret auth. HMAC/replay behavior lives in separate patch `.gs` files and cannot be assumed deployed. Shifts still use GET query secrets. Settings, including client-held tokens/secrets, are persisted in localStorage.
 

@@ -33,5 +33,5 @@ assert.match(map,/iconFor\(category,false,options\.markerPreset,options\.markerP
 assert.match(marker,/private[\s\S]*Муфта/);assert.match(styles,/marker-contrast/);assert.ok(40<46,'largest object marker remains smaller than GPS marker');
 assert.match(maplibre,/addControl\(new gl\.NavigationControl[^\n]+,'top-left'\)/);assert.match(maplibre,/map\.addControl\(control,'top-right'\)/,'MapLibre controls match Leaflet zones');
 assert.equal((domain.match(/class="tools-map-floating-btn" data-tools-action="map-my-location"/g)||[]).length,1);assert.equal((domain.match(/class="tools-map-floating-btn" data-tools-action="map-toggle-fullscreen"/g)||[]).length,1,'GPS/fullscreen app controls are not duplicated');
-assert.match(map,/requestedEngine[\s\S]*'leaflet'/,'Leaflet remains the default fallback');
+assert.match(map,/requestedEngine[\s\S]*'leaflet'/,'Leaflet remains an explicit compatibility fallback');
 console.log('PASS v91.8 newest-first lists, diagnostic draft lifecycle, marker presets and map control parity');
