@@ -42,7 +42,7 @@ function findNaryadMatches(rawText){
   return results;
 }
 
-function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+function closeModal(){ if(typeof mtModalCleanup==='function')mtModalCleanup();document.getElementById('modalRoot').innerHTML=''; }
 // NEW: "🔍 Повна заявка" на картці профілю абонента (де показано лише
 // стислий перелік робіт) — просто показує оригінальний повний текст заявки
 // для читання, без переходу в режим редагування.

@@ -42,20 +42,47 @@ function showToast(msg, ms=2200){
   setTimeout(()=>{ el.remove(); }, ms);
 }
 
+let mtModalCleanup=null;
 function openModal(title, bodyHtml, opts={}){
+  if(typeof mtModalCleanup==='function')mtModalCleanup(false);
   const root = document.getElementById('modalRoot');
   const overlayClass = String(opts.overlayClass||'').replace(/[^a-zA-Z0-9_-]/g,'');
+  const titleId=`mtModalTitle-${Date.now()}`;
   root.innerHTML = `
     <div class="modal-overlay ${overlayClass}" id="modalOverlay">
-      <div class="modal">
-        <div class="modal-head"><h3>${escapeHtml(title)}</h3><button class="modal-close" id="modalCloseBtn">✕</button></div>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+        <div class="modal-head"><h3 id="${titleId}">${escapeHtml(title)}</h3><button type="button" class="modal-close" id="modalCloseBtn" aria-label="Закрити">✕</button></div>
         <div id="modalBody">${bodyHtml}</div>
       </div>
     </div>`;
-  const doClose = opts.onClose || closeModal; // NEW: дозволяє викликачу повернутись до свого контексту (напр. профілю) замість повного закриття
+  const previousFocus=document.activeElement;
+  let closed=false;
+  const cleanup=(restoreFocus=true)=>{document.removeEventListener('keydown',onKeyDown,true);if(mtModalCleanup===cleanup)mtModalCleanup=null;if(restoreFocus&&previousFocus?.isConnected)previousFocus.focus?.();};
+  const doClose=()=>{if(closed)return;closed=true;cleanup();(opts.onClose||closeModal)();};
+  const onKeyDown=event=>{
+    if(event.key==='Escape'){event.preventDefault();doClose();return;}
+    if(event.key!=='Tab')return;
+    const dialog=document.querySelector('#modalOverlay [role="dialog"]'),focusable=[...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')];
+    if(!focusable.length){event.preventDefault();return;}
+    const first=focusable[0],last=focusable[focusable.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  };
+  mtModalCleanup=cleanup;document.addEventListener('keydown',onKeyDown,true);
   document.getElementById('modalCloseBtn').onclick = doClose;
   document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') doClose(); });
   if(opts.onOpen) opts.onOpen(document.getElementById('modalBody'));
+  requestAnimationFrame(()=>{const preferred=document.querySelector('#modalBody [data-modal-cancel]')||document.getElementById('modalCloseBtn');preferred?.focus?.();});
+}
+
+function openConfirmModal({title,message,confirmLabel='Підтвердити',cancelLabel='Скасувати',danger=false}={}){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;resolve(value);closeModal();};
+    openModal(title||'Підтвердження',`<p class="modal-confirm-message">${escapeHtml(message||'')}</p><div class="row wrap"><button type="button" class="btn ${danger?'btn-danger':'btn-accent'}" data-modal-confirm>${escapeHtml(confirmLabel)}</button><button type="button" class="btn" data-modal-cancel>${escapeHtml(cancelLabel)}</button></div>`,{
+      onClose:()=>{if(!settled){settled=true;resolve(false);}closeModal();},
+      onOpen:body=>{const confirmBtn=body.querySelector('[data-modal-confirm]'),cancelBtn=body.querySelector('[data-modal-cancel]');confirmBtn.onclick=()=>{if(confirmBtn.disabled)return;confirmBtn.disabled=true;cancelBtn.disabled=true;finish(true);};cancelBtn.onclick=()=>finish(false);}
+    });
+  });
 }
 
 // Єдиний внутрішній Back-stack. Він зберігає лише короткий serializable state

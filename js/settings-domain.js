@@ -58,12 +58,12 @@ function bindSettingsScreen(){
     saveSettings(); applyTheme();
   });
   // NEW: захист входу
-  document.getElementById('appLockToggle').addEventListener('change', e=>{
+  document.getElementById('appLockToggle').addEventListener('change', async e=>{
     if(e.target.checked){
       e.target.checked = false; // вмикаємо лише після того, як пароль реально встановлено
       openSetPasswordModal(true);
     } else {
-      if(!confirm('Вимкнути захист входу? Пароль і відбиток буде видалено.')){ e.target.checked = true; return; }
+      if(!await openConfirmModal({title:'Вимкнути захист входу?',message:'Пароль і налаштований відбиток буде видалено з цього пристрою.',confirmLabel:'Вимкнути захист',danger:true})){ e.target.checked = true; return; }
       settings.appLockEnabled = false;
       settings.appLockPasswordHash = '';
       settings.appLockPasswordKdf = '';
@@ -213,9 +213,8 @@ function bindSettingsScreen(){
     if(restoreBtn) restoreDeletedTicket(restoreBtn.dataset.deletedAt);
     if(purgeBtn) purgeDeletedTicket(purgeBtn.dataset.deletedAt);
   });
-  document.getElementById('clearAllBtn').addEventListener('click', ()=>{
-    if(!confirm('Очистити ВСЮ базу даних (заявки і зміни)? Цю дію не можна скасувати.')) return;
-    if(!confirm('Ви впевнені? Дані будуть видалені остаточно.')) return;
+  document.getElementById('clearAllBtn').addEventListener('click', async ()=>{
+    if(!await openConfirmModal({title:'Очистити всю базу?',message:'Усі заявки, зміни та локальні фото буде видалено без можливості відновлення. Перед видаленням буде створено доступну локальну резервну копію.',confirmLabel:'Видалити всі дані',danger:true}))return;
     backupLocalData();
     tickets = []; shifts = [];
     saveTickets(); saveShifts();
