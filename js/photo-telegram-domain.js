@@ -15,7 +15,7 @@ async function fetchPhotoFromTelegram(fileId){
       reader.onerror = ()=> resolve(null);
       reader.readAsDataURL(blob);
     });
-  }catch(e){ MTSafeError?.reportError(e,{scope:'telegram-photo-backup'}); return null; }
+  }catch(e){ globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-photo-backup'}); return null; }
 }
 async function collectLocalPhotoData(ticketList){
   const photoData = {};
@@ -87,7 +87,7 @@ function clearAllPhotos(){
   try{
     const tx = photoDb.transaction(PHOTO_STORE, 'readwrite');
     tx.objectStore(PHOTO_STORE).clear();
-  }catch(e){ MTSafeError?.reportError(e,{scope:'telegram-message-delete'}); }
+  }catch(e){ globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-message-delete'}); }
 }
 /* ---- Щоденні автобекапи — самі знімки (важкі, tickets+shifts) лежать в
    IndexedDB (окрема база, як і фото), а легкий список по датах — у
@@ -510,7 +510,7 @@ async function backupTicketToTelegramNow(t){
       }
     }catch(e){
       if(e && e.telegramAmbiguous) throw e;
-      MTSafeError?.reportError(e,{scope:'telegram-json-backup'});
+      globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-json-backup'});
     }
     // NEW: нова версія підтверджено відправлена повністю — тепер
     // безпечно прибрати стару копію. Якщо старої не було (перший бекап
@@ -522,7 +522,7 @@ async function backupTicketToTelegramNow(t){
       backupSucceeded = true;
       t.tgBackupPending = t.tgBackupCleanupMsgIds.length>0;
     }
-  }catch(e){ambiguousDelivery=e?.telegramAmbiguous===true;MTSafeError?.reportError(e,{scope:'telegram-backup'});} // тихо — це лише резервна копія, не критична дія
+  }catch(e){ambiguousDelivery=e?.telegramAmbiguous===true;globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-backup'});} // тихо — це лише резервна копія, не критична дія
   finally{
     if(!backupSucceeded){
       await deleteTicketTelegramMessages(currentAttemptMsgIds, token, chatId);

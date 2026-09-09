@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8'),core=require('../js/tools-core.js'),backup=require('../js/backup-system.js');
-const domain=read('js/tools-domain.js'),map=read('js/tools-map.js'),styles=read('styles.css'),naryad=read('js/ticket-address-domain.js'),backupSource=read('js/backup-system.js'),sw=read('sw.js');
+const domain=read('js/tools-domain.js'),diagnosticNetwork=read('js/tools-diagnostics-network.js'),map=read('js/tools-map.js'),styles=read('styles.css'),naryad=read('js/ticket-address-domain.js'),backupSource=read('js/backup-system.js'),sw=read('sw.js');
 
 // Map-first layout, compact presentation filters and a single network-point store.
 const mapHtml=domain.slice(domain.indexOf('function toolsMapHtml'),domain.indexOf('function toolsOpenPointEditorFromMap'));
@@ -63,13 +63,13 @@ assert.doesNotMatch(backupSource,/offlineMap|pmtiles/i,'backup payload has no of
 
 // Continuous availability check is explicit, bounded and honest.
 assert.match(domain,/Безперервна перевірка доступності/);assert.match(domain,/не ICMP ping/);
-assert.match(domain,/Справжній ICMP ping до IP-адреси недоступний у браузерній PWA/);
+assert.match(diagnosticNetwork,/Справжній ICMP ping до IP-адреси недоступний у браузерній PWA/);
 assert.match(domain,/CORS\/браузерне блокування/);assert.doesNotMatch(domain,/packet loss|втрата пакетів/i);
-assert.match(domain,/setTimeout\(toolsConnectionCheckTick,1000\)/);
-assert.match(domain,/state\.log=state\.log\.slice\(0,20\)/);
+assert.match(diagnosticNetwork,/setTimeout\(toolsConnectionCheckTick,1000\)/);
+assert.match(diagnosticNetwork,/state\.log=state\.log\.slice\(0,20\)/);
 assert.match(domain,/toolsStopConnectionCheck/);assert.match(read('js/ui-orchestration.js'),/if\(tab!=='tools'/);
-assert.doesNotMatch(domain,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
+assert.doesNotMatch(diagnosticNetwork,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
 
-assert.match(sw,/maister-treker-v66-runtime-54/);
-assert.match(read('app.js'),/v91\.17 · 2026-09-08/);
+assert.match(sw,/maister-treker-v66-runtime-55/);
+assert.match(read('app.js'),/v91\.18 · 2026-09-09/);
 console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and honest availability check');

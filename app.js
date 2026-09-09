@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.17 · 2026-09-08';
+const APP_VERSION = 'v91.18 · 2026-09-09';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -302,7 +302,7 @@ async function registerBiometricCredential(){
     saveSettings();
     return true;
   }catch(err){
-    MTSafeError?.reportError(err,{scope:'app-lock-webauthn',userMessage:'Не вдалося налаштувати відбиток.'});
+    globalThis.MTSafeError?.reportError?.(err,{scope:'app-lock-webauthn',userMessage:'Не вдалося налаштувати відбиток.'});
     showToast('Не вдалося налаштувати відбиток — спробуйте ще раз або лишіть лише пароль');
     return false;
   }
@@ -397,7 +397,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'})
       .then((registration)=>registration.update())
-      .catch(err=>MTSafeError?.reportError(err,{scope:'service-worker-update',userMessage:'Не вдалося оновити застосунок.'}));
+      .catch(err=>globalThis.MTSafeError?.reportError?.(err,{scope:'service-worker-update',userMessage:'Не вдалося оновити застосунок.'}));
   });
 }
 

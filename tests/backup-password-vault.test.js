@@ -13,7 +13,7 @@ const elements={
 const context={
   console,crypto:webcrypto,TextEncoder,TextDecoder,Blob,btoa:value=>Buffer.from(value,'binary').toString('base64'),atob:value=>Buffer.from(value,'base64').toString('binary'),setTimeout:()=>1,clearTimeout:()=>{},window:{},
   URL:{createObjectURL:()=> 'blob:test',revokeObjectURL:()=>{}},
-  prompt:()=>prompts.length?prompts.shift():null,confirm:()=>true,showToast:()=>{},
+  prompt:()=>prompts.length?prompts.shift():null,confirm:()=>true,openConfirmModal:async()=>true,showToast:()=>{},
   document:{getElementById:id=>elements[id]||null,createElement:()=>({href:'',download:'',click(){}})},
   localStorage:{getItem:key=>local.get(key)||null,setItem:(key,value)=>local.set(key,String(value)),removeItem:key=>local.delete(key)},
   backupDbGet:async key=>vault.get(key)||null,
