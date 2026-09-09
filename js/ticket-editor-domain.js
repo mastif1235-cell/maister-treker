@@ -1,6 +1,7 @@
 /* Canonical ticket calculator/editor workflows. */
 
 function hasUnsavedChanges(){
+  if(!formTouchedByUser) return false;
   const s = calcState;
   if(s.signal) return true;
   if(s.otherNote) return true;
@@ -85,6 +86,7 @@ function restoreDraftIfAny(){
   if(!ok){ cleanupUnsavedDraftPhotos(draft); clearDraft(); return; }
   editingTicketId = draft.editingTicketId || null;
   loadTicketIntoForm(draft.state);
+  formTouchedByUser = true; // відновлена чернетка вже містить незбережені користувацькі зміни
   if(Array.isArray(draft.originalPhotoKeys)) calcOriginalPhotoKeys = draft.originalPhotoKeys.slice();
   if(editingTicketId){
     document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
@@ -145,6 +147,7 @@ function resetCalcForm(presetDate, overrides){
   // ціну виклику/тариф перерахуємо під фактичний тип, а не під той, для якого
   // їх порахував blankCalcState() ще до застосування overrides.
   if(overrides && overrides.type){ applyDefaultCallFee(); applyDefaultTariff(); }
+  formTouchedByUser = false; // програмні defaults/render не є користувацькою правкою
 }
 
 function loadTicketIntoForm(t){
@@ -222,10 +225,11 @@ function loadTicketIntoForm(t){
   editingTicketId = t.id;
   feeIsAutoDefault = false; // NEW: редагуємо існуючу заявку — ціну вже введено, автопідстановку вимикаємо
   tariffIsAutoDefault = false;
-  formTouchedByUser = true; // NEW: це або реальне редагування наявної заявки, або відновлення чернетки — в обох випадках це вже "справжній" вміст, а не щойно підставлені за замовчуванням дані
+  formTouchedByUser = false; // саме відкриття збереженої заявки ще не є ручною правкою
   document.getElementById('saveTicketBtn').textContent = 'Оновити заявку';
   { const cancelBtn = document.getElementById('cancelEditBtn'); cancelBtn.textContent = 'Скасувати редагування'; cancelBtn.classList.remove('hidden'); } // NEW: скидаємо підпис — міг лишитись "Назад до пошуку" від попереднього створення нової заявки з профілю
   fillFormFromState();
+  formTouchedByUser = false; // програмне заповнення збереженими даними не робить форму dirty
 }
 
 /* Розбирає текст, вставлений з Viber/Telegram від диспетчера, на логін і пароль.

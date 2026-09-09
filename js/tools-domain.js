@@ -66,15 +66,17 @@ function toolsHomeHtml(){
 function toolsBackButton(){return appNavigationCanGoBack()?appBackButtonHtml(toolsView==='offline'&&toolsOfflineReturnSettings?'Налаштування':'Назад'):'';}
 function toolsNavigate(view){
   const from=toolsView;if(from===view)return renderToolsScreen(view);
-  appNavigationPush(`tools-${view}`,()=>{toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
+  if(from==='map'&&view!=='map')MTOfflineMap?.resetViewMode?.();
+  appNavigationPush(`tools-${view}`,()=>{if(toolsView==='map')MTOfflineMap?.resetViewMode?.();toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
 }
 function toolsOpenRootFromTab(){
   toolsStopConnectionCheck(false);toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();MTToolsMap?.destroyMap?.();
+  MTOfflineMap?.resetViewMode?.();
   toolsMapFullscreen=false;document.body.classList.remove('tools-map-fullscreen-open');
   toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';
 }
-function toolsLeaveOfflineSettings(dropNavigation=true){if(toolsView!=='offline'&&!toolsOfflineReturnSettings)return;MTToolsMap?.destroyMap?.();toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';if(dropNavigation)appNavigationDrop('tools-offline-settings');}
-function openOfflineMapSettings(){toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsLeaveOfflineSettings(false);switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
+function toolsLeaveOfflineSettings(dropNavigation=true){if(toolsView!=='offline'&&!toolsOfflineReturnSettings)return;MTToolsMap?.destroyMap?.();MTOfflineMap?.resetViewMode?.();toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';if(dropNavigation)appNavigationDrop('tools-offline-settings');}
+function openOfflineMapSettings(){MTOfflineMap?.resetViewMode?.();toolsOfflineReturnSettings=true;appNavigationPush('tools-offline-settings',()=>{toolsLeaveOfflineSettings(false);switchTab('settings');});toolsView='offline';switchTab('tools');renderToolsScreen('offline');}
 function toolsContextHtml(){
   return toolsDiagnosticContext?.address
     ? `<div class="card" style="font-size:13px;"><div class="row wrap" style="justify-content:space-between;align-items:center;"><strong>📍 ${escapeHtml(toolsDiagnosticContext.address)}</strong><button type="button" class="btn btn-sm" data-tools-action="reset-diagnostic-address">✕ Скинути адресу</button></div><div style="color:var(--text-dim);margin-top:3px;">Результат збережеться лише після вашого підтвердження.</div></div>`
@@ -338,7 +340,7 @@ function toolsSaveOfflineArea(){
 function toolsEditOfflineArea(id){const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;toolsOfflineEditingAreaId=id;toolsOfflinePendingBounds={...area};renderToolsScreen('offline');}
 function toolsDeleteOfflineArea(id){const areas=toolsLoadOfflineAreas(),area=areas.find(item=>item.id===id);if(!area||!confirm(`Видалити лише область «${area.name}»? Встановлений PMTiles та інші дані залишаться.`))return;toolsSaveOfflineAreas(areas.filter(item=>item.id!==id));if(toolsOfflineEditingAreaId===id){toolsOfflineEditingAreaId='';toolsOfflinePendingBounds=null;}renderToolsScreen('offline');showToast('Область видалено. Дані та PMTiles не змінено');}
 function toolsShowOfflineArea(id){const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;MTToolsMap.drawBounds(area);document.getElementById('toolsOfflineSelectMap')?.scrollIntoView({behavior:'smooth',block:'center'});}
-function toolsOpenOfflineMap(){MTOfflineMap.setMode('offline');toolsNavigate('map');}
+function toolsOpenOfflineMap(){MTOfflineMap.setViewMode('offline');toolsNavigate('map');}
 function toolsImportOfflineArea(id){toolsOfflineImportAreaId=id;document.getElementById('toolsOfflineMapFile')?.click();}
 function toolsExportOfflineArea(id){
   const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;
@@ -683,7 +685,7 @@ function bindToolsScreen(){
   });
   root.addEventListener('change',event=>{
     if(event.target.id==='toolsOfflineMapFile'){const file=event.target.files?.[0];event.target.value='';toolsPrepareOfflineMap(file);}
-    if(event.target.id==='toolsMapBaseMode'){MTOfflineMap.setMode(event.target.value);renderToolsScreen(toolsView);}
+    if(event.target.id==='toolsMapBaseMode'){event.target.value==='offline'?MTOfflineMap.setViewMode('offline'):MTOfflineMap.setMode(event.target.value);renderToolsScreen(toolsView);}
   });
   root.addEventListener('toggle',event=>{const street=event.target.closest?.('[data-network-street]');if(street){street.open?toolsNetworkOpenStreets.add(street.dataset.networkStreet):toolsNetworkOpenStreets.delete(street.dataset.networkStreet);return;}const city=event.target.closest?.('[data-network-city]');if(city)city.open?toolsNetworkOpenCities.add(city.dataset.networkCity):toolsNetworkOpenCities.delete(city.dataset.networkCity);},true);
   root.addEventListener('input',event=>{if(event.target.id==='toolsNetworkSearch'){toolsNetworkSearch=event.target.value;renderToolsScreen('map');const input=document.getElementById('toolsNetworkSearch');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}});

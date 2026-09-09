@@ -10,6 +10,7 @@
   const SLOTS=['map-a.pmtiles','map-b.pmtiles'];
   const META_KEY='mtOfflineMapMetaV1';
   const MODE_KEY='mtOfflineMapModeV1';
+  let viewMode='';
   const VECTOR_TILE_TYPE=1;
   const RASTER_TILE_TYPES=new Set([2,3,4,5]);
 
@@ -42,8 +43,11 @@
   }
   function writeMeta(value){local()?.setItem(META_KEY,JSON.stringify(value));}
   function clearMeta(){local()?.removeItem(META_KEY);}
-  function getMode(){const value=local()?.getItem(MODE_KEY);return ['auto','online','offline'].includes(value)?value:'auto';}
-  function setMode(value){const next=['auto','online','offline'].includes(value)?value:'auto';local()?.setItem(MODE_KEY,next);return next;}
+  function storedMode(){const value=local()?.getItem(MODE_KEY);return ['auto','online','offline'].includes(value)?value:'auto';}
+  function getMode(){return viewMode||storedMode();}
+  function setMode(value){const next=['auto','online','offline'].includes(value)?value:'auto';viewMode='';local()?.setItem(MODE_KEY,next);return next;}
+  function setViewMode(value){viewMode=value==='offline'?'offline':'';return getMode();}
+  function resetViewMode(){viewMode='';if(storedMode()==='offline')setMode('auto');return getMode();}
   async function getDirectory(create=true){
     if(!storage()?.getDirectory)throw new Error('OPFS_UNAVAILABLE');
     const rootDirectory=await storage().getDirectory();
@@ -112,5 +116,5 @@
     try{const directory=await getDirectory(false);await removeSlot(directory,meta.activeSlot);clearMeta();return true;}catch(_e){return false;}
   }
 
-  return{DIRECTORY,META_KEY,MODE_KEY,VECTOR_TILE_TYPE,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,readMeta};
+  return{DIRECTORY,META_KEY,MODE_KEY,VECTOR_TILE_TYPE,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,setViewMode,resetViewMode,readMeta};
 });

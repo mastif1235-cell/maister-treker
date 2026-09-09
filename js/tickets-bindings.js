@@ -183,6 +183,9 @@ function bindCalculatorScreen(){
   // чи вважати її чернеткою (див. formTouchedByUser і saveDraftToLocalStorage)
   document.getElementById('calcForm').addEventListener('input', ()=>{ formTouchedByUser = true; });
   document.getElementById('calcForm').addEventListener('change', ()=>{ formTouchedByUser = true; });
+  document.getElementById('calcForm').addEventListener('click', event=>{
+    if(event.target.closest('.mixed-item-toggle,.photo-remove,.aw-remove,[data-calctag],[data-master-letter],[data-address-suggestion]')) formTouchedByUser = true;
+  });
   // Автоматично виділяємо весь вміст числового поля при фокусі —
   // щоб не доводилось вручну видаляти «0» перед введенням ціни
   document.querySelectorAll('#calcForm input[type="number"]').forEach(el=>{
@@ -339,6 +342,7 @@ async function startMacScan(){
     btn.innerHTML = `<div style="font-weight:700;">${mac}</div><div style="font-size:11.5px; color:var(--text-dim);">як відскановано: ${raw}</div>`;
     btn.addEventListener('click', ()=>{
       document.getElementById('f_mac').value = mac;
+      formTouchedByUser = true;
       showToast(`Обрано: ${mac}`);
       stopMacScan();
     });

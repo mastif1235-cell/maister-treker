@@ -18,7 +18,7 @@ assert.match(styles,/\.tools-offline-install\{[^}]*min-height:46px/);
 assert.match(adapter,/OBJECT_ICON_SCALE=\{min:\.78,max:1\.35\}/,'object markers have readable Leaflet-parity scaling');
 assert.match(adapter,/markerElement\('Моє місце',true\)/,'GPS remains a separate configurable DOM marker');
 assert.ok(48/2*1.35<40,'largest rendered object pin stays smaller than the default 40px GPS pin');
-assert.match(source,/function toolsOpenOfflineMap\(\)\{MTOfflineMap\.setMode\('offline'\);toolsNavigate\('map'\);\}/,'Open activates the installed map');
+assert.match(source,/function toolsOpenOfflineMap\(\)\{MTOfflineMap\.setViewMode\('offline'\);toolsNavigate\('map'\);\}/,'Open activates the installed map without persisting Offline as the default');
 const context={module:{exports:{}},exports:{},console,Date,Math};vm.runInNewContext(coreSource,context);const core=context.module.exports;
 const first={name:'Дніпро',minLat:48,minLng:34,maxLat:49,maxLng:36};
 assert.equal(core.offlineAreaDuplicate(first,{...first,name:'дніпро'}),true,'same normalized name warns');
