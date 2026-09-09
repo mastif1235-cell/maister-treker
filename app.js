@@ -302,7 +302,7 @@ async function registerBiometricCredential(){
     saveSettings();
     return true;
   }catch(err){
-    console.error('WebAuthn registration failed:', err);
+    MTSafeError?.reportError(err,{scope:'app-lock-webauthn',userMessage:'Не вдалося налаштувати відбиток.'});
     showToast('Не вдалося налаштувати відбиток — спробуйте ще раз або лишіть лише пароль');
     return false;
   }
@@ -397,7 +397,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'})
       .then((registration)=>registration.update())
-      .catch(err=>console.error('SW registration failed', err));
+      .catch(err=>MTSafeError?.reportError(err,{scope:'service-worker-update',userMessage:'Не вдалося оновити застосунок.'}));
   });
 }
 

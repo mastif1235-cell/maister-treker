@@ -189,7 +189,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const generation=++styleGeneration;
     if(kind==='offline'){
       try{const prepared=await offlineStyle();if(generation!==styleGeneration)return false;currentBase='offline';map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
-      catch(_error){if(generation!==styleGeneration)return false;setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
+      catch(error){if(generation!==styleGeneration)return false;root.MTSafeError?.reportError?.(error,{scope:'map-offline-style'});setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
     }else if(kind==='satellite'){
       if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн.');return false;}
       const key=root.MTMapTilerLocal?.getKey?.();if(!key){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
@@ -209,7 +209,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     }
     if(kind!=='offline'){picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'');return true;}
     try{const prepared=await offlineStyle();picker.map.setStyle(prepared.style);setStatus(pickerStatusNode,'Офлайн-карта активна.');return true;}
-    catch(_error){picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'Офлайн-карта не встановлена. Залишено звичайну карту.');return false;}
+    catch(error){root.MTSafeError?.reportError?.(error,{scope:'map-picker-offline-style'});picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'Офлайн-карта не встановлена. Залишено звичайну карту.');return false;}
   };
   const handleConnectivityChange=()=>{
     if(!map||(root.MTOfflineMap?.getMode?.()||'auto')!=='auto')return false;
