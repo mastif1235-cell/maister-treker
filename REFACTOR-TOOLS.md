@@ -23,8 +23,19 @@ New executable regression covers create/edit/cancel/delete, grouping/search, per
 
 ## Offline UI checkpoint
 
-`tools-offline-ui.js` owns ten unchanged functions for bounds labels/selection, area form/list rendering and save/export, PMTiles import confirmation/quota messages/install and explicit archive deletion.
+`tools-offline-ui.js` owns nine unchanged functions for bounds labels/selection, area form/list rendering and save, PMTiles import confirmation/quota messages/install and explicit archive deletion.
 State remains in tools-domain: pending bounds, area editing/import IDs, return settings and mode. Existing area storage helpers/keys and the compact edit/delete/show/import bridge functions stay there as well, preserving the surrounding context of protected `toolsOpenOfflineMap`.
 The new file only delegates bytes/storage to the unchanged MTOfflineMap API (including safe A/B replacement). No OPFS, format, registry, connectivity or mode implementation moves.
 Its async callbacks and modal listeners are unchanged. Existing binder dispatches to the same globals; source order is domain → network points → offline UI → diagnostics network → bootstrap.
 Executable regression covers bounds selection, area create/edit/delete and definition export, PMTiles confirm/cancel/quota/failure/success, unchanged keys and archive retention during area deletion. The existing OPFS safe-replacement tests also pass.
+
+## Diagnostics UI checkpoint and final boundaries
+
+`tools-diagnostics-ui.js` owns seven unchanged functions: result/speed/screen/history rendering, address attachment modal, result save and copy. Reads existing context/result/run time/saved flag, speed status/controller, tickets/history and calculator draft; explicit save writes the same history/draft and saved flag through existing persistence APIs with identical rollback. It creates only the original modal-scoped attachment listeners.
+Network execution, timers, cancellation and fetch remain in tools-diagnostics-network.js. Session open/close/reset, suspended form inputs, calculator return and all shared state remain in tools-domain.js. No additional context or wrapper state is introduced.
+Executable regression covers opening/reopening without saved state or duplicate listeners, save-once/history, copy, address reset, exit and calculator/photo-reference return.
+
+All modules are declarations-only and loaded in order: domain → network points → offline UI → diagnostics UI → existing diagnostics network. Bootstrap still binds once on DOMContentLoaded.
+Map rendering, selection/GPS/pickers, ticket-linking/navigation, list grouping, storage helpers and the six protected functions are deliberately retained. Further splitting these small controller bridges would scatter shared lifecycle ownership.
+
+`toolsContextHtml` and `toolsExportOfflineArea` also remain in the domain, because they provide surrounding context for the production patch. The export was returned to this owner after a read-only patch check exposed a context-only conflict. After this boundary adjustment, the complete production tools diff d493138..2c0a261 passes `git apply --check` against LAB without applying it. Tools-only future patch conflict: NONE in this checked state. The editor part of that production fix remains for the later independent integration review.

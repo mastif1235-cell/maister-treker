@@ -77,10 +77,3 @@ function toolsSaveOfflineArea(){
     document.getElementById('toolsOfflineDuplicateCancel').onclick=closeModal;
   }});
 }
-
-function toolsExportOfflineArea(id){
-  const area=toolsLoadOfflineAreas().find(item=>item.id===id);if(!area)return;
-  const payload={format:'master-tracker-offline-area-v1',name:area.name,bounds:{minLat:area.minLat,minLng:area.minLng,maxLat:area.maxLat,maxLng:area.maxLng},zoom:{min:area.minZoom,max:area.maxZoom}};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');
-  link.href=url;link.download=`master-tracker-area-${String(area.name||'area').replace(/[^a-zа-яіїє0-9_-]+/gi,'-').replace(/^-|-$/g,'')||'area'}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);showToast('Параметри області експортовано. Це не файл карти.');
-}
