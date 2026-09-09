@@ -4,8 +4,9 @@ const merged=core.mergeDiagnosticResults({online:true,summaryStatus:'ok',interne
 assert.equal(merged.publicIp,'1.2.3.4');assert.equal(merged.downloadMbps,120);assert.equal(merged.uploadMbps,45);assert.equal(merged.resources.length,2);
 const partial=core.mergeDiagnosticResults({online:true,summaryStatus:'ok',internetStatus:'ok',dnsStatus:'indirect'},{speedStatus:'error',summaryStatus:'warning'});assert.equal(partial.summaryStatus,'warning');assert.equal(partial.speedStatus,'error');
 const domain=fs.readFileSync(path.join(__dirname,'..','js','tools-domain.js'),'utf8');
-const run=domain.slice(domain.indexOf('async function runToolsDiagnostics()'),domain.indexOf('async function toolsRunSpeedTest()'));
+const network=fs.readFileSync(path.join(__dirname,'..','js','tools-diagnostics-network.js'),'utf8');
+const run=network.slice(network.indexOf('async function runToolsDiagnostics()'),network.indexOf('async function toolsRunSpeedTest()'));
 assert.match(run,/runBrowserDiagnostics/);assert.match(run,/runBrowserSpeedTest/);assert.match(run,/mergeDiagnosticResults/);assert.match(run,/toolsSaveCurrentDiagnostic\(\)/,'combined run saves once');assert.equal((run.match(/toolsSaveCurrentDiagnostic\(\)/g)||[]).length,1);
 assert.match(run,/signal\.aborted\|\|speed\.speedStatus==='cancelled'/,'cancel does not save fake success');
-assert.match(domain,/Браузерна оцінка швидкості/);assert.doesNotMatch(domain,/data-tools-action="run-speed-test"/,'separate speed launch is removed from UI');
+assert.match(domain+network,/Браузерна оцінка швидкості/);assert.doesNotMatch(domain,/data-tools-action="run-speed-test"/,'separate speed launch is removed from UI');
 console.log('PASS main diagnostics merges browser speed into one partial-safe, cancel-safe history flow');
