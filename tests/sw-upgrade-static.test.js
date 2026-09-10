@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-57'/,'installed-PWA cache revision is unique for the v91.19 display hotfix');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-58'/,'installed-PWA cache revision is unique for the v91.19 autocomplete hotfix');
 assert.match(appSource,/APP_VERSION\s*=\s*'v91\.19 · 2026-09-10'/,'canonical release identity is v91.19');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/let serviceWorkerRefreshing=false[\s\S]*if\(serviceWorkerRefreshing\) return;[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'controllerchange saves draft and allows one controlled reload');
