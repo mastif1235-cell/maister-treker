@@ -1,5 +1,5 @@
 {
-  "baseline": "ad2ea6c12374cb110fa48be9693b02205bdd0ef3",
+  "baseline": "2c0a26156b9dd994010b7f5cb6c7d0e1ff11f787",
   "protected": [
     "toolsNavigate",
     "toolsOpenRootFromTab",
@@ -52,10 +52,10 @@
     "toolsPhotoOwnerRecords": "e6260eb30fdd70b7f49203b63a3636bf11b976afbaaa8defe8a22bd23c9756a1",
     "toolsHomeHtml": "ec0f28ff54c54c1ccd7849657955372fcf0c6b829c3bae14489176d8fb4b7766",
     "toolsBackButton": "0354be3bf10dce49c5797e1fe29845ee660442ddf03069692719698ac46b575f",
-    "toolsNavigate": "648fbb9114d264f5b9e97390fa750d92acbebac453ea4b1344d26e3929b6d25e",
-    "toolsOpenRootFromTab": "066584e2af2bd54e1fd382940ec017ddeb1000547efe984a296c7e3408689bcd",
-    "toolsLeaveOfflineSettings": "61e91037ac5b7c14b176360b8c8af783303a026fb20035091468d158abc0b1c0",
-    "openOfflineMapSettings": "daebe99b7730b557f2f5e5bce8a9bfa44f57c54ba9a64caf34ddf5f903f333d6",
+    "toolsNavigate": "e8ab5384b3fbde2f212314bda3f37feca4a141fbca7a351cd4db7e5a850c7d09",
+    "toolsOpenRootFromTab": "170d207fd302889726f42834595118a0156973ca9342f9d89fe22b511b9fb3b1",
+    "toolsLeaveOfflineSettings": "047ea3df6c6ffd2a61b75903a52d69c932f40e9e8919a91645a6397bb9378f32",
+    "openOfflineMapSettings": "0b589a55b365225c2fabb2af257d7abe6c72c88c2d17450a7ce49726572f8175",
     "toolsContextHtml": "bf7162f9a73f31d7a4808bf861dfc1af239501ff468c045fb29b9310d8df5230",
     "toolsDiagnosticResultsHtml": "554dcc26cc54efccee313b701bc5bfe24bb2144238cecb85822683f0e9b4adf7",
     "toolsSpeedTestHtml": "8122aed8e8f48b49adc9f60a1e3e02470c93aa26410f9fa90cd13d333e1ec754",
@@ -94,7 +94,7 @@
     "toolsEditOfflineArea": "cc676a7e11500e574b8932cd01da97b855cd826f540f8eb46dfa3515ba88e87f",
     "toolsDeleteOfflineArea": "fa350afa5edf09734ccd11ad3dc3c67fe8fcedbef7be93085923cd774f62488e",
     "toolsShowOfflineArea": "f464675dd28c33b33d241ebc89244319b4335cbc78b7140857b8fe488911f99b",
-    "toolsOpenOfflineMap": "09dbfd1cb664c45ecf0b84779ce38861db46a667d01096dd633baed182e82c7c",
+    "toolsOpenOfflineMap": "f4ec0366a20d17ee4ac73aaacd114419078c85efc5a25885c7d5fd057a21e66f",
     "toolsImportOfflineArea": "2a96b2ad488cb234ff5d103fd8f29fb14ec118a9e433846b2257d2e533b02991",
     "toolsExportOfflineArea": "ed5be8d5531fa73e657c2e7b5cc4003a0c3e94ae4f2824e25b03d536b9326d05",
     "toolsOpenProfileById": "fd97ede134cfad3f4c7265d68aa424d71c8868a85747b7554f4797dc9c75f790",
@@ -130,6 +130,6 @@
     "toolsHighlightNetworkPointInList": "5d3c2031695a0ca1c9574f4f0562b39a51cca184b2277558d8be59a86c64e616",
     "toolsFocusNetworkPoint": "744b75a10c19a20ca7b2e6c4e9c63f2322a3594ffce917520193f730fd0a2a36",
     "renderToolsScreen": "afe100b42134f7cd365b9a9f489b1b8cdbd09de1666d8614a7e7e29ee2e9e1b2",
-    "bindToolsScreen": "408d430ae7d4ab7b27c40b9dadeb1ff13d418a09aac589b08b14ddbe14734e65"
+    "bindToolsScreen": "8f74868f2087c760a3afe407722b50914a136c7e58a949e1a523c3f619f758c9"
   }
 }

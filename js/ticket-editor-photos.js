@@ -77,4 +77,3 @@ function handlePhotoFile(file){
   };
   reader.readAsDataURL(file);
 }
-

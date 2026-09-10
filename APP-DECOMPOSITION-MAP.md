@@ -67,8 +67,8 @@ Cross-domain calls that must remain explicit: ticket share uses photo/Telegram h
 - Each block adds a static single-owner/load-order check and targeted behavior tests where a pure seam exists.
 - Storage keys/schema and user-visible behavior remain unchanged.
 
-## Future responsibility boundaries (refactor LAB)
+## Future responsibility boundaries
 
 Do not add new, substantial independent features back into the large domain files. Give a feature with a distinct responsibility an appropriate domain/controller/storage/render owner from the start. Keep shared state ownership explicit; do not duplicate it or introduce synchronization wrappers merely to shorten a file.
 
-Prefer cohesive modules with meaningful ownership over microfiles containing a few unrelated functions. The LAB tools boundaries and classic-script dependencies are documented in REFACTOR-TOOLS.md. This is a documentation rule, not a new framework, bundler or lint requirement.
+Prefer cohesive modules with meaningful ownership over microfiles containing a few unrelated functions. Keep classic-script dependencies and load order explicit until the project adopts a separately reviewed module architecture. This is a documentation rule, not a new framework, bundler or lint requirement.
