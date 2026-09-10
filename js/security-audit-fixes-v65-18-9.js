@@ -7,8 +7,6 @@
    before it can reach an HTML attribute.
    ===================================================================== */
 
-  const SECURITY_AUDIT_RELEASE_LABEL = 'v91.18 · 2026-09-09';
-
 function securityAuditSafePhotoUrl(value){
   if(typeof value !== 'string') return null;
   const v = value.trim();
@@ -44,7 +42,7 @@ if(typeof renderSettingsScreen === 'function'){
   renderSettingsScreen = function(){
     const result = securityAuditOriginalRenderSettings.apply(this, arguments);
     const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${SECURITY_AUDIT_RELEASE_LABEL}`;
+    if(label) label.textContent = `Версія застосунку: ${APP_VERSION}`;
     return result;
   };
 }

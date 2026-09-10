@@ -1,11 +1,11 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-56'/,'installed-PWA cache revision is unique for v91.19');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-57'/,'installed-PWA cache revision is unique for the v91.19 display hotfix');
 assert.match(appSource,/APP_VERSION\s*=\s*'v91\.19 · 2026-09-10'/,'canonical release identity is v91.19');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/let serviceWorkerRefreshing=false[\s\S]*if\(serviceWorkerRefreshing\) return;[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'controllerchange saves draft and allows one controlled reload');
-assert.match(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL\s*=\s*'v91\.18 · 2026-09-09'/);
+assert.doesNotMatch(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL/);
 const cachedNavigation={kind:'cached-navigation'},cachedScript={kind:'cached-script'};
 const cache={addAll:async assets=>added.push(...assets),put:async(request,response)=>puts.push([request,response])};
 const caches={open:async()=>cache,keys:async()=>['maister-treker-v66-runtime-42','unrelated-cache'],delete:async key=>{deleted.push(key);return true;},match:async request=>{const value=String(request?.url||request);if(value.includes('app.js'))return cachedScript;if(value.includes('index.html')||value.endsWith('/'))return cachedNavigation;return null;}};
