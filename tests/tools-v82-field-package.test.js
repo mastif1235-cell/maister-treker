@@ -70,6 +70,6 @@ assert.match(diagnosticNetwork,/state\.log=state\.log\.slice\(0,20\)/);
 assert.match(domain,/toolsStopConnectionCheck/);assert.match(read('js/ui-orchestration.js'),/if\(tab!=='tools'/);
 assert.doesNotMatch(diagnosticNetwork,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
 
-assert.match(sw,/maister-treker-v66-runtime-55/);
-assert.match(read('app.js'),/v91\.18 · 2026-09-09/);
+assert.match(sw,/maister-treker-v66-runtime-56/);
+assert.match(read('app.js'),/v91\.19 · 2026-09-10/);
 console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and honest availability check');
