@@ -8,6 +8,7 @@
     ticketDraft:{key:'ticketDraft',owner:'ticket-editor-domain',persistence:'temporary',secret:true},
     dailyMasters:{key:'dailyMastersDefault',owner:'ticket-editor-domain',persistence:'daily',secret:false},
     pendingTickets:{key:'pendingTicketsFallback',owner:'ticket-state-storage',persistence:'emergency',secret:true},
+    pendingShifts:{key:'pendingShiftsFallback',owner:'storage-orchestration',persistence:'emergency',secret:false},
     diagnostics:{key:'mtSavedDiagnosticsV1',owner:'tools-domain',persistence:'persistent',secret:true},
     networkPoints:{key:'mtNetworkPointsV1',owner:'tools-domain',persistence:'persistent',secret:true},
     toolsDraft:{key:'mtToolsCalculatorDraftV1',owner:'tools-domain',persistence:'temporary',secret:true},

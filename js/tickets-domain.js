@@ -60,8 +60,26 @@ async function retrySyncQueue(){
   } finally {
     retryBtn.disabled = false;
   }
+  // NEW: якщо не пройшли саме зміни — робимо безпечну read-only пробу й
+  // показуємо підказку замість загального «залишилось не синхронізовано».
+  // Проба лише пояснює ситуацію: вона НЕ керує retry і не може вимкнути
+  // синхронізацію; будь-який її збій просто лишає звичайне повідомлення.
+  let reason='';
+  if(ok && typeof resetShiftsSyncConfigProbe==='function') resetShiftsSyncConfigProbe();
+  if(!ok){
+    try{
+      const pending=syncEngine.core.pending(syncEngine.state);
+      if(typeof shiftsOnlyPending==='function' && shiftsOnlyPending(pending) && typeof probeShiftsSyncConfig==='function'){
+        const probe=await probeShiftsSyncConfig({force:true});
+        reason=typeof shiftsSyncConfigUserMessage==='function' ? shiftsSyncConfigUserMessage(probe.status) : '';
+      }
+    }catch(error){
+      globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-config-probe-ui'});
+      reason='';
+    }
+  }
   renderTicketsScreen();
-  showToast(ok ? 'Усе синхронізовано ✅' : `Залишилось не синхронізовано: ${syncEngine.pendingCount()}`);
+  showToast(ok ? 'Усе синхронізовано ✅' : (reason || `Залишилось не синхронізовано: ${syncEngine.pendingCount()}`), reason ? 6000 : 2200);
 }
 
 function ticketFromConflictServer(serverTicket, current){
@@ -254,8 +272,8 @@ function toggleTicketCardPhoto(btn, scopeEl){
 function openTicketPhotoFullscreen(src){
   openModal('Фото', `<img src="${src}" style="width:100%; border-radius:10px;">`, {});
 }
-function deleteTicket(id){
-  if(!confirm('Видалити цю заявку?')) return;
+async function deleteTicket(id){
+  if(!await openConfirmModal({title:'Видалити цю заявку?',message:'Заявку буде прибрано зі списку та з Google-таблиці. Відновити її можна буде з кошика (Налаштування → Кошик).',confirmLabel:'Видалити',danger:true})) return;
   const idx = tickets.findIndex(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
   if(idx===-1) return;
   const t = tickets[idx];
@@ -332,10 +350,10 @@ function restoreDeletedTicket(deletedAt){
   showToast('Заявку відновлено');
 }
 
-function purgeDeletedTicket(deletedAt){
+async function purgeDeletedTicket(deletedAt){
   const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
   if(idx===-1) return;
-  if(!confirm('Видалити заявку з кошика остаточно? Відновити після цього буде неможливо.')) return;
+  if(!await openConfirmModal({title:'Видалити заявку з кошика остаточно?',message:'Відновити після цього буде неможливо; фото цієї заявки також буде видалено з пристрою.',confirmLabel:'Видалити назавжди',danger:true})) return;
   const t = deletedTickets[idx];
   deleteAllTicketPhotos(t); // NEW: усі фото (photos), не лише перше
   deletedTickets.splice(idx,1);

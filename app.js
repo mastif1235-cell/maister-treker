@@ -16,7 +16,9 @@ if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для вс�
 // дані підвантажуються асинхронно з IndexedDB у init() (loadTicketsFromIdb),
 // до першого рендеру екрану заявок ще встигає бути порожній масив.
 let tickets  = [];
-let shifts   = loadJSON('shifts', []);
+// loadShiftsWithFallback() (js/local-state-storage.js) підхоплює аварійну копію
+// змін, якщо попередній запис у localStorage не вдався.
+let shifts   = typeof loadShiftsWithFallback==='function' ? loadShiftsWithFallback() : loadJSON('shifts', []);
 // Ревізії відрізняють «стан на початку cloud load» від локальних змін,
 // зроблених користувачем, поки мережевий запит ще очікує відповідь.
 let ticketsRevision = 0;
@@ -344,6 +346,12 @@ async function init(){
   syncEngine = await new MTSyncEngineRuntime.Engine({
     transport:syncTransport,
     online:()=>navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
+    // Зараз shiftsSyncAutoRetryBlocked() завжди повертає false: сервер не віддає
+    // окремого коду «немає таблиці змін», тож жодна серверна помилка не вимикає
+    // автоматичні повтори смен — вони працюють як звичайно. Хук лишається точкою
+    // розширення: якщо явний сигнал конфігурації колись з'явиться, блокування
+    // вмикатиметься саме тут. Заявки це не зачіпає.
+    retryPolicy:(pending)=>!(typeof shiftsSyncAutoRetryBlocked==='function' && shiftsSyncAutoRetryBlocked(pending)),
     onChange:()=>{
       if(document.getElementById('syncQueueBanner')) renderSyncQueueBanner();
       if(document.getElementById('screen-tickets')?.classList.contains('active')) renderTicketsScreen();
@@ -362,6 +370,9 @@ async function init(){
   renderTicketsScreen();
   resetCalcForm(currentTicketDate);
   renderShiftsScreen();
+  if(typeof mtConsumeShiftsFallbackNotice==='function' && mtConsumeShiftsFallbackNotice()){
+    showToast('⚠️ Зміни відновлено з аварійної копії — попередній запис не вдався');
+  }
   renderToolsScreen();
   renderSettingsScreen();
 

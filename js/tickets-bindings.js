@@ -40,12 +40,12 @@ function bindTicketsScreen(){
   document.getElementById('clearTagFilterBtn').addEventListener('click', ()=>{
     activeFilterTags.clear(); renderTagFilterChips(); renderTicketsScreen();
   });
-  document.getElementById('tagFilterChips').addEventListener('click', e=>{
+  document.getElementById('tagFilterChips').addEventListener('click', async e=>{
     const delBtn = e.target.closest('[data-deltag]');
     if(delBtn){
       const tag = delBtn.dataset.deltag;
       const count = tickets.filter(t=>(t.tags||[]).includes(tag)).length;
-      if(!confirm(`Видалити тег "${tag}"? Він зникне з ${count} заявок і зі списку тегів.`)) return;
+      if(!await openConfirmModal({title:`Видалити тег «${tag}»?`,message:`Тег зникне з ${count} заявок і зі списку тегів. Перед цим створюється локальний знімок бази.`,confirmLabel:'Видалити тег',danger:true})) return;
       backupLocalData();
       tickets.forEach(t=>{ if(t.tags) t.tags = t.tags.filter(x=>x!==tag); });
       settings.tags = (settings.tags||[]).filter(x=>x!==tag);
@@ -114,6 +114,7 @@ function bindTicketsScreen(){
     const retryBtn = e.target.closest('.retry-sync-btn');
     const conflictBtn = e.target.closest('.resolve-sync-conflict-btn');
     const retryTgBtn = e.target.closest('.retry-tg-btn');
+    const retryTgAmbiguousBtn = e.target.closest('.retry-tg-ambiguous-btn'); // NEW: явний повтор для «неоднозначної» копії
     const gotoProfileBtn = e.target.closest('.goto-profile-btn'); // NEW: замінила "На дату" на звичайних картках
     const moreBtn  = e.target.closest('.show-more-tickets-btn');
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
@@ -136,6 +137,7 @@ function bindTicketsScreen(){
     if(retryBtn) retrySyncTicket(retryBtn.dataset.id);
     if(conflictBtn) showTicketConflictResolution(conflictBtn.dataset.id);
     if(retryTgBtn) retryTelegramBackup(retryTgBtn.dataset.id);
+    if(retryTgAmbiguousBtn) forceRetryTelegramBackup(retryTgAmbiguousBtn.dataset.id);
     if(expBtn){
       const id = expBtn.dataset.id;
       const contentEl = document.getElementById('tcc-'+id);
