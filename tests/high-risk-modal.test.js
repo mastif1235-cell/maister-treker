@@ -20,4 +20,37 @@ assert.doesNotMatch(lock,/\bconfirm\s*\(/,'disable-lock no longer uses browser c
 assert.match(backup,/await openConfirmModal\(\{title:'Відновити резервну копію\?'/,'restore-over-current-data uses app confirmation');
 assert.match(backup,/await openConfirmModal\(\{title:'Імпортувати незашифрований бекап\?'/,'legacy unencrypted import uses app confirmation');
 assert.doesNotMatch(backup,/if\(!confirm\(/,'high-risk backup paths no longer use browser confirm');
+
+// Irreversible ticket/shift operations, bulk cleanup and cloud restores must use
+// the in-app modal as well: a browser-level confirm() can be suppressed by the
+// browser ("не показувати діалоги"), and then the destructive action silently
+// proceeds or silently does nothing.
+const tickets=read('js/tickets-domain.js'),shifts=read('js/shifts-domain.js'),reports=read('js/reports-domain.js'),bindings=read('js/tickets-bindings.js'),telegram=read('js/photo-telegram-domain.js');
+const deleteTicketBlock=tickets.slice(tickets.indexOf('async function deleteTicket('),tickets.indexOf('/* ---- Кошик видалених заявок'));
+assert.match(deleteTicketBlock,/await openConfirmModal/,'ticket deletion asks through the app modal');
+assert.doesNotMatch(deleteTicketBlock,/\bconfirm\s*\(/,'ticket deletion no longer uses browser confirm');
+const purgeBlock=tickets.slice(tickets.indexOf('async function purgeDeletedTicket('),tickets.indexOf('function renderDeletedTicketsList('));
+assert.match(purgeBlock,/await openConfirmModal/,'permanent trash purge asks through the app modal');
+assert.doesNotMatch(purgeBlock,/\bconfirm\s*\(/,'permanent trash purge no longer uses browser confirm');
+const shiftDeleteBlock=shifts.slice(shifts.indexOf('async function deleteShift('),shifts.indexOf('/* Текстовий звіт за обраний місяць'));
+assert.match(shiftDeleteBlock,/await openConfirmModal/,'shift deletion asks through the app modal');
+assert.doesNotMatch(shiftDeleteBlock,/\bconfirm\s*\(/,'shift deletion no longer uses browser confirm');
+const dedupBlock=reports.slice(reports.indexOf('async function dedupTickets('),reports.indexOf('async function repairCorruptedTickets('));
+assert.match(dedupBlock,/await openConfirmModal/,'duplicate cleanup asks through the app modal');
+assert.doesNotMatch(dedupBlock,/\bconfirm\s*\(/,'duplicate cleanup no longer uses browser confirm');
+const repairBlock=reports.slice(reports.indexOf('async function repairCorruptedTickets('),reports.indexOf('async function runBulkImport('));
+assert.match(repairBlock,/await openConfirmModal/,'corrupted-ticket repair asks through the app modal');
+assert.doesNotMatch(repairBlock,/\bconfirm\s*\(/,'corrupted-ticket repair no longer uses browser confirm');
+const tagDeleteBlock=bindings.slice(bindings.indexOf("document.getElementById('tagFilterChips')"),bindings.indexOf("document.getElementById('calPrevMonth')"));
+assert.match(tagDeleteBlock,/await openConfirmModal/,'bulk tag deletion asks through the app modal');
+assert.doesNotMatch(tagDeleteBlock,/\bconfirm\s*\(/,'bulk tag deletion no longer uses browser confirm');
+const restoreCloudBlock=settings.slice(settings.indexOf("document.getElementById('restoreCloudBtn')"),settings.indexOf("document.getElementById('sendAllBtn')"));
+assert.match(restoreCloudBlock,/await openConfirmModal/,'cloud ticket restore asks through the app modal');
+assert.doesNotMatch(restoreCloudBlock,/\bconfirm\s*\(/,'cloud ticket restore no longer uses browser confirm');
+const restoreShiftsBlock=settings.slice(settings.indexOf("document.getElementById('restoreShiftsCloudBtn')"),settings.indexOf("document.getElementById('sendShiftsAllBtn')"));
+assert.match(restoreShiftsBlock,/await openConfirmModal/,'cloud shift restore asks through the app modal');
+assert.doesNotMatch(restoreShiftsBlock,/\bconfirm\s*\(/,'cloud shift restore no longer uses browser confirm');
+const resyncBlock=telegram.slice(telegram.indexOf('async function resyncAllTicketsToTelegram('),telegram.indexOf('/* Поділитися заявкою'));
+assert.match(resyncBlock,/await openConfirmModal/,'full Telegram archive rewrite asks through the app modal');
+assert.doesNotMatch(resyncBlock,/\bconfirm\s*\(/,'full Telegram archive rewrite no longer uses browser confirm');
 console.log('PASS high-risk app modals default to cancel, prevent double submit and gate all mutations');

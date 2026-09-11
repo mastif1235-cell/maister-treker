@@ -66,7 +66,7 @@ function openImportModal(){
 
 
 async function dedupTickets(){
-  if(!confirm('Знайти заявки з однаковою датою, часом і текстом та залишити тільки одну копію кожної?')) return;
+  if(!await openConfirmModal({title:'Прибрати дублікати заявок?',message:'Буде знайдено заявки з однаковою датою, часом і текстом та залишено тільки одну копію кожної. Перед цим створюється локальний знімок бази.',confirmLabel:'Прибрати дублікати',danger:true})) return;
   backupLocalData();
   const result=MTTicketTime.deduplicateTickets(tickets,Date.now());
   if(result.removedIds.length === 0){ showToast(result.ambiguousCount?'Неоднозначні дублікати залишено без змін':'Дублікатів не знайдено'); return; }
@@ -82,7 +82,7 @@ async function dedupTickets(){
 }
 
 async function repairCorruptedTickets(){
-  if(!confirm('Знайти та полагодити заявки з битими id/датою (залишились від старих тестів синхронізації)? Текст заявок не зміниться.')) return;
+  if(!await openConfirmModal({title:'Полагодити заявки?',message:'Буде знайдено заявки з битими id/датою (залишились від старих тестів синхронізації). Текст заявок не зміниться, але id та дата таких записів буде перезаписано.',confirmLabel:'Полагодити',danger:true})) return;
   backupLocalData();
   // Розпізнаємо зіпсовані записи: id виглядає як рядок з toString() дати
   // JS (напр. "Fri Jul 10 2026 00:00:00 GMT+0300 (...)"). Такий рядок

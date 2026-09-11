@@ -11,6 +11,7 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 | localStorage | `ticketDraft` | ticket-editor-domain | Unsaved ticket draft | Temporary | Personal data |
 | localStorage | `dailyMastersDefault` | ticket-editor-domain | Daily crew choice | Daily | No |
 | localStorage | `pendingTicketsFallback` | ticket-state-storage | Emergency copy after IndexedDB write failure | Until successful durable write | Personal data |
+| localStorage | `pendingShiftsFallback` | storage-orchestration | Emergency copy of shifts after a localStorage write failure | Until successful durable write | No |
 | localStorage | `mtSavedDiagnosticsV1` | tools-domain | Saved diagnostics | Persistent | Personal/network data |
 | localStorage | `mtNetworkPointsV1` | tools-domain | Network points and local photo references | Persistent | Personal/network data |
 | localStorage | `mtToolsCalculatorDraftV1` | tools-domain | Tools diagnostic draft | Temporary | Personal data |

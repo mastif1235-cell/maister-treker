@@ -45,7 +45,7 @@ function addShift(){
   const coworker = coworkerSelection.size ? [...coworkerSelection].join(', ') : 'Сам';
   const shift = {id: MTSyncEngineRuntime.uuid(), date: currentShiftDate, hours, coworker};
   shifts.push(shift);
-  saveShifts();
+  saveShiftsSafely();
   syncShiftsMonthlyTelegramMessage(); // NEW: оновлюємо/надсилаємо місячне повідомлення в Telegram (у фоні, не блокує UI)
   document.getElementById('shiftHours').value = '';
   coworkerSelection = new Set();
@@ -54,10 +54,10 @@ function addShift(){
   showToast(hours !== enteredHours ? `Зміну додано · округлено до ${hours} год` : 'Зміну додано');
 }
 
-function deleteShift(id){
-  if(!confirm('Видалити цю зміну?')) return;
+async function deleteShift(id){
+  if(!await openConfirmModal({title:'Видалити цю зміну?',message:'Зміну буде видалено з локального списку та з Google-таблиці змін.',confirmLabel:'Видалити',danger:true})) return;
   shifts = shifts.filter(s=>String(s.id)!==String(id)); // NEW: id зміни — рядок (UUID), Number() ламав порівняння
-  saveShifts();
+  saveShiftsSafely();
   syncShiftsMonthlyTelegramMessage(); // NEW: те саме — місячне повідомлення в Telegram лишається актуальним і після видалення
   renderShiftsScreen();
   showToast('Зміну видалено');
@@ -210,7 +210,83 @@ function bindShiftsScreen(){
   document.getElementById('addShiftBtn').addEventListener('click', addShift);
   document.getElementById('shiftHistoryCard').addEventListener('click', e=>{
     const btn = e.target.closest('.delete-shift-btn'); if(!btn) return;
-    deleteShift(btn.dataset.id);
+    Promise.resolve(deleteShift(btn.dataset.id)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'shift-delete'}));
   });
 }
 
+/* ==== Діагностика синхронізації змін (лише читання) ====
+   Зміни зберігаються в ОКРЕМІЙ таблиці (Script Property MT_SHIFTS_SPREADSHEET_ID),
+   але за поточним контрактом Code.gs клієнт НЕ отримує окремого коду для
+   «таблицю змін не налаштовано» — будь-який збій приходить як SERVER_ERROR.
+   Тож проба нижче призначена лише для пояснення ситуації майстру: вона робить
+   безпечний підписаний GET getEntityState для неіснуючої зміни (нічого не
+   створює й не змінює на сервері) і розрізняє серверну помилку, втрату мережі,
+   офлайн і невірний підпис. Вона не впливає на retry, не блокує синхронізацію
+   смен і не зачіпає заявки. */
+const MT_SHIFTS_SYNC_PROBE_MIN_INTERVAL_MS = 10 * 60 * 1000;
+const MT_SHIFTS_SYNC_PROBE_ID = 'mt-shifts-config-probe';
+const mtShiftsSyncProbe = {status:'unknown', code:'', checkedAt:0};
+
+function mtShiftsSyncProbeResult(status, code=''){
+  mtShiftsSyncProbe.status=status;
+  mtShiftsSyncProbe.code=String(code||'');
+  mtShiftsSyncProbe.checkedAt=Date.now();
+  return mtShiftsSyncProbeCached();
+}
+function mtShiftsSyncProbeCached(){
+  return {status:mtShiftsSyncProbe.status, code:mtShiftsSyncProbe.code, checkedAt:mtShiftsSyncProbe.checkedAt};
+}
+function mtShiftsSyncProbeFresh(){
+  return mtShiftsSyncProbe.status!=='unknown' && (Date.now()-mtShiftsSyncProbe.checkedAt) < MT_SHIFTS_SYNC_PROBE_MIN_INTERVAL_MS;
+}
+function resetShiftsSyncConfigProbe(){
+  mtShiftsSyncProbe.status='unknown'; mtShiftsSyncProbe.code=''; mtShiftsSyncProbe.checkedAt=0;
+}
+
+async function probeShiftsSyncConfig(options={}){
+  const force=options.force===true;
+  if(!force && mtShiftsSyncProbeFresh()) return mtShiftsSyncProbeCached();
+  if(typeof navigator!=='undefined' && navigator.onLine===false) return mtShiftsSyncProbeResult('offline');
+  const transportAvailable=typeof syncEngine!=='undefined' && !!syncEngine && !!syncEngine.transport && typeof syncEngine.transport.getEntityState==='function';
+  const configured=typeof getScriptUrl==='function' && !!getScriptUrl() && String((settings&&settings.syncHmacSecret)||'').length>=32;
+  if(!transportAvailable || !configured) return mtShiftsSyncProbeResult('unavailable');
+  try{
+    const response=await syncEngine.transport.getEntityState('shift', MT_SHIFTS_SYNC_PROBE_ID);
+    if(response && response.ok && response.result && response.result.status==='ok') return mtShiftsSyncProbeResult('ok');
+    const code=String((response && response.result && response.result.code) || '');
+    // SERVER_ERROR — це будь-який збій на сервері (квота, таймаут, помилка
+    // звіту «Зміни», недоступна таблиця). Відрізнити «немає таблиці змін» від
+    // тимчасового збою за поточним контрактом неможливо, тож НЕ називаємо це
+    // проблемою конфігурації: це просто серверна помилка.
+    if(code==='NETWORK') return mtShiftsSyncProbeResult('network', code);
+    if(code==='AUTH_FAILED') return mtShiftsSyncProbeResult('auth', code);
+    return mtShiftsSyncProbeResult('server', code);
+  }catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-config-probe'});
+    return mtShiftsSyncProbeResult('network');
+  }
+}
+
+function shiftsOnlyPending(pending){
+  return Array.isArray(pending) && pending.length>0 && pending.every(item=>!!item && item.entity==='shift');
+}
+
+// Автоматичний retry смен НЕ вимикаємо: поки сервер не віддає окремий код
+// «немає таблиці змін» (його в Code.gs немає), будь-яка серверна помилка може
+// бути тимчасовим збоєм. Функція лишається точкою розширення: якщо колись
+// з'явиться явний сигнал конфігурації, блокування повернемо лише для нього.
+function shiftsSyncAutoRetryBlocked(){
+  return false;
+}
+
+function shiftsSyncConfigUserMessage(status){
+  const value=status || mtShiftsSyncProbe.status;
+  // Статусу 'config' свідомо немає: без окремого коду від сервера такий
+  // діагноз був би здогадкою (див. probeShiftsSyncConfig вище).
+  if(value==='auth') return 'Сервер відхилив підпис HMAC — перевірте ключ у Налаштуваннях і в Apps Script.';
+  if(value==='server') return 'Сервер не зміг обробити зміни. Спробуйте ще раз пізніше.';
+  if(value==='network') return 'Немає зв’язку із сервером — зміни надішлються, коли з’явиться інтернет.';
+  if(value==='offline') return 'Немає інтернету — зміни надішлються, коли з’явиться зв’язок.';
+  return '';
+}
+/* ==== кінець блоку діагностики змін ==== */

@@ -21,11 +21,19 @@ Unknown infrastructure does not block isolated development. No production deploy
 
 ## Confirmed critical architecture
 
-At this historical baseline, `index.html` loaded the baseline scripts and `app.js`, while `sw.js` rewrote navigation HTML and injected versioned security/hotfix scripts. The current Service Worker is cache/update-only and does not inject runtime modules; see `docs/ARCHITECTURE.md`.
+> Correction (verified on `main@7613973`, v91.19): `sw.js` today is cache/update-only — it
+> precaches `CORE_ASSETS`, refreshes navigation/JS/CSS in the background and never rewrites
+> navigation or injects modules (`docs/ARCHITECTURE.md`, `tests/sw-upgrade-static.test.js`,
+> `tests/sw-core-assets-coverage.test.js`). The paragraph below describes the historical v62 baseline.
+
+At this historical baseline, `index.html` loaded the baseline scripts and `app.js`, while `sw.js` rewrote navigation HTML and injected versioned security/hotfix scripts. The Service Worker is cache/update-only and does not inject runtime modules at all: as of `main@7613973` (v91.19) it precaches `CORE_ASSETS`, refreshes navigation/JS/CSS in the background, and never rewrites navigation HTML; see `docs/ARCHITECTURE.md`, `tests/sw-upgrade-static.test.js` and `tests/sw-core-assets-coverage.test.js`.
 
 Baseline `Code.gs` is legacy secret auth. HMAC/replay behavior lives in separate patch `.gs` files and cannot be assumed deployed. Shifts still use GET query secrets. Settings, including client-held tokens/secrets, are persisted in localStorage.
 
-## Severity summary
+## Severity summary (historical baseline)
+
+> Historical baseline severity (v62-era runtime). Current known severity is recorded in the
+> "Stable checkpoint reassessment" section below: Critical 0, High 0, Medium 2, Low 2.
 
 - CRITICAL: 4 — runtime split-brain; unverified HMAC/GAS contract; shift URL secret; client-held privileged secrets.
 - HIGH: 6 — multiple owners/wrappers; legacy GAS auth; competing backup and lock owners; host headers not proven; fragmented sync state.

@@ -144,6 +144,38 @@ function retryTelegramBackup(id){
   backupTicketToTelegram(t);
 }
 
+// NEW: ручний повтор для заявки, чия попередня відправка завершилась
+// НЕОДНОЗНАЧНО (відповідь Telegram загубилась). Автоматичний повтор для таких
+// заявок вимкнено навмисно — щоб не плодити дублі. Але лишати заявку зовсім без
+// копії теж не можна: майстер сам вирішує, чи надіслати ще раз, і бачить
+// попередження про можливий дубль. Флаг знімається лише після підтвердження.
+async function forceRetryTelegramBackup(id){
+  const t = tickets.find(x=>String(x.id)===String(id));
+  if(!t) return false;
+  if(!(settings.tgBotToken||'').trim() || !(settings.tgBackupChatId||'').trim()){
+    showToast('Спочатку налаштуйте токен бота і Chat ID групи-архіву');
+    return false;
+  }
+  const proceed = await openConfirmModal({
+    title:'Надіслати копію ще раз?',
+    message:'Попередня спроба завершилась невідомо: відповідь Telegram не дійшла. Автоматичний повтор вимкнено, щоб не створити дубль. Якщо надіслати ще раз — у групі може з’явитися ДРУГА копія цієї заявки.',
+    confirmLabel:'Надіслати ще раз',
+    danger:true
+  });
+  if(!proceed) return false;
+  t.tgBackupAmbiguous = false; // знімаємо блокування лише після явного підтвердження
+  t.tgBackupPending = true;
+  await saveTicketsLocalOnly();
+  let ok = false;
+  try{
+    ok = await backupTicketToTelegram(t);
+  }catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'telegram-manual-retry'});
+  }
+  showToast(ok ? '✅ Копію надіслано в групу-архів' : 'Не вдалося надіслати копію — спробуйте пізніше', ok ? 2200 : 4000);
+  return !!ok;
+}
+
 /* ---- Надіслати заявку диспетчеру через бота (за вимогою, з кнопки) ----
    На відміну від резервного копіювання нижче — це не тихий фон, а явна дія
    майстра: показуємо тост про успіх/помилку. Використовує той самий бот
@@ -737,7 +769,7 @@ async function resyncAllTicketsToTelegram(){
   const all = tickets.filter(t => t.content);
   if(!all.length){ showToast('Немає заявок для вивантаження'); return; }
   const etaMin = Math.ceil(all.length * 1.4 / 60);
-  if(!confirm(`Це ПЕРЕЗАПИШЕ геть усі ${all.length} заявок(и) у групі: старі повідомлення кожної заявки буде видалено, замість них надіслано свіжі (текст + фото + повний JSON-файл). Орієнтовно ~${etaMin} хв. Не закривайте застосунок, поки триває. Продовжити?`)) return;
+  if(!await openConfirmModal({title:`Перезаписати всі ${all.length} заявок у групі?`,message:`Старі повідомлення кожної заявки буде видалено, замість них надіслано свіжі (текст + фото + повний JSON-файл). Орієнтовно ~${etaMin} хв; не закривайте застосунок, поки триває.`,confirmLabel:'Перезаписати',danger:true})) return;
   await runBulkTelegramJob(all, 'Перезапис усіх заявок у Telegram');
 }
 

@@ -3,18 +3,78 @@
 // Local persistence and backup UI orchestration. Loaded after app.js.
 function saveNaryadQueue(){ localStorage.setItem('naryadQueue', JSON.stringify(naryadQueue)); }
 
+/* ---- Безпечний запис змін ----
+   localStorage.setItem кидає QuotaExceededError (квота ~5 МБ спільна з
+   налаштуваннями й чернетками) або SecurityError. Раніше такий виняток ішов
+   «в нікуди»: проміс відхилявся без обробника, зміна жила лише в пам'яті й
+   зникала після перезапуску — без жодного повідомлення користувачу.
+   Тепер невдалий запис перехоплюється, дані дублюються в аварійний ключ
+   pendingShiftsFallback, а користувач бачить тост. */
+function mtShiftsPersistFailure(error){
+  globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-persist'});
+  try{
+    localStorage.setItem(PENDING_SHIFTS_FALLBACK_KEY, JSON.stringify(shifts));
+    showToast('⚠️ Зміни не записались у сховище — збережено аварійну копію. Перезавантажте застосунок.');
+    return true;
+  }catch(_fallbackError){
+    globalThis.MTSafeError?.reportError?.(_fallbackError,{scope:'shifts-persist-fallback'});
+    showToast('⚠️ Не вдалося зберегти зміни. Не закривайте застосунок — перезавантажте його.');
+    return false;
+  }
+}
+
+function mtClearShiftsFallback(){
+  try{ localStorage.removeItem(PENDING_SHIFTS_FALLBACK_KEY); }catch(_error){}
+}
+
 function saveShifts(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   shiftsRevision++;
   const before=syncShiftsSnapshot; const after=JSON.parse(JSON.stringify(shifts));
   const persist=syncEngine ? syncEngine.recordDiff('shift',before,after) : Promise.resolve();
-  return persist.then(()=>{syncShiftsSnapshot=after;localStorage.setItem('shifts',JSON.stringify(shifts));});
+  let journalFailed=false;
+  return persist.catch(error=>{
+    // Журнал не записався: локальні дані все одно зберігаємо, але знімок
+    // синхронізації НЕ рухаємо — інакше різниця загубилась би назавжди.
+    journalFailed=true;
+    globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-journal'});
+  }).then(()=>{
+    if(!journalFailed) syncShiftsSnapshot=after;
+    try{
+      localStorage.setItem('shifts',JSON.stringify(shifts));
+    }catch(error){
+      return mtShiftsPersistFailure(error);
+    }
+    mtClearShiftsFallback();
+    return true;
+  });
 }
 
 function saveShiftsLocalOnly(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
-  localStorage.setItem('shifts',JSON.stringify(shifts));
+  try{
+    localStorage.setItem('shifts',JSON.stringify(shifts));
+  }catch(error){
+    return Promise.resolve(mtShiftsPersistFailure(error));
+  }
+  mtClearShiftsFallback();
   return Promise.resolve(true);
+}
+
+// Єдина точка виклику для UI: saveShifts ніколи не має лишати ні
+// необроблений reject, ні тиху втрату зміни.
+function saveShiftsSafely(){
+  try{
+    return Promise.resolve(saveShifts()).catch(error=>{
+      globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-save'});
+      showToast('⚠️ Не вдалося зберегти зміни — перевірте вільне місце і спробуйте ще раз');
+      return false;
+    });
+  }catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'shifts-save'});
+    showToast('⚠️ Не вдалося зберегти зміни — перевірте вільне місце і спробуйте ще раз');
+    return Promise.resolve(false);
+  }
 }
 
 const DAILY_BACKUP_MAX = 10;

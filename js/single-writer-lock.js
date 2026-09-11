@@ -7,7 +7,7 @@
   const LOCK_NAME='maister-tracker-production-writer-v1';
   const FALLBACK_KEY='mt-single-writer-lease-v1',LEASE_MS=8000,HEARTBEAT_MS=2500;
   const ownerId=root.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  let state='idle',release=null,decision=null,fallbackTimer=null;
+  let state='idle',release=null,decision=null,fallbackTimer=null,usingFallback=false;
   function canWrite(){return state!=='reader';}
   function showConflict(){
     if(typeof document==='undefined'||document.getElementById('mtWriterConflict'))return;
@@ -16,16 +16,32 @@
     Object.assign(overlay.firstElementChild.style,{maxWidth:'420px',padding:'22px',border:'1px solid #f39a32',borderRadius:'14px',background:'#1b1b1b',color:'#fff'});
     overlay.querySelector('button').onclick=()=>root.location.reload();document.body.appendChild(overlay);
   }
-  function warn(){if(state==='reader'){showConflict();if(typeof root.showToast==='function')root.showToast('Інша копія застосунку вже змінює дані');}return canWrite();}
+  function warn(){if(usingFallback)revalidate();if(state==='reader'){showConflict();if(typeof root.showToast==='function')root.showToast('Інша копія застосунку вже змінює дані');}return canWrite();}
   function readFallback(){try{const value=JSON.parse(root.localStorage?.getItem(FALLBACK_KEY)||'null');return value&&typeof value.owner==='string'&&Number.isFinite(Number(value.expiresAt))?value:null;}catch(_e){return null;}}
   function writeFallback(){try{root.localStorage.setItem(FALLBACK_KEY,JSON.stringify({owner:ownerId,expiresAt:Date.now()+LEASE_MS}));return readFallback()?.owner===ownerId;}catch(_e){return false;}}
   function removeConflict(){if(typeof document!=='undefined')document.getElementById('mtWriterConflict')?.remove();}
   function tryFallbackAcquire(){const held=readFallback();if(held&&held.owner!==ownerId&&Number(held.expiresAt)>Date.now())return false;if(!writeFallback())return false;state='writer';removeConflict();startFallbackTimer();return true;}
   function startFallbackTimer(){if(fallbackTimer||typeof root.setInterval!=='function')return;fallbackTimer=root.setInterval(()=>{if(state==='writer'){const held=readFallback();if(held?.owner===ownerId)writeFallback();else{state='reader';showConflict();}}else if(state==='reader')tryFallbackAcquire();},HEARTBEAT_MS);}
   function releaseFallback(){const held=readFallback();if(held?.owner!==ownerId)return false;try{root.localStorage.removeItem(FALLBACK_KEY);return true;}catch(_e){return false;}}
+  function leaseOwnedByUs(){const held=readFallback();return !!(held&&held.owner===ownerId&&Number(held.expiresAt)>Date.now());}
+  function leaseHeldByOther(){const held=readFallback();return !!(held&&held.owner!==ownerId&&Number(held.expiresAt)>Date.now());}
+  // Поки вкладка/PWA була у фоні чи спала, аренда могла протухнути, а писарем
+  // міг стати інший таб. Перед дозволом на запис перевіряємо аренду наново:
+  // протухла й нікого іншого немає — тихо подовжуємо собі; аренду забрав інший
+  // таб — переходимо в режим перегляду. Без Web Locks нічого не змінюється.
+  function revalidate(){
+    if(!usingFallback)return status();
+    if(state==='writer'){
+      if(!leaseOwnedByUs()){
+        if(leaseHeldByOther()){state='reader';showConflict();}
+        else if(!tryFallbackAcquire()){state='reader';showConflict();}
+      }
+    }else if(state==='reader'&&!leaseHeldByOther()){tryFallbackAcquire();}
+    return status();
+  }
   async function acquire(){
     if(state!=='idle')return decision||Promise.resolve(canWrite());
-    if(!root.navigator?.locks?.request){const acquired=tryFallbackAcquire();if(!acquired){state='reader';startFallbackTimer();showConflict();}return acquired;}
+    if(!root.navigator?.locks?.request){usingFallback=true;const acquired=tryFallbackAcquire();if(!acquired){state='reader';startFallbackTimer();showConflict();}return acquired;}
     decision=new Promise(resolve=>{
       root.navigator.locks.request(LOCK_NAME,{mode:'exclusive',ifAvailable:true},lock=>{
         if(!lock){state='reader';showConflict();resolve(false);return;}
@@ -37,5 +53,8 @@
   function releaseForTest(){if(release){release();release=null;}releaseFallback();if(fallbackTimer&&typeof root.clearInterval==='function')root.clearInterval(fallbackTimer);fallbackTimer=null;state='idle';decision=null;}
   function status(){return state;}
   if(typeof root.addEventListener==='function')root.addEventListener('pagehide',releaseFallback);
-  return{LOCK_NAME,FALLBACK_KEY,LEASE_MS,ownerId,acquire,canWrite,warn,status,releaseForTest,tryFallbackAcquireForTest:tryFallbackAcquire};
+  if(typeof root.document!=='undefined'&&root.document&&typeof root.document.addEventListener==='function'){
+    root.document.addEventListener('visibilitychange',()=>{if(root.document.visibilityState==='visible')revalidate();});
+  }
+  return{LOCK_NAME,FALLBACK_KEY,LEASE_MS,ownerId,acquire,canWrite,warn,status,revalidate,releaseForTest,revalidateForTest:revalidate,tryFallbackAcquireForTest:tryFallbackAcquire};
 });

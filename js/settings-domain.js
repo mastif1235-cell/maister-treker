@@ -147,14 +147,14 @@ function bindSettingsScreen(){
   });
 
   document.getElementById('loadCloudBtn').addEventListener('click', loadFromCloud);
-  document.getElementById('restoreCloudBtn').addEventListener('click', ()=>{
-    if(!confirm('Відновити дані з хмари? Поточні локальні дані будуть замінені.')) return;
+  document.getElementById('restoreCloudBtn').addEventListener('click', async ()=>{
+    if(!await openConfirmModal({title:'Відновити дані з хмари?',message:'Поточні локальні заявки буде замінено даними з таблиці. Перед відновленням переконайтесь, що є актуальний бекап.',confirmLabel:'Відновити',danger:true})) return;
     loadFromCloud();
   });
   document.getElementById('sendAllBtn').addEventListener('click', sendAllToCloud);
   document.getElementById('loadShiftsCloudBtn').addEventListener('click', loadShiftsFromCloud);
-  document.getElementById('restoreShiftsCloudBtn').addEventListener('click', ()=>{
-    if(!confirm('Відновити зміни з хмари? Поточні локальні зміни будуть замінені.')) return;
+  document.getElementById('restoreShiftsCloudBtn').addEventListener('click', async ()=>{
+    if(!await openConfirmModal({title:'Відновити зміни з хмари?',message:'Поточні локальні зміни буде замінено даними з таблиці змін.',confirmLabel:'Відновити',danger:true})) return;
     loadShiftsFromCloud();
   });
   document.getElementById('sendShiftsAllBtn').addEventListener('click', sendShiftsToCloud);
@@ -211,13 +211,13 @@ function bindSettingsScreen(){
     const restoreBtn = e.target.closest('.restore-trash-btn');
     const purgeBtn = e.target.closest('.purge-trash-btn');
     if(restoreBtn) restoreDeletedTicket(restoreBtn.dataset.deletedAt);
-    if(purgeBtn) purgeDeletedTicket(purgeBtn.dataset.deletedAt);
+    if(purgeBtn) Promise.resolve(purgeDeletedTicket(purgeBtn.dataset.deletedAt)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'trash-purge'}));
   });
   document.getElementById('clearAllBtn').addEventListener('click', async ()=>{
     if(!await openConfirmModal({title:'Очистити всю базу?',message:'Усі заявки, зміни та локальні фото буде видалено без можливості відновлення. Перед видаленням буде створено доступну локальну резервну копію.',confirmLabel:'Видалити всі дані',danger:true}))return;
     backupLocalData();
     tickets = []; shifts = [];
-    saveTickets(); saveShifts();
+    saveTickets(); saveShiftsSafely();
     clearAllPhotos();
     showToast('Видалення поставлено в безпечну пооб’єктну чергу; full sync не використовується');
     renderTicketsScreen(); renderShiftsScreen();

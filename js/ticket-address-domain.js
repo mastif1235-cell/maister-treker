@@ -597,6 +597,8 @@ function attachAddressNavHandlers(rootEl){
     if(tgOpenBtn){ openTicketInTelegram(tgOpenBtn.dataset.id); return; }
     const retryTgBtn = e.target.closest('.retry-tg-btn');
     if(retryTgBtn){ retryTelegramBackup(retryTgBtn.dataset.id); return; }
+    const retryTgAmbiguousBtn = e.target.closest('.retry-tg-ambiguous-btn'); // NEW: явний повтор для «неоднозначної» копії
+    if(retryTgAmbiguousBtn){ forceRetryTelegramBackup(retryTgAmbiguousBtn.dataset.id); return; }
     const retrySyncBtn = e.target.closest('.retry-sync-btn');
     if(retrySyncBtn){ retrySyncTicket(retrySyncBtn.dataset.id); return; }
     const copyBtn = e.target.closest('.copy-ticket-btn');
@@ -606,7 +608,7 @@ function attachAddressNavHandlers(rootEl){
     const gotoProfileBtn = e.target.closest('.goto-profile-btn'); // NEW: для "loose"-заявок без структурованої адреси, показаних тут же
     if(gotoProfileBtn){ goToTicketProfile(gotoProfileBtn.dataset.id); return; }
     const delBtn = e.target.closest('.delete-ticket-btn');
-    if(delBtn){ deleteTicket(delBtn.dataset.id); renderAddressNav(); return; }
+    if(delBtn){ Promise.resolve(deleteTicket(delBtn.dataset.id)).then(()=>renderAddressNav()).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'ticket-delete-from-profile'})); return; }
     const photoBadgeBtn = e.target.closest('.tc-photo-toggle-btn');
     if(photoBadgeBtn){ toggleTicketCardPhoto(photoBadgeBtn, rootEl); return; }
     const photoThumb = e.target.closest('.tc-photo-thumb');

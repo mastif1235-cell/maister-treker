@@ -1,5 +1,8 @@
-/* Canonical HMAC contract shared by future ticket/shift transports.
-   This module is intentionally not wired into the production client yet. */
+/* Canonical HMAC contract shared by the ticket/shift sync transport.
+   This module IS wired into the production client: index.html loads it before
+   js/sync-transport.js, which signs every mutation envelope with it. It must stay
+   byte-compatible with the server copy in Code.gs (prefix MT-SYNC-HMAC-V3);
+   parity is checked by tests/gas-contract.test.js and tests/secrets-static.test.js. */
 (function(root, factory){
   var api = factory();
   if(typeof module === 'object' && module.exports) module.exports = api;
