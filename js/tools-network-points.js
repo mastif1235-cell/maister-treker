@@ -105,6 +105,18 @@ async function toolsRemoveNetworkPointPhoto(pointId,key){
   const previous={...point,photoKeys:(point.photoKeys||[]).slice()},nextKeys=(point.photoKeys||[point.photoKey]).filter(Boolean).filter(value=>value!==key);point.photoKeys=nextKeys;point.photoKey=nextKeys[0]||'';point.updatedAt=new Date().toISOString();
   if(!toolsSaveNetworkPoints()){Object.assign(point,previous);return false;}if(!toolsPhotoKeyStillUsed(key,pointId))await deletePhotoKey(key);await toolsSendNetworkPointTelegram(point,{updateExisting:true});closeModal();toolsOpenNetworkPointEditor(pointId);showToast('Фото видалено з об’єкта');return true;
 }
+function toolsDropDeletedNetworkPointFromDraft(id){
+  // Заявка може бути відкрита в редакторі або лежати в чернетці: після
+  // видалення обʼєкта прибираємо його id і там, інакше наступне збереження
+  // заявки повернуло б звʼязок із точки, якої вже немає.
+  const target=String(id===undefined||id===null?'':id);
+  if(!target)return;
+  if(typeof calcState==='object'&&calcState)calcState.networkPointIds=MTToolsCore.unlinkNetworkPoint(calcState.networkPointIds,target);
+  const draft=typeof toolsCalculatorDraft==='object'&&toolsCalculatorDraft?toolsCalculatorDraft:null;
+  if(draft&&draft.state)draft.state.networkPointIds=MTToolsCore.unlinkNetworkPoint(draft.state.networkPointIds,target);
+  if(draft&&typeof MT_TOOLS_DRAFT_KEY!=='undefined'){try{localStorage.setItem(MT_TOOLS_DRAFT_KEY,JSON.stringify(draft));}catch(_e){}}
+  if(typeof toolsRenderTicketNetworkLinks==='function'){try{toolsRenderTicketNetworkLinks();}catch(_e){}}
+}
 async function toolsDeleteNetworkPoint(id){
   const previous=toolsNetworkPoints,outcome=MTToolsCore.removeNetworkPoint(previous,id);if(!outcome.removed)return false;
   const linked=MTToolsCore.ticketsForNetworkPoint(tickets,id),previousLinks=linked.map(ticket=>({ticket,ids:(ticket.networkPointIds||[]).slice()}));
@@ -112,6 +124,7 @@ async function toolsDeleteNetworkPoint(id){
   if(linked.length&&!await saveTickets()){previousLinks.forEach(item=>item.ticket.networkPointIds=item.ids);return false;}
   toolsNetworkPoints=outcome.points;
   if(!toolsSaveNetworkPoints()){toolsNetworkPoints=previous;previousLinks.forEach(item=>item.ticket.networkPointIds=item.ids);if(linked.length)await saveTickets();return false;}
+  toolsDropDeletedNetworkPointFromDraft(id);
   const photoKeys=[...new Set((outcome.removed.photoKeys||[outcome.removed.photoKey]).filter(Boolean))];
   for(const key of photoKeys){if(!toolsPhotoKeyStillUsed(key,id))await deletePhotoKey(key);}
   closeModal();renderToolsScreen(toolsView);showToast('Об’єкт видалено');return true;
