@@ -302,7 +302,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     pickerMap.on('load',()=>{if(useOffline)switchPickerBase('offline');});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>pickerMap.resize());return picker;
   };
-  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,selectBounds,drawBounds,showUserLocation,startPointPlacement,cancelPointPlacement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,switchBaseLayer,handleConnectivityChange,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
+  return{engine:'maplibre',mount,destroy,resize,captureView,currentCenter,focusPoint,selectBounds,drawBounds,showUserLocation,startPointPlacement,cancelPointPlacement,isPointPlacementActive:()=>!!placement,mountPicker,destroyPicker,objectGeoJson,applyObjectFilters,switchBaseLayer,handleConnectivityChange,isMounted:()=>!!map,isPickerMounted:()=>!!picker,getMap:()=>map};
 }
 
 maplibregl.setWorkerUrl(WORKER_URL);

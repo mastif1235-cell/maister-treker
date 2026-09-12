@@ -349,6 +349,8 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .shift-row button{background:none; border:none; color:var(--danger); font-size:18px; padding:6px;}
 .shift-row-actions{display:flex; align-items:center; gap:6px;}
 .shift-conflict-btn{background:none; border:1px solid var(--danger); border-radius:8px; color:var(--danger); font-size:11.5px; font-weight:600; padding:4px 8px; line-height:1.4;}
+/* Компактне запрошення оновити PWA — не перериває роботу і не дублюється. */
+.app-update-card{position:fixed; left:12px; right:12px; bottom:calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom,0px)); z-index:115; max-width:560px; margin:auto; display:flex; align-items:center; gap:10px; box-shadow:0 10px 28px rgba(0,0,0,.28);}
 
 .tag-mgmt-list, .cw-mgmt-list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;}
 .settings-row{display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);}

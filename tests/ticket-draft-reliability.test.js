@@ -39,5 +39,7 @@ memory.set('ticketDraft','{broken');assert.doesNotThrow(()=>context.restoreDraft
 context.calcState={...blank(),cloudImported:true,content:'changed',_origContent:'old',sum:20,_origSum:10};context.formTouchedByUser=true;context.editingTicketId='cloud';context.saveDraftToLocalStorage();
 assert.equal(JSON.parse(memory.get('ticketDraft')).state.content,'changed','cloud-imported raw content change is saved');
 const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-assert.match(app,/controllerchange[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'SW-controlled reload saves draft first');
+assert.match(app,/function serviceWorkerUpdateIsSafe\(\)[\s\S]*hasUnsavedChanges\(\)/,'SW-controlled reload never interrupts unsaved work');
+assert.match(app,/function serviceWorkerApplyUpdate\(\)[\s\S]*serviceWorkerRefreshing[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'SW-controlled reload saves draft first');
+assert.match(app,/controllerchange[\s\S]*serviceWorkerUpdateIsSafe\(\)\)\{ serviceWorkerApplyUpdate\(\)/,'idle state reloads, busy state waits for the user');
 console.log('PASS ticket draft save, restore, discard, malformed and SW-update safety');

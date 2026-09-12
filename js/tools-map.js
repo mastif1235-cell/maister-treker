@@ -412,6 +412,12 @@
     setTimeout(()=>map?.invalidateSize(),0);
     return map;
   }
+  // Чи активне зараз розміщення точки — потрібно, щоб оновлення PWA не
+  // перезавантажило застосунок посеред роботи з картою.
+  function isPointPlacementActive(){
+    if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.isPointPlacementActive?.()===true;
+    return !!placement;
+  }
   function invalidateSize(){
     if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.resize();
     if(!map)return false;
@@ -460,5 +466,5 @@
   }
   function handleConnectivityChange(){return root.MTToolsMapLibreAdapter?.isMounted?.()?root.MTToolsMapLibreAdapter.handleConnectivityChange?.()||false:false;}
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange,bindMapLongPress};
+  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,isPointPlacementActive,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange,bindMapLongPress};
 })(typeof window!=='undefined'?window:globalThis);

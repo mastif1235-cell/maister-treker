@@ -399,11 +399,44 @@ document.addEventListener('DOMContentLoaded', init);
    самого інтерфейсу. */
 if('serviceWorker' in navigator){
   let serviceWorkerRefreshing=false;
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(serviceWorkerRefreshing) return;
+  let serviceWorkerUpdateOffered=false;
+  // Оновлення PWA не має виривати користувача з роботи. Якщо зараз щось
+  // незакінчене (незбережена форма, відкрита модалка, замер швидкості,
+  // розміщення точки на карті) — не перезавантажуємо, а показуємо компактне
+  // запрошення. Перезавантаження завжди одноразове (serviceWorkerRefreshing).
+  function serviceWorkerUpdateIsSafe(){
+    try{
+      if(typeof syncFormToState==='function') syncFormToState();
+      if(typeof hasUnsavedChanges==='function' && hasUnsavedChanges()) return false;
+      const modalRoot=(typeof document!=='undefined'&&document.getElementById)?document.getElementById('modalRoot'):null;
+      if(modalRoot&&modalRoot.children&&modalRoot.children.length) return false;
+      if(typeof toolsSpeedController!=='undefined'&&toolsSpeedController) return false;
+      if(typeof MTToolsMap!=='undefined'&&typeof MTToolsMap.isPointPlacementActive==='function'&&MTToolsMap.isPointPlacementActive()) return false;
+      return true;
+    }catch(_error){ return false; }
+  }
+  function serviceWorkerApplyUpdate(){
+    if(serviceWorkerRefreshing) return false;
     serviceWorkerRefreshing=true;
     try{ saveDraftToLocalStorage(); }catch(e){}
     window.location.reload();
+    return true;
+  }
+  function serviceWorkerHideUpdateOffer(){ const root=document.getElementById('appUpdateRoot'); if(root) root.innerHTML=''; }
+  function serviceWorkerShowUpdateOffer(){
+    const root=document.getElementById('appUpdateRoot');
+    if(!root||serviceWorkerUpdateOffered) return false;
+    serviceWorkerUpdateOffered=true;
+    root.innerHTML='<div class="card app-update-card"><div style="flex:1;font-size:13px;line-height:1.35;">Доступне оновлення застосунку</div><button type="button" class="btn btn-accent btn-sm" id="appUpdateApplyBtn">Оновити</button><button type="button" class="btn btn-sm" id="appUpdateLaterBtn">Пізніше</button></div>';
+    const apply=document.getElementById('appUpdateApplyBtn'), later=document.getElementById('appUpdateLaterBtn');
+    if(apply) apply.onclick=()=>serviceWorkerApplyUpdate();
+    if(later) later.onclick=()=>serviceWorkerHideUpdateOffer();
+    return true;
+  }
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(serviceWorkerUpdateIsSafe()){ serviceWorkerApplyUpdate(); return; }
+    try{ saveDraftToLocalStorage(); }catch(e){}
+    serviceWorkerShowUpdateOffer();
   });
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'})
