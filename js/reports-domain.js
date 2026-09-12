@@ -29,7 +29,10 @@ function downloadExport(format, includeStats, hidePhones){
   sorted.forEach(t=>{
     let content = t.content || '';
     if(hidePhones) content = content.replace(/(\+?\d[\d\s\-\(\)]{6,}\d)/g, '[прихований номер]');
-    out += md ? `## ${t.date} ${t.time} — ${t.type}\n\n${content}\n\n` : `=== ${t.date} ${t.time} — ${t.type} ===\n${content}\n\n`;
+    // Порожні дата, час і тип не мають потрапляти в файл як «undefined».
+    const stamp = [t.date, t.time].filter(Boolean).join(' ');
+    const header = [stamp || '—', t.type].filter(Boolean).join(' — ');
+    out += md ? `## ${header}\n\n${content}\n\n` : `=== ${header} ===\n${content}\n\n`;
   });
   if(includeStats){
     const totalSum = tickets.reduce((s,t)=>s+(Number(t.sum)||0),0);
