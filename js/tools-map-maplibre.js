@@ -308,4 +308,3 @@ export function createMapLibreAdapter(gl,root=globalThis){
 maplibregl.setWorkerUrl(WORKER_URL);
 const adapter=createMapLibreAdapter(maplibregl,globalThis);
 globalThis.MTToolsMapLibreAdapter=adapter;
-globalThis.dispatchEvent?.(new Event('mt-maplibre-ready'));
