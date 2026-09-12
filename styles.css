@@ -43,6 +43,39 @@ button,input,select,textarea{font-family:inherit;color:inherit;}
 }
 .topbar-title{font-size:18px; font-weight:700; letter-spacing:.01em;}
 .topbar-leading{display:flex;align-items:center;gap:9px;min-width:0}.app-back-btn{min-height:38px;min-width:88px;margin:0 0 10px;touch-action:manipulation}.topbar .app-back-btn{margin:0;flex:0 0 auto}.modal .app-back-btn{align-self:flex-start}
+/* Анімований логотип розділу: стоїть у шапці зліва від заголовка.
+   Той самий sprite, що й раніше, лише кадр 22px. Кадри рухаються transform-ом
+   (композитор): верстка не смикається, шапка не росте, іконка не перемальовує
+   себе щокадру. Останній кадр — повний логотип, він же статичний варіант для
+   prefers-reduced-motion. */
+.app-logo{
+  position:relative; display:block; overflow:hidden;
+  width:22px; height:22px; flex:0 0 auto;
+}
+.app-logo::before{
+  content:''; position:absolute; top:0; left:0; width:264px; height:22px;
+  background-image:url('assets/logo-tab-sprite.png');
+  background-repeat:no-repeat; background-size:264px 22px;
+  animation:mt-app-logo 3s steps(1, end) infinite;
+}
+@keyframes mt-app-logo{
+  0%{transform:translateX(0)}
+  6.6667%{transform:translateX(-22px)}
+  13.3333%{transform:translateX(-44px)}
+  20%{transform:translateX(-66px)}
+  26.6667%{transform:translateX(-88px)}
+  33.3333%{transform:translateX(-110px)}
+  40%{transform:translateX(-132px)}
+  46.6667%{transform:translateX(-154px)}
+  53.3333%{transform:translateX(-176px)}
+  60%{transform:translateX(-198px)}
+  66.6667%{transform:translateX(-220px)}
+  73.3333%{transform:translateX(-242px)}
+  100%{transform:translateX(-242px)}
+}
+@media (prefers-reduced-motion: reduce){
+  .app-logo::before{animation:none; transform:translateX(-242px);}
+}
 .sync-dot{width:9px;height:9px;border-radius:50%;background:var(--text-faint); transition:background .2s;}
 .sync-dot.syncing{background:var(--accent); animation:pulse 1s infinite ease-in-out;}
 .sync-dot.ok{background:var(--success);}
@@ -76,38 +109,6 @@ nav.tabbar{
 }
 .tab-btn .icon{font-size:21px; line-height:1;}
 .tab-btn.active{color:var(--accent);}
-/* Анімований логотип нижнього меню: один sprite на всі пʼять пунктів.
-   Кадри рухаються transform-ом (композитор), тому анімація не смикає верстку
-   й не перемальовує іконку щокадру. 12 кадрів по 28px = 336px, останній кадр
-   — повний логотип, він же лишається статичною картинкою без анімації. */
-.tab-btn .tab-logo{
-  position:relative; display:block; overflow:hidden;
-  width:28px; height:28px; flex:0 0 auto;
-}
-.tab-btn .tab-logo::before{
-  content:''; position:absolute; top:0; left:0; width:336px; height:28px;
-  background-image:url('assets/logo-tab-sprite.png');
-  background-repeat:no-repeat; background-size:336px 28px;
-  animation:mt-tab-logo 3s steps(1, end) infinite;
-}
-@keyframes mt-tab-logo{
-  0%{transform:translateX(0)}
-  6.6667%{transform:translateX(-28px)}
-  13.3333%{transform:translateX(-56px)}
-  20%{transform:translateX(-84px)}
-  26.6667%{transform:translateX(-112px)}
-  33.3333%{transform:translateX(-140px)}
-  40%{transform:translateX(-168px)}
-  46.6667%{transform:translateX(-196px)}
-  53.3333%{transform:translateX(-224px)}
-  60%{transform:translateX(-252px)}
-  66.6667%{transform:translateX(-280px)}
-  73.3333%{transform:translateX(-308px)}
-  100%{transform:translateX(-308px)}
-}
-@media (prefers-reduced-motion: reduce){
-  .tab-btn .tab-logo::before{animation:none; transform:translateX(-308px);}
-}
 @media (max-width:430px){.tab-btn{font-size:9.5px}.tab-btn .icon{font-size:19px}}
 
 .tools-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
