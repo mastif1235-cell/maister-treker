@@ -104,12 +104,18 @@ function securityRuntimeSanitizeTicket(ticket,index=0){
   if('geoLat' in t)t.geoLat=t.geoLat===null||t.geoLat===''?null:securityRuntimeSafeNumber(t.geoLat,null,-90,90);
   if('geoLng' in t)t.geoLng=t.geoLng===null||t.geoLng===''?null:securityRuntimeSafeNumber(t.geoLng,null,-180,180);
 
-  ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork','networkPointIds','diagnosticHistory'].forEach(k=>{
+  ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','tgBackupStaleMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork','networkPointIds','diagnosticHistory'].forEach(k=>{
     if(k in t && !Array.isArray(t[k])) t[k]=[];
     // Діагностика — це хронологія: обрізаємо найстаріші записи, а не найновіші.
     if(Array.isArray(t[k]) && t[k].length>500) t[k]=k==='diagnosticHistory'?t[k].slice(-500):t[k].slice(0,500);
   });
   if(typeof MTToolsCore!=='undefined'&&typeof MTToolsCore.sanitizeDiagnostics==='function')t.diagnosticHistory=MTToolsCore.sanitizeDiagnostics(t.diagnosticHistory||[]).slice(-200);
+  // Лічильники повторів видалення старих Telegram-копій: лишаємо тільки
+  // невеликі числові значення, щоб імпорт не приносив сміття в заявку.
+  if(t.tgBackupCleanupAttempts&&typeof t.tgBackupCleanupAttempts==='object'&&!Array.isArray(t.tgBackupCleanupAttempts)){
+    const clean={};Object.keys(t.tgBackupCleanupAttempts).slice(0,32).forEach(key=>{const value=Number(t.tgBackupCleanupAttempts[key]);if(Number.isFinite(value)&&value>0&&value<=10)clean[key]=value;});
+    t.tgBackupCleanupAttempts=clean;
+  }
   return t;
 }
 

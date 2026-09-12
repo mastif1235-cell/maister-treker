@@ -265,24 +265,39 @@ async function sendCurrentTicketToDispatcher(){
    логін/пароль, вулиця/будинок/квартира, теги, geo-посилання тощо).
    Спрацьовує лише якщо в Налаштуваннях заповнені tgBotToken і tgBackupChatId,
    інакше нічого не робить. Не блокує збереження заявки — викликається без await. */
+// Telegram не дає видалити частину повідомлень ніколи (ліміт віку, права в
+// групі, невірний message_id). Такі відмови не можна крутити вічно: вони
+// відрізняються від тимчасових (мережа, 429, 5xx), які має сенс повторити.
+const MT_TG_CLEANUP_MAX_ATTEMPTS = 3;
+function telegramDeleteFailureIsPermanent(response, data){
+  const status=Number(response&&response.status)||0;
+  if(status===429||status>=500) return false;
+  const description=String((data&&data.description)||'');
+  if(/retry after|too many requests|flood/i.test(description)) return false;
+  if(status===400||status===403) return true;
+  return /can't be deleted|not enough rights|message_id_invalid|chat_admin_required|bot was kicked|forbidden/i.test(description);
+}
 async function deleteTicketTelegramMessages(t, token, chatId){
   // NEW: tgPhotoMsgIds — усі повідомлення з фото (до 3), tgPhotoMsgId лишається
   // як дублікат першого для сумісності зі старими заявками, тож не дублюємо його
   // в списку, якщо він вже є в масиві.
   const photoIds = (t.tgPhotoMsgIds && t.tgPhotoMsgIds.length) ? t.tgPhotoMsgIds : [t.tgPhotoMsgId].filter(Boolean);
   const ids = [t.tgSepMsgId, t.tgTextMsgId, ...photoIds, t.tgJsonMsgId].filter(Boolean);
-  const failedIds=[];
+  const failedIds=[], permanentIds=[];
   for(const msgId of ids){
     try{
       const response=await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({chat_id: chatId, message_id: msgId})
       });
-      const data=await response.json();if(!data.ok&&!/message to delete not found/i.test(String(data.description||'')))failedIds.push(Number(msgId));
+      let data={};try{data=await response.json();}catch(_e){data={};}
+      if(data.ok||/message to delete not found/i.test(String(data.description||'')))continue;
+      if(telegramDeleteFailureIsPermanent(response,data))permanentIds.push(Number(msgId));
+      else failedIds.push(Number(msgId));
     }catch(e){failedIds.push(Number(msgId));}
   }
   t.tgSepMsgId = null; t.tgTextMsgId = null; t.tgPhotoMsgId = null; t.tgJsonMsgId = null; t.tgPhotoMsgIds = []; t.tgPhotoFileIds = [];
-  return{ok:failedIds.length===0,failedIds};
+  return{ok:failedIds.length===0&&permanentIds.length===0,failedIds,permanentIds};
 }
 /* NEW: для бекапу в групу текст має бути ПОВНИМ — на відміну від t.content
    (який навмисно без приватної примітки/геолокації/логіна-пароля, бо саме
@@ -421,8 +436,34 @@ async function backupTicketToTelegramNow(t){
   t.tgBackupPending = true;
   await saveTicketsLocalOnly();
   if(Array.isArray(t.tgBackupCleanupMsgIds)&&t.tgBackupCleanupMsgIds.length){
-    const cleanup=await deleteTicketTelegramMessages({tgPhotoMsgIds:t.tgBackupCleanupMsgIds},token,chatId);t.tgBackupCleanupMsgIds=cleanup.failedIds;
-    t.tgBackupPending=cleanup.failedIds.length>0;await saveTicketsLocalOnly();refreshTicketCardDom(t.id);return cleanup.ok;
+    // Повторюємо видалення лише для тих id, які ще можна видалити. Постійні
+    // відмови Telegram (вік повідомлення, права в групі) не мають блокувати
+    // надсилання нової копії — інакше бекап заявки зупиняється назавжди.
+    const attempted=t.tgBackupCleanupMsgIds.slice();
+    const cleanup=await deleteTicketTelegramMessages({tgPhotoMsgIds:attempted},token,chatId);
+    const attempts=Object.assign({},t.tgBackupCleanupAttempts||{});
+    const stale=new Set((t.tgBackupStaleMsgIds||[]).map(Number));
+    const retryIds=[];
+    for(const rawId of attempted){
+      const id=Number(rawId),key=String(id);
+      if(cleanup.permanentIds.includes(id)){stale.add(id);delete attempts[key];continue;}
+      if(cleanup.failedIds.includes(id)){
+        const count=Number(attempts[key]||0)+1;
+        if(count>=MT_TG_CLEANUP_MAX_ATTEMPTS){stale.add(id);delete attempts[key];}
+        else{attempts[key]=count;retryIds.push(id);}
+      }
+    }
+    t.tgBackupCleanupMsgIds=retryIds;t.tgBackupCleanupAttempts=attempts;
+    const previousStale=(t.tgBackupStaleMsgIds||[]).map(Number), staleList=[...stale];
+    t.tgBackupStaleMsgIds=staleList;
+    t.tgBackupPending=retryIds.length>0;
+    await saveTicketsLocalOnly();refreshTicketCardDom(t.id);
+    // Актуальна копія вже надіслана раніше — цей блок лише прибирає старіші
+    // повідомлення. Тому жодних нових JSON заради очистки не створюємо: або
+    // повторюємо видалення пізніше (тимчасова відмова), або чесно лишаємо
+    // стару копію в групі й кажемо про це один раз.
+    if(!retryIds.length&&staleList.some(id=>!previousStale.includes(id)))showToast('⚠️ Стару копію в Telegram не вдалося видалити — вона може лишитися в групі');
+    return retryIds.length===0;
   }
   // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
   // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
