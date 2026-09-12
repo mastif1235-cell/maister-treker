@@ -25,6 +25,11 @@
     conflictFor(entity,id){return this.core.conflictFor(this.state,entity,id);}
     acceptServerConflict(entity,id,server){return this.persistTransition(s=>this.core.acceptServerConflict(s,entity,id,server));}
     keepLocalConflict(entity,id,server,payload){return this.persistTransition(s=>this.core.keepLocalConflict(s,entity,id,server,payload,uuid)).then(()=>this.flush());}
+    seedBaseline(entity,id,server){return this.persistTransition(s=>this.core.seedBaseline(s,entity,id,server));}
+    replaceState(state){
+      const snapshot=JSON.parse(JSON.stringify(state && typeof state==='object' ? state : {records:{}}));
+      return this.persistTransition(()=>snapshot);
+    }
     cancelRetryTimer(){if(this.retryTimer!==null){this.clearTimer(this.retryTimer);this.retryTimer=null;}}
     resetBackoff(){this.cancelRetryTimer();this.retryStep=0;}
     scheduleRetry(){if(this.retryTimer!==null||!this.online()||!this.pendingCount())return;const pending=this.core.pending(this.state);if(this.retryPolicy&&!this.retryPolicy(pending)){this.onChange(this.pendingCount());return;}const delay=this.retryDelays[Math.min(this.retryStep,this.retryDelays.length-1)];this.retryStep=Math.min(this.retryStep+1,this.retryDelays.length-1);this.retryTimer=this.setTimer(()=>{this.retryTimer=null;this.flush();},delay);}

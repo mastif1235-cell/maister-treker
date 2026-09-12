@@ -22,6 +22,7 @@
     if(data.networkPoints!==undefined&&!validCollection(data.networkPoints))return false;
     if(data.settings!==undefined&&!isPlainObject(data.settings))return false;
     if(data.photoData!==undefined){if(!isPlainObject(data.photoData)||Object.keys(data.photoData).length>MAX_PHOTOS)return false;for(const [key,value] of Object.entries(data.photoData)){if(!String(key).startsWith('idb:')||typeof value!=='string'||!value.startsWith('data:image/')||value.length>MAX_PHOTO_CHARS)return false;}}
+    if(data.syncJournal!==undefined&&!isPlainObject(data.syncJournal))return false;
     try{if(enc.encode(JSON.stringify(data)).byteLength>MAX_PLAIN_BYTES)return false;}catch(_e){return false;}
     return Array.isArray(data.tickets)||Array.isArray(data.shifts)||isPlainObject(data.settings)||Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
   }
@@ -74,6 +75,13 @@ if(typeof window!=='undefined'){
     if(hasShifts){shifts=nextShifts;syncShiftsSnapshot=JSON.parse(JSON.stringify(nextShifts));if(!await saveShiftsLocalOnly())throw new Error('SHIFT_WRITE_FAILED');}
     if(hasSettings){settings=nextSettings;saveSettings();}
     if(hasTools&&typeof toolsRestoreData==='function')toolsRestoreData(nextTools);
+    if(data.syncJournal){
+      try{
+        const journalState=JSON.parse(JSON.stringify(data.syncJournal));
+        if(typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage&&typeof MTSyncJournalStorage.save==='function')await MTSyncJournalStorage.save(journalState);
+        if(typeof syncEngine!=='undefined'&&syncEngine&&typeof syncEngine.replaceState==='function')await syncEngine.replaceState(journalState);
+      }catch(_journalError){}
+    }
     renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();showToast('Відновлені дані збережено локально й не відправлено в хмару');return true;
   }
   async function mtBackupMigrateLegacySlots(){

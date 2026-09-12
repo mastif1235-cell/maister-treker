@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-58'/,'installed-PWA cache revision is unique for the v91.19 autocomplete hotfix');
-assert.match(appSource,/APP_VERSION\s*=\s*'v91\.19 · 2026-09-10'/,'canonical release identity is v91.19');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v66-runtime-59'/,'installed-PWA cache revision is unique for the Google Sheets restore release');
+assert.match(appSource,/APP_VERSION\s*=\s*'v91\.20 · 2026-09-12'/,'canonical release identity is v91.20');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/let serviceWorkerRefreshing=false[\s\S]*if\(serviceWorkerRefreshing\) return;[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'controllerchange saves draft and allows one controlled reload');
 assert.doesNotMatch(fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8'),/SECURITY_AUDIT_RELEASE_LABEL/);
@@ -20,5 +20,5 @@ async function fetchEvent(request){let response;const waits=[];handlers.fetch({r
   assert.equal(localTouches,0);assert.equal(idbTouches,0);assert.equal(/Clear-Site-Data|indexedDB|localStorage|deleteDatabase|opfs/i.test(source),false);assert.equal(/Clear-Site-Data|deleteDatabase/.test(appSource),false);
   const clientHandlers={};const clientContext={navigator:{serviceWorker:{addEventListener:(name,fn)=>{clientHandlers[name]=fn;},register:async()=>({update:async()=>{}})}},window:{addEventListener(){},location:{reload:()=>{reloadCalls++;}}},document:{addEventListener(){}},saveDraftToLocalStorage(){},console};vm.createContext(clientContext);vm.runInContext(appSource.slice(appSource.indexOf("if('serviceWorker' in navigator)"),appSource.indexOf("window.addEventListener('beforeunload'")),clientContext);clientHandlers.controllerchange();clientHandlers.controllerchange();assert.equal(reloadCalls,1,'one controller activation causes at most one reload');assert.equal(clientHandlers.message,undefined,'repeated MT_SW_ACTIVATED messages cannot trigger reloads');
   for(const asset of added){const value=asset.url;if(!value.startsWith('./')||value==='./')continue;assert.equal(fs.existsSync(path.join(root,value.slice(2))),true,`missing cached asset ${value}`);}
-  console.log('PASS SW v91.19 starts cached navigation/code without waiting for network, refreshes in background and preserves application data');
+  console.log('PASS SW starts cached navigation/code without waiting for network, refreshes in background and preserves application data');
 })().catch(error=>{console.error(error);process.exitCode=1;});

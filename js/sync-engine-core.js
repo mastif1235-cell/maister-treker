@@ -119,6 +119,27 @@
     record.head = mutation('ticket', item.id, 'addTicket', 1, item.body, random);
     return {recovered:true,state};
   }
+  // Seeding the committed revision after a read-only restore. This writes only
+  // the durable baseline (no pending head), so a later real edit continues at
+  // committedRevision + 1 and the server accepts it without STALE. It never
+  // clobbers an existing pending mutation or an unresolved conflict, and it
+  // never regresses an already higher committed revision.
+  function seedBaseline(state, entity, id, server){
+    state = copy(state);
+    const recordKey = key(entity, id);
+    const current = state.records[recordKey];
+    if(current && (current.head || current.tail)) throw new Error('PENDING_MUTATION');
+    if(current && current.conflict) throw new Error('PENDING_CONFLICT');
+    const revision = Number(server && server.revision) || 0;
+    const tombstone = !!(server && server.tombstone);
+    const existingRevision = current ? (Number(current.committedRevision) || 0) : 0;
+    state.records[recordKey] = {
+      entity, id:String(id),
+      committedRevision:Math.max(existingRevision, revision),
+      tombstone, head:null, tail:null, conflict:null
+    };
+    return state;
+  }
   function pending(state){
     return Object.keys((state && state.records) || {}).sort().map(k=>state.records[k]).filter(r=>r.head).map(r=>{
       const item=copy(r.head); if(r.conflict) item.conflict=copy(r.conflict); return item;
@@ -135,5 +156,5 @@
     });
     return true;
   }
-  return {key, enqueue, markAttempted, acknowledge, reconcile, markConflict, conflictFor, acceptServerConflict, keepLocalConflict, recoverUncommittedAddTicketGap, pending, assertInvariants};
+  return {key, enqueue, markAttempted, acknowledge, reconcile, markConflict, conflictFor, acceptServerConflict, keepLocalConflict, recoverUncommittedAddTicketGap, seedBaseline, pending, assertInvariants};
 });

@@ -4,11 +4,11 @@ const root=path.join(__dirname,'..'),app=fs.readFileSync(path.join(root,'app.js'
 const ticketsRecovery=app.slice(app.indexOf('async function loadFromCloud()'),app.indexOf('async function sendAllToCloud()'));
 const shiftsRecovery=app.slice(app.indexOf('async function loadShiftsFromCloud()'),app.indexOf('async function sendShiftsToCloud()'));
 for(const body of [ticketsRecovery,shiftsRecovery]){
-  assert.match(body,/recovery protocol/);
+  assert.match(body,/restoreFromGoogleSheets/);
   assert.doesNotMatch(body,/\bfetch\b|\bres\b|getScriptUrl|saveTickets|saveShifts|ADMIN_RECOVERY_REQUIRED/);
 }
 assert.doesNotMatch(runtime,/if\s*\(\s*false\s*&&\s*typeof securityValidateBackupEnvelope/);
 const unsafe=JSON.parse('{"__proto__":{"polluted":true}}');
 assert.equal(backup.hasUnsafeKeys(unsafe),true);
 assert.equal(backup.validatePayload({app:'master-tracker',tickets:[unsafe],shifts:[],settings:{}}),false);
-console.log('PASS cloud recovery stays inert and active backup validation blocks unsafe keys');
+console.log('PASS cloud recovery delegates to the safe restore flow and backup validation blocks unsafe keys');

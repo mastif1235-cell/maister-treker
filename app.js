@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.19 · 2026-09-10';
+const APP_VERSION = 'v91.20 · 2026-09-12';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -206,7 +206,7 @@ function shiftToSyncPayload(s){
 }
 
 async function loadFromCloud(){
-  showToast('Повне відновлення з хмари вимкнено до окремого recovery protocol');
+  return restoreFromGoogleSheets('tickets');
 }
 
 
@@ -246,7 +246,7 @@ async function sendAllToCloud(){
    навіть якщо "URL Apps Script для змін" не заповнений — це явні кнопки
    саме для блоку "Синхронізація — Зміни", щоб не плутати користувача. */
 async function loadShiftsFromCloud(){
-  showToast('Повне відновлення змін вимкнено до окремого recovery protocol');
+  return restoreFromGoogleSheets('shifts');
 }
 /* Дата з таблиці може прийти як ДД.ММ.РРРР (рядок зі скрипта) — вона вже
    в потрібному форматі, але про всяк випадок підтримуємо й конвертацію,

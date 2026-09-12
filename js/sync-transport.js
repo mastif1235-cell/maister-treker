@@ -59,15 +59,18 @@
         return {ok:false,result};
       }catch(err){ return verify(mutation); }
     }
-    async function get(action,entity,id){
+    async function get(action,entity,id,timeoutMs){
       try{
         const url=await signedGetUrl(options.url({entity,id}),action,entity,id,options.secret(),random,now);
-        const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||4000);
+        const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},timeoutMs||options.verifyTimeoutMs||4000);
         const result=await response.json();
         return response.ok && result.status==='ok' ? {ok:true,result} : {ok:false,result};
       }catch(_err){return {ok:false,result:{status:'error',code:'NETWORK'}};}
     }
-    return {send,verify,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id)};
+    // Повне читання таблиці (list) важче за точковий getEntityState: на базі
+    // 1000+ записів Apps Script довше читає два аркуші й серіалізує JSON, тому
+    // для нього окремий, довший таймаут. Решта GET-ів лишаються на 4 с.
+    return {send,verify,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:()=>get('list','system','',options.listTimeoutMs||20000)};
   }
   return {create,signedEnvelope,signedGetUrl,signedStateUrl,semanticFingerprint};
 });

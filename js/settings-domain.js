@@ -146,18 +146,13 @@ function bindSettingsScreen(){
     settings.dogovorUrl = e.target.value.trim(); saveSettings();
   });
 
-  document.getElementById('loadCloudBtn').addEventListener('click', loadFromCloud);
-  document.getElementById('restoreCloudBtn').addEventListener('click', async ()=>{
-    if(!await openConfirmModal({title:'Відновити дані з хмари?',message:'Поточні локальні заявки буде замінено даними з таблиці. Перед відновленням переконайтесь, що є актуальний бекап.',confirmLabel:'Відновити',danger:true})) return;
-    loadFromCloud();
-  });
+  document.getElementById('loadCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
+  document.getElementById('restoreCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
   document.getElementById('sendAllBtn').addEventListener('click', sendAllToCloud);
-  document.getElementById('loadShiftsCloudBtn').addEventListener('click', loadShiftsFromCloud);
-  document.getElementById('restoreShiftsCloudBtn').addEventListener('click', async ()=>{
-    if(!await openConfirmModal({title:'Відновити зміни з хмари?',message:'Поточні локальні зміни буде замінено даними з таблиці змін.',confirmLabel:'Відновити',danger:true})) return;
-    loadShiftsFromCloud();
-  });
+  document.getElementById('loadShiftsCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('shifts'));
+  document.getElementById('restoreShiftsCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('shifts'));
   document.getElementById('sendShiftsAllBtn').addEventListener('click', sendShiftsToCloud);
+  document.getElementById('restoreFromSheetsBtn').addEventListener('click', ()=>restoreFromGoogleSheets('both'));
   document.getElementById('showScriptBtn').addEventListener('click', showAppsScriptModal);
   document.getElementById('exportJsonBtn').addEventListener('click', exportJsonBackup);
   document.getElementById('downloadExternalBackupNowBtn').addEventListener('click', ()=> downloadExternalDailyBackup());
