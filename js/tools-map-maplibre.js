@@ -81,6 +81,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   let map=null;
   let picker=null;
   let placement=null;
+  let unbindLongPress=null;
   let userMarker=null;
   let userPoint=null;
   let userAccuracy=0;
@@ -222,7 +223,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const cancelPointPlacement=()=>{if(!placement)return;if(map&&placement.clickHandler)map.off('click',placement.clickHandler);placement.marker?.remove();placement=null;};
   const destroyPicker=()=>{if(!picker)return;picker.map.remove();picker=null;pickerStatusNode=null;if(!map&&offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}};
-  const destroy=()=>{destroyPicker();cancelPointPlacement();if(map&&selectionClickHandler)map.off('click',selectionClickHandler);selectionClickHandler=null;selectionBounds=null;userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;if(objectEventsBound){map.off('click','mt-objects',handleObjectClick);map.off('mouseenter','mt-objects',handleObjectEnter);map.off('mouseleave','mt-objects',handleObjectLeave);objectEventsBound=false;}map.off('style.load',handleStyleLifecycle);map.off('styledata',handleStyleLifecycle);map.off('idle',handleStyleLifecycle);styleGeneration++;overlayRestorePending=false;captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
+  const destroy=()=>{destroyPicker();if(unbindLongPress){unbindLongPress();unbindLongPress=null;}cancelPointPlacement();if(map&&selectionClickHandler)map.off('click',selectionClickHandler);selectionClickHandler=null;selectionBounds=null;userMarker?.remove();userMarker=null;userPoint=null;if(!map)return;if(objectEventsBound){map.off('click','mt-objects',handleObjectClick);map.off('mouseenter','mt-objects',handleObjectEnter);map.off('mouseleave','mt-objects',handleObjectLeave);objectEventsBound=false;}map.off('style.load',handleStyleLifecycle);map.off('styledata',handleStyleLifecycle);map.off('idle',handleStyleLifecycle);styleGeneration++;overlayRestorePending=false;captureView();map.remove();map=null;if(offlineProtocol){gl.removeProtocol?.('pmtiles');offlineProtocol=null;}offlineBounds=null;};
   const mount=(container,_objects=[],options={})=>{
     destroy();
     if(!container||!webgl2Available()){
@@ -247,6 +248,17 @@ export function createMapLibreAdapter(gl,root=globalThis){
     map.on('moveend',()=>{captureView();updateOfflineCoverage();});
     map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');scheduleOverlayRestore(styleGeneration);}});
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
+    // Той самий long-press, що й у Leaflet: один обробник на обидва рушії.
+    if(typeof options.onAddHere==='function'&&typeof root.MTToolsMap?.bindMapLongPress==='function'){
+      const container=map.getContainer();
+      if(unbindLongPress)unbindLongPress();
+      unbindLongPress=root.MTToolsMap.bindMapLongPress(container,(clientX,clientY)=>{
+        if(placement)return; // у режимі розміщення точки працює звичайний клік
+        const rect=container.getBoundingClientRect();
+        const point=map.unproject([clientX-rect.left,clientY-rect.top]);
+        options.onAddHere({lat:point.lat,lng:point.lng});
+      },{ignore:()=>!!placement});
+    }
     map.on('error',event=>{if(currentBase==='satellite'){root.MTMapTilerLocal?.saveLayer?.('map');switchBaseLayer('map',options.statusNode,{remember:false,message:'Супутниковий шар недоступний. Відкрито звичайну карту.'});}else setStatus(options.statusNode,`Карта тимчасово недоступна: ${event.error?.message||'помилка завантаження'}`);});
     (root.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>map?.resize());
     return map;

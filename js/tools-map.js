@@ -24,9 +24,75 @@
   let userLayer=null;
   let selectionLayer=null;
   let placement=null;
+  let unbindLongPress=null;
   const baseStates=new WeakMap();
 
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
+  /* Long-press по карті = «додати обʼєкт тут». Один спільний обробник для обох
+     рушіїв: він лише визначає жест і віддає координати екрана, а сценарій
+     додавання лишається той самий, який уже приходить у onAddHere. */
+  function bindMapLongPress(container,handler,options={}){
+    if(!container||typeof handler!=='function')return null;
+    const holdMs=Number(options.holdMs)>0?Number(options.holdMs):600;
+    const tolerance=Number(options.tolerance)>0?Number(options.tolerance):12;
+    let timer=null,start=null,pointerId=null,firedAt=0;
+    const clearTimer=()=>{if(timer!==null){clearTimeout(timer);timer=null;}};
+    const cancel=()=>{clearTimer();start=null;pointerId=null;};
+    const recent=()=>firedAt>0&&Date.now()-firedAt<900;
+    const onPointerDown=event=>{
+      if(options.ignore?.())return;
+      if(event.pointerType==='mouse'&&event.button!==0)return;
+      if(pointerId!==null){cancel();return;} // друга точка дотику — це вже жест масштабування
+      pointerId=event.pointerId??'pointer';start={x:Number(event.clientX)||0,y:Number(event.clientY)||0};
+      clearTimer();
+      timer=setTimeout(()=>{
+        timer=null;
+        if(!start||options.ignore?.()){cancel();return;}
+        firedAt=Date.now();
+        const point={x:start.x,y:start.y};
+        cancel();
+        handler(point.x,point.y);
+      },holdMs);
+    };
+    const onPointerMove=event=>{
+      if(!start)return;
+      if(pointerId!==null&&event.pointerId!==undefined&&event.pointerId!==pointerId)return;
+      const dx=(Number(event.clientX)||0)-start.x,dy=(Number(event.clientY)||0)-start.y;
+      if(Math.hypot(dx,dy)>tolerance)cancel(); // користувач веде карту — жест скасовується
+    };
+    const onPointerEnd=()=>cancel();
+    const onClick=event=>{
+      if(!recent())return;
+      firedAt=0;
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+      event.stopPropagation?.();
+    };
+    const onContextMenu=event=>{
+      // Поки палець утримують (або одразу після) браузерне меню не потрібне.
+      if(!recent()&&!start)return;
+      firedAt=0;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+    };
+    container.addEventListener('pointerdown',onPointerDown);
+    container.addEventListener('pointermove',onPointerMove);
+    container.addEventListener('pointerup',onPointerEnd);
+    container.addEventListener('pointercancel',onPointerEnd);
+    container.addEventListener('pointerleave',onPointerEnd);
+    container.addEventListener('click',onClick,true);
+    container.addEventListener('contextmenu',onContextMenu,true);
+    return ()=>{
+      cancel();
+      container.removeEventListener('pointerdown',onPointerDown);
+      container.removeEventListener('pointermove',onPointerMove);
+      container.removeEventListener('pointerup',onPointerEnd);
+      container.removeEventListener('pointercancel',onPointerEnd);
+      container.removeEventListener('pointerleave',onPointerEnd);
+      container.removeEventListener('click',onClick,true);
+      container.removeEventListener('contextmenu',onContextMenu,true);
+    };
+  }
   function requestedEngine(options={}){
     if(options.engine)return options.engine;
     try{return root.URLSearchParams&&new root.URLSearchParams(root.location?.search||'').get('mapEngine')==='leaflet'?'leaflet':'maplibre';}catch(_error){return'maplibre';}
@@ -188,6 +254,7 @@
     if(!map)return;
     captureView();
     cancelPointPlacement();
+    unbindLongPress?.();unbindLongPress=null;
     baseStates.delete(map);map.remove();map=null;tileLayer=null;groups=new Map();userLayer=null;selectionLayer=null;
   }
   function currentCenter(){if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.currentCenter();if(!map)return null;const point=map.getCenter();return{lat:point.lat,lng:point.lng};}
@@ -331,6 +398,17 @@
     else map.setView(DEFAULT_CENTER,6);
     map.on('moveend zoomend',captureView);
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.latlng.lat,lng:event.latlng.lng}));
+    // Довге натискання = той самий сценарій, що й «＋» → клік по карті.
+    if(typeof options.onAddHere==='function'){
+      unbindLongPress?.();
+      const container=map.getContainer();
+      unbindLongPress=bindMapLongPress(container,(clientX,clientY)=>{
+        if(placement)return; // у режимі розміщення працює звичайний клік
+        const rect=container.getBoundingClientRect();
+        const point=map.containerPointToLatLng([clientX-rect.left,clientY-rect.top]);
+        options.onAddHere({lat:point.lat,lng:point.lng});
+      },{ignore:()=>!!placement});
+    }
     setTimeout(()=>map?.invalidateSize(),0);
     return map;
   }
@@ -382,5 +460,5 @@
   }
   function handleConnectivityChange(){return root.MTToolsMapLibreAdapter?.isMounted?.()?root.MTToolsMapLibreAdapter.handleConnectivityChange?.()||false:false;}
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
-  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange};
+  root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange,bindMapLongPress};
 })(typeof window!=='undefined'?window:globalThis);
