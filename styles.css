@@ -76,6 +76,38 @@ nav.tabbar{
 }
 .tab-btn .icon{font-size:21px; line-height:1;}
 .tab-btn.active{color:var(--accent);}
+/* Анімований логотип нижнього меню: один sprite на всі пʼять пунктів.
+   Кадри рухаються transform-ом (композитор), тому анімація не смикає верстку
+   й не перемальовує іконку щокадру. 12 кадрів по 28px = 336px, останній кадр
+   — повний логотип, він же лишається статичною картинкою без анімації. */
+.tab-btn .tab-logo{
+  position:relative; display:block; overflow:hidden;
+  width:28px; height:28px; flex:0 0 auto;
+}
+.tab-btn .tab-logo::before{
+  content:''; position:absolute; top:0; left:0; width:336px; height:28px;
+  background-image:url('assets/logo-tab-sprite.png');
+  background-repeat:no-repeat; background-size:336px 28px;
+  animation:mt-tab-logo 3s steps(1, end) infinite;
+}
+@keyframes mt-tab-logo{
+  0%{transform:translateX(0)}
+  6.6667%{transform:translateX(-28px)}
+  13.3333%{transform:translateX(-56px)}
+  20%{transform:translateX(-84px)}
+  26.6667%{transform:translateX(-112px)}
+  33.3333%{transform:translateX(-140px)}
+  40%{transform:translateX(-168px)}
+  46.6667%{transform:translateX(-196px)}
+  53.3333%{transform:translateX(-224px)}
+  60%{transform:translateX(-252px)}
+  66.6667%{transform:translateX(-280px)}
+  73.3333%{transform:translateX(-308px)}
+  100%{transform:translateX(-308px)}
+}
+@media (prefers-reduced-motion: reduce){
+  .tab-btn .tab-logo::before{animation:none; transform:translateX(-308px);}
+}
 @media (max-width:430px){.tab-btn{font-size:9.5px}.tab-btn .icon{font-size:19px}}
 
 .tools-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
