@@ -58,7 +58,58 @@
     if(!Array.isArray(result.tickets) || !Array.isArray(result.shifts)){
       return {ok:false, code:'MALFORMED', reason:'у відповіді немає списків заявок/змін'};
     }
-    return {ok:true, tickets:result.tickets, shifts:result.shifts};
+    const states = normalizeCloudStates(result.states);
+    if(!states.ok) return {ok:false, code:'MALFORMED', reason:states.reason || 'пошкоджений блок states'};
+    return {ok:true, tickets:result.tickets, shifts:result.shifts, states:states.present ? states.map : null};
+  }
+
+  // Bulk-ревізії з відповіді `list`. Новий сервер віддає states одним
+  // читанням _SyncState, тому відновленню не потрібен getEntityState на кожен
+  // запис. Відсутній блок = старий сервер => клієнт іде старим fallback.
+  // Пошкоджений або небезпечний блок відхиляється цілком: без точних ревізій
+  // відновлення не можна вважати безпечним.
+  function normalizeCloudStates(states){
+    if(states === undefined || states === null) return {ok:true, present:false, map:null};
+    if(!isPlainObject(states) || hasUnsafeKeys(states)) return {ok:false, reason:'небезпечний блок states'};
+    for(const key of Object.keys(states)){
+      if(key !== 'ticket' && key !== 'shift') return {ok:false, reason:'невідомий ключ у states'};
+    }
+    if(!Array.isArray(states.ticket) || !Array.isArray(states.shift)) return {ok:false, reason:'states має містити списки заявок і змін'};
+    const map = {ticket:new Map(), shift:new Map()};
+    for(const key of ['ticket', 'shift']){
+      const rows = states[key];
+      for(const row of rows){
+        if(!isPlainObject(row) || hasUnsafeKeys(row)) return {ok:false, reason:'пошкоджений запис states'};
+        const id = typeof row.id === 'string' ? row.id : '';
+        if(!id || id.length > 128) return {ok:false, reason:'некоректний id у states'};
+        const revision = row.revision;
+        if(typeof revision !== 'number' || !isFinite(revision) || revision < 0 || Math.floor(revision) !== revision || revision > 1000000000){
+          return {ok:false, reason:'некоректна ревізія у states'};
+        }
+        if(typeof row.tombstone !== 'boolean') return {ok:false, reason:'некоректний tombstone у states'};
+        if(map[key].has(id)) return {ok:false, reason:'дубль id у states'};
+        map[key].set(id, {revision, tombstone:row.tombstone});
+      }
+    }
+    return {ok:true, present:true, map};
+  }
+
+  // Будує baseline для журналу синхронізації з bulk-ревізій list, без мережі.
+  // Запис без рядка в _SyncState отримує revision 0 — рівно те, що повернув би
+  // getEntityState. Tombstone не імпортується: id потрапляє в skipCloud.
+  function baselineFromStates(items, statesMap){
+    const baselines = [];
+    const skipCloud = {ticket:new Set(), shift:new Set()};
+    (Array.isArray(items) ? items : []).forEach(item=>{
+      const entity = item && (item.entity === 'ticket' || item.entity === 'shift') ? item.entity : '';
+      const id = entity && item && item.id !== undefined && item.id !== null ? String(item.id) : '';
+      if(!entity || !id) throw Object.assign(new Error('BAD_BASELINE_ITEM'), {code:'REVISION_FETCH_FAILED'});
+      const bucket = (statesMap && statesMap[entity]) || new Map();
+      const entry = bucket.get(id);
+      if(entry && entry.tombstone){ skipCloud[entity].add(id); return; }
+      baselines.push({entity, id, revision:entry ? entry.revision : 0, tombstone:false});
+    });
+    return {baselines, skipCloud};
   }
 
   function cloudTicketToLocal(row, deps){
@@ -302,6 +353,7 @@
     hasUnsafeKeys,
     stableStringify,
     validateCloudListPayload,
+    normalizeCloudStates,
     cloudTicketToLocal,
     cloudShiftToLocal,
     canonicalTicket,
@@ -311,7 +363,8 @@
     applyTicketPlan,
     applyShiftPlan,
     defaultDecisions,
-    baselineRequests
+    baselineRequests,
+    baselineFromStates
   };
 });
 
@@ -684,24 +737,37 @@ if(typeof window !== 'undefined'){
     ];
     let baselineResult;
     if(baselineItems.length){
-      let progressEl = null;
-      openModal('Перевірка стану синхронізації', `<div style="font-size:14px; color:var(--text-dim);">Отримую серверні версії записів…</div><div id="mtBaselineProgress" style="font-weight:700; margin-top:6px;">0 / ${baselineItems.length}</div>`, {
-        onOpen: body=>{ progressEl = body.querySelector('#mtBaselineProgress'); }
-      });
-      try{
-        baselineResult = await mtFetchBaselines(baselineItems, {
-          transport,
-          concurrency:6,
-          maxRetries:2,
-          onProgress:(done,total)=>{ if(progressEl) progressEl.textContent = `${done} / ${total}`; }
+      if(validation.states){
+        // Новий сервер: ревізії вже прийшли разом з list — жодного
+        // додаткового запиту на запис.
+        try{
+          baselineResult = MTRestoreFromSheets.baselineFromStates(baselineItems, validation.states);
+        }catch(error){
+          globalThis.MTSafeError && globalThis.MTSafeError.reportError && globalThis.MTSafeError.reportError(error, {scope:'sheets-restore-revision'});
+          showToast('Не вдалося отримати серверні версії записів — локальну базу не змінено');
+          return;
+        }
+      }else{
+        // Старий сервер без states: попередня поведінка, getEntityState на запис.
+        let progressEl = null;
+        openModal('Перевірка стану синхронізації', `<div style="font-size:14px; color:var(--text-dim);">Отримую серверні версії записів…</div><div id="mtBaselineProgress" style="font-weight:700; margin-top:6px;">0 / ${baselineItems.length}</div>`, {
+          onOpen: body=>{ progressEl = body.querySelector('#mtBaselineProgress'); }
         });
-      }catch(error){
-        globalThis.MTSafeError && globalThis.MTSafeError.reportError && globalThis.MTSafeError.reportError(error, {scope:'sheets-restore-revision'});
+        try{
+          baselineResult = await mtFetchBaselines(baselineItems, {
+            transport,
+            concurrency:6,
+            maxRetries:2,
+            onProgress:(done,total)=>{ if(progressEl) progressEl.textContent = `${done} / ${total}`; }
+          });
+        }catch(error){
+          globalThis.MTSafeError && globalThis.MTSafeError.reportError && globalThis.MTSafeError.reportError(error, {scope:'sheets-restore-revision'});
+          closeModal();
+          showToast('Не вдалося отримати серверні версії записів — локальну базу не змінено');
+          return;
+        }
         closeModal();
-        showToast('Не вдалося отримати серверні версії записів — локальну базу не змінено');
-        return;
       }
-      closeModal();
     }else{
       baselineResult = {baselines:[], skipCloud:{ticket:new Set(), shift:new Set()}};
     }

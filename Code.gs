@@ -409,6 +409,33 @@ function syncReadEntityState_(ss, entityType, entityId) {
   return empty;
 }
 
+// Bulk-читання ревізій для однієї книги: одне getValues на весь лист
+// _SyncState, без записів. Потрібне для `list`, щоб клієнт не робив
+// getEntityState на кожен запис. Перший рядок з id перемагає — так само, як
+// поводиться точковий syncReadEntityState_. Ревізії лишаються єдиним
+// джерелом істини: list їх лише повертає, мутації перевіряють як і раніше.
+function syncReadAllEntityStates_(ss, entityType) {
+  var states = [];
+  var sheet = syncGetStateSheet_(ss, false);
+  if (!sheet || sheet.getLastRow() <= 1) return states;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, SYNC_STATE_HEADERS.length).getValues();
+  var seen = {};
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) !== String(entityType)) continue;
+    var id = safeString(rows[i][1]);
+    if (!id) continue;
+    var seenKey = '#' + id;
+    if (seen[seenKey]) continue;
+    seen[seenKey] = true;
+    states.push({
+      id: id,
+      revision: Number(rows[i][2]) || 0,
+      tombstone: rows[i][3] === true || String(rows[i][3]).toLowerCase() === 'true'
+    });
+  }
+  return states;
+}
+
 function syncWriteEntityState_(ss, state, rowIndex) {
   var sheet = syncGetStateSheet_(ss, true);
   var row = [state.entityType, state.entityId, state.revision, state.tombstone, state.fingerprint, state.requestId, state.updatedAt];
@@ -454,7 +481,12 @@ function syncReadAll_() {
       if (row[0] || row[1]) shifts.push({id:safeString(row[0]), date:cellToDateString(row[1], shiftTz), hours:safeNumber(row[2]), coworker:safeString(row[3])});
     });
   }
-  return {status:'ok', tickets:tickets, shifts:shifts};
+  return {
+    status:'ok',
+    tickets:tickets,
+    shifts:shifts,
+    states:{ticket:syncReadAllEntityStates_(ticketSs, 'ticket'), shift:syncReadAllEntityStates_(shiftSs, 'shift')}
+  };
 }
 
 function syncTicketFromRow_(row, tz) {

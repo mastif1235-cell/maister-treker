@@ -53,6 +53,7 @@ This length-prefixing removes separator ambiguity and makes Unicode byte handlin
 - Ticket add/update/delete and shift add/delete are idempotent by stable entity ID. `addShift` updates an existing matching ID instead of duplicating it.
 - Revision-1 `addTicket` is an idempotent upsert so the first mutation can adopt a pre-contract legacy row without a destructive Sheets migration.
 - Signed `getEntityState` returns only `exists`, `revision`, `tombstone` and the semantic fingerprint for tickets and shifts.
+- Signed `list` also returns bulk revisions in `states: {ticket:[{id, revision, tombstone}], shift:[...]}`. Both `_SyncState` sheets are read with exactly one `getValues` per workbook and `list` never writes to Google Sheets. The client uses these revisions to seed the sync baseline after a restore, so no per-entity `getEntityState` calls are needed; absence of `states` (older deployment) keeps the previous per-entity fallback. Revisions stay authoritative on the server: mutations still validate `revision` exactly as before, and `getEntityState` keeps its original role.
 - `syncAll*`/`clearAll` return `ADMIN_RECOVERY_REQUIRED` until a separate recovery protocol can preserve revisions and tombstones. They are never incremental repair mechanisms.
 
 ## Tests
@@ -62,6 +63,7 @@ Run:
 ```text
 node tests/gas-contract.test.js
 node tests/gas-static.test.js
+node tests/gas-list-states.test.js
 ```
 
 The first suite independently calculates every vector through the future browser client implementation and the GAS implementation executed with Apps Script mocks. It also covers malformed signatures, expired timestamps, replayed nonces, modified bodies, wrong keys, oversized bodies, exact lost-response retry, retry with a fresh nonce, and request-ID collision.
