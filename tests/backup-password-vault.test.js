@@ -22,7 +22,8 @@ const context={
   localDateKey:()=> '2026-08-30',tickets:[],shifts:[],settings:{theme:'dark',syncHmacSecret:'server-secret'},
   securitySanitizeSettingsForBackup:value=>({theme:value.theme}),blankTicketObject:()=>({signal:''}),securityRuntimeSanitizeTicket:value=>value,
   collectLocalPhotoData:async()=>({photoData:{},missingPhotos:0}),photoDbPut:async()=>true,migrateLegacyPhotosToIdb:async()=>{},
-  saveTickets:async()=>{},saveShifts:async()=>{},saveSettings:()=>{},renderTicketsScreen:()=>{},renderShiftsScreen:()=>{},renderSettingsScreen:()=>{},
+  saveTickets:async()=>{},saveShifts:async()=>{},saveSettings:()=>{},saveTicketsLocalOnly:async()=>true,saveShiftsLocalOnly:async()=>true,
+  renderTicketsScreen:()=>{},renderShiftsScreen:()=>{},renderSettingsScreen:()=>{},
   securityMergeImportedSettings:(_imported,current)=>current
 };
 context.window=context;
