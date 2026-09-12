@@ -12,7 +12,18 @@ function renderYearChart(){
   document.getElementById('yearChart').innerHTML = hoursByMonth.map((h,i)=>{ const pct=Math.max(2,Math.round((h/max)*100)), active=i===statsViewDate.getMonth(); return `<button type="button" class="ychart-bar-wrap" data-month="${i}" title="${MONTH_NAMES[i]}: ${h.toFixed(1)} год"><span class="ychart-val">${h>0?h.toFixed(0):''}</span><span class="ychart-bar ${active?'active':''}" style="height:${pct}%"></span><span class="ychart-lbl">${MONTH_NAMES[i].slice(0,3)}</span></button>`; }).join('');
 }
 function renderShiftStats(){ const {count,totalHours,averageHours,salary}=calculateShiftMonthStats(shifts,statsViewDate,settings.hourlyRate); document.getElementById('shiftStatGrid').innerHTML=`<div class="stat-box"><div class="s-val tabular">${count}</div><div class="s-lbl">Змін</div></div><div class="stat-box"><div class="s-val tabular">${totalHours.toFixed(1)}</div><div class="s-lbl">Годин</div></div><div class="stat-box"><div class="s-val tabular">${averageHours.toFixed(1)}</div><div class="s-lbl">Середнє/зміну</div></div><div class="stat-box"><div class="s-val tabular">${fmtMoney(salary)}</div><div class="s-lbl">Зарплата</div></div>`; }
-function renderShiftHistory(){ const monthShifts=sortShiftsByDateDesc(getShiftsForMonth(shifts,statsViewDate)),card=document.getElementById('shiftHistoryCard'); if(!monthShifts.length){card.innerHTML=`<div class="empty-state"><div class="es-icon">🕒</div>Змін у цьому місяці ще немає</div>`;return;} card.innerHTML=monthShifts.map(s=>{const earned=calculateShiftEarnings(s.hours,settings.hourlyRate);return `<div class="shift-row" data-id="${s.id}"><div><div class="sr-main">${escapeHtml(s.date)} · ${s.hours} год</div><div class="sr-sub">${escapeHtml(s.coworker)}${earned>0?` · ${fmtMoney(earned)}`:''}</div></div><button type="button" class="delete-shift-btn" data-id="${s.id}">✕</button></div>`;}).join(''); }
+function renderShiftHistory(){
+  const monthShifts=sortShiftsByDateDesc(getShiftsForMonth(shifts,statsViewDate)),card=document.getElementById('shiftHistoryCard');
+  if(!monthShifts.length){card.innerHTML=`<div class="empty-state"><div class="es-icon">🕒</div>Змін у цьому місяці ще немає</div>`;return;}
+  card.innerHTML=monthShifts.map(s=>{
+    const earned=calculateShiftEarnings(s.hours,settings.hourlyRate);
+    // Конфлікт показуємо тим самим індикатором, що й у заявках, лише коли sync
+    // справді зафіксував розбіжність із сервером для цієї зміни.
+    const conflict=typeof getEntityConflict==='function'?getEntityConflict('shift',s.id):null;
+    const conflictBtn=conflict?`<button type="button" class="shift-conflict-btn" data-id="${escapeHtml(String(s.id))}" title="Оберіть, яку версію зберегти">⚠️ Конфлікт</button>`:'';
+    return `<div class="shift-row" data-id="${s.id}"><div><div class="sr-main">${escapeHtml(s.date)} · ${s.hours} год</div><div class="sr-sub">${escapeHtml(s.coworker)}${earned>0?` · ${fmtMoney(earned)}`:''}</div></div><div class="shift-row-actions">${conflictBtn}<button type="button" class="delete-shift-btn" data-id="${s.id}">✕</button></div></div>`;
+  }).join('');
+}
 
 function formatShiftMonthText(monthShifts, refDate, monthNames, updatedText){
   const totalHours = monthShifts.reduce((s,x)=>s+(Number(x.hours)||0),0);

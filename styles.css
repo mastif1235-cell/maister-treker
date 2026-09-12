@@ -347,6 +347,8 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .shift-row .sr-main{font-weight:600; font-size:14px;}
 .shift-row .sr-sub{font-size:12.5px; color:var(--text-dim);}
 .shift-row button{background:none; border:none; color:var(--danger); font-size:18px; padding:6px;}
+.shift-row-actions{display:flex; align-items:center; gap:6px;}
+.shift-conflict-btn{background:none; border:1px solid var(--danger); border-radius:8px; color:var(--danger); font-size:11.5px; font-weight:600; padding:4px 8px; line-height:1.4;}
 
 .tag-mgmt-list, .cw-mgmt-list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;}
 .settings-row{display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);}

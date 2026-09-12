@@ -209,6 +209,8 @@ function bindShiftsScreen(){
   });
   document.getElementById('addShiftBtn').addEventListener('click', addShift);
   document.getElementById('shiftHistoryCard').addEventListener('click', e=>{
+    const conflictBtn = e.target.closest('.shift-conflict-btn');
+    if(conflictBtn){ showShiftConflictResolution(conflictBtn.dataset.id); return; }
     const btn = e.target.closest('.delete-shift-btn'); if(!btn) return;
     Promise.resolve(deleteShift(btn.dataset.id)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'shift-delete'}));
   });
@@ -290,3 +292,74 @@ function shiftsSyncConfigUserMessage(status){
   return '';
 }
 /* ==== кінець блоку діагностики змін ==== */
+
+/* ==== Розв’язання конфлікту зміни ====
+   Семантика така сама, як у заявок: локальну зміну ніколи не перезаписуємо
+   автоматично. Серверну версію можна взяти лише якщо її реально віддає
+   поточний контракт: Code.gs підтримує getEntityState для shift і повне
+   читання таблиці (list), окремого читання одного рядка зміни в контракті
+   немає. Тому server-варіант робить той самий безпечний list, що й
+   відновлення з Google Sheets, і двічі звіряє ревізію/відпечаток стану. */
+async function readCurrentShiftState(id){
+  const transport=syncEngine&&syncEngine.transport;
+  if(!transport||typeof transport.getEntityState!=='function')throw new Error('TRANSPORT_UNAVAILABLE');
+  const response=await transport.getEntityState('shift',id);
+  if(!response.ok||!response.result||!response.result.state)throw new Error(response.result?.code||'STATE_READ_FAILED');
+  return response.result.state;
+}
+async function readCurrentShiftConflict(id){
+  const state=await readCurrentShiftState(id);
+  if(state.tombstone)return{state,shift:null};
+  const transport=syncEngine&&syncEngine.transport;
+  if(!transport||typeof transport.listAll!=='function')throw new Error('TRANSPORT_UNAVAILABLE');
+  const listResponse=await transport.listAll();
+  if(!listResponse.ok||!listResponse.result)throw new Error(listResponse.result?.code||'SHIFT_READ_FAILED');
+  const validated=MTRestoreFromSheets.validateCloudListPayload(listResponse.result);
+  if(!validated.ok)throw new Error(validated.code||'SHIFT_READ_FAILED');
+  const serverShift=(validated.shifts||[]).find(item=>String(item.id)===String(id));
+  // Між читанням стану й таблиці хтось міг записати ще раз — тоді не гадаємо.
+  const confirmed=await readCurrentShiftState(id);
+  if(Number(confirmed.revision)!==Number(state.revision)||!!confirmed.tombstone!==!!state.tombstone||String(confirmed.fingerprint||'')!==String(state.fingerprint||''))throw new Error('SERVER_CHANGED_RETRY');
+  if(!serverShift)throw new Error('SHIFT_ROW_MISSING');
+  return {state,shift:serverShift};
+}
+function shiftFromConflictServer(serverShift,current){
+  const next=Object.assign({},current||{});
+  Object.assign(next,{id:String(serverShift.id),date:String(serverShift.date||''),hours:Number(serverShift.hours)||0,coworker:String(serverShift.coworker||'Сам')});
+  return next;
+}
+async function acceptServerShiftConflict(id){
+  const index=shifts.findIndex(item=>String(item.id)===String(id));
+  if(index<0||!getEntityConflict('shift',id))return;
+  const remote=await readCurrentShiftConflict(id);
+  if(remote.state.tombstone)shifts=shifts.filter(item=>String(item.id)!==String(id));
+  else shifts[index]=shiftFromConflictServer(remote.shift,shifts[index]);
+  if(!await saveShiftsLocalOnly())throw new Error('LOCAL_WRITE_FAILED');
+  syncShiftsSnapshot=JSON.parse(JSON.stringify(shifts));
+  await syncEngine.acceptServerConflict('shift',id,remote.state);
+  closeModal();renderShiftsScreen();showToast('Прийнято версію з Таблиці ✅');
+}
+async function keepLocalShiftConflict(id){
+  const local=shifts.find(item=>String(item.id)===String(id));
+  if(!local||!getEntityConflict('shift',id))return;
+  const state=await readCurrentShiftState(id);
+  if(state.tombstone)throw new Error('TOMBSTONED');
+  await syncEngine.keepLocalConflict('shift',id,state,shiftToSyncPayload(local));
+  closeModal();renderShiftsScreen();
+  showToast(isEntitySynced('shift',id)?'Локальну версію збережено ✅':'Версію поставлено в чергу');
+}
+function showShiftConflictResolution(id){
+  if(!getEntityConflict('shift',id))return;
+  openModal('⚠️ Конфлікт зміни', `
+    <div style="font-size:14px; line-height:1.5; margin-bottom:12px;">Цю зміну змінили на іншому пристрої. Оберіть версію — автоматично дані не перезаписуються.</div>
+    <button type="button" class="btn btn-block" id="acceptServerShiftConflictBtn">Прийняти версію з Таблиці</button>
+    <button type="button" class="btn btn-accent btn-block" id="keepLocalShiftConflictBtn" style="margin-top:8px;">Залишити цю локальну версію</button>`, {
+    onOpen:()=>{
+      const run=async(button,action)=>{button.disabled=true;try{await action();}catch(error){button.disabled=false;showToast(error.message==='TOMBSTONED'?'Зміну вже видалено на іншому пристрої — прийміть серверну версію':error.message==='SHIFT_ROW_MISSING'?'Не вдалося прочитати зміну з таблиці — спробуйте пізніше':`Не вдалося вирішити конфлікт: ${error.message}`);}};
+      const accept=document.getElementById('acceptServerShiftConflictBtn');
+      const keep=document.getElementById('keepLocalShiftConflictBtn');
+      accept.onclick=()=>run(accept,()=>acceptServerShiftConflict(id));
+      keep.onclick=()=>run(keep,()=>keepLocalShiftConflict(id));
+    }
+  });
+}
