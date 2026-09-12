@@ -26,6 +26,12 @@
     acceptServerConflict(entity,id,server){return this.persistTransition(s=>this.core.acceptServerConflict(s,entity,id,server));}
     keepLocalConflict(entity,id,server,payload){return this.persistTransition(s=>this.core.keepLocalConflict(s,entity,id,server,payload,uuid)).then(()=>this.flush());}
     seedBaseline(entity,id,server){return this.persistTransition(s=>this.core.seedBaseline(s,entity,id,server));}
+    seedBaselines(items){
+      const list=Array.isArray(items)?items:[];
+      if(!list.length)return Promise.resolve(this.state);
+      if(typeof this.core.seedBaselines==='function')return this.persistTransition(s=>this.core.seedBaselines(s,list));
+      return this.persistTransition(s=>list.reduce((next,item)=>this.core.seedBaseline(next,item.entity,item.id,{revision:Number(item&&item.revision)||0,tombstone:!!(item&&item.tombstone)}),s));
+    }
     replaceState(state){
       const snapshot=JSON.parse(JSON.stringify(state && typeof state==='object' ? state : {records:{}}));
       return this.persistTransition(()=>snapshot);
@@ -44,10 +50,20 @@
             await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));
             failedEntities.add(`${item.entity}:${item.id}`);continue;
           }
+          // Остаточна відмова сервера (запис видалено в хмарі) не має
+          // ретраїтись вічно: паркуємо як явний конфлікт для рішення користувача.
+          if(error && error.code==='TOMBSTONED'){
+            await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));
+            failedEntities.add(`${item.entity}:${item.id}`);continue;
+          }
           if(error && error.code==='REVISION_GAP' && this.core.recoverUncommittedAddTicketGap){
             let recovered=false;
             await this.persistTransition(s=>{const repair=this.core.recoverUncommittedAddTicketGap(s,item,error.state,uuid);recovered=repair.recovered;return repair.state;});
             if(recovered)continue;
+          }
+          if(error && error.code==='REVISION_GAP'){
+            await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));
+            failedEntities.add(`${item.entity}:${item.id}`);continue;
           }
           failed=true;failedEntities.add(`${item.entity}:${item.id}`);continue;
         }

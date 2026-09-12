@@ -43,7 +43,8 @@ assert.equal(state.records['ticket:t4'].committedRevision,9,'no regression to lo
 state=core.enqueue(core.seedBaseline({records:{}},'ticket','t5',{revision:2,tombstone:false}),{entity:'ticket',id:'t5',payload:{content:'x'}},random);
 assert.throws(()=>core.seedBaseline(state,'ticket','t5',{revision:3,tombstone:false}),/PENDING_MUTATION/);
 
-// 9/10. конфлікт local не чіпає baseline; cloud отримує серверний baseline.
+// 9/10. конфлікт — baseline завжди вирівнюється під серверну ревізію (R1);
+// контент визначає лише рішення користувача.
 function ticketToSyncPayload(t){
   return {id:String(t.id||''),date:String(t.date||''),time:String(t.time||''),content:String(t.content||''),sum:Number(t.sum)||0,tags:Array.isArray(t.tags)?t.tags:[],backupNote:'',fullDataJson:JSON.stringify({city:t.city||'',clientName:t.clientName||''})};
 }
@@ -52,8 +53,8 @@ const local=[{id:'c1',date:'01.09.2026',time:'10:00',content:'local',sum:100,tag
 const cloudRow={id:'c1',date:'01.09.2026',time:'10:00',content:'cloud',sum:100,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Київ',clientName:'Іван'})};
 const plan=restore.buildTicketPlan(local,[cloudRow],deps);
 assert.equal(plan.stats.conflictCount,1);
-assert.deepEqual(restore.baselineRequests(plan,{c1:'local'}),[],'local conflict keeps local baseline');
-assert.deepEqual(restore.baselineRequests(plan,{c1:'cloud'}),[{entity:'ticket',id:'c1'}],'cloud conflict fetches cloud baseline');
+assert.deepEqual(restore.baselineRequests(plan,{c1:'local'}),[{entity:'ticket',id:'c1'}],'local conflict still aligns the server revision');
+assert.deepEqual(restore.baselineRequests(plan,{c1:'cloud'}),[{entity:'ticket',id:'c1'}],'cloud conflict aligns the server revision');
 assert.equal(restore.applyTicketPlan(local,[cloudRow],{c1:'local'},deps)[0].content,'local','local decision keeps local content');
 assert.equal(restore.applyTicketPlan(local,[cloudRow],{c1:'cloud'},deps)[0].content,'cloud','cloud decision imports cloud content');
 

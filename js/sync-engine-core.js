@@ -124,21 +124,28 @@
   // committedRevision + 1 and the server accepts it without STALE. It never
   // clobbers an existing pending mutation or an unresolved conflict, and it
   // never regresses an already higher committed revision.
-  function seedBaseline(state, entity, id, server){
+  // Baseline для одного або багатьох id за одну трансакцію: стан копіюється
+  // один раз, тому масова вирівнювальна розмітка після restore не коштує O(N²).
+  function seedBaselines(state, items){
     state = copy(state);
-    const recordKey = key(entity, id);
-    const current = state.records[recordKey];
-    if(current && (current.head || current.tail)) throw new Error('PENDING_MUTATION');
-    if(current && current.conflict) throw new Error('PENDING_CONFLICT');
-    const revision = Number(server && server.revision) || 0;
-    const tombstone = !!(server && server.tombstone);
-    const existingRevision = current ? (Number(current.committedRevision) || 0) : 0;
-    state.records[recordKey] = {
-      entity, id:String(id),
-      committedRevision:Math.max(existingRevision, revision),
-      tombstone, head:null, tail:null, conflict:null
-    };
+    (Array.isArray(items) ? items : []).forEach(item=>{
+      if(!item || !item.entity || item.id === undefined || item.id === null) throw new Error('BAD_BASELINE_ITEM');
+      const recordKey = key(item.entity, item.id);
+      const current = state.records[recordKey];
+      if(current && (current.head || current.tail)) throw new Error('PENDING_MUTATION');
+      if(current && current.conflict) throw new Error('PENDING_CONFLICT');
+      const revision = Number(item.revision) || 0;
+      const existingRevision = current ? (Number(current.committedRevision) || 0) : 0;
+      state.records[recordKey] = {
+        entity:item.entity, id:String(item.id),
+        committedRevision:Math.max(existingRevision, revision),
+        tombstone:!!item.tombstone, head:null, tail:null, conflict:null
+      };
+    });
     return state;
+  }
+  function seedBaseline(state, entity, id, server){
+    return seedBaselines(state, [{entity, id, revision:Number(server && server.revision) || 0, tombstone:!!(server && server.tombstone)}]);
   }
   function pending(state){
     return Object.keys((state && state.records) || {}).sort().map(k=>state.records[k]).filter(r=>r.head).map(r=>{
@@ -156,5 +163,5 @@
     });
     return true;
   }
-  return {key, enqueue, markAttempted, acknowledge, reconcile, markConflict, conflictFor, acceptServerConflict, keepLocalConflict, recoverUncommittedAddTicketGap, seedBaseline, pending, assertInvariants};
+  return {key, enqueue, markAttempted, acknowledge, reconcile, markConflict, conflictFor, acceptServerConflict, keepLocalConflict, recoverUncommittedAddTicketGap, seedBaseline, seedBaselines, pending, assertInvariants};
 });

@@ -335,17 +335,41 @@
     return decisions;
   }
 
-  // Які сутності потрібно «привʼязати» до серверної revision: нові з хмари та
-  // конфлікти, які користувач вирішив узяти з хмари. Для local/skip baseline
-  // лишається локальним і не перезаписується.
-  function baselineRequests(plan, decisions){
+  // Які сутності потрібно «привʼязати» до серверної revision: усі записи, які
+  // є в хмарі — нові, однакові та конфлікти, незалежно від рішення по
+  // конфлікту. Рішення визначає лише контент; baseline завжди має дорівнювати
+  // серверній ревізії, інакше наступна локальна правка втрапить у STALE.
+  function baselineRequests(plan){
     const requests = [];
     if(!plan || !Array.isArray(plan.items)) return requests;
     plan.items.forEach(item=>{
-      if(item.kind === 'new'){ requests.push({entity:plan.entity, id:item.id}); return; }
-      if(item.kind === 'conflict' && (decisions && decisions[item.id]) === 'cloud'){ requests.push({entity:plan.entity, id:item.id}); }
+      if(item.kind === 'new' || item.kind === 'match' || item.kind === 'conflict'){ requests.push({entity:plan.entity, id:item.id}); }
     });
     return requests;
+  }
+
+  // Локальний запис, який на сервері вже видалено (tombstone). Такий запис не
+  // імпортується, не видаляється локально і не пересоздається. Baseline
+  // вирівнюється під серверну ревізію без tombstone-прапорця: наступна правка
+  // піде як update на revision+1, сервер відповість TOMBSTONED (delete-wins), а
+  // клієнт паркує цю відповідь як явний конфлікт. Тому немає ні retry-циклу,
+  // ні мовчазної втрати правки.
+  function tombstonedLocalBaselines(items, statesMap){
+    const baselines = [];
+    const seen = new Set();
+    (Array.isArray(items) ? items : []).forEach(item=>{
+      const entity = item && (item.entity === 'ticket' || item.entity === 'shift') ? item.entity : '';
+      const id = entity && item && item.id !== undefined && item.id !== null ? String(item.id) : '';
+      if(!entity || !id) return;
+      const key = entity + ':' + id;
+      if(seen.has(key)) return;
+      const bucket = statesMap && statesMap[entity];
+      const entry = bucket && typeof bucket.get === 'function' ? bucket.get(id) : null;
+      if(!entry || !entry.tombstone) return;
+      seen.add(key);
+      baselines.push({entity, id, revision:Number(entry.revision) || 0, tombstone:false});
+    });
+    return {baselines};
   }
 
   return {
@@ -364,7 +388,8 @@
     applyShiftPlan,
     defaultDecisions,
     baselineRequests,
-    baselineFromStates
+    baselineFromStates,
+    tombstonedLocalBaselines
   };
 });
 
@@ -403,7 +428,8 @@ if(typeof window !== 'undefined'){
 
   function mtRestorePlanStatsText(label, stats){
     const s = stats || {};
-    return `${label}: у хмарі ${s.cloudCount || 0}, нових ${s.newCount || 0}, збігається ${s.matchCount || 0}, конфліктів ${s.conflictCount || 0}, пошкоджених ${s.invalidCount || 0}, лише локально ${s.localOnlyCount || 0}`;
+    const deleted = Number(s.cloudDeletedLocalCount) || 0;
+    return `${label}: у хмарі ${s.cloudCount || 0}, нових ${s.newCount || 0}, збігається ${s.matchCount || 0}, конфліктів ${s.conflictCount || 0}, пошкоджених ${s.invalidCount || 0}, лише локально ${s.localOnlyCount || 0}${deleted ? `, видалених у хмарі ${deleted} (лишаються локально)` : ''}`;
   }
 
   function mtRestoreTicketConflictLabel(item){
@@ -632,9 +658,16 @@ if(typeof window !== 'undefined'){
       if(errors.length) throw new Error('DATA_WRITE_FAILED');
 
       const baselines = Array.isArray(opts.baselines) ? opts.baselines : [];
-      if(baselines.length && typeof syncEngine !== 'undefined' && syncEngine && typeof syncEngine.seedBaseline === 'function'){
-        for(const baseline of baselines){
-          await syncEngine.seedBaseline(baseline.entity, baseline.id, {revision:baseline.revision, tombstone:!!baseline.tombstone});
+      if(baselines.length && typeof syncEngine !== 'undefined' && syncEngine){
+        if(typeof syncEngine.seedBaselines === 'function'){
+          // Одна журнальна трансакція на весь набір: baseline тепер
+          // вирівнюється для всіх записів з хмари, тому окремий запис на кожен
+          // id був би квадратичним по I/O на великій базі.
+          await syncEngine.seedBaselines(baselines);
+        }else if(typeof syncEngine.seedBaseline === 'function'){
+          for(const baseline of baselines){
+            await syncEngine.seedBaseline(baseline.entity, baseline.id, {revision:baseline.revision, tombstone:!!baseline.tombstone});
+          }
         }
       }
     }catch(_error){
@@ -714,6 +747,20 @@ if(typeof window !== 'undefined'){
     const ticketPlan = includeTickets ? MTRestoreFromSheets.buildTicketPlan(tickets || [], validation.tickets, deps) : null;
     const shiftPlan = includeShifts ? MTRestoreFromSheets.buildShiftPlan(shifts || [], validation.shifts) : null;
 
+    // R2: локальні записи, яких немає в хмарі, але серверний state — tombstone.
+    // Рахуємо це до показу аналізу: користувач має бачити, що такі записи
+    // лишаються локально і не синхронізуються самі.
+    const localOnlyItems = [];
+    if(ticketPlan) ticketPlan.items.forEach(item=>{ if(item.kind === 'local-only') localOnlyItems.push({entity:'ticket', id:item.id}); });
+    if(shiftPlan) shiftPlan.items.forEach(item=>{ if(item.kind === 'local-only') localOnlyItems.push({entity:'shift', id:item.id}); });
+    const deletedLocalBaselines = (validation.states && localOnlyItems.length)
+      ? MTRestoreFromSheets.tombstonedLocalBaselines(localOnlyItems, validation.states).baselines
+      : [];
+    if(deletedLocalBaselines.length){
+      if(ticketPlan) ticketPlan.stats.cloudDeletedLocalCount = deletedLocalBaselines.filter(item=>item.entity === 'ticket').length;
+      if(shiftPlan) shiftPlan.stats.cloudDeletedLocalCount = deletedLocalBaselines.filter(item=>item.entity === 'shift').length;
+    }
+
     const proceed = await mtShowRestoreAnalysis(scope, ticketPlan, shiftPlan);
     if(!proceed) return;
 
@@ -728,12 +775,12 @@ if(typeof window !== 'undefined'){
     const summary = mtBuildRestoreSummary(scope, ticketPlan, shiftPlan, decision);
     if(!await openConfirmModal({title:'Застосувати відновлення з Google Sheets?', message:summary, confirmLabel:'Відновити', danger:true})) return;
 
-    // Read-only baseline: отримуємо серверну revision для записів, які
-    // імпортуються з хмари (нові + конфлікти, узяті з хмари). Жодна локальна
-    // зміна не відбувається, поки всі версії не отримані.
+    // Read-only baseline: отримуємо серверну revision для всіх записів, що є в
+    // хмарі (нові, однакові, конфлікти — рішення впливає лише на контент).
+    // Жодна локальна зміна не відбувається, поки всі версії не отримані.
     const baselineItems = [
-      ...(ticketPlan ? MTRestoreFromSheets.baselineRequests(ticketPlan, decision.tickets) : []),
-      ...(shiftPlan ? MTRestoreFromSheets.baselineRequests(shiftPlan, decision.shifts) : [])
+      ...(ticketPlan ? MTRestoreFromSheets.baselineRequests(ticketPlan) : []),
+      ...(shiftPlan ? MTRestoreFromSheets.baselineRequests(shiftPlan) : [])
     ];
     let baselineResult;
     if(baselineItems.length){
@@ -771,6 +818,10 @@ if(typeof window !== 'undefined'){
     }else{
       baselineResult = {baselines:[], skipCloud:{ticket:new Set(), shift:new Set()}};
     }
+    // R2: baseline локально лишених, але вже видалених у хмарі записів
+    // (пораховано вище) додаємо до того самого набору seed — навіть коли в
+    // хмарі немає жодного запису для відновлення.
+    if(validation.states && deletedLocalBaselines.length) baselineResult.baselines = baselineResult.baselines.concat(deletedLocalBaselines);
 
     let backupKey = '';
     try{
