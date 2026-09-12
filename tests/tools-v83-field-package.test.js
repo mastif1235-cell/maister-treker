@@ -24,7 +24,8 @@ assert.match(binding,/Зберегти координати/);assert.match(bindi
 assert.ok(binding.indexOf('await saveTickets()')>binding.indexOf('toolsAddressPickerSave'),'coordinates persist only in the explicit save handler');
 
 assert.match(domain,/toolsDiagnosticsProfileSearch/);assert.match(domain,/profile\.city,profile\.street,profile\.house,profile\.apartment,profile\.address/);
-assert.match(domain,/Відгук інтернету/);assert.match(domain,/Стабільність відгуку/);assert.match(domain,/Що означають ці показники\?/);assert.match(domain,/не звичайний ICMP Ping/);
+assert.match(domain,/Інтернет/);assert.match(domain,/Завантаження/);assert.match(domain,/Відвантаження/);
+for(const jargon of ['Відгук інтернету','Стабільність відгуку','Що означають ці показники','ICMP','CORS'])assert.doesNotMatch(domain,new RegExp(jargon),`diagnostics screen keeps out ${jargon}`);
 assert.match(core,/Відгук інтернету/);assert.match(core,/Стабільність відгуку/);
 
 assert.match(styles,/\.naryad-editor-overlay #modalBody\{[^}]*padding:2px/);assert.match(styles,/\.naryad-editor-textarea:focus/);

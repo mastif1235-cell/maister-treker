@@ -17,7 +17,8 @@ assert.deepEqual(core.sortNewestFirst(legacy).map(x=>x.id),['legacy-b','legacy-a
 assert.deepEqual(core.searchNetworkPoints(points,'Муфта').map(x=>x.id),['old-z','new-a'],'search still finds all matching points');
 
 assert.match(html,/id="calcDiagnosticsBtn"[^>]*type="button"|type="button"[^>]*id="calcDiagnosticsBtn"/);assert.match(domain,/openToolsDiagnosticsFromCalculator\(\)[\s\S]*document\.activeElement\?\.blur/,'diagnostics blurs the address field before navigation');
-assert.match(domain,/id="toolsConnectionTarget" name="mt-internal-diagnostic-host" autocomplete="off"/);assert.doesNotMatch(domain,/<label>Адреса або хост<\/label>/,'diagnostic host control does not advertise address autofill semantics');
+assert.doesNotMatch(domain,/toolsConnectionTarget|mt-internal-diagnostic-host/,'the continuous availability host field is gone');
+assert.doesNotMatch(domain,/data-tools-action="start-connection-check"/);
 assert.match(domain,/editorContext:true/);assert.match(domain,/toolsDiagnosticContext\?\.ticketId\|\|toolsDiagnosticContext\?\.editorContext/,'ticket draft context never asks for the same address again');
 assert.match(domain,/draft\.state\.diagnosticHistory=MTToolsCore\.appendDiagnosticHistory/);assert.match(domain,/localStorage\.setItem\(MT_TOOLS_DRAFT_KEY,JSON\.stringify\(draft\)\)/,'history is persisted in the current editor draft');
 assert.match(domain,/calcState=JSON\.parse\(JSON\.stringify\(draft\.state\)\)/);assert.doesNotMatch(domain,/toolsReturnToTicket\(\)[\s\S]{0,500}localStorage\.removeItem\(MT_TOOLS_DRAFT_KEY/,'return restores the same editor without premature draft cleanup');

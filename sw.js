@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v66-runtime-63';
+const CACHE_NAME = 'maister-treker-v66-runtime-64';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',
   './js/core-utils.js','./js/safe-error.js','./js/storage-registry.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/map-marker-renderer.js','./js/address-suggestions.js','./js/ticket-time-utils.js','./js/settings-core.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',

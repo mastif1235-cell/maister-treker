@@ -17,7 +17,6 @@ let toolsOfflineImportAreaId='';
 let toolsLastUserLocation=null;
 let toolsMapReturnContext=null;
 let toolsSelectedNetworkPointId='';
-let toolsConnectionCheck=null;
 let toolsSpeedController=null;
 let toolsSpeedStatus='';
 let toolsOfflineReturnSettings=false;
@@ -70,7 +69,7 @@ function toolsNavigate(view){
   appNavigationPush(`tools-${view}`,()=>{if(toolsView==='map')MTOfflineMap?.resetViewMode?.();toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
 }
 function toolsOpenRootFromTab(){
-  toolsStopConnectionCheck(false);toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();MTToolsMap?.destroyMap?.();
+  toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();MTToolsMap?.destroyMap?.();
   MTOfflineMap?.resetViewMode?.();
   toolsMapFullscreen=false;document.body.classList.remove('tools-map-fullscreen-open');
   toolsOfflineReturnSettings=false;toolsOfflinePendingBounds=null;toolsOfflineEditingAreaId='';toolsOfflineImportAreaId='';toolsView='home';
@@ -86,7 +85,7 @@ function toolsContextHtml(){
 function toolsClearDiagnosticAddress(){toolsDiagnosticContext=null;toolsDiagnosticSaved=false;}
 function toolsResumeTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input)input.disabled=false;});}
 function toolsSuspendTicketAddressInputs(){['f_city','f_street','f_house','f_apartment'].forEach(id=>{const input=document.getElementById(id);if(input){input.value='';input.disabled=true;}});}
-function toolsLeaveDiagnostics(){if(toolsView!=='diagnostics')return;toolsStopConnectionCheck(false);toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();toolsView='home';}
+function toolsLeaveDiagnostics(){if(toolsView!=='diagnostics')return;toolsCancelSpeedTest();toolsResumeTicketAddressInputs();toolsClearDiagnosticAddress();toolsView='home';}
 function toolsResetDiagnosticAddress(){toolsClearDiagnosticAddress();renderToolsScreen('diagnostics');}
 function toolsOpenDiagnostics(context=null,returnTab='tools'){
   if(returnTab==='tools')appNavigationPush('tools-diagnostics',()=>{toolsLeaveDiagnostics();switchTab('tools');renderToolsScreen('home');});
@@ -317,7 +316,7 @@ function toolsReturnToTicketLinking(newPointId=''){
 }
 
 function renderToolsScreen(view){
-  const nextView=view||toolsView;if(toolsView==='diagnostics'&&nextView!=='diagnostics')toolsStopConnectionCheck(false);toolsView=nextView;
+  const nextView=view||toolsView;toolsView=nextView;
   const root=document.getElementById('toolsScreenRoot');if(!root)return;
   MTToolsMap?.captureView?.();
   if(toolsView==='diagnostics')root.innerHTML=toolsDiagnosticsHtml();
@@ -349,8 +348,6 @@ function bindToolsScreen(){
     else if(action==='reset-diagnostic-address')toolsResetDiagnosticAddress();
     else if(action==='run-speed-test')toolsRunSpeedTest();
     else if(action==='cancel-speed-test')toolsCancelSpeedTest();
-    else if(action==='start-connection-check')toolsStartConnectionCheck();
-    else if(action==='stop-connection-check')toolsStopConnectionCheck();
     else if(action==='return-to-ticket')toolsReturnToTicket();
     else if(action==='new-network-point')toolsOpenNetworkPointEditor();
     else if(action==='map-add-object')toolsStartMapAddMode();

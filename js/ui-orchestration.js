@@ -115,7 +115,6 @@ const SCREEN_TITLES = {tickets:'Заявки', calculator:'Калькулято�
 function switchTab(tab){
   if(tab!=='tools'&&typeof toolsLeaveDiagnostics==='function')toolsLeaveDiagnostics();
   if(tab!=='tools'&&typeof toolsLeaveOfflineSettings==='function')toolsLeaveOfflineSettings();
-  if(tab!=='tools'&&typeof toolsStopConnectionCheck==='function')toolsStopConnectionCheck(false);
   // NEW: якщо вкладка вже й так активна — не скидаємо скрол. Це прибирає
   // ефект "улетів на початок форми", який траплявся, якщо щось під час
   // заповнення заявки повторно викликало перемикання на ту саму вкладку.

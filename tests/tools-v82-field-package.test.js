@@ -61,15 +61,14 @@ assert.equal(clone.tickets[0].geoLat,48.123);assert.equal(clone.tickets[0].house
 assert.equal(clone.networkPoints[0].telegramMessageId,44);assert.deepEqual(clone.networkPoints[0].photoKeys,['idb:p1']);
 assert.doesNotMatch(backupSource,/offlineMap|pmtiles/i,'backup payload has no offline map archive');
 
-// Continuous availability check is explicit, bounded and honest.
-assert.match(domain,/Безперервна перевірка доступності/);assert.match(domain,/не ICMP ping/);
-assert.match(diagnosticNetwork,/Справжній ICMP ping до IP-адреси недоступний у браузерній PWA/);
-assert.match(domain,/CORS\/браузерне блокування/);assert.doesNotMatch(domain,/packet loss|втрата пакетів/i);
-assert.match(diagnosticNetwork,/setTimeout\(toolsConnectionCheckTick,1000\)/);
-assert.match(diagnosticNetwork,/state\.log=state\.log\.slice\(0,20\)/);
-assert.match(domain,/toolsStopConnectionCheck/);assert.match(read('js/ui-orchestration.js'),/if\(tab!=='tools'/);
-assert.doesNotMatch(diagnosticNetwork,/toolsSaveDiagnostics\(\)[\s\S]{0,120}toolsConnectionCheckTick/,'continuous check never auto-saves diagnostics');
+// Diagnostics screen stays short: no continuous availability block, no internal jargon.
+assert.doesNotMatch(domain,/Безперервна перевірка доступності/);
+assert.doesNotMatch(domain,/ICMP|CORS|Private Network Access|DNS lookup/,'no browser-internals jargon is shown to the fitter');
+assert.doesNotMatch(domain,/toolsConnectionCheck|ConnectionCheckTick|start-connection-check/);
+assert.doesNotMatch(read('js/ui-orchestration.js'),/toolsStopConnectionCheck/);
+assert.match(domain,/tools-router-grid/);assert.match(read('styles.css'),/\.tools-router-grid\{display:grid; grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+assert.equal((domain.match(/data-router-ip=/g)||[]).length,1,'router grid renders from one canonical list');
 
-assert.match(sw,/maister-treker-v66-runtime-63/);
-assert.match(read('app.js'),/v91\.24 · 2026-09-12/);
-console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and honest availability check');
+assert.match(sw,/maister-treker-v66-runtime-64/);
+assert.match(read('app.js'),/v91\.25 · 2026-09-12/);
+console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and compact diagnostics screen');
