@@ -107,6 +107,22 @@
     return {baselines, skipCloud};
   }
 
+  // Хмара — зовнішнє джерело: таблицю можна правити вручну, тому колекції
+  // заявки приводимо до тих самих меж, що й імпорт із бекапу. Без цього рядок
+  // із не-масивом або тисячами записів історії потрапляє в локальну базу як є.
+  function normalizeImportedCollections(ticket){
+    const core = typeof MTToolsCore !== 'undefined' ? MTToolsCore : null;
+    const diagnostics = core && typeof core.sanitizeDiagnostics === 'function'
+      ? core.sanitizeDiagnostics(ticket.diagnosticHistory)
+      : (Array.isArray(ticket.diagnosticHistory) ? ticket.diagnosticHistory : []).filter(item=>item && typeof item === 'object');
+    // Історія діагностик — це хронологія: обрізаємо найстаріші записи.
+    ticket.diagnosticHistory = diagnostics.slice(-200);
+    ticket.networkPointIds = core && typeof core.networkPointIds === 'function'
+      ? core.networkPointIds(ticket.networkPointIds)
+      : (Array.isArray(ticket.networkPointIds) ? ticket.networkPointIds : []).map(value=>String(value == null ? '' : value).trim()).filter(Boolean);
+    return ticket;
+  }
+
   function cloudTicketToLocal(row, deps){
     deps = deps || {};
     if(!row || typeof row !== 'object' || Array.isArray(row) || hasUnsafeKeys(row)){
@@ -158,7 +174,7 @@
       ticket.password = extra.password || '';
     }
 
-    return {invalid:false, ticket};
+    return {invalid:false, ticket:normalizeImportedCollections(ticket)};
   }
 
   function cloudShiftToLocal(row){

@@ -106,7 +106,8 @@ function securityRuntimeSanitizeTicket(ticket,index=0){
 
   ['tags','extraPhones','photos','tgPhotoFileIds','tgPhotoMsgIds','connectMasters','equipment','cables','presetWorks','additionalWork','networkPointIds','diagnosticHistory'].forEach(k=>{
     if(k in t && !Array.isArray(t[k])) t[k]=[];
-    if(Array.isArray(t[k]) && t[k].length>500) t[k]=t[k].slice(0,500);
+    // Діагностика — це хронологія: обрізаємо найстаріші записи, а не найновіші.
+    if(Array.isArray(t[k]) && t[k].length>500) t[k]=k==='diagnosticHistory'?t[k].slice(-500):t[k].slice(0,500);
   });
   if(typeof MTToolsCore!=='undefined'&&typeof MTToolsCore.sanitizeDiagnostics==='function')t.diagnosticHistory=MTToolsCore.sanitizeDiagnostics(t.diagnosticHistory||[]).slice(-200);
   return t;
