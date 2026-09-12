@@ -583,6 +583,25 @@ async function backupTicketToTelegramNow(t){
    ніби заявку й не видаляли, навіть якщо локальне фото вже загублено.
    Майстер сам відкриває потрібний .json у Telegram, копіює весь його текст
    і вставляє в модалку нижче — жодних токенів чи ручного набору полів. */
+/* Чи стосується цей Telegram-JSON заявці, яка вже є локально. Шукаємо за
+   оригінальним id (він є у файлі) і, як запасний варіант для старих файлів без
+   id, за message_id уже відомих копій у групі. */
+function findTicketForTelegramRestore(parsed){
+  if(!parsed||typeof parsed!=='object')return null;
+  const own=value=>String(value===undefined||value===null?'':value);
+  const parsedIds=[parsed.id,...(Array.isArray(parsed.tgPhotoMsgIds)?parsed.tgPhotoMsgIds:[])].map(own).filter(Boolean);
+  if(parsedIds.length){
+    const byId=tickets.find(ticket=>ticket&&parsedIds.includes(own(ticket.id)));
+    if(byId)return byId;
+  }
+  const messageIds=['tgSepMsgId','tgTextMsgId','tgPhotoMsgId','tgJsonMsgId'].map(key=>own(parsed[key])).filter(Boolean);
+  if(!messageIds.length)return null;
+  return tickets.find(ticket=>{
+    if(!ticket)return false;
+    const owned=[ticket.tgSepMsgId,ticket.tgTextMsgId,ticket.tgPhotoMsgId,ticket.tgJsonMsgId,...(Array.isArray(ticket.tgPhotoMsgIds)?ticket.tgPhotoMsgIds:[])].map(own).filter(Boolean);
+    return owned.some(id=>messageIds.includes(id));
+  })||null;
+}
 function restoreTicketFromTelegramJson(jsonText){
   let parsed;
   try{ parsed = JSON.parse(jsonText); }
@@ -605,6 +624,14 @@ function restoreTicketFromTelegramJson(jsonText){
   }
   if(parsed.content!==undefined && parsed.content!==null && typeof parsed.content!=='string'){
     showToast('Поле "зміст" у файлі має неправильний формат — перевірте .json'); return false;
+  }
+  // NEW: якщо така заявка вже є в застосунку, копію не створюємо — інакше нова
+  // заявка успадкувала б Telegram-id оригінала і могла б редагувати/видаляти
+  // його бекап у групі. Відновлення справді відсутньої заявки працює як раніше.
+  const existingTicket=findTicketForTelegramRestore(parsed);
+  if(existingTicket){
+    showToast('Ця заявка вже є в застосунку — відновлення не потрібне');
+    return false;
   }
   const restored = JSON.parse(JSON.stringify(parsed));
   if(restored.sum!==undefined && restored.sum!==null) restored.sum = Number(restored.sum) || 0;
