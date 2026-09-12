@@ -43,11 +43,6 @@
     return JSON.stringify(value);
   }
 
-  function normalizeJsonText(text){
-    try{ return stableStringify(JSON.parse(text)); }
-    catch(_e){ return JSON.stringify(String(text || '')); }
-  }
-
   function validateCloudListPayload(result){
     if(!result || typeof result !== 'object' || Array.isArray(result) || hasUnsafeKeys(result)){
       return {ok:false, code:'MALFORMED', reason:'хмара повернула небезпечний або пошкоджений обʼєкт'};
@@ -180,25 +175,136 @@
     return {invalid:false, shift:{id, date, hours, coworker}};
   }
 
+  // Порівняння заявок/змін: нормалізуємо лише формат (порожнє значення, тип,
+  // хвостові пробіли, формат дати/часу, порядок незначущих наборів), але не
+  // сенс. Будь-яка реальна розбіжність значень лишається конфліктом.
+  const COMPARABLE_UNORDERED_FIELDS = ['networkPointIds', 'diagnosticHistory'];
+
+  function comparableFieldOptions(field){
+    return COMPARABLE_UNORDERED_FIELDS.indexOf(String(field)) >= 0 ? {unordered:true} : null;
+  }
+
+  function padComparable(value){
+    return (value < 10 ? '0' : '') + String(value);
+  }
+
+  function comparableDate(value){
+    if(value && typeof value.getTime === 'function' && typeof value.getFullYear === 'function' && !isNaN(value.getTime())){
+      return value.getFullYear() + '-' + padComparable(value.getMonth() + 1) + '-' + padComparable(value.getDate());
+    }
+    const text = String(value === undefined || value === null ? '' : value).trim();
+    if(!text) return null;
+    let match = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if(match) return match[3] + '-' + padComparable(match[2]) + '-' + padComparable(match[1]);
+    match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(match) return match[1] + '-' + padComparable(match[2]) + '-' + padComparable(match[3]);
+    match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(match) return match[3] + '-' + padComparable(match[2]) + '-' + padComparable(match[1]);
+    return text;
+  }
+
+  function comparableTime(value){
+    if(value && typeof value.getHours === 'function' && typeof value.getMinutes === 'function'){
+      return padComparable(value.getHours()) + ':' + padComparable(value.getMinutes());
+    }
+    const text = String(value === undefined || value === null ? '' : value).trim();
+    if(!text) return null;
+    const match = text.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+    if(!match) return text;
+    const hours = Number(match[1]);
+    if(!(hours >= 0 && hours <= 23)) return text;
+    return padComparable(hours) + ':' + match[2];
+  }
+
+  function comparableNumberText(text){
+    const cleaned = text.replace(/\s+/g, '').replace(',', '.');
+    if(!/^[-+]?\d+(\.\d+)?$/.test(cleaned)) return null;
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function comparableContent(value){
+    const text = String(value === undefined || value === null ? '' : value).replace(/[\s\u00a0]+$/, '');
+    return text === '' ? null : text;
+  }
+
+  // Порожнє (немає ключа / null / '' / [] / {}) і нуль — те саме «порожньо»:
+  // старі рядки не мали нових полів, і це не розбіжність даних.
+  function comparableValue(value, options){
+    const unordered = !!(options && options.unordered);
+    if(value === undefined || value === null) return null;
+    if(typeof value === 'number'){
+      if(!Number.isFinite(value)) return String(value);
+      return value === 0 ? null : value;
+    }
+    if(typeof value === 'boolean') return value === false ? null : value;
+    if(typeof value === 'string'){
+      const trimmed = value.trim();
+      if(!trimmed) return null;
+      const parsed = comparableNumberText(trimmed);
+      if(parsed !== null) return parsed === 0 ? null : parsed;
+      return trimmed;
+    }
+    if(Array.isArray(value)){
+      const items = value.map(item=>comparableValue(item)).filter(item=>item !== null);
+      if(!items.length) return null;
+      return unordered ? items.map(item=>stableStringify(item)).sort() : items;
+    }
+    if(isPlainObject(value)){
+      const result = {};
+      Object.keys(value).sort().forEach(key=>{
+        const normalized = comparableValue(value[key], comparableFieldOptions(key));
+        if(normalized !== null) result[key] = normalized;
+      });
+      return Object.keys(result).length ? result : null;
+    }
+    return String(value);
+  }
+
   function canonicalTicket(ticket, deps){
     deps = deps || {};
     const toPayload = (typeof deps.ticketToSyncPayload === 'function') ? deps.ticketToSyncPayload : function(t){
       return {id:t.id, date:t.date, time:t.time, content:t.content, sum:t.sum, tags:t.tags || [], backupNote:'', fullDataJson:''};
     };
     const p = toPayload(ticket) || {};
+    // Пласкі поля берём из самой заявки: payload может подменить невалидную
+    // дату/время на «сегодня», и это дало бы расхождение там, где данные те же.
+    const source = ticket && typeof ticket === 'object' ? ticket : {};
+    const pick = field=>{
+      const raw = source[field];
+      return raw === undefined || raw === null || raw === '' ? p[field] : raw;
+    };
+    let full = null;
+    try{ full = JSON.parse(String(p.fullDataJson || '') || 'null'); }catch(_e){ full = null; }
+    if(isPlainObject(full)){
+      // geoLink — це локація, а не формат тексту: якщо з обох боків є
+      // координати, довга/коротка ссылка сама по собі не є розбіжністю.
+      const lat = comparableValue(full.geoLat);
+      const lng = comparableValue(full.geoLng);
+      if(typeof lat === 'number' && typeof lng === 'number') full.geoLink = 'coordinates';
+    }
+    const note = (typeof deps.parseBackupNote === 'function' ? deps.parseBackupNote(String(p.backupNote || '')) : null) || {};
     return stableStringify({
-      id:String(p.id || ''), date:String(p.date || ''), time:String(p.time || ''),
-      content:String(p.content || ''), sum:Number(p.sum) || 0,
-      tags:Array.isArray(p.tags) ? p.tags.slice().sort() : [],
-      backupNote:String(p.backupNote || ''),
-      fullDataJson:normalizeJsonText(String(p.fullDataJson || ''))
+      id:String(pick('id') === undefined || pick('id') === null ? '' : pick('id')),
+      date:comparableDate(pick('date')),
+      time:comparableTime(pick('time')),
+      content:comparableContent(pick('content')),
+      sum:Number(pick('sum')) || 0,
+      tags:comparableValue(Array.isArray(pick('tags')) ? pick('tags') : [], {unordered:true}),
+      full:comparableValue(full),
+      // backupNote не порівнюємо як рядок: він похідний від geoLink/masterNote
+      // (вони вже в fullDataJson) і від login/password — саме їх і порівнюємо.
+      login:comparableValue(note.login),
+      password:comparableValue(note.password)
     });
   }
 
   function canonicalShift(shift){
     return stableStringify({
-      id:String(shift.id || ''), date:String(shift.date || ''),
-      hours:Number(shift.hours) || 0, coworker:String(shift.coworker || '')
+      id:String(shift === undefined || shift === null || shift.id === undefined || shift.id === null ? '' : shift.id),
+      date:comparableDate(shift && shift.date),
+      hours:Number(shift && shift.hours) || 0,
+      coworker:comparableValue(shift && shift.coworker)
     });
   }
 
