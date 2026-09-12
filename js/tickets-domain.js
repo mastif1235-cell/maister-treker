@@ -53,12 +53,20 @@ function renderSyncQueueBanner(){
 async function retrySyncQueue(){
   const retryBtn = document.getElementById('syncQueueRetryBtn');
   if(!syncEngine || !getScriptUrl()) return;
+  const bannerText = document.getElementById('syncQueueBannerText');
+  // Ручний повтор має бути видимим: показуємо стан одразу, а якщо flush уже
+  // виконується — чекаємо саме його, не запускаючи другий паралельний.
+  const runningLoop = syncEngine.loop || null;
+  const previousLabel = retryBtn.textContent;
   retryBtn.disabled = true;
+  retryBtn.textContent = 'Синхронізація…';
+  if(bannerText) bannerText.textContent = runningLoop ? '⏳ Синхронізація вже виконується — чекаємо завершення' : '⏳ Синхронізація…';
   let ok=false;
   try{
-    ok=await syncEngine.flush();
+    ok=await (runningLoop || syncEngine.flush());
   } finally {
     retryBtn.disabled = false;
+    retryBtn.textContent = previousLabel || 'Повторити';
   }
   // NEW: якщо не пройшли саме зміни — робимо безпечну read-only пробу й
   // показуємо підказку замість загального «залишилось не синхронізовано».
