@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.28 · 2026-09-14';
+const APP_VERSION = 'v91.29 · 2026-09-14';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -27,7 +27,9 @@ let deletedTickets = loadJSON('deletedTickets', []); // "кошик" — ост�
 let syncEngine = null;
 let syncTicketsSnapshot = [];
 let syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
-const DELETED_TICKETS_MAX = 30;
+// Кошик не обрізається за кількістю: кожна видалена заявка (і її фото)
+// зберігається рівно до планового очищення за віком.
+const DELETED_TICKET_RETENTION_DAYS = 30;
 // NEW: черга "сирих" нарядів від диспетчера — вставив текст як є (з Viber
 // тощо), поки не перетворив на заявку. Маленькі текстові записи, тож
 // localStorage тут цілком доречний (не той випадок, що з tickets).
@@ -405,6 +407,7 @@ async function init(){
   try{
     photoDb = await openPhotoDb();
     await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
+    await cleanupExpiredDeletedTickets(); // лише записи, для яких минув явно показаний строк кошика
 
     backupDb = await openBackupDb();
     await maybeRunDailyBackup(); // NEW: раз на день — автоматичний знімок заявок/змін у IndexedDB (10 останніх днів по колу)
@@ -424,7 +427,7 @@ async function init(){
   renderToolsScreen();
   renderSettingsScreen();
 
-  restoreDraftIfAny();
+  await restoreDraftIfAny();
   setInterval(saveDraftToLocalStorage, 30000);
 
   maybeShowMonthlyCleanupReminder(); // NEW: 1-го числа кожного місяця — нагадування почистити файли бекапів

@@ -170,7 +170,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
   };
   const handleStyleLifecycle=()=>scheduleOverlayRestore(styleGeneration);
   const offlineStyle=async()=>{
-    const pm=root.pmtiles,stored=await root.MTOfflineMap?.archive?.();
+    const pm=(await root.MTMapAssets?.loadPmtiles?.())||root.pmtiles,stored=await root.MTOfflineMap?.archive?.();
     if(!stored?.file||!pm?.PMTiles||!pm?.FileSource||!pm?.Protocol)throw new Error('OFFLINE_MAP_UNAVAILABLE');
     const key=`mt-offline-${Date.now()}-${++offlineSequence}`,source=new pm.FileSource(stored.file);source.getKey=()=>key;
     const archive=new pm.PMTiles(source),[header,metadata]=await Promise.all([archive.getHeader(),archive.getMetadata().catch(()=>({}))]);

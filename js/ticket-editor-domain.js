@@ -75,14 +75,14 @@ function cleanupUnsavedDraftPhotos(draft){
   });
 }
 
-function restoreDraftIfAny(){
+async function restoreDraftIfAny(){
   const raw = localStorage.getItem(DRAFT_KEY);
   if(!raw) return;
   let draft;
   try{ draft = JSON.parse(raw); } catch(e){ clearDraft(); return; }
   if(!draft || !draft.state) { clearDraft(); return; }
   const d = new Date(draft.ts);
-  const ok = confirm(`Знайдено незбережену чернетку заявки від ${formatDate(d)} ${formatTime(d)}.\nВідновити її?`);
+  const ok = await openConfirmModal({title:'Відновити незбережену чернетку?',message:`Чернетка від ${formatDate(d)} ${formatTime(d)} буде відкрита для продовження роботи.`,confirmLabel:'Відновити'});
   if(!ok){ cleanupUnsavedDraftPhotos(draft); clearDraft(); return; }
   editingTicketId = draft.editingTicketId || null;
   loadTicketIntoForm(draft.state);
@@ -395,11 +395,16 @@ function getCurrentTicketText(){
   const isOther = calcState.type === 'Інше';
   assignContractNumberIfNeeded();
   const total = isOther ? 0 : computeTotal();
-  return buildTicketContent({
+  const state={
     ...calcState,
     type:getEffectiveType(),
     freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
-  }, total);
+  };
+  // Formatter output must use the same effective fee as the live total. This
+  // matters before the form has been saved, when baseCallFee can differ from
+  // the last persisted callFee after an equipment/threshold change.
+  state.callFee=effectiveTicketCallFee(state);
+  return buildTicketContent(state, total);
 }
 
 function getEffectiveType(){
@@ -576,9 +581,9 @@ function setGeoLink(link,coords=null){
 /* Одна розумна кнопка 📍:
    - якщо HTTPS і GPS доступні — визначає координати автоматично
    - якщо GPS заблокований або файл відкрито локально — одразу показує модалку «вставити посилання» */
-function handleGeoBtn(){
+async function handleGeoBtn(){
   if(MTToolsCore.explicitCoordinates(calcState)){openTicketGeoPointPicker();return;}
-  if(calcState.geoLink&&!confirm('Геолокація вже додана. Оновити?'))return;
+  if(calcState.geoLink&&!await openConfirmModal({title:'Оновити геолокацію?',message:'Поточну геолокацію буде замінено новою.',confirmLabel:'Оновити'}))return;
   openGeoPasteModal();
 }
 
@@ -802,7 +807,7 @@ async function saveTicketFromForm(e){
   if(!editingTicketId && calcState.address){
     const nowMs = Date.now();
     const similar = tickets.find(t=>MTTicketTime.isRecentDuplicateCandidate(t,{city:calcState.city,address:calcState.address,now:nowMs,windowMs:3*60*60*1000}));
-    if(similar && !confirm(`Схожа заявка вже є (${similar.date} ${similar.time}, ${similar.city||''} ${similar.address}).\nЗберегти ще одну?`)){
+    if(similar && !await openConfirmModal({title:'Знайдено схожу заявку',message:`${similar.date} ${similar.time}, ${similar.city||''} ${similar.address}. Зберегти ще одну?`,confirmLabel:'Зберегти'})){
       cleanupUnsavedNewPhotos(); // NEW: якщо скасували через дубль — не лишати щойно зроблені фото сиротами в IndexedDB
       return;
     }

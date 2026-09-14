@@ -49,3 +49,11 @@ This document describes the maintained browser runtime. Historical audit evidenc
 ## Verification
 
 Automated tests cover pure rules, storage fallback, sync/retry/conflict behavior, backup validation, safe errors, high-risk modal lifecycle, online/offline maps, diagnostics, autocomplete, and static asset wiring. Device-only behavior such as Android keyboard layout, native share/download UI, two-finger map gestures, GPS permission prompts, and installed-PWA update presentation remains a documented manual release check.
+
+## v91.29 maintenance decisions
+
+- QR and map runtimes are optional independent capabilities: their loaders are lazy and neither loader artificially depends on the other. The normal MapLibre path, Leaflet fallback, offline PMTiles placement, Service Worker shell and map UI remain supported.
+- No bundler, framework, minifier or precompression claim was added. The static classic-script architecture is intentional; GitHub Pages does not provide repository-level control needed to promise precompressed delivery. See `README.md` for the maintenance contract.
+- Normal destructive actions use the application confirmation UI in Ukrainian. The remaining browser `confirm()` calls protect unsaved editor state, and the backup password `prompt()` is only an emergency fallback before application modal UI is available.
+- The dispatcher naryad queue deduplicates matching active text/date entries, caps new active entries at 200 without evicting any active item, and prunes only completed entries with an explicit 30-day completion timestamp. The ticket trash retains tickets and photos by an explicit 30-day age policy rather than deleting a 31st recent item.
+- Local raster `data:image` conversion is a call-site helper. It does not monkey-patch global `fetch`, and rejects non-raster/unsafe data URLs.

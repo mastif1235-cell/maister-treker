@@ -12,13 +12,14 @@ const context={
   console,Date,TYPE_TAG_MAP:{Repair:'repair'},MTToolsCore:{explicitCoordinates:()=>null},
   calcState:{},calcOriginalPhotoKeys:[],editingTicketId:null,formTouchedByUser:false,
   syncFormToState(){},deletePhotoKey:key=>deleted.push(key),formatDate:()=>'',formatTime:()=>'',
-  loadTicketIntoForm(state){context.calcState=state;},switchTab(){},showToast(){},confirm:()=>true,
+  loadTicketIntoForm(state){context.calcState=state;},switchTab(){},showToast(){},openConfirmModal:async()=>true,
   document:{getElementById:()=>({textContent:'',classList:{remove(){}}})},
   localStorage:{getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)}
 };
 vm.createContext(context);vm.runInContext(source,context);
 const blank=()=>({signal:'',otherNote:'',city:'',address:'',street:'',house:'',clientName:'',phone:'',note:'',masterNote:'',photo:null,photos:[],macAddress:'',cloudImported:false,login:'',password:'',type:'Repair',contractNumber:'',geoLink:'',callFee:0,tariff:0,cables:[],equipment:[],presetWorks:[],additionalWork:[],tags:['repair']});
 
+(async()=>{
 context.calcState=blank();context.formTouchedByUser=true;context.saveDraftToLocalStorage();
 assert.equal(memory.has('ticketDraft'),false,'empty form does not create a draft');
 context.calcState={...blank(),city:'Dnipro'};context.formTouchedByUser=false;context.saveDraftToLocalStorage();
@@ -27,14 +28,14 @@ context.formTouchedByUser=true;context.editingTicketId='ticket-existing';context
 const saved=JSON.parse(memory.get('ticketDraft'));
 assert.equal(saved.editingTicketId,'ticket-existing','edited ticket id is persisted');
 assert.deepEqual(saved.originalPhotoKeys,['idb:original'],'original photo ownership is persisted');
-context.calcState=blank();context.editingTicketId=null;context.restoreDraftIfAny();
+context.calcState=blank();context.editingTicketId=null;await context.restoreDraftIfAny();
 assert.equal(context.editingTicketId,'ticket-existing','reload restores editing id');
 assert.equal(context.calcState.city,'Dnipro','reload restores entered values');
 
-memory.set('ticketDraft',JSON.stringify(saved));context.confirm=()=>false;context.restoreDraftIfAny();
+memory.set('ticketDraft',JSON.stringify(saved));context.openConfirmModal=async()=>false;await context.restoreDraftIfAny();
 assert.deepEqual(deleted,['idb:new'],'discard removes only a new unsaved photo');
 assert.equal(memory.has('ticketDraft'),false,'discard clears the draft record');
-memory.set('ticketDraft','{broken');assert.doesNotThrow(()=>context.restoreDraftIfAny());assert.equal(memory.has('ticketDraft'),false,'malformed draft is safely removed');
+memory.set('ticketDraft','{broken');await context.restoreDraftIfAny();assert.equal(memory.has('ticketDraft'),false,'malformed draft is safely removed');
 
 context.calcState={...blank(),cloudImported:true,content:'changed',_origContent:'old',sum:20,_origSum:10};context.formTouchedByUser=true;context.editingTicketId='cloud';context.saveDraftToLocalStorage();
 assert.equal(JSON.parse(memory.get('ticketDraft')).state.content,'changed','cloud-imported raw content change is saved');
@@ -43,3 +44,4 @@ assert.match(app,/function serviceWorkerUpdateIsSafe\(\)[\s\S]*hasUnsavedChanges
 assert.match(app,/function serviceWorkerApplyUpdate\(\)[\s\S]*serviceWorkerRefreshing[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'SW-controlled reload saves draft first');
 assert.match(app,/controllerchange[\s\S]*serviceWorkerUpdateIsSafe\(\)\)\{ serviceWorkerApplyUpdate\(\)/,'idle state reloads, busy state waits for the user');
 console.log('PASS ticket draft save, restore, discard, malformed and SW-update safety');
+})().catch(error=>{console.error(error);process.exitCode=1;});

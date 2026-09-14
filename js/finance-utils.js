@@ -25,6 +25,19 @@ function effectiveTicketCallFee(state,equipmentSum){
     : ticketBaseCallFee(state);
 }
 
+// A ticket with baseCallFee is the current persisted format: callFee is its
+// already-calculated, canonical amount at save time. Presentation must not
+// revive baseCallFee when a formatter is called later without the then-current
+// free-call threshold. Legacy records without baseCallFee still use the old
+// derived calculation when enough source data exists.
+function ticketDisplayCallFee(state){
+  const value=state||{},hasBase=Object.prototype.hasOwnProperty.call(value,'baseCallFee');
+  // A stored zero (including string "0") is authoritative. If no effective
+  // amount was stored at all, fail closed rather than inventing a default fee.
+  if(hasBase&&(!Object.prototype.hasOwnProperty.call(value,'callFee')||safeNonNegativeNumber(value.callFee)===0))return 0;
+  return effectiveTicketCallFee(value);
+}
+
 function calculateTicketTotal(state){
   const emptyResult = {total:0, callFee:0, tariff:0, equipmentSum:0, cablesSum:0, additionalWorkSum:0, presetWorkSum:0};
   if(state.cloudImported) return {...emptyResult, total:safeNonNegativeNumber(state.rawSum)};
@@ -44,7 +57,7 @@ function callFeeLabelFor(type){
 
 function buildMixedPaymentItemsFromTicket(t){
   const items = [];
-  const callFee=effectiveTicketCallFee(t);
+  const callFee=ticketDisplayCallFee(t);
   if(callFee>0) items.push({key:'callFee', label: callFeeLabelFor(t.type), amount:callFee});
   if(Number(t.tariff)>0) items.push({key:'tariff', label:'Тариф', amount: Number(t.tariff)});
   (t.equipment||[]).filter(e=>e.checked!==false).forEach(e=> items.push({key:'eq_'+e.id, label:e.label, amount:safeNonNegativeNumber(e.price)}));
@@ -68,7 +81,7 @@ function buildMixedPaymentBreakdownLines(t){
 function buildWorkSummaryLines(t){
   const lines = [];
   const isFree = t.payment === 'Безкоштовно';
-  const callFee=effectiveTicketCallFee(t);
+  const callFee=ticketDisplayCallFee(t);
   if(t.macAddress) lines.push(`🔧 MAC ONU: ${t.macAddress}`);
   if(callFee>0) lines.push(`💎 ${callFeeLabelFor(t.type)}: ${isFree ? '0 грн' : fmtMoney(callFee)}`);
   if(Number(t.tariff)>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(t.tariff)}`);
@@ -106,7 +119,7 @@ function buildTicketContent(s, total){
   if(onuSignal) lines.push(`📶 Сигнал ONU: ${onuSignal} dBm`);
   lines.push('------------------');
   const isFree = s.payment === 'Безкоштовно';
-  const callFee=effectiveTicketCallFee(s);
+  const callFee=ticketDisplayCallFee(s);
   if(callFee>0) lines.push(`💎 ${callFeeLabelFor(s.type)}: ${isFree ? '0 грн' : fmtMoney(callFee)}`);
   if(s.tariff>0) lines.push(`💎 Тариф: ${isFree ? '0 грн' : fmtMoney(s.tariff)}`);
   (s.equipment||[]).filter(e=>e.checked!==false).forEach(e=>{

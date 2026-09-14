@@ -12,7 +12,7 @@ function makeHarness({photo=true,failAt=''}){
   const oldIds=[11,12,13,14];
   const ticket={id:'tx-ticket',type:'Ремонт',date:'05.09.2026',time:'12:00',content:'backup text',photos:photo?['idb:photo']:[],tgBackedUp:true,tgBackupPending:true,tgSepMsgId:11,tgTextMsgId:12,tgPhotoMsgId:13,tgPhotoMsgIds:[13],tgPhotoFileId:'old-file',tgPhotoFileIds:['old-file'],tgJsonMsgId:14};
   const live=new Set(oldIds),deleted=[];let nextId=100;
-  const context={AbortController,Blob,FormData,clearTimeout,setTimeout,console:{error(){}},navigator:{onLine:true},settings:{tgBotToken:'token',tgBackupChatId:'chat'},tickets:[ticket],
+  const context={AbortController,Blob,FormData,atob:globalThis.atob,clearTimeout,setTimeout,console:{error(){}},navigator:{onLine:true},settings:{tgBotToken:'token',tgBackupChatId:'chat'},tickets:[ticket],
     refreshTicketCardDom(){},saveTicketsLocalOnly:async()=>true,resolvePhotoAsync:async()=>photo?'data:image/jpeg;base64,AA==':null,
     fetch:async(url,opts)=>{
       if(String(url).startsWith('data:')) return {blob:async()=>new Blob(['photo'],{type:'image/jpeg'})};

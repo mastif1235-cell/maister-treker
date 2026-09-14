@@ -232,7 +232,7 @@ function openReportModal(){
     </label>
     <div id="reportOutput"></div>
     <div class="field" style="margin-top:12px;">
-      <label for="reportCommentInput">Комментарий к отчёту</label>
+      <label for="reportCommentInput">Коментар до звіту</label>
       <textarea id="reportCommentInput" rows="4" placeholder="Необов’язковий коментар"></textarea>
     </div>
     <div class="row wrap" style="margin-top:10px;">

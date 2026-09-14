@@ -94,12 +94,12 @@ function bindTicketsScreen(){
     searchQuery=''; document.getElementById('searchInput').value=''; activeFilterTags.clear();
     renderTicketsScreen();
   });
-  document.getElementById('ticketList').addEventListener('click', e=>{
+  document.getElementById('ticketList').addEventListener('click', async e=>{
     const networkOpen=e.target.closest('.ticket-network-open');
     const networkUnlink=e.target.closest('.ticket-network-unlink');
     if(networkOpen){toolsShowNetworkPoint(networkOpen.dataset.pointId);return;}
     if(networkUnlink){
-      if(!confirm('Відв’язати об’єкт від заявки?'))return;
+      if(!await openConfirmModal({title:'Відв’язати об’єкт?',message:'Об’єкт буде відв’язано лише від цієї заявки. Сам об’єкт не видаляється.',confirmLabel:'Відв’язати',danger:true}))return;
       const ticket=tickets.find(item=>String(item.id)===String(networkUnlink.dataset.ticketId));if(!ticket)return;
       ticket.networkPointIds=MTToolsCore.unlinkNetworkPoint(ticket.networkPointIds,networkUnlink.dataset.pointId);saveTickets().then(renderTicketsScreen);return;
     }
@@ -570,14 +570,14 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
   document.getElementById('copyTextBtn').addEventListener('click', copyTicketText);
   document.getElementById('sharePhotoBtn').addEventListener('click', sharePhoto);
   document.getElementById('saveTicketBtn').addEventListener('click', saveTicketFromForm);
-  document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
+  document.getElementById('cancelEditBtn').addEventListener('click', async ()=>{
     if(appNavigationPeek()?.key==='ticket-editor'){appNavigationBack();return;}
     syncFormToState(); // щоб hasUnsavedChanges бачила саме те, що зараз у полях, а не стан на момент відкриття
     // NEW: та сама кнопка тепер править і "Скасувати редагування" (для наявної
     // заявки), і "Назад до пошуку" (для нової заявки, відкритої з профілю/
     // пошуку) — текст підтвердження підбираємо залежно від того, що з двох
     const confirmMsg = editingTicketId ? 'Скасувати редагування? Незбережені зміни буде втрачено.' : 'Повернутись назад? Введені у заявку дані буде втрачено.';
-    if(hasUnsavedChanges() && !confirm(confirmMsg)) return;
+    if(hasUnsavedChanges() && !await openConfirmModal({title:'Скасувати незбережені зміни?',message:confirmMsg,confirmLabel:'Не зберігати',danger:true})) return;
     cleanupUnsavedNewPhotos(); // NEW: не лишати в IndexedDB фото, зроблені в цьому сеансі, якщо заявку скасовано
     clearDraft(); resetCalcForm(currentTicketDate); returnAfterTicketEdit();
   });

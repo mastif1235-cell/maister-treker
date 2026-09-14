@@ -1,5 +1,30 @@
 /* Canonical local-photo lifecycle and direct Telegram workflows. */
 
+// CSP intentionally disallows network fetches to data:. Convert only the small,
+// explicitly allowed raster-photo subset at the call site; never patch fetch()
+// globally, so every non-photo request keeps the browser's native semantics.
+const PHOTO_DATA_MAX_URL_CHARS = 16*1024*1024;
+const PHOTO_DATA_ALLOWED_RE = /^data:image\/(?:jpeg|jpg|png|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i;
+function photoDataUrlToBlob(dataUrl){
+  const source=String(dataUrl||'');
+  if(source.length>PHOTO_DATA_MAX_URL_CHARS)throw new TypeError('Photo data URL too large');
+  const match=source.match(PHOTO_DATA_ALLOWED_RE);
+  if(!match)throw new TypeError('Only safe raster image data URLs are supported');
+  const mime=(source.match(/^data:([^;,]+);base64,/i)||[])[1]?.toLowerCase()||'image/jpeg';
+  const payload=match[1].replace(/\s/g,'');
+  if(!payload)throw new TypeError('Empty photo data URL');
+  let binary;
+  try{binary=atob(payload);}catch(_error){throw new TypeError('Invalid base64 photo data URL');}
+  const bytes=new Uint8Array(binary.length);
+  for(let index=0;index<binary.length;index++)bytes[index]=binary.charCodeAt(index);
+  return new Blob([bytes],{type:mime});
+}
+async function photoSourceToBlob(source){
+  if(typeof source==='string'&&/^data:/i.test(source))return photoDataUrlToBlob(source);
+  const response=await fetch(source);
+  return response.blob();
+}
+
 async function fetchPhotoFromTelegram(fileId){
   const token = (settings.tgBotToken||'').trim();
   if(!fileId || !token) return null;
@@ -77,9 +102,9 @@ async function storePhoto(dataUrl){
   return key;
 }
 async function deletePhotoKey(key){
-  if(!key || !String(key).startsWith('idb:')) return;
+  if(!key || !String(key).startsWith('idb:')) return false;
   photoCache.delete(key);
-  await photoDbDelete(key);
+  return await photoDbDelete(key);
 }
 function clearAllPhotos(){
   photoCache.clear();
@@ -193,7 +218,7 @@ async function sendToTelegramChat(chatId, text, photoKey, tgFileId){
     if(photoKey){
       const photoData = await resolvePhotoAsync(photoKey, tgFileId);
       if(photoData){
-        const blob = await (await fetch(photoData)).blob();
+        const blob = await photoSourceToBlob(photoData);
         const form = new FormData();
         form.append('chat_id', chatId);
         form.append('photo', blob, 'foto.jpg');
@@ -349,7 +374,7 @@ async function sendTelegramPhotoMessage(chatId,photoKey,caption=''){
   if(!token||!chatId||!photoKey)return{ok:false,reason:'не налаштовано Telegram photo'};
   try{
     const photoData=await resolvePhotoAsync(photoKey,null);if(!photoData)return{ok:false,reason:'локальне фото недоступне'};
-    const blob=await(await fetch(photoData)).blob(),form=new FormData();
+    const blob=await photoSourceToBlob(photoData),form=new FormData();
     form.append('chat_id',String(chatId));form.append('photo',blob,'network-point.jpg');
     if(caption)form.append('caption',String(caption).slice(0,1000));
     const response=await fetch(`https://api.telegram.org/bot${token}/sendPhoto`,{method:'POST',body:form}),data=await response.json();
@@ -540,7 +565,7 @@ async function backupTicketToTelegramNow(t){
       const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
       if(!photoData) continue;
       photoSendAttempts++;
-      const blob = await (await fetch(photoData)).blob();
+      const blob = await photoSourceToBlob(photoData);
       const form = new FormData();
       form.append('chat_id', chatId);
       const caption = `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim();
@@ -818,7 +843,7 @@ async function bulkExportTicketsToTelegram(){
   const todo = tickets.filter(t => !t.tgBackedUp && t.content);
   if(!todo.length){ showToast('Усі заявки вже вивантажено в групу'); return; }
   const etaMin = Math.ceil(todo.length * 1.4 / 60);
-  if(!confirm(`Буде надіслано ${todo.length} заявок(и) у групу. Орієнтовно ~${etaMin} хв (навмисна пауза між заявками, щоб не впертися в ліміти Telegram). Не закривайте застосунок, поки триває. Продовжити?`)) return;
+  if(!await openConfirmModal({title:`Надіслати ${todo.length} заявок(и) в Telegram?`,message:`Орієнтовно ~${etaMin} хв через навмисну паузу між заявками для лімітів Telegram. Не закривайте застосунок, поки триває відправлення.`,confirmLabel:'Надіслати',danger:true})) return;
   await runBulkTelegramJob(todo, 'Вивантаження в Telegram');
 }
 

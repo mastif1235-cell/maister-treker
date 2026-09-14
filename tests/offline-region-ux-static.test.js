@@ -10,7 +10,7 @@ assert.doesNotMatch(areaUi,/CLI|MVT|daily build/,'primary saved-area flow has no
 assert.match(source,/MTOfflineMap\.inspectFile\(file\)/);
 assert.match(source,/MTOfflineMap\.quotaFor\(file\.size\)/);
 assert.match(source,/MTOfflineMap\.install\(file,info,\{areaId:/);
-assert.match(source,/Видалити лише офлайн-карту\?/);
+assert.match(source,/Видалити офлайн-карту\?/);
 assert.match(source,/Попередню карту не змінено/,'failed replacement explicitly preserves the installed map');
 assert.match(source,/PMTILES_TILE_TYPE_UNSUPPORTED/);
 assert.match(source,/Схожа область вже існує[\s\S]*Замінити існуючу[\s\S]*Зберегти як нову[\s\S]*Скасувати/);

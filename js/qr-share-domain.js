@@ -1,19 +1,35 @@
 /* Canonical QR/dogovor UI. Loaded after app state, before security adapters. */
 const LNET_CONTACTS={phone:'+380 (67) 568-20-22',viber:'+380 (73) 568-20-22 (Viber)',site:'lnet.com.ua',schedule:'Пн — Пт: 09:00 — 18:00\nСб: 09:00 — 16:00\nНд: Вихідний'};
 
-function showVizitka(){
+// QR is independent from maps and is loaded only by a QR action.
+let mtQrCodeLoadPromise=null;
+function loadQrCodeLibrary(){
+  if(typeof qrcode==='function')return Promise.resolve(qrcode);
+  if(mtQrCodeLoadPromise)return mtQrCodeLoadPromise;
+  mtQrCodeLoadPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src=new URL('qrcode.js',document.baseURI).href;
+    script.async=true;
+    script.onload=()=>typeof qrcode==='function'?resolve(qrcode):reject(new Error('QR_LIBRARY_UNAVAILABLE'));
+    script.onerror=()=>reject(new Error('QR_LIBRARY_LOAD_FAILED'));
+    document.head.appendChild(script);
+  }).catch(error=>{mtQrCodeLoadPromise=null;throw error;});
+  return mtQrCodeLoadPromise;
+}
+
+async function showVizitka(){
   const url=(settings.vizitkaUrl||'').trim();if(!url){showToast('Спершу вкажіть URL візитки в Налаштуваннях');return;}
-  let dataUrl='';try{const qr=qrcode(0,'M');qr.addData(url);qr.make();dataUrl=qr.createDataURL(6);}catch(_e){showToast('Не вдалося згенерувати QR-код');return;}
+  let dataUrl='';try{const Qr=await loadQrCodeLibrary(),qr=new Qr(0,'M');qr.addData(url);qr.make();dataUrl=qr.createDataURL(6);}catch(_e){showToast('Не вдалося завантажити генератор QR-коду');return;}
   openModal('Візитка LNET',`<div class="qr-wrap"><img src="${dataUrl}" alt="QR візитка"><div class="qr-hint">Дайте абоненту відсканувати камерою — відкриється сторінка з контактами диспетчера: натискання на телефон відкриє дзвінок, на Viber — Viber, на пошту — лист.</div><button type="button" class="btn btn-block" id="openVizitkaLinkBtn">🔗 Відкрити посилання</button></div>`,{onOpen:()=>{document.getElementById('openVizitkaLinkBtn').onclick=()=>window.open(url,'_blank');}});
 }
 
 function buildDogovorText(address,login,password,contractNumber){return['LNET — інтернет-провайдер',formatUaDate(new Date()),contractNumber?`№ договору: ${contractNumber}`:'',LNET_CONTACTS.site,'',`Адреса підключення: ${address}`,'','Особистий кабінет:',`Логін: ${login}`,`Пароль: ${password}`,'',`Особистий рахунок: ${login}`,`Сайт: ${LNET_CONTACTS.site}`,'','Контакти:',LNET_CONTACTS.phone,LNET_CONTACTS.viber,'','Графік роботи:',LNET_CONTACTS.schedule].filter(Boolean).join('\n');}
 
-function showDogovor(id){
+async function showDogovor(id){
   const t=tickets.find(x=>String(x.id)===String(id));if(!t)return;
-  if(!t.login&&!t.password&&!confirm('У цій заявці ще не вказано логін і пароль (додайте їх у калькуляторі при редагуванні заявки). Сформувати договір без них?'))return;
+  if(!t.login&&!t.password&&!await openConfirmModal({title:'Сформувати договір без облікових даних?',message:'У цій заявці ще не вказано логін і пароль. Додайте їх у калькуляторі при редагуванні або продовжіть без них.',confirmLabel:'Сформувати',cancelLabel:'Скасувати'}))return;
   const rawAddress=[t.city,t.address].filter(Boolean).join(', '),address=rawAddress||'—',login=t.login||'—',password=t.password||'—',contractNumber=t.contractNumber||'',text=buildDogovorText(address,login,password,contractNumber);let qrDataUrl='';
-  try{const qr=qrcode(0,'M');qr.addData(securityQrBuildContractUrl({address:rawAddress,login:t.login,password:t.password,number:contractNumber,date:t.date}));qr.make();qrDataUrl=qr.createDataURL(8);}catch(_e){}
+  try{const Qr=await loadQrCodeLibrary(),qr=new Qr(0,'M');qr.addData(securityQrBuildContractUrl({address:rawAddress,login:t.login,password:t.password,number:contractNumber,date:t.date}));qr.make();qrDataUrl=qr.createDataURL(8);}catch(_e){showToast('QR-код договору недоступний — текст договору можна скопіювати або надіслати');}
   const body=`<div class="dogovor-card"><div class="dg-title">LNET — інтернет-провайдер</div><div class="dg-date">${escapeHtml(formatUaDate(new Date()))}</div>${contractNumber?`<div class="dg-site">№ ${escapeHtml(contractNumber)}</div>`:''}<div class="dg-site">${escapeHtml(LNET_CONTACTS.site)}</div><hr class="dg-sep"><div class="dg-label">Адреса підключення:</div><div class="dg-value">${escapeHtml(address)}</div><div class="dg-cabinet"><div class="dg-label">Логін:</div><div class="dg-value" style="margin-bottom:0;">${escapeHtml(login)}</div><div class="dg-label">Пароль:</div><div class="dg-value" style="margin-bottom:0;">${escapeHtml(password)}</div></div><div class="dg-label" style="text-align:center;">Особистий рахунок:</div><div class="dg-account">${escapeHtml(login)}</div><div class="dg-label">Сайт:</div><div class="dg-value">${escapeHtml(LNET_CONTACTS.site)}</div><hr class="dg-sep"><div class="dg-contacts"><strong>Контакти:</strong><br>${escapeHtml(LNET_CONTACTS.phone)}<br>${escapeHtml(LNET_CONTACTS.viber)}</div><div class="dg-schedule"><strong>Графік роботи:</strong><br>${escapeHtml(LNET_CONTACTS.schedule).replace(/\n/g,'<br>')}</div>${qrDataUrl?`<div class="qr-wrap" style="margin-top:14px;"><img src="${qrDataUrl}" alt="QR договору" style="width:220px; height:220px;"><div class="qr-hint">QR веде на локальну viewer-сторінку; дані абонента містяться тільки після # і не надсилаються хосту.</div></div>`:''}</div><div class="row wrap" style="margin-top:14px;"><button type="button" class="btn" style="flex:1;" id="copyDogovorBtn">📄 Копіювати текст</button><button type="button" class="btn" style="flex:1;" id="shareDogovorBtn">📤 Поділитися</button></div><button type="button" class="btn btn-block" id="printDogovorPdfBtn" style="margin-top:8px;">🖨️ Сформувати PDF-лист</button>`;
   openModal('Договір',body,{onOpen:()=>{document.getElementById('copyDogovorBtn').onclick=async()=>{try{await navigator.clipboard.writeText(text);showToast('Скопійовано');}catch(_e){showToast('Не вдалося скопіювати');}};document.getElementById('shareDogovorBtn').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'Договір LNET',text});}catch(_e){}}else showToast('Поділитися не підтримується цим браузером');};document.getElementById('printDogovorPdfBtn').onclick=()=>printDogovorAsPdf({address,login,password,contractNumber});}});
 }

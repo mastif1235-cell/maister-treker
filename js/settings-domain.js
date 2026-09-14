@@ -175,9 +175,9 @@ function bindSettingsScreen(){
     if(!window.MTMapTilerLocal?.saveKey?.(key)){showToast('Не вдалося зберегти ключ на цьому пристрої');return;}
     input.value='';input.type='password';renderSettingsScreen();showToast('✅ Ключ збережено на цьому пристрої');
   });
-  document.getElementById('mapTilerKeyClearBtn').addEventListener('click', ()=>{
+  document.getElementById('mapTilerKeyClearBtn').addEventListener('click', async ()=>{
     if(!window.MTMapTilerLocal?.hasKey?.())return;
-    if(!confirm('Очистити MapTiler API key на цьому пристрої?'))return;
+    if(!await openConfirmModal({title:'Очистити ключ MapTiler?',message:'Ключ буде видалено лише з цього пристрою. Звичайна карта залишиться доступною.',confirmLabel:'Очистити',danger:true}))return;
     window.MTMapTilerLocal.clearKey();window.MTMapTilerLocal.saveLayer('map');
     const input=document.getElementById('mapTilerKeyInput');input.value='';input.type='password';
     renderSettingsScreen();showToast('Ключ очищено. Звичайна карта залишається доступною');
@@ -206,7 +206,7 @@ function bindSettingsScreen(){
   document.getElementById('deletedTicketsList').addEventListener('click', e=>{
     const restoreBtn = e.target.closest('.restore-trash-btn');
     const purgeBtn = e.target.closest('.purge-trash-btn');
-    if(restoreBtn) restoreDeletedTicket(restoreBtn.dataset.deletedAt);
+    if(restoreBtn) Promise.resolve(restoreDeletedTicket(restoreBtn.dataset.deletedAt)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'trash-restore'}));
     if(purgeBtn) Promise.resolve(purgeDeletedTicket(purgeBtn.dataset.deletedAt)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'trash-purge'}));
   });
   document.getElementById('clearAllBtn').addEventListener('click', async ()=>{

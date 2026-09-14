@@ -9,7 +9,7 @@ const element=id=>nodes[id]||(nodes[id]={value:'',innerHTML:'',classList:{add(){
 const ctx={
  MTToolsCore:core,loadJSON:(key,fallback)=>values.has(key)?JSON.parse(values.get(key)):fallback,
  localStorage:{setItem(key,value){writes.push(key);values.set(key,value);}},settings:{},tickets:[],
- document:{getElementById:element,createElement:()=>({click(){}})},escapeHtml:v=>String(v??''),showToast(){},confirm:()=>true,
+ document:{getElementById:element,createElement:()=>({click(){}})},escapeHtml:v=>String(v??''),showToast(){},confirm:()=>true,openConfirmModal:async()=>true,
  MTOfflineMap:{readMeta:()=>installed,getMode:()=> 'auto',formatBytes:v=>String(v),supported:()=>true,inspectFile:async file=>({fileName:file.name,size:file.size,header:headers}),
  quotaFor:async()=>({enough:quotaEnough,available:100000}),install:async(file,info,options)=>{installCalls++;if(failInstall)throw Error('fixture failure');installed={...info,...options};},
  remove:async()=>{removed++;return true;}},
@@ -43,7 +43,7 @@ loadRuntime(ctx);ctx.renderToolsScreen=()=>{};
  assert.equal(installed.areaId,id);assert.match(ctx.toolsOfflineAreasHtml(ctx.toolsLoadOfflineAreas()),/Офлайн-карта встановлена/);
  const count=installCalls;await ctx.toolsPrepareOfflineMap({name:'area.json',size:100,text:async()=>JSON.stringify(exported)},id);
  assert.equal(installCalls,count,'definition JSON is not tile data and cannot replace PMTiles');
- const savedMap=installed;ctx.toolsDeleteOfflineArea(id);
+ const savedMap=installed;await ctx.toolsDeleteOfflineArea(id);
  assert.equal(ctx.toolsLoadOfflineAreas().length,0);assert.equal(installed,savedMap);assert.equal(removed,0,'area deletion never deletes PMTiles');
  assert.ok(writes.every(key=>key==='mtOfflineAreasV1'),'existing area key only');
  assert.equal(vm.runInContext('toolsOfflinePendingBounds',ctx),null);

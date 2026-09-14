@@ -1,8 +1,8 @@
 'use strict';
 /* Регресія аудиту (P1 iOS PWA): у standalone-режимі iOS prompt() повертає null
    без діалогу — створення/зміна пароля бекапу та розшифрування імпорту
-   ставали неможливими. Тепер на iOS-standalone пароль запитується власним
-   модальним вікном; у решті середовищ — без змін (системний prompt). */
+   ставали неможливими. Тепер пароль запитується власним модальним вікном у всіх звичайних
+   runtime-середовищах; native prompt лишається лише аварійним fallback до UI. */
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
@@ -78,13 +78,14 @@ function harness({ios}){
     h.elements.mtBackupPwCancel.onclick();
     assert.equal(await cancelling,false,'скасування не зберігає пароль');
   }
-  // десктоп: без змін — prompt(), жодної модалки
+  // desktop uses the same accessible application modal, not a native prompt
   {
     const h=harness({ios:false});
-    h.context.prompt=()=>{h.prompts.push(1);return null;};/* user cancel */
-    assert.equal(await h.context.saveBackupPasswordCredential(),false,'десктоп лишився на prompt()');
-    assert.equal(h.modalOpens.length,0,'модалка не заваджає звичайним браузерам');
-    assert.equal(h.prompts.length,1,'prompt викликано рівно раз');
+    const saving=h.context.saveBackupPasswordCredential();
+    assert.equal(h.modalOpens.length,1,'на desktop також відкрито модальний діалог');
+    assert.equal(h.prompts.length,0,'native prompt не використовується у звичайному runtime');
+    h.elements.mtBackupPwCancel.onclick();
+    assert.equal(await saving,false,'скасування модалки не зберігає пароль');
   }
-  console.log('PASS iOS PWA backup password falls back to app modal, desktop keeps prompt()');
+  console.log('PASS backup password uses the application modal on iOS and desktop');
 })().catch(e=>{console.error(e);process.exitCode=1;});

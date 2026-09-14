@@ -11,7 +11,7 @@ const html = read('index.html');
 const sw = read('sw.js');
 // Pin the original block, including comments: extraction must not rewrite behavior.
 assert.equal(crypto.createHash('sha256').update(source.slice(source.indexOf('function computeTotal(){')).trim()).digest('hex'),
-  'b8c753fb84407387c8f8ba8225b495df80b4773394604c81dfca5b2b6a42798e');
+  '2dc89a44c5df65c1062bf0615cd8bdd9a3c2d33d4c3fee237dcf6cb55b56020c');
 for (const name of ['computeTotal','buildMixedPaymentItems','renderMixedPaymentItems','updateMixedPaymentVisibility']) {
   assert.equal((source.match(new RegExp('function '+name+'\\(', 'g')) || []).length, 1);
   assert.doesNotMatch(editor, new RegExp('function '+name+'\\('));

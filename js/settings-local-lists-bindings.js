@@ -14,8 +14,8 @@ function bindSettingsLocalListsControls(){
   document.getElementById('newTagInput').addEventListener('keydown', e=>{
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addTagBtn').click(); }
   });
-  document.getElementById('resetTagsBtn').addEventListener('click', ()=>{
-    if(!confirm('Скинути список тегів до стандартного?')) return;
+  document.getElementById('resetTagsBtn').addEventListener('click', async ()=>{
+    if(!await openConfirmModal({title:'Скинути список тегів?',message:'Власний список тегів буде замінено стандартним. Теги у вже створених заявках не зміняться.',confirmLabel:'Скинути',danger:true})) return;
     settings.tags = [...DEFAULT_TAGS]; saveSettings(); renderTagMgmtList();
   });
 
