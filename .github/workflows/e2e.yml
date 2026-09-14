@@ -1,0 +1,51 @@
+name: E2E
+
+# Пункти 19/20 аудиту v91.27: реальні браузерні E2E (Playwright, Chromium)
+# ДОПОВНЮЮТЬ наявні unit/vm/static-тести з tests.yml і нічого не замінюють.
+# Відтворюваність: версії залежностей фіксує package-lock.json (npm ci),
+# а збірку браузера — сама версія Playwright (playwright install --with-deps).
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Install Chromium and OS dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

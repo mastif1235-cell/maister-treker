@@ -15,7 +15,7 @@
 
 ## Host enforcement
 
-- `_headers` is the canonical Netlify header policy. GitHub Pages does not apply repository `_headers`, so the main page and both viewer pages also carry enforceable CSP/referrer meta policies. A meta policy cannot enforce `frame-ancestors`; therefore clickjacking protection is **Medium** while production remains GitHub Pages. Resolving it requires a host/CDN that emits the checked-in headers (or an equivalent GitHub Pages fronting proxy) and is a production deployment decision.
+- `_headers` is the canonical Netlify header policy. GitHub Pages does not apply repository `_headers` — the file itself now carries an explicit in-file caveat saying so — and the main page and both viewer pages therefore rely on enforceable CSP/referrer meta policies. A meta policy cannot enforce `frame-ancestors`; therefore clickjacking protection is **Medium** while production remains GitHub Pages, and no document may claim anti-framing is fully closed on the current host. Resolving it requires a host/CDN that emits the checked-in headers (or an equivalent GitHub Pages fronting proxy) and is a production deployment decision. No hosting migration or custom domain is introduced by this maintenance.
 - Service Worker is not treated as a security-header owner.
 
 ## Residual assessment

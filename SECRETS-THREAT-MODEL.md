@@ -2,9 +2,9 @@
 
 ## Inventory
 
-- `syncHmacSecret` is device-held in local settings, used only as Web Crypto HMAC key material, and excluded from exports/snapshots. It is never placed in a URL or signed body. The server copy exists only as GAS Script Property `MT_SYNC_HMAC_SECRET`.
+- `syncHmacSecret` is device-held, used only as Web Crypto HMAC key material, and excluded from exports/snapshots. It is never placed in a URL or signed body. Since v91.28 it is persisted encrypted in the IndexedDB settings-secrets vault (`js/settings-secrets-vault.js`) instead of plaintext localStorage `settings`; the in-memory `settings` copy feeds synchronous consumers. The server copy exists only as GAS Script Property `MT_SYNC_HMAC_SECRET`.
 - Legacy `syncSecret` is discarded during settings load and ignored during imports.
-- `tgBotToken` is device-held and excluded from every backup pipeline together with Telegram chat/message identifiers.
+- `tgBotToken` is device-held (encrypted settings-secrets vault since v91.28, automatic migration from legacy plaintext localStorage) and excluded from every backup pipeline together with Telegram chat/message identifiers.
 - Chat IDs are routing/privacy identifiers rather than authentication credentials, but are treated as sensitive export data.
 - No application/server secret or real API key is hardcoded in source. Test-vector keys are non-production fixtures.
 

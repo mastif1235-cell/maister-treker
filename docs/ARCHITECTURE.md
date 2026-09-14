@@ -5,6 +5,7 @@ This document describes the maintained browser runtime. Historical audit evidenc
 ## Application and map runtime
 
 - Production is a static GitHub Pages PWA. `index.html` declares script order; `sw.js` caches and updates the app shell but does not inject modules.
+- GitHub Pages does not apply the checked-in `_headers` file, so production HTTP responses carry no custom security headers. Runtime protection on Pages is the meta CSP in `index.html`, `d.html` and `dogovor-secure.html`; a meta CSP cannot express `frame-ancestors`/`X-Frame-Options`, so anti-framing on the current host is incomplete (documented Medium in `SECURITY-REVIEW.md`). `_headers` is retained, with an in-file caveat, as the ready policy for a header-capable host only.
 - MapLibre is the default map engine. Leaflet remains an explicit compatibility fallback and is intentionally not removed.
 - Online maps use OSM or user-provided MapTiler Satellite credentials. Credentials stay device-local and are sent only to the configured provider.
 - Offline maps are PMTiles v3 archives stored in OPFS. Import uses validated A/B replacement so the installed archive remains available until its replacement succeeds.
@@ -21,12 +22,14 @@ This document describes the maintained browser runtime. Historical audit evidenc
 ## Sync, conflicts, and Telegram
 
 - The bounded sync journal serializes entity mutations. Revision conflicts are entity-scoped and preserve the local operation for explicit recovery rather than silently overwriting remote state.
+- Manual full push (`js/sync-full-push.js`, settings → sync) re-enqueues the entire local tickets/shifts database through the same journal under explicit user confirmation; server-side CAS keeps newer cloud rows intact (STALE/CONFLICT are reported, never silently overwritten). Server `syncAll*` full-replacement actions stay disabled (`ADMIN_RECOVERY_REQUIRED`) and are not used by the client.
 - Google Apps Script and client sync contracts are versioned compatibility boundaries; this browser-maintenance work does not change them.
 - Telegram backup keeps the previous complete copy until a replacement is complete. Ambiguous delivery may leave an extra remote message, but it must not make local save or Google sync fail.
 
 ## Privacy and errors
 
 - HMAC and server properties remain server-side. Device-held Telegram and optional MapTiler credentials are excluded from backup/settings exports.
+- `tgBotToken` and `syncHmacSecret` are persisted encrypted in the IndexedDB vault (`js/settings-secrets-vault.js`, same non-extractable AES-GCM architecture as the backup password) and are no longer written plaintext to localStorage `settings`; they stay in the in-memory `settings` object for synchronous consumers, with an automatic legacy-plaintext migration on startup and a legacy fallback only while IndexedDB/WebCrypto are unavailable. The vault is device-local at-rest protection, not an XSS boundary.
 - `MTSafeError` normalizes operational errors and redacts tokens, authorization headers, API keys, passwords, HMAC material, and circular values before technical logging.
 - User cancellation is not reported as an application failure. System errors do not enter ticket diagnostic history.
 

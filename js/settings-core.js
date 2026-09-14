@@ -187,5 +187,11 @@ function loadSettings(){
 function saveSettings(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
   settings = migrateSyncSettingsV66(settings, settings);
-  localStorage.setItem('settings', JSON.stringify(settings));
+  /* Пункт 16 (аудит v91.27): tgBotToken і syncHmacSecret не потрапляють у
+     localStorage plaintext. Поки vault синхронізований — записується копія
+     без секретів, а справжні значення асинхронно шифруються в IndexedDB
+     (js/settings-secrets-vault.js). Якщо vault недоступний — стара
+     поведінка зберігається, щоб існуючий токен не втратився. */
+  const persisted = typeof mtSettingsSecretsPreparePersist==='function' ? mtSettingsSecretsPreparePersist(settings) : settings;
+  localStorage.setItem('settings', JSON.stringify(persisted));
 }

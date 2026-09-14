@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.27 · 2026-09-14';
+const APP_VERSION = 'v91.28 · 2026-09-14';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -319,6 +319,18 @@ async function init(){
   applyTheme();
   await ensureAppUnlocked(); // якщо ввімкнено захист входу — чекаємо пароль/відбиток, перш ніж щось малювати чи підвантажувати
   await MTSingleWriterLock.acquire();
+  /* Пункт 16 (аудит v91.27): системні секрети (Telegram-токен, HMAC-ключ
+     синхронізації) відновлюються з шифрованого vault ДО створення sync
+     engine, Telegram-функцій і рендеру налаштувань; legacy plaintext у
+     localStorage автоматично мігрує в vault і стирається. Збій етапу не
+     вбиває init: додаток лишається в legacy-режимі (секрети в пам'яті з
+     localStorage), токен не втрачається. */
+  try{
+    if(typeof backupDb === 'undefined' || !backupDb) backupDb = await openBackupDb();
+    if(typeof mtSettingsSecretsRestoreIntoSettings === 'function') await mtSettingsSecretsRestoreIntoSettings();
+  }catch(secretsVaultError){
+    globalThis.MTSafeError?.reportError?.(secretsVaultError,{scope:'settings-secrets-vault'});
+  }
   bindTabBar();
   bindTicketsScreen();
   bindCalculatorScreen();
@@ -425,6 +437,9 @@ async function init(){
     retryPendingTelegramBackups();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
+  // Маркер завершення init(): використовують браузерні E2E-тести (e2e/) і
+  // діагностика, щоб відрізнити «застосунок ще ініціалізується» від «готовий».
+  window.__mtAppInitDone = true;
 }
 
 document.addEventListener('DOMContentLoaded', init);

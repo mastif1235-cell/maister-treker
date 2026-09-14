@@ -1,0 +1,7 @@
+# Залежності та артефакти браузерних E2E (Playwright). Unit/VM/static-тести
+# (tests/*.test.js) залежностей не потребують і запускаються чистим node.
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

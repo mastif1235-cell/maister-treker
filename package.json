@@ -1,0 +1,13 @@
+{
+  "name": "maister-treker",
+  "version": "91.28.0",
+  "private": true,
+  "description": "Майстер-Трекер — offline-first PWA. Unit/VM/static-тести виконуються без залежностей (node tests/*.test.js); цей package.json існує лише для браузерних Playwright E2E (каталог e2e/).",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

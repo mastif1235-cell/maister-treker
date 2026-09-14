@@ -4,7 +4,7 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 
 | Storage | Key / database | Owner | Purpose | Retention | Secret |
 |---|---|---|---|---|---|
-| localStorage | `settings` | settings-core | Preferences and device integration settings | Persistent | Yes: contains credentials |
+| localStorage | `settings` | settings-core | Preferences and device integration settings | Persistent | No plaintext `tgBotToken`/`syncHmacSecret` since v91.28: secrets live in the IndexedDB vault (settings-secrets-vault). Legacy plaintext fallback remains only while IndexedDB/WebCrypto are unavailable, until migration completes on a later start |
 | localStorage | `shifts` | storage-orchestration | Shift presentation cache | Persistent | No |
 | localStorage | `deletedTickets` | tickets-domain | Recoverable ticket trash | Persistent | No |
 | localStorage | `naryadQueue` | storage-orchestration | Dispatcher draft orders | Persistent | May contain personal data |
@@ -25,7 +25,7 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 | localStorage | `cleanupReminderMonth`, `tgMonthlyReportMonth` | orchestration/Telegram | Monthly idempotency markers | Monthly | No |
 | IndexedDB | `masterTrackerTickets` / `tickets` / `all` | ticket-storage | Canonical tickets | Persistent | Personal data |
 | IndexedDB | `masterTrackerPhotos` / `photos` | photo-storage | Local photo bytes | Persistent | Personal data |
-| IndexedDB | `masterTrackerBackups` / `daily` | backup-storage | Daily snapshots and non-extractable password vault records | Persistent/rotating | Yes |
+| IndexedDB | `masterTrackerBackups` / `daily` | backup-storage | Daily snapshots, non-extractable backup-password vault records (`__backupPasswordKeyV1`/`__backupPasswordSecretV1`) and settings-secrets vault records (`__settingsSecretsKeyV1`/`__settingsSecretsV1`, owner: settings-secrets-vault) | Persistent/rotating | Yes (encrypted) |
 | IndexedDB | `maisterTrackerSync` / `journal` / `state-v1` | sync-journal-storage | Durable sync mutations and conflicts | Persistent | Personal data |
 | OPFS | `master-tracker-offline-maps/map-a.pmtiles`, `map-b.pmtiles` | offline-map-storage | A/B-installed offline map | Persistent | No |
 
