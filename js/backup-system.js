@@ -148,11 +148,34 @@ function mtBackupIosStandalone(){
     }
     return rollbackFailed;
   }
+  // Пункт 18 (аудит v91.27): один backup-файл міг містити кілька записів з
+  // однаковим ID. Порівняння завжди через String(id), щоб 1 і '1' вважалися
+  // дублікатами. Перший запис зберігає свій ID, наступні дублікати отримують
+  // новий унікальний ID — жодні дані не втрачаються, але після відновлення в
+  // базі не може існувати двох сутностей з однаковим String(id).
+  function mtBackupDedupeById(list,newId){
+    if(!Array.isArray(list))return list;
+    const seen=new Set();
+    let dupCount=0;
+    return list.map(item=>{
+      if(!item||typeof item!=='object')return item;
+      const key=String(item.id);
+      if(seen.has(key)){
+        let candidate;
+        do{dupCount++;candidate=String(typeof newId==='function'?newId():'dup')+'-'+dupCount;}while(seen.has(candidate));
+        item.id=candidate;
+        seen.add(candidate);
+      }else{
+        seen.add(key);
+      }
+      return item;
+    });
+  }
   async function mtBackupRestore(data){
     if(!MTBackupSystem.validatePayload(data))throw new Error('BAD_PAYLOAD');
     const hasTickets=Array.isArray(data.tickets),hasShifts=Array.isArray(data.shifts),hasSettings=data.settings&&typeof data.settings==='object',hasTools=Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
-    const nextTickets=hasTickets?data.tickets.map((ticket,index)=>mtBackupCleanTicket(JSON.parse(JSON.stringify(ticket)),index)):null;
-    const nextShifts=hasShifts?data.shifts.map(s=>({id:String(s.id||MTSyncEngineRuntime.uuid()),date:String(s.date||''),hours:Number(s.hours)||0,coworker:String(s.coworker||'Сам')})):null;
+    const nextTickets=hasTickets?mtBackupDedupeById(data.tickets.map((ticket,index)=>mtBackupCleanTicket(JSON.parse(JSON.stringify(ticket)),index)),()=>MTSyncEngineRuntime.uuid()):null;
+    const nextShifts=hasShifts?mtBackupDedupeById(data.shifts.map(s=>({id:String(s.id||MTSyncEngineRuntime.uuid()),date:String(s.date||''),hours:Number(s.hours)||0,coworker:String(s.coworker||'Сам')})),()=>MTSyncEngineRuntime.uuid()):null;
     const nextSettings=hasSettings?(typeof securityMergeImportedSettings==='function'?securityMergeImportedSettings(JSON.parse(JSON.stringify(data.settings)),settings):settings):null;
     const nextTools=hasTools?{diagnostics:Array.isArray(data.diagnostics)?JSON.parse(JSON.stringify(data.diagnostics)):undefined,networkPoints:Array.isArray(data.networkPoints)?JSON.parse(JSON.stringify(data.networkPoints)):undefined}:null;
     const photoEntries=data.photoData?Object.entries(data.photoData):[];
