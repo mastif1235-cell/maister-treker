@@ -620,6 +620,10 @@
           <button class="btn" id="sendAllBtn">⬆️ Надіслати зміни до хмари</button>
           <button class="btn btn-accent btn-block" id="restoreCloudBtn" style="margin-top:8px;">🔄 Відновити дані з таблиці</button>
         </div>
+        <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border);">
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Повна відправка надсилає в хмару ВСЮ локальну базу (заявки і зміни), а не лише невідправлені зміни. Таблиці не замінюються цілком: свіжіші хмарні записи не перезаписуються, підсумок показується у звіті.</div>
+          <button class="btn btn-block" id="fullPushLocalDbBtn">📤 Повна відправка локальної бази (заявки + зміни)</button>
+        </div>
         <details class="instructions" style="margin-top:12px;">
           <summary>Як налаштувати Google Таблицю</summary>
           <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">
@@ -876,6 +880,7 @@
 <script src="app.js"></script>
 <script src="js/ui-orchestration.js"></script>
 <script src="js/storage-orchestration.js"></script>
+<script src="js/sync-full-push.js"></script>
 <script src="js/qr-share-domain.js"></script>
 <script src="js/share-domain.js"></script>
 <script src="js/reports-domain.js"></script>

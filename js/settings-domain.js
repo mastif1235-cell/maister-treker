@@ -149,6 +149,7 @@ function bindSettingsScreen(){
   document.getElementById('loadCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
   document.getElementById('restoreCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
   document.getElementById('sendAllBtn').addEventListener('click', sendAllToCloud);
+  document.getElementById('fullPushLocalDbBtn').addEventListener('click', e => mtSyncFullPushLocalDatabase({ button: e.currentTarget }));
   document.getElementById('loadShiftsCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('shifts'));
   document.getElementById('restoreShiftsCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('shifts'));
   document.getElementById('sendShiftsAllBtn').addEventListener('click', sendShiftsToCloud);
