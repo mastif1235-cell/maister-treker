@@ -437,6 +437,9 @@ async function init(){
     retryPendingTelegramBackups();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
+  // Маркер завершення init(): використовують браузерні E2E-тести (e2e/) і
+  // діагностика, щоб відрізнити «застосунок ще ініціалізується» від «готовий».
+  window.__mtAppInitDone = true;
 }
 
 document.addEventListener('DOMContentLoaded', init);
