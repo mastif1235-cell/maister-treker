@@ -57,32 +57,54 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+/* ── Цілісність релізу (завершення аудиту P1) ─────────────────────────────────
+   Активний CACHE_NAME — незмінний (immutable) набір. Фоновий fetch НЕ ПІДМІНЯЄ
+   вже кешовані JS/CSS/HTML: пофайлова заміна створювала «франкенкеш» — свіжий
+   app.js поруч зі старим tickets-domain.js усередині того самого кешу — і
+   наступне завантаження збирало файли з різних релізів одразу. Тому:
+     • є запис у кеші → віддаємо його, мережу для заміни не деремо взагалі;
+     • запису немає («дірка» після збійного встановлення) → дістаємо з мережі й
+       ДОДАЄМО у кеш — це латка, а не підміна; офлайн так і залишається робочим;
+     • новий набір активується ЛИШЕ новою версією Service Worker з новим
+       CACHE_NAME (install → activate), а старі кеші зникають атомарно в
+       activate. Мішати версії всередині одного кешу фізично ніде. */
+async function cacheShellGap(request,response){
+  try{
+    const cache=await caches.open(CACHE_NAME);
+    if(await cache.match(request,{ignoreSearch:true}))return; // запис уже є — не чіпаємо
+    await cache.put(request,response.clone());
+  }catch(_putError){/* офлайн чи переповнене сховище — дірку латаємо наступного візиту */}
+}
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
   if(e.request.mode === 'navigate'){
-    const cached=caches.match(e.request,{ignoreSearch:true}).then(value=>value||caches.match('./index.html'));
-    const refresh=fetch(e.request,{cache:'no-store'}).then(async fresh=>{if(fresh&&fresh.status===200)await (await caches.open(CACHE_NAME)).put(e.request,fresh.clone());return fresh;}).catch(()=>null);
-    e.waitUntil(refresh);
-    e.respondWith((async()=>await cached||await refresh||await caches.match('./index.html'))());
+    e.respondWith((async()=>{
+      const hit=await caches.match(e.request,{ignoreSearch:true})||await caches.match('./index.html');
+      if(hit)return hit;
+      const fresh=await fetch(e.request,{cache:'no-store'}).catch(()=>null);
+      if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);
+      return fresh;
+    })());
     return;
   }
   if(/\.(?:js|mjs|css)$/.test(url.pathname)){
-    const cached=caches.match(e.request,{ignoreSearch:true});
-    const refresh=fetch(e.request,{cache:'no-store'}).then(async fresh=>{if(fresh&&fresh.status===200)await (await caches.open(CACHE_NAME)).put(e.request,fresh.clone());return fresh;}).catch(()=>null);
-    e.waitUntil(refresh);
-    e.respondWith((async()=>await cached||await refresh)());
+    e.respondWith((async()=>{
+      const hit=await caches.match(e.request,{ignoreSearch:true});
+      if(hit)return hit;
+      const fresh=await fetch(e.request,{cache:'no-store'}).catch(()=>null);
+      if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);
+      return fresh;
+    })());
     return;
   }
-  e.respondWith(caches.match(e.request).then(async (cached) => {
-    const networkFetch = fetch(e.request).then((res) => {
-      if (res && res.status === 200) {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache)=>cache.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => cached);
-    return cached || await networkFetch;
-  }));
+  e.respondWith((async()=>{
+    const hit=await caches.match(e.request);
+    if(hit)return hit;
+    const fresh=await fetch(e.request).catch(()=>null);
+    if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);
+    return fresh;
+  })());
 });
