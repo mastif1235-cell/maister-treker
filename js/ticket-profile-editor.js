@@ -70,7 +70,7 @@ function showEditAbonentProfile(profileJson){
     };
     updateAbonentEditStreetDl(data.city||'');
     abonentEditCityEl.addEventListener('input', e=> updateAbonentEditStreetDl(e.target.value.trim()));
-    document.getElementById('abonentEditSaveBtn').addEventListener('click', ()=>{
+    document.getElementById('abonentEditSaveBtn').addEventListener('click', async ()=>{
       const vals = {
         city: document.getElementById('abonentEditCity').value.trim(),
         street: document.getElementById('abonentEditStreet').value.trim(),
@@ -88,10 +88,7 @@ function showEditAbonentProfile(profileJson){
       // якщо її справді змінили (а не просто ПІБ/телефон/тощо), попереджаємо,
       // скільки заявок "переїде" на нову адресу, щоб не зробити це випадково
       const addressChanged = vals.city!==(data.city||'') || vals.street!==(data.street||'') || vals.house!==(data.house||'') || vals.apartment!==(data.apartment||'');
-      if(addressChanged){
-        const sure = confirm(`Адресу змінено — вона застосується до ${ids.length} заявок(и) за старою адресою (вони «переїдуть» на нову). Якщо це насправді інший абонент — краще скасувати й створити нову заявку з новою адресою. Продовжити?`);
-        if(!sure) return;
-      }
+      if(addressChanged&&!await openConfirmModal({title:'Оновити адресу профілю?',message:`Нова адреса буде застосована до ${ids.length} заявок(и) цього профілю. Якщо це інший абонент, скасуйте дію та створіть нову заявку.`,confirmLabel:'Оновити адресу',danger:true}))return;
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
         if(t){

@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'..','js','tickets-domain.js'),'utf8');
+const start=source.indexOf('function deletedTicketExpiryMs('),end=source.indexOf('function saveDeletedTickets(',start);
+assert.ok(start>=0&&end>start,'trash retention helpers have one bounded source block');
+const removed=[],saves=[];
+const now=Date.UTC(2026,8,14),day=24*60*60*1000;
+const context={DELETED_TICKET_RETENTION_DAYS:30,deletedTickets:Array.from({length:30},(_,id)=>({id,deletedAt:now-3*day,photos:[`idb:${id}`]})),deletePhotoKey:async key=>removed.push(key),saveDeletedTickets:()=>saves.push(true),Date};
+vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+(async()=>{
+  await context.moveTicketToTrash({id:'thirty-first',photos:['idb:31','idb:31']});
+  assert.equal(context.deletedTickets.length,31,'the 31st recently deleted ticket is retained, rather than count-evicted');
+  assert.deepEqual(removed,[],'no recent photo is silently purged');
+  const expired={id:'expired',deletedAt:now-31*day,photos:['idb:expired-a','idb:expired-b']};
+  context.deletedTickets.push(expired);
+  assert.equal(await context.cleanupExpiredDeletedTickets(now),1,'only tickets older than the declared 30-day retention are purged');
+  assert.deepEqual(removed.sort(),['idb:expired-a','idb:expired-b'],'all expired ticket photos are purged once');
+  assert.equal(context.deletedTickets.some(t=>t.id==='thirty-first'),true,'the recently deleted ticket still remains recoverable');
+  assert.ok(saves.length>=2,'retention changes are persisted');
+  assert.match(source,/DELETED_TICKET_RETENTION_DAYS/,'retention is explicit, not a hidden item-count cap');
+  assert.doesNotMatch(source,/DELETED_TICKETS_MAX/,'the old automatic 31st-ticket/photo purge is removed');
+  console.log('PASS photo trash retention is time-based, explicit and preserves the 31st recent ticket');
+})().catch(error=>{console.error(error);process.exitCode=1;});

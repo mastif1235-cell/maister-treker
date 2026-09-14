@@ -34,7 +34,7 @@ context.MTBackupSystem.encrypt=async payload=>{capturedPayload=JSON.parse(JSON.s
 (async()=>{
   const dayOne=new Date(2026,7,30,8,0,0),dayTwo=new Date(2026,7,31,8,0,0);
   assert.equal(context.maybeOfferExternalDailyBackup(dayOne),true,'first launch of a new day offers external backup');
-  assert.match(offerRoot.innerHTML,/Сохранить ежедневный бэкап/,'daily offer renders an explicit user-action button');
+  assert.match(offerRoot.innerHTML,/Зберегти щоденну резервну копію/,'daily offer renders an explicit user-action button');
   assert.equal(downloads.length,0,'daily offer never starts a silent download');
   await elements.externalDailyBackupSaveBtn.onclick();
   assert.equal(store.get('externalDailyBackupDate'),'2026-08-30','successful download launch stores the local calendar date');
@@ -51,7 +51,7 @@ context.MTBackupSystem.encrypt=async payload=>{capturedPayload=JSON.parse(JSON.s
   assert.equal(store.get('externalDailyBackupDate'),'2026-08-31','manual successful download also satisfies today’s offer');
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const settingsDomain=fs.readFileSync(path.join(root,'js','settings-domain.js'),'utf8');
-  assert.match(html,/id="downloadExternalBackupNowBtn"[^>]*>Скачать бэкап сейчас</,'settings exposes the manual download button');
+  assert.match(html,/id="downloadExternalBackupNowBtn"[^>]*>Завантажити резервну копію зараз</,'settings exposes the manual download button');
   assert.match(settingsDomain,/downloadExternalBackupNowBtn[^\n]+downloadExternalDailyBackup/,'manual settings button invokes external daily download');
   console.log('PASS external daily encrypted backup offer/date/photo-free/secrets/manual download');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -31,7 +31,7 @@ function toolsOpenNetworkPointEditor(id='',defaults={},options={}){
       document.getElementById('modalBody').addEventListener('input',()=>{pointEditorDirty=true;});
       document.getElementById('modalBody').addEventListener('change',()=>{pointEditorDirty=true;});
       document.querySelectorAll('[data-photo-preview-key]').forEach(async image=>{const data=await resolvePhotoAsync(image.dataset.photoPreviewKey,null);if(data)image.src=data;});
-      document.querySelectorAll('.tools-point-photo-remove').forEach(button=>button.onclick=async()=>{if(!confirm('Видалити це фото?'))return;button.disabled=true;await toolsRemoveNetworkPointPhoto(existing.id,button.dataset.photoKey);});
+      document.querySelectorAll('.tools-point-photo-remove').forEach(button=>button.onclick=async()=>{if(!await openConfirmModal({title:'Видалити це фото?',message:'Фото буде видалено з цього об’єкта і з локального сховища, якщо більше ніде не використовується.',confirmLabel:'Видалити',danger:true}))return;button.disabled=true;await toolsRemoveNetworkPointPhoto(existing.id,button.dataset.photoKey);});
       if(options.placement){document.getElementById('toolsScreenRoot')?.classList.add('tools-map-editor-open');setTimeout(()=>document.getElementById('toolsLeafletMap')?.scrollIntoView({block:'start'}),0);}
       document.getElementById('toolsPointCancelBtn').onclick=closePointEditor;
       document.getElementById('toolsPointPickBtn').onclick=()=>{

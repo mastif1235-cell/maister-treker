@@ -79,6 +79,25 @@ function openAddressForTicket(id){
 // доходить той день — наряд сам там і чекає.
 // Підпис кнопки під датою — кількість ще не виконаних нарядів САМЕ на дату,
 // яка зараз переглядається в календарі заявок (оновлюється разом з нею).
+// Ліміт захищає localStorage від нескінченного росту. Ми ніколи не викидаємо
+// активний наряд заради нового: спершу прибираємо лише давно виконані записи,
+// а коли всі 200 ще актуальні — чесно просимо завершити/видалити потрібний.
+const NARYAD_QUEUE_MAX = 200;
+const NARYAD_DONE_RETENTION_MS = 30*24*60*60*1000;
+function naryadQueueFingerprint(text,date){
+  return `${String(date||'').trim()}|${String(text||'').trim().replace(/\s+/g,' ').toLowerCase()}`;
+}
+function findPendingNaryadDuplicate(text,date,exceptId){
+  const key=naryadQueueFingerprint(text,date);
+  return naryadQueue.find(item=>item&&!item.done&&String(item.id)!==String(exceptId===undefined?'':exceptId)&&naryadQueueFingerprint(item.text,naryadItemDate(item,formatDate))===key)||null;
+}
+function pruneCompletedNaryads(now=Date.now()){
+  const cutoff=now-NARYAD_DONE_RETENTION_MS,before=naryadQueue.length;
+  // Legacy "done" records have no reliable completion timestamp: preserve them
+  // until the master removes them deliberately instead of guessing their age.
+  naryadQueue=naryadQueue.filter(item=>!(item&&item.done===true&&Number.isFinite(Number(item.completedAt))&&Number(item.completedAt)>0&&Number(item.completedAt)<=cutoff));
+  return before-naryadQueue.length;
+}
 function updateNaryadQueueBtn(){
   const btn = document.getElementById('naryadQueueBtn');
   if(!btn) return;
@@ -89,6 +108,7 @@ function updateNaryadQueueBtn(){
 // Головний список — з навігацією по днях (як і на екрані "Заявки"), щоб
 // можна було глянути наперед чи назад, не виходячи звідси.
 function showNaryadQueue(date){
+  if(pruneCompletedNaryads()) saveNaryadQueue();
   let viewDate = date || currentTicketDate;
   const bodyHtml = `
     <div class="row" style="gap:6px; align-items:center; margin-bottom:12px;">
@@ -97,6 +117,7 @@ function showNaryadQueue(date){
       <button type="button" class="btn btn-icon" id="naryadQueueNextDayBtn">›</button>
     </div>
     <button type="button" class="btn btn-block" id="naryadQueueAddBtn">➕ Додати наряд</button>
+    <div style="font-size:12.5px; color:var(--text-dim); margin-top:8px;">До ${NARYAD_QUEUE_MAX} активних нарядів. Виконані записи зберігаються 30 днів.</div>
     <div id="naryadQueueListArea" style="margin-top:14px;">${naryadQueueListHtml(naryadQueue, viewDate, tickets, formatDate, escapeHtml)}</div>`;
   openModal('Наряди від диспетчера', bodyHtml, {onOpen: (rootEl)=>{
     const refresh = ()=>{
@@ -108,7 +129,7 @@ function showNaryadQueue(date){
     // NEW: поле вводу — окрема "на весь екран" модалка (див. showAddNaryadModal
     // нижче), а не тісний textarea поруч зі списком
     document.getElementById('naryadQueueAddBtn').addEventListener('click', ()=> showAddNaryadModal(viewDate));
-    rootEl.addEventListener('click', e=>{
+    rootEl.addEventListener('click', async e=>{
       const editTicketBtn = e.target.closest('.naryad-queue-edit-ticket-btn');
       if(editTicketBtn){
         // Наряд уже пов'язаний зі збереженою заявкою: відкриваємо саме її
@@ -126,12 +147,16 @@ function showNaryadQueue(date){
       const doneBtn = e.target.closest('.naryad-queue-done-btn');
       if(doneBtn){
         const n = naryadQueue.find(x=>String(x.id)===doneBtn.dataset.id);
-        if(n){ n.done = !n.done; saveNaryadQueue(); refresh(); updateNaryadQueueBtn(); }
+        if(n){
+          n.done=!n.done;
+          if(n.done)n.completedAt=Date.now();else delete n.completedAt;
+          saveNaryadQueue(); refresh(); updateNaryadQueueBtn();
+        }
         return;
       }
       const delBtn = e.target.closest('.naryad-queue-delete-btn');
       if(delBtn){
-        if(!confirm('Прибрати цей наряд з черги?')) return;
+        if(!await openConfirmModal({title:'Прибрати наряд з черги?',message:'Наряд буде видалено з локальної черги. Це не впливає на вже створену заявку.',confirmLabel:'Прибрати',danger:true})) return;
         naryadQueue = naryadQueue.filter(x=>String(x.id)!==delBtn.dataset.id);
         saveNaryadQueue();
         refresh();
@@ -187,6 +212,8 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
       if(!text){ showToast('Встав текст наряду'); return; }
       const chosenDate = isoToDdmmyyyy(document.getElementById('addNaryadDateInput').value) || initialDate;
       if(editingNaryad){
+        const duplicate=findPendingNaryadDuplicate(text,chosenDate,editingNaryad.id);
+        if(duplicate){ showToast('Такий активний наряд уже є в черзі'); return; }
         // Зберігаємо той самий об'єкт: ID, createdAt, done і ticketId не
         // змінюються. Оновлюються лише поля, доступні у формі створення.
         editingNaryad.text = text;
@@ -197,8 +224,19 @@ function showAddNaryadModal(defaultDate, editingNaryadId){
         showNaryadQueue(chosenDate);
         return;
       }
+      const pruned=pruneCompletedNaryads();
+      if(pruned)saveNaryadQueue();
+      if(findPendingNaryadDuplicate(text,chosenDate)){
+        showToast('Такий активний наряд уже є в черзі');
+        showNaryadQueue(chosenDate);
+        return;
+      }
+      if(naryadQueue.length>=NARYAD_QUEUE_MAX){
+        showToast(`Черга заповнена (${NARYAD_QUEUE_MAX}). Активні наряди не видалено — завершіть або приберіть непотрібний запис.`);
+        return;
+      }
       const now = new Date();
-      naryadQueue.push({id: Date.now(), text, date: chosenDate, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
+      naryadQueue.push({id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`, text, date: chosenDate, createdAt: `${formatDate(now)} ${formatTime(now)}`, done: false});
       saveNaryadQueue();
       updateNaryadQueueBtn();
       // NEW: одразу перевіряємо, чи це вже знайомий абонент (за телефоном

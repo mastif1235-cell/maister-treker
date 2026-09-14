@@ -1,7 +1,14 @@
 'use strict';
 
 // Local persistence and backup UI orchestration. Loaded after app.js.
-function saveNaryadQueue(){ localStorage.setItem('naryadQueue', JSON.stringify(naryadQueue)); }
+function saveNaryadQueue(){
+  try{localStorage.setItem('naryadQueue',JSON.stringify(naryadQueue));return true;}
+  catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'naryad-queue-persist'});
+    if(typeof showToast==='function')showToast('⚠️ Чергу нарядів не вдалося зберегти. Не закривайте застосунок і звільніть місце.');
+    return false;
+  }
+}
 
 /* ---- Безпечний запис змін ----
    localStorage.setItem кидає QuotaExceededError (квота ~5 МБ спільна з

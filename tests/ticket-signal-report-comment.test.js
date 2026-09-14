@@ -69,7 +69,7 @@ assert.match(telegramSource,/sendToTelegramChat\(id2, dispatcherTicketText\(t\.c
 assert.match(telegramSource,/const text = dispatcherTicketText\(getCurrentTicketText\(\)\)/,'current-form dispatcher path sanitizes text');
 
 const tickets=[{id:'one',content:'unchanged'}],before=JSON.stringify(tickets);
-assert.equal(context.appendTicketReportComment('Звіт',' Текст користувача '),'Звіт\n\nКомментарий:\nТекст користувача','non-empty report comment is appended');
+assert.equal(context.appendTicketReportComment('Звіт',' Текст користувача '),'Звіт\n\nКоментар:\nТекст користувача','non-empty report comment is appended');
 assert.equal(context.appendTicketReportComment('Звіт','   '),'Звіт','empty comment adds nothing');
 assert.equal(JSON.stringify(tickets),before,'comment formatting does not mutate tickets');
 

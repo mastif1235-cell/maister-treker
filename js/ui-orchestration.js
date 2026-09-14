@@ -135,7 +135,7 @@ function switchTab(tab){
 function bindTabBar(){
   document.addEventListener('click',event=>{if(event.target.closest('[data-app-back]')){event.preventDefault();appNavigationBack();}});
   document.querySelectorAll('.tab-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
+    btn.addEventListener('click', async ()=>{
       const tab = btn.dataset.tab;
       const currentlyOnCalculator = document.getElementById('screen-calculator').classList.contains('active');
       // NEW: раніше умова тут ще й перевіряла editingTicketId===null — тобто
@@ -148,7 +148,7 @@ function bindTabBar(){
       if(currentlyOnCalculator && tab!=='calculator'){
         syncFormToState();
         if(hasUnsavedChanges()){
-          const leave = confirm(editingTicketId ? 'Є незбережені правки заявки. Перейти без збереження?' : 'У калькуляторі є незбережені дані. Перейти без збереження?');
+          const leave = await openConfirmModal({title:'Перейти без збереження?',message:editingTicketId ? 'Є незбережені правки заявки. Перейти без збереження?' : 'У калькуляторі є незбережені дані. Перейти без збереження?',confirmLabel:'Перейти',danger:true});
           if(!leave) return;
         }
       }

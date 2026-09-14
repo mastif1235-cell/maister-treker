@@ -17,5 +17,5 @@ function calculateTicketReportTotals(tickets){
 function appendTicketReportComment(reportText,comment){
   const text=String(reportText||'');
   const cleanComment=String(comment||'').trim();
-  return cleanComment ? `${text}\n\nКомментарий:\n${cleanComment}` : text;
+  return cleanComment ? `${text}\n\nКоментар:\n${cleanComment}` : text;
 }

@@ -303,31 +303,48 @@ async function deleteTicket(id){
   // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
   // Ставимо прапорець ДО мережі: якщо застосунок закриється під час await,
   // наступний запуск усе одно знатиме, що Google-видалення треба повторити.
-  moveTicketToTrash(t);
+  await moveTicketToTrash(t);
   renderTicketsScreen();
   showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
 }
 
-/* ---- Кошик видалених заявок: зберігає останні DELETED_TICKETS_MAX записів,
-   старіші за цю межу видаляються остаточно (разом із фото в IndexedDB). ---- */
-// NEW: спільна функція для видалення ВСІХ фото заявки з IndexedDB (масив
-// photos, якщо є, інакше старе одиничне поле photo) — використовується і в
-// кошику (переповнення/остаточне видалення), і будь-де ще, де потрібно
-// прибрати фото заявки цілком. Раніше кошик прибирав лише t.photo (перше
-// фото), а друге й третє лишались "сиротами" в IndexedDB назавжди.
-function deleteAllTicketPhotos(t){
-  const keys = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
-  keys.forEach(k=> deletePhotoKey(k));
+/* ---- Кошик видалених заявок ------------------------------------------------
+   Кількість записів НЕ є приводом назавжди видалити 31-шу заявку чи її фото.
+   Кожен запис зберігається 30 днів від свого deletedAt; після цього строку він
+   і пов'язані локальні фото очищуються. Таке правило видно в інтерфейсі і не
+   залежить від того, скільки заявок майстер видалив за день. */
+function deletedTicketExpiryMs(ticket){
+  const deletedAt=Number(ticket&&ticket.deletedAt);
+  if(!Number.isFinite(deletedAt)||deletedAt<=0)return null; // старі пошкоджені записи не стираємо навмання
+  return deletedAt + DELETED_TICKET_RETENTION_DAYS*24*60*60*1000;
 }
 
-function moveTicketToTrash(t){
-  const copy = JSON.parse(JSON.stringify(t));
-  copy.deletedAt = Date.now();
-  deletedTickets.unshift(copy);
-  while(deletedTickets.length > DELETED_TICKETS_MAX){
-    const dropped = deletedTickets.pop();
-    deleteAllTicketPhotos(dropped);
+// Видаляє ВСІ фото заявки (масив photos, або legacy photo) лише при явному
+// остаточному видаленні/завершенні строку. Set захищає від дубльованого ключа.
+async function deleteAllTicketPhotos(t){
+  const keys=(t&&t.photos&&t.photos.length)?t.photos:(t&&t.photo?[t.photo]:[]);
+  await Promise.all([...new Set(keys)].map(key=>deletePhotoKey(key)));
+}
+
+async function cleanupExpiredDeletedTickets(now=Date.now()){
+  const expired=[],retained=[];
+  for(const ticket of deletedTickets){
+    const expiry=deletedTicketExpiryMs(ticket);
+    if(expiry!==null&&expiry<=now)expired.push(ticket);else retained.push(ticket);
   }
+  if(!expired.length)return 0;
+  // Спочатку прибираємо вже прострочені байти фото, потім — посилання з кошика.
+  await Promise.all(expired.map(deleteAllTicketPhotos));
+  deletedTickets=retained;
+  saveDeletedTickets();
+  return expired.length;
+}
+
+async function moveTicketToTrash(t){
+  const copy=JSON.parse(JSON.stringify(t));
+  copy.deletedAt=Date.now();
+  deletedTickets.unshift(copy);
+  await cleanupExpiredDeletedTickets(copy.deletedAt);
   saveDeletedTickets();
   return copy;
 }
@@ -363,7 +380,7 @@ async function purgeDeletedTicket(deletedAt){
   if(idx===-1) return;
   if(!await openConfirmModal({title:'Видалити заявку з кошика остаточно?',message:'Відновити після цього буде неможливо; фото цієї заявки також буде видалено з пристрою.',confirmLabel:'Видалити назавжди',danger:true})) return;
   const t = deletedTickets[idx];
-  deleteAllTicketPhotos(t); // NEW: усі фото (photos), не лише перше
+  await deleteAllTicketPhotos(t); // усі фото (photos), не лише перше
   deletedTickets.splice(idx,1);
   saveDeletedTickets();
   renderDeletedTicketsList();
@@ -383,7 +400,7 @@ function renderDeletedTicketsList(){
       <div style="min-width:0; flex:1;">
         <div class="sr-title">${escapeHtml(t.date||'')} ${escapeHtml(t.time||'')} — ${escapeHtml(t.type||'')}</div>
         <div style="font-size:12px; color:var(--text-dim); overflow-wrap:anywhere;">${escapeHtml(sub)}${t.sum?(' · '+fmtMoney(t.sum)):''}</div>
-        <div style="font-size:11px; color:var(--text-faint);">Видалено: ${formatDate(d)} ${formatTime(d)}</div>
+        <div style="font-size:12px; color:var(--text-faint);">Видалено: ${formatDate(d)} ${formatTime(d)}</div>
       </div>
       <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0;">
         <button type="button" class="btn btn-sm restore-trash-btn" data-deleted-at="${t.deletedAt}">↩️ Відновити</button>

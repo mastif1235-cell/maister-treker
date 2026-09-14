@@ -30,7 +30,7 @@ function naryadQueueItemHtml(n, ticketList, escapeHtmlValue){
   return `
     <div class="card" style="margin-bottom:10px; padding:12px 14px; ${n.done ? 'opacity:.55;' : ''}">
       <div style="white-space:pre-wrap; font-size:13.5px; ${n.done ? 'text-decoration:line-through;' : ''}">${escapeHtmlValue(n.text)}</div>
-      <div style="font-size:11px; color:var(--text-dim); margin:4px 0 8px;">додано ${escapeHtmlValue(n.createdAt||'')}</div>
+      <div style="font-size:12px; color:var(--text-dim); margin:4px 0 8px;">додано ${escapeHtmlValue(n.createdAt||'')}</div>
       <div class="row" style="gap:6px; flex-wrap:wrap;">
         <button type="button" class="btn btn-sm naryad-queue-done-btn" data-id="${n.id}">${n.done ? '↩️ Повернути' : '✅ Виконано'}</button>
         ${n.done ? '' : `<button type="button" class="btn btn-sm naryad-queue-create-btn" data-id="${n.id}">➕ Заявка</button>`}

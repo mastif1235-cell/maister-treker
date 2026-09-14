@@ -32,7 +32,7 @@ async function toolsPrepareOfflineMap(file,areaId=toolsOfflineImportAreaId){
   }
 }
 async function toolsDeleteOfflineMap(){
-  if(!confirm('Видалити лише офлайн-карту? Заявки, точки, фото й налаштування залишаться.'))return;
+  if(!await openConfirmModal({title:'Видалити офлайн-карту?',message:'Буде видалено лише офлайн-карту. Заявки, точки, фото й налаштування залишаться.',confirmLabel:'Видалити',danger:true}))return;
   const ok=await MTOfflineMap.remove();
   if(ok){renderToolsScreen(toolsView==='offline'?'offline':'map');showToast('Офлайн-карту видалено');}else showToast('Не вдалося видалити офлайн-карту');
 }

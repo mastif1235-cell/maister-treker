@@ -19,7 +19,7 @@ async function sharePickerBuildItems(ticket){
     try{
       const photoData = await resolvePhotoAsync(refs[i], fallbackIds[i] || (i===0 ? ticket.tgPhotoFileId : null));
       if(!photoData) continue;
-      const blob = await (await fetch(photoData)).blob();
+      const blob = await photoSourceToBlob(photoData);
       const type = (blob.type && blob.type.startsWith('image/')) ? blob.type : 'image/jpeg';
       const ext = type.includes('png') ? 'png' : (type.includes('webp') ? 'webp' : 'jpg');
       const file = new File([blob], `zayavka-foto-${i+1}.${ext}`, {type});
@@ -206,8 +206,7 @@ async function sharePhoto(){
       const fallbackId = fallbackFileIds[i] || null;
       const photoData = await resolvePhotoAsync(photos[i], fallbackId);
       if(!photoData) continue;
-      const res = await fetch(photoData);
-      const blob = await res.blob();
+      const blob = await photoSourceToBlob(photoData);
       files.push(new File([blob], `foto${i+1}.jpg`, {type:'image/jpeg'}));
     }
     if(!files.length){ showToast('Не вдалося завантажити фото'); return; }
