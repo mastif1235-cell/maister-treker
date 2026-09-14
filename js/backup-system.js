@@ -47,10 +47,49 @@ if(typeof window!=='undefined'){
   async function mtBackupVaultSave(password){if(String(password||'').length<MT_BACKUP_MIN_PASSWORD)return false;try{const key=await mtBackupVaultCreateKey();if(!key)return false;const iv=crypto.getRandomValues(new Uint8Array(12));const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(String(password))));return backupDbPut(MT_BACKUP_VAULT_SECRET_RECORD,{version:1,iv,ciphertext});}catch(_e){return false;}}
   async function mtBackupVaultRead(){try{const [key,record]=await Promise.all([mtBackupVaultStoredKey(),backupDbGet(MT_BACKUP_VAULT_SECRET_RECORD)]);if(!key||!record||Number(record.version)!==1)return null;const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv)},key,new Uint8Array(record.ciphertext));const password=new TextDecoder().decode(plain);return password.length>=MT_BACKUP_MIN_PASSWORD?password:null;}catch(_e){return null;}}
   async function mtBackupVaultForget(){const secretDeleted=await backupDbDelete(MT_BACKUP_VAULT_SECRET_RECORD);const keyDeleted=await backupDbDelete(MT_BACKUP_VAULT_KEY_RECORD);return secretDeleted&&keyDeleted;}
-  async function mtBackupPasswordForExport(){return (await mtBackupVaultRead())||mtBackupPassword(true);}
-  async function mtBackupDecryptForImport(envelope){const saved=await mtBackupVaultRead();if(saved){try{return await MTBackupSystem.decrypt(envelope,saved);}catch(_e){}}const manual=mtBackupPassword(false);return manual?MTBackupSystem.decrypt(envelope,manual):null;}
+function mtBackupIosStandalone(){
+    try{
+      const standalone=(typeof matchMedia==='function'&&matchMedia('(display-mode: standalone)').matches)||(typeof navigator!=='undefined'&&navigator.standalone===true);
+      if(!standalone)return false;
+      const ua=String(typeof navigator!=='undefined'&&navigator.userAgent||'');
+      return /iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&Number(navigator.maxTouchPoints||0)>1);
+    }catch(_e){return false;}
+  }
+  function mtBackupPasswordModal(confirmNew){
+    return new Promise(resolve=>{
+      let settled=false;
+      const finish=value=>{if(settled)return;settled=true;resolve(value);if(typeof closeModal==='function')closeModal();};
+      openModal(confirmNew?'Створення пароля бекапу':'Пароль бекапу',
+        '<div class="field"><label for="mtBackupPw1">'+(confirmNew?'Новий пароль (мінімум '+MT_BACKUP_MIN_PASSWORD+' символів):':'Пароль:')+'</label><input type="password" id="mtBackupPw1" autocomplete="'+(confirmNew?'new-password':'current-password')+'"></div>'+
+        (confirmNew?'<div class="field"><label for="mtBackupPw2">Повторіть пароль:</label><input type="password" id="mtBackupPw2" autocomplete="new-password"></div>':'')+
+        '<p id="mtBackupPwError" class="muted" style="color:var(--accent)"></p>'+
+        '<div class="row"><button type="button" class="btn" id="mtBackupPwCancel" data-modal-cancel>Скасувати</button><button type="button" class="btn btn-accent" id="mtBackupPwOk">OK</button></div>',
+        {onOpen:()=>{
+          const one=document.getElementById('mtBackupPw1'),two=document.getElementById('mtBackupPw2'),err=document.getElementById('mtBackupPwError');
+          const submit=()=>{const a=String(one.value||'');
+            if(a.length<MT_BACKUP_MIN_PASSWORD){err.textContent='Пароль бекапу — мінімум '+MT_BACKUP_MIN_PASSWORD+' символів';return;}
+            if(confirmNew&&a!==String(two.value||'')){err.textContent='Паролі бекапу не збігаються';return;}
+            finish(a);};
+          document.getElementById('mtBackupPwOk').onclick=submit;
+          document.getElementById('mtBackupPwCancel').onclick=()=>finish(null);
+          one.onkeydown=event=>{if(event.key==='Enter')submit();};
+          if(two)two.onkeydown=event=>{if(event.key==='Enter')submit();};
+          if(one.focus)one.focus();
+        },onClose:()=>finish(null)});
+    });
+  }
+  async function mtBackupPasswordInteractive(confirmNew){
+    /* iOS не підтримує prompt() у PWA standalone-режимі: він повертає null без
+       діалогу, і екпорт зашифрованого бекапу ставав неможливим. На таких
+       пристроях просимо пароль власним модальним вікном; решта середовищ
+       зберігають звичний системний діалог. */
+    if(mtBackupIosStandalone()&&typeof openModal==='function')return await mtBackupPasswordModal(confirmNew);
+    return mtBackupPassword(confirmNew);
+  }
+  async function mtBackupPasswordForExport(){return (await mtBackupVaultRead())||await mtBackupPasswordInteractive(true);}
+  async function mtBackupDecryptForImport(envelope){const saved=await mtBackupVaultRead();if(saved){try{return await MTBackupSystem.decrypt(envelope,saved);}catch(_e){}}const manual=await mtBackupPasswordInteractive(false);return manual?MTBackupSystem.decrypt(envelope,manual):null;}
   renderBackupPasswordStatus=async function(){const saved=!!(await mtBackupVaultRead());const status=document.getElementById('backupPasswordStatus');const save=document.getElementById('backupPasswordSaveBtn');const change=document.getElementById('backupPasswordChangeBtn');const forget=document.getElementById('backupPasswordForgetBtn');if(status)status.textContent=saved?'✅ Пароль для бэкапов сохранён на этом устройстве':'Пароль для бэкапов ещё не сохранён';if(save)save.classList.toggle('hidden',saved);if(change)change.classList.toggle('hidden',!saved);if(forget)forget.classList.toggle('hidden',!saved);return saved;};
-  saveBackupPasswordCredential=async function(){const password=mtBackupPassword(true);if(!password)return false;const ok=await mtBackupVaultSave(password);showToast(ok?'✅ Пароль для бекапів збережено':'Не вдалося безпечно зберегти пароль на цьому пристрої');await renderBackupPasswordStatus();return ok;};
+  saveBackupPasswordCredential=async function(){const password=await mtBackupPasswordInteractive(true);if(!password)return false;const ok=await mtBackupVaultSave(password);showToast(ok?'✅ Пароль для бекапів збережено':'Не вдалося безпечно зберегти пароль на цьому пристрої');await renderBackupPasswordStatus();return ok;};
   forgetBackupPasswordCredential=async function(){const ok=await mtBackupVaultForget();showToast(ok?'Пароль для бекапів забуто':'Не вдалося видалити збережений пароль');await renderBackupPasswordStatus();return ok;};
   const MT_EXTERNAL_DAILY_BACKUP_DATE_KEY='externalDailyBackupDate';
   function mtBackupDownload(value,name){try{const blob=new Blob([JSON.stringify(value)],{type:'application/json;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);return true;}catch(_e){return false;}}

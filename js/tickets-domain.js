@@ -132,7 +132,7 @@ async function acceptServerTicketConflict(id){
   const remote=await readCurrentTicketConflict(id);
   if(remote.state.tombstone) tickets=tickets.filter(t=>String(t.id)!==String(id));
   else tickets[tickets.indexOf(current)]=ticketFromConflictServer(remote.ticket,current);
-  const saved=await ticketsDbPut(tickets);
+  const saved=((typeof ticketsStoreWritable!=='function')||ticketsStoreWritable())?await ticketsDbPut(tickets):false;
   if(!saved) throw new Error('LOCAL_WRITE_FAILED');
   syncTicketsSnapshot=JSON.parse(JSON.stringify(tickets));
   await syncEngine.acceptServerConflict('ticket',id,remote.state);
@@ -420,6 +420,7 @@ async function retrySyncTicket(id){
   const t = tickets.find(x=>String(x.id)===String(id)); // NEW
   if(!t) return;
   if(!getScriptUrl()){ showToast('Синхронізація не налаштована'); return; }
+  if(!syncEngine){ showToast('Синхронізація тимчасово недоступна — зміни збережено локально'); return; }
   showToast('Повторна спроба надсилання...');
   const ok = await syncEngine.flush();
   renderTicketsScreen();

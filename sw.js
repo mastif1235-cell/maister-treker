@@ -10,10 +10,36 @@ const CORE_ASSETS = [
   './app.js','./manifest.json','./icon-192.png','./icon-512.png','./assets/logo-tab-sprite.png'
 ];
 
+/* Критичне ядро: без нього застосунок не стартує офлайн узагалі. Якщо будь-
+   який із цих файлів недоступний — інсталяція нового кешу МАЄ зірватися: тоді
+   браузер лишиться на старому, повному й робочому наборі (best-effort кеш із
+   дірками гірший за відсутність оновлення). Решту активів добираємо окремо. */
+const CRITICAL_CORE_ASSETS=['./','./index.html','./app.js','./styles.css','./manifest.json'];
+
+function cacheCoreAssets(cache){
+  const requests=CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'}));
+  return cache.addAll(requests).catch(async(firstError)=>{
+    // Друга спроба тим самим шляхом: ловить короткі мережеві збої.
+    try{ await cache.addAll(requests); return; }
+    catch(_retryError){
+      // І все ще не вийшло: критичне — обов'язково; решту — що вдалося.
+      for(const asset of CRITICAL_CORE_ASSETS){ await cache.add(new Request(asset,{cache:'reload'})); }
+      const misses=[];
+      for(const asset of CORE_ASSETS){
+        if(CRITICAL_CORE_ASSETS.indexOf(asset)>=0) continue;
+        try{ await cache.add(new Request(asset,{cache:'reload'})); }
+        catch(_assetError){ misses.push(asset); }
+      }
+      if(misses.length) console.warn('Попереднє кешування пропущено (добереме фоном):',misses.join(', '));
+      void firstError;
+    }
+  });
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil((async()=>{
     const cache=await caches.open(CACHE_NAME);
-    await cache.addAll(CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'})));
+    await cacheCoreAssets(cache);
     await self.skipWaiting();
   })());
 });
@@ -21,10 +47,13 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil((async()=>{
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith('maister-treker-') && k !== CACHE_NAME).map((k) => caches.delete(k)));
+    const stale=keys.filter((k) => k.startsWith('maister-treker-') && k !== CACHE_NAME);
+    await Promise.all(stale.map((k) => caches.delete(k)));
     await self.clients.claim();
     const clients = await self.clients.matchAll({type:'window', includeUncontrolled:true});
-    clients.forEach((client)=>client.postMessage({type:'MT_SW_ACTIVATED', cacheName:CACHE_NAME}));
+    // upgrade:true — то було оновлення наявного встановлення, а не перший
+    // запуск; сторінка використовує це для делікатної підказки перезавантаження.
+    clients.forEach((client)=>client.postMessage({type:'MT_SW_ACTIVATED', cacheName:CACHE_NAME, upgrade:stale.length>0}));
   })());
 });
 

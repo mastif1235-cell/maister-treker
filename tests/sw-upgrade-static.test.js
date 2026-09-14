@@ -50,7 +50,11 @@ async function fetchEvent(request){let response;const waits=[];handlers.fetch({r
   idle.handlers.controllerchange();idle.handlers.controllerchange();
   assert.equal(idle.reloads.count,1,'idle controller activation causes at most one reload');
   assert.equal(idle.context.draftSaves,1,'draft is still saved once before the reload');
-  assert.equal(idle.handlers.message,undefined,'repeated MT_SW_ACTIVATED messages cannot trigger reloads');
+  assert.equal(typeof idle.handlers.message,'function','MT_SW_ACTIVATED has a live consumer (no longer a dead postMessage)');
+  const idleReloads=idle.reloads.count;
+  idle.handlers.message({data:{type:'MT_SW_ACTIVATED',cacheName:'maister-treker-x',upgrade:true}});
+  idle.handlers.message({data:{type:'MT_SW_ACTIVATED',cacheName:'maister-treker-x',upgrade:true}});
+  assert.equal(idle.reloads.count,idleReloads,'repeated MT_SW_ACTIVATED messages cannot trigger reloads');
 
   for(const busyState of [{unsaved:true},{modalOpen:true},{speedTest:true},{mapPlacement:true}]){
     const busy=clientHarness(busyState);

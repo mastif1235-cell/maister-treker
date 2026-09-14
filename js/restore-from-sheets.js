@@ -413,7 +413,16 @@
       imported.add(id);
       if(canonicalTicket(localTicket, deps) === canonicalTicket(parsed.ticket, deps)){ out.push(localTicket); return; }
       const decision = decisions[id] || 'local';
-      if(decision === 'cloud') out.push(parsed.ticket);
+      if(decision === 'cloud'){
+        // Пароль з v91.27 не подорожує в таблиці (у нотатці лише маркер
+        // @local-only), тому Sheets більше НЕ є джерелом пароля:
+        //  • є локальний пароль — лишаємо його, навіть якщо в застарілому
+        //    стовпці хтось колись вписав відкритий текст;
+        //  • локального немає (наприклад, чистий пристрій) — підхоплюємо
+        //    легасі-значення з рядка, щоб не втрадати доступ.
+        if(localTicket.password) parsed.ticket.password = localTicket.password;
+        out.push(parsed.ticket);
+      }
       else out.push(localTicket); // 'local' або 'skip' — ніколи не видаляємо локальне автоматично
     });
     (Array.isArray(local) ? local : []).forEach(ticket=>{ if(!imported.has(String(ticket.id))) out.push(ticket); });

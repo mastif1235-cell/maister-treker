@@ -49,6 +49,7 @@ function downloadExport(format, includeStats, hidePhones){
 }
 
 /* ---- Масовий імпорт ---- */
+let mtLastBulkImportStats={imported:0,duplicates:0,rejected:0};
 function openImportModal(){
   openModal('Масовий імпорт заявок', `
     <div class="field">
@@ -60,8 +61,12 @@ function openImportModal(){
     document.getElementById('importRunBtn').onclick = async ()=>{
       const text = document.getElementById('importTextarea').value;
       const count = await runBulkImport(text);
+      const stats=mtLastBulkImportStats||{imported:count,duplicates:0,rejected:0};
       closeModal();
-      showToast(`Імпортовано заявок: ${count}`);
+      const extras=[];
+      if(stats.duplicates) extras.push(`дублікати (уже є в базі): ${stats.duplicates}`);
+      if(stats.rejected) extras.push(`відхилено битих блоків: ${stats.rejected}`);
+      showToast(`Імпортовано заявок: ${count}${extras.length?' · '+extras.join(' · '):''}`);
       renderTicketsScreen();
     };
   }});
@@ -78,6 +83,7 @@ async function dedupTickets(){
   renderTicketsScreen();
   showToast(`Видалено дублікатів: ${result.removedIds.length}${result.ambiguousCount?`; неоднозначних залишено: ${result.ambiguousCount}`:''}. Синхронізація з хмарою...`);
   if(getScriptUrl()){
+    if(!syncEngine){ showToast('Синхронізація тимчасово недоступна — зміни збережено локально'); return; }
     const ok = await syncEngine.flush();
     renderTicketsScreen();
     showToast(ok ? 'Синхронізацію завершено' : 'Синхронізація не вдалась — перевірте інтернет');
@@ -127,13 +133,29 @@ async function repairCorruptedTickets(){
   renderTicketsScreen();
   showToast(`Полагоджено: ${repaired}${unfixable ? `, не вдалось: ${unfixable}` : ''}. Синхронізація з хмарою...`);
   if(getScriptUrl()){
+    if(!syncEngine){ showToast('Синхронізація тимчасово недоступна — зміни збережено локально'); return; }
     const ok = await syncEngine.flush();
     renderTicketsScreen();
     showToast(ok ? 'Синхронізацію завершено' : 'Синхронізація не вдалась — перевірте інтернет');
   }
 }
 
+function mtBulkImportKey(t){
+  // Ключ дедуплікації для імпорту: дата+час+довжина+крапки тексту+сума.
+  // Точного хешу не треба — імпорт із буфера обміну повторює рядки 1-в-1.
+  const c=String(t&&t.content||'');
+  return [t&&t.date,t&&t.time,c.length,c.slice(0,160),c.slice(-80),String(t&&t.sum||'')].join('\u0000');
+}
+function mtBulkImportDateIsValid(date){
+  const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(date||''));
+  if(!m) return false;
+  const d=+m[2], mo=+m[1]-1, y=+m[3];
+  const dt=new Date(y,mo,d);
+  return dt.getFullYear()===y && dt.getMonth()===mo && dt.getDate()===d;
+}
+const MT_BULK_IMPORT_MAX=1000, MT_BULK_IMPORT_MAX_CONTENT=20000;
 async function runBulkImport(text){
+  mtLastBulkImportStats={imported:0,duplicates:0,rejected:0};
   if(!text.trim()) return 0;
   const dateRe = /^(\d{2}\.\d{2}\.\d{4})/;
   const lines = text.split('\n');
@@ -148,36 +170,55 @@ async function runBulkImport(text){
     }
   });
   if(current) blocks.push(current);
-  let imported = 0;
+  // Фікс аудиту: без меж один великий вставлянний файл міг нагнати десятки
+  // тисяч карток у базу і в журнал синхронізації однією дією.
+  if(blocks.length > MT_BULK_IMPORT_MAX){
+    mtLastBulkImportStats.rejected = blocks.length - MT_BULK_IMPORT_MAX;
+    blocks.length = MT_BULK_IMPORT_MAX;
+  }
+  let imported = 0, duplicates = 0;
+  const existingKeys=new Set(tickets.map(mtBulkImportKey));
+  const batchKeys=new Set();
   blocks.forEach(b=>{
     const content = b.lines.join('\n').trim();
     if(!content) return;
+    // Реальна дата, а не лише формат: 31.02.2026 не має народити «заявку».
+    if(!mtBulkImportDateIsValid(b.date)){ mtLastBulkImportStats.rejected++; return; }
+    if(content.length > MT_BULK_IMPORT_MAX_CONTENT){ mtLastBulkImportStats.rejected++; return; }
     const sumMatch = content.match(/ВСЬОГО:\s*([\d\s]+)/i) || content.match(/Сума:\s*([\d\s]+)/i);
     const sum = sumMatch ? Number(sumMatch[1].replace(/\s/g,'')) : 0;
     const timeMatch = content.match(/(\d{2}:\d{2})/);
     const t = blankTicketObject();
-    t.id = Date.now() + imported;
+    // Стабільний унікальний id замість Date.now()+лічильника: числові id
+    // минулого варіанту створювали колізії з заявками, збереженими того ж
+    // мілісекундного зрізу, і змішували типи id (рядок-uuid ↔ число).
+    t.id = (typeof MTSyncEngineRuntime!=='undefined' && MTSyncEngineRuntime.uuid)
+      ? MTSyncEngineRuntime.uuid()
+      : ('bulk-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));
     t.date = b.date;
     t.time = timeMatch ? timeMatch[1] : '';
     t.content = content;
     t.sum = sum;
     t.type = 'Імпорт';
+    const key=mtBulkImportKey(t);
+    if(existingKeys.has(key) || batchKeys.has(key)){ duplicates++; return; }
+    batchKeys.add(key);
     tickets.push(t);
     imported++;
   });
+  mtLastBulkImportStats.imported=imported;
+  mtLastBulkImportStats.duplicates=duplicates;
   saveTickets();
   // NEW: раніше кожна імпортована заявка відправлялась окремим addTicket без
   // очікування відповіді й БЕЗ оновлення t.synced — вони назавжди лишались
   // "не синхронізовано" локально, хоча текст (наприклад) уже міг піти в
   // таблицю. Тепер після імпорту робимо один спільний синк і чесно
   // проставляємо реальний статус усім щойно доданим заявкам.
-  if(imported && getScriptUrl()){
+  if(imported && getScriptUrl() && syncEngine){
     const ok = await syncEngine.flush();
   }
   return imported;
-}
-
-/* ---- Звіти ---- */
+}/* ---- Звіти ---- */
 function openReportModal(){
   openModal('Звіти', `
     <div class="row wrap" style="margin-bottom:12px;">
