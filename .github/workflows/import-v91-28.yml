@@ -1,0 +1,42 @@
+name: Import v91.28 handoff
+
+on:
+  push:
+    branches:
+      - transfer/v91-28-clean
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out transfer branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify and apply audited handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='c495b145202e09e8e5609a5cc91a3c53222d46f3'
+          target='fix/audit-v91-28-items-11-20'
+          expected_patch_sha='c24c224a5a5c35de06bb9478bc4a0a27fc5b2f451f41417e279a653ee2731309'
+
+          base64 -d .handoff-v91.28/payload.xz.b64 | xz -d > /tmp/v91.28-series.mbox
+          echo "${expected_patch_sha}  /tmp/v91.28-series.mbox" | sha256sum -c -
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B "$target" "$base"
+          git am --3way --keep-cr /tmp/v91.28-series.mbox
+
+          test "$(git rev-list --count "${base}..HEAD")" = '6'
+          grep -F "v91.28 · 2026-09-14" app.js
+          grep -F "maister-treker-v67-runtime-67" sw.js
+          git diff --check "$base" HEAD
+
+          git push origin "HEAD:refs/heads/${target}" --force-with-lease="refs/heads/${target}:${base}"
+          echo "Imported HEAD: $(git rev-parse HEAD)"
