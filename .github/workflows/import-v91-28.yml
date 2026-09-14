@@ -23,6 +23,7 @@ jobs:
           set -euo pipefail
           base='c495b145202e09e8e5609a5cc91a3c53222d46f3'
           target='fix/audit-v91-28-items-11-20'
+          target_old='ad8748633845c4e30c49fdc80360534cead784fd'
           expected_patch_sha='c24c224a5a5c35de06bb9478bc4a0a27fc5b2f451f41417e279a653ee2731309'
           expected_xz_sha='22a94cbede5b0707eb6e6d0ca1f5630a951a77183c4d38a7607b08b7d218f367'
 
@@ -46,5 +47,5 @@ jobs:
           grep -F "maister-treker-v67-runtime-67" sw.js
           git diff --check "$base" HEAD
 
-          git push origin "HEAD:refs/heads/${target}" --force-with-lease="refs/heads/${target}:${base}"
+          git push origin "HEAD:refs/heads/${target}" --force-with-lease="refs/heads/${target}:${target_old}"
           echo "Imported HEAD: $(git rev-parse HEAD)"
