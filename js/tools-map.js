@@ -26,6 +26,50 @@
   let placement=null;
   let unbindLongPress=null;
   const baseStates=new WeakMap();
+  const mapRuntimeLoads=new Map();
+
+  // MapLibre is the primary engine; Leaflet remains a real WebGL fallback.
+  // Runtime nodes have stable ids, so repeated opening of Tools cannot append
+  // duplicate scripts or styles.
+  function mapAssetUrl(path){return new URL(path,root.document?.baseURI||root.location?.href||'/').href;}
+  function loadMapRuntimeAsset(kind,path,type){
+    const id=`mt-runtime-${kind}`;
+    if(mapRuntimeLoads.has(id))return mapRuntimeLoads.get(id);
+    const doc=root.document||document;
+    const existing=doc.getElementById?.(id);
+    if(existing){const ready=Promise.resolve(existing);mapRuntimeLoads.set(id,ready);return ready;}
+    const loaded=new Promise((resolve,reject)=>{
+      const node=doc.createElement(type==='style'?'link':'script');
+      node.id=id;
+      if(type==='style'){node.rel='stylesheet';node.href=mapAssetUrl(path);}
+      else{node.src=mapAssetUrl(path);node.async=true;}
+      node.onload=()=>resolve(node);node.onerror=()=>reject(new Error(`MAP_RUNTIME_LOAD_FAILED:${path}`));
+      (doc.head||doc.documentElement).appendChild(node);
+    }).catch(error=>{mapRuntimeLoads.delete(id);throw error;});
+    mapRuntimeLoads.set(id,loaded);return loaded;
+  }
+  function loadMapLibreAdapter(){
+    if(root.MTToolsMapLibreAdapter?.mount)return Promise.resolve(root.MTToolsMapLibreAdapter);
+    const key='mt-runtime-maplibre-adapter';
+    if(mapRuntimeLoads.has(key))return mapRuntimeLoads.get(key);
+    const loaded=loadMapRuntimeAsset('maplibre-css','vendor/maplibre/maplibre-gl.css','style')
+      .then(()=>import(mapAssetUrl('js/tools-map-maplibre.js')))
+      .then(()=>{if(!root.MTToolsMapLibreAdapter?.mount)throw new Error('MAPLIBRE_ADAPTER_UNAVAILABLE');return root.MTToolsMapLibreAdapter;})
+      .catch(error=>{mapRuntimeLoads.delete(key);throw error;});
+    mapRuntimeLoads.set(key,loaded);return loaded;
+  }
+  function loadLeaflet(){
+    if(root.L&&typeof root.L.map==='function')return Promise.resolve(root.L);
+    return Promise.all([
+      loadMapRuntimeAsset('leaflet-css','vendor/leaflet/leaflet.css','style'),
+      loadMapRuntimeAsset('leaflet-js','vendor/leaflet/leaflet.js','script')
+    ]).then(()=>{if(!root.L||typeof root.L.map!=='function')throw new Error('LEAFLET_UNAVAILABLE');return root.L;});
+  }
+  function loadPmtiles(){
+    if(root.pmtiles)return Promise.resolve(root.pmtiles);
+    return loadMapRuntimeAsset('pmtiles','vendor/pmtiles/pmtiles.js','script').then(()=>root.pmtiles||null);
+  }
+  root.MTMapAssets={loadMapLibreAdapter,loadLeaflet,loadPmtiles};
 
   function hasLeaflet(){return !!(root.L&&typeof root.L.map==='function');}
   /* Long-press по карті = «додати обʼєкт тут». Один спільний обробник для обох
@@ -365,13 +409,23 @@
   function mount(container,objects=[],options={}){
     if(!container)return null;
     destroyMap();
-    if(requestedEngine(options)==='maplibre'&&root.MTToolsMapLibreAdapter?.mount){
-      const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,{...options,selectedCategories:selected});
-      if(mounted)return mounted;
-    }
     const statusNode=options.statusNode||null;
+    if(requestedEngine(options)==='maplibre'){
+      if(root.MTToolsMapLibreAdapter?.mount){
+        const mounted=root.MTToolsMapLibreAdapter.mount(container,objects,{...options,selectedCategories:selected});
+        if(mounted)return mounted;
+      }else{
+        if(statusNode){statusNode.textContent='Завантаження карти…';statusNode.classList.remove('hidden');}
+        loadMapLibreAdapter().then(()=>{if(container.isConnected)mount(container,objects,options);}).catch(()=>{
+          // A failed/unavailable WebGL path is exactly when Leaflet is needed.
+          loadLeaflet().then(()=>{if(container.isConnected)mount(container,objects,{...options,engine:'leaflet'});}).catch(()=>{if(statusNode){statusNode.textContent='Модуль карти не завантажився. Дані об’єктів не змінено.';statusNode.classList.remove('hidden');}});
+        });
+        return null;
+      }
+    }
     if(!hasLeaflet()){
-      if(statusNode){statusNode.textContent='Модуль карти не завантажився. Дані об’єктів не змінено.';statusNode.classList.remove('hidden');}
+      if(statusNode){statusNode.textContent='Завантаження резервної карти…';statusNode.classList.remove('hidden');}
+      loadLeaflet().then(()=>{if(container.isConnected)mount(container,objects,{...options,engine:'leaflet'});}).catch(()=>{if(statusNode){statusNode.textContent='Модуль карти не завантажився. Дані об’єктів не змінено.';statusNode.classList.remove('hidden');}});
       return null;
     }
     map=root.L.map(container,{zoomControl:true,tap:true,worldCopyJump:true});
@@ -433,8 +487,29 @@
   }
   function mountPicker(container,options={}){
     destroyPicker();
-    if(requestedEngine(options)==='maplibre'&&root.MTToolsMapLibreAdapter?.mountPicker){const mounted=root.MTToolsMapLibreAdapter.mountPicker(container,options);if(mounted)return mounted;}
-    if(!container||!hasLeaflet())return null;
+    if(!container)return null;
+    const deferredPicker=()=>{
+      let active=null,cancelled=false;
+      const pending={
+        getPoint:()=>active?.getPoint?.()||null,
+        setPoint:value=>active?.setPoint?.(value)||null,
+        hasChanged:()=>active?.hasChanged?.()===true,
+        invalidateSize:()=>active?.invalidateSize?.()||false,
+        destroy:()=>{cancelled=true;active?.destroy?.();}
+      };
+      const retry=()=>{if(!cancelled&&container.isConnected)active=mountPicker(container,options);};
+      const statusNode=options.statusNode||null;
+      if(statusNode){statusNode.textContent='Завантаження карти…';statusNode.classList.remove('hidden');}
+      (requestedEngine(options)==='maplibre'?loadMapLibreAdapter():loadLeaflet())
+        .then(retry)
+        .catch(()=>loadLeaflet().then(retry).catch(()=>{if(statusNode){statusNode.textContent='Модуль карти не завантажився. Координати можна вказати вручну.';statusNode.classList.remove('hidden');}}));
+      return pending;
+    };
+    if(requestedEngine(options)==='maplibre'){
+      if(root.MTToolsMapLibreAdapter?.mountPicker){const mounted=root.MTToolsMapLibreAdapter.mountPicker(container,options);if(mounted)return mounted;}
+      else return deferredPicker();
+    }
+    if(!hasLeaflet())return deferredPicker();
     const initial=validPoint(options.initial);
     const pickerMap=root.L.map(container,{zoomControl:true,tap:true}).setView(initial?[initial.lat,initial.lng]:DEFAULT_CENTER,initial?17:6);
     let pickerTile=null;

@@ -5,8 +5,8 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const html=read('index.html'),map=read('js/tools-map.js'),domain=require('./helpers/tools-source').readToolsSource(),render=read('js/tickets-render.js'),styles=read('styles.css'),sw=read('sw.js'),leaflet=read('vendor/leaflet/leaflet.js'),offline=read('js/offline-map-storage.js'),address=read('js/address-render.js');
 
 assert.match(leaflet,/version="1\.9\.4"/,'stable Leaflet 1.9.4 is vendored locally');
-assert.match(html,/vendor\/leaflet\/leaflet\.css/);assert.match(html,/vendor\/leaflet\/leaflet\.js/);assert.match(html,/js\/tools-map\.js/);
-assert.match(html,/vendor\/pmtiles\/pmtiles\.js/);assert.match(html,/js\/offline-map-storage\.js/);
+assert.doesNotMatch(html,/vendor\/leaflet\/leaflet\.css|vendor\/leaflet\/leaflet\.js|vendor\/pmtiles\/pmtiles\.js/,'optional engines do not block the app shell');assert.match(html,/js\/tools-map\.js/);
+assert.match(map,/loadMapRuntimeAsset\('leaflet-css','vendor\/leaflet\/leaflet\.css','style'\)/);assert.match(map,/loadMapRuntimeAsset\('leaflet-js','vendor\/leaflet\/leaflet\.js','script'\)/);assert.match(map,/loadMapRuntimeAsset\('pmtiles','vendor\/pmtiles\/pmtiles\.js','script'\)/);assert.match(html,/js\/offline-map-storage\.js/);
 assert.match(html,/img-src[^;]*https:\/\/tile\.openstreetmap\.org/,'CSP permits only the selected OSM tile image host');
 assert.match(html,/<meta name="referrer" content="no-referrer">/,'global referrer privacy remains unchanged');
 assert.match(map,/https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png/);

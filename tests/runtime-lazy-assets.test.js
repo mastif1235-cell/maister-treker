@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.join(__dirname,'..'),read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const html=read('index.html'),map=read('js/tools-map.js'),adapter=read('js/tools-map-maplibre.js'),qr=read('js/qr-share-domain.js'),sw=read('sw.js');
+for(const asset of ['qrcode.js','vendor/leaflet/leaflet.js','vendor/pmtiles/pmtiles.js','js/tools-map-maplibre.js'])assert.doesNotMatch(html,new RegExp(`<script[^>]+${asset.replace(/[./]/g,'\\$&')}`),'heavy optional runtime is not parsed at boot: '+asset);
+for(const asset of ['vendor/leaflet/leaflet.css','vendor/maplibre/maplibre-gl.css'])assert.doesNotMatch(html,new RegExp(`<link[^>]+${asset.replace(/[./]/g,'\\$&')}`),'optional map stylesheet is not render-blocking at boot: '+asset);
+assert.match(qr,/function loadQrCodeLibrary\(\)/);assert.match(qr,/script\.src=new URL\('qrcode\.js',document\.baseURI\)/);assert.match(qr,/await loadQrCodeLibrary\(\)/);
+assert.match(map,/function loadMapLibreAdapter\(\)/);assert.match(map,/function loadLeaflet\(\)/);assert.match(map,/id=`mt-runtime-\$\{kind\}`/,'loader gives every dynamic node a stable duplicate-proof id');assert.match(map,/import\(mapAssetUrl\('js\/tools-map-maplibre\.js'\)\)/);assert.match(map,/loadLeaflet\(\)\.then/,'Leaflet remains a lazy fallback when MapLibre/WebGL is unavailable');assert.match(adapter,/await root\.MTMapAssets\?\.loadPmtiles\?\.\(\)/,'PMTiles is loaded only when an offline map is actually selected');
+for(const asset of ['qrcode.js','vendor/leaflet/leaflet.js','vendor/pmtiles/pmtiles.js','vendor/maplibre/maplibre-gl.mjs'])assert.ok(sw.includes(`'./${asset}'`),'optional asset stays precached after online installation for offline use: '+asset);
+console.log('PASS optional QR/map assets are lazy at boot, deduplicated, and still available offline');
