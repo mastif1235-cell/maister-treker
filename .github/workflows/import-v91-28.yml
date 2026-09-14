@@ -24,8 +24,16 @@ jobs:
           base='c495b145202e09e8e5609a5cc91a3c53222d46f3'
           target='fix/audit-v91-28-items-11-20'
           expected_patch_sha='c24c224a5a5c35de06bb9478bc4a0a27fc5b2f451f41417e279a653ee2731309'
+          expected_xz_sha='22a94cbede5b0707eb6e6d0ca1f5630a951a77183c4d38a7607b08b7d218f367'
 
-          base64 -d .handoff-v91.28/payload.xz.b64 | xz -d > /tmp/v91.28-series.mbox
+          cat .handoff-v91.28/payload.xz.b64 \
+              .handoff-v91.28/payload.part1.b64 \
+              .handoff-v91.28/payload.part2.b64 \
+              .handoff-v91.28/payload.part3.b64 \
+              .handoff-v91.28/payload.part4.b64 > /tmp/payload.b64
+          base64 -d /tmp/payload.b64 > /tmp/v91.28-series.xz
+          echo "${expected_xz_sha}  /tmp/v91.28-series.xz" | sha256sum -c -
+          xz -d -c /tmp/v91.28-series.xz > /tmp/v91.28-series.mbox
           echo "${expected_patch_sha}  /tmp/v91.28-series.mbox" | sha256sum -c -
 
           git config user.name 'github-actions[bot]'
