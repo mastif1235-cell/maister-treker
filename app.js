@@ -153,7 +153,7 @@ async function migrateLegacySyncState(){
   if(migrateLegacyShifts) localStorage.setItem(shiftsMigrationKey,'1');
   tickets.forEach(t=>{delete t.syncAction;delete t.synced;});
   deletedTickets.forEach(t=>{delete t.pendingCloudDelete;});
-  if(hadLegacyTicketFields) await ticketsDbPut(tickets);
+  if(hadLegacyTicketFields && ((typeof ticketsStoreWritable!=='function')||ticketsStoreWritable())) await ticketsDbPut(tickets);
   if(hadLegacyDeletes) saveDeletedTickets();
 }
 function isEntitySynced(entity,id){
@@ -181,7 +181,13 @@ function ticketToSyncPayload(t){
   if(geoUrl) backupExtra.push(`Геолокація: ${geoUrl}`);
   if(t.masterNote) backupExtra.push(`Приватна примітка майстра: ${t.masterNote}`);
   if(t.login) backupExtra.push(`Логін: ${t.login}`);
-  if(t.password) backupExtra.push(`Пароль: ${t.password}`);
+  // Фікс аудиту (P0): відкритий текст пароля в Google Sheets — це витік:
+  // таблиця зазвичай спільна для бригади, а стовпець «нотатки_майстра» читає
+  // будь-хто з доступом до листа. Тому в хмару йде лише позначка, що пароль
+  // ІСНУЄ — сам він лишається в локальній IndexedDB і в особистому
+  // Telegram-бекапі майстра. Зворотний бік: парсер нотатки розуміє цю
+  // позначку і не перетворює її на «пароль».
+  if(t.password) backupExtra.push('Пароль: @local-only');
   // NEW: "Завантажити дані з хмари" раніше замінювала заявки лише на
   // id/date/time/content/sum/tags — місто/вулиця/будинок/квартира/ПІБ/
   // телефон/MAC/обладнання/оплата губились назавжди, хоча текст (content)
@@ -211,34 +217,19 @@ async function loadFromCloud(){
 
 
 async function sendAllToCloud(){
-  showToast('Повна синхронізація вимкнена до окремого recovery protocol'); return;
-  backupLocalData();
-  // "Відправити все" повністю замінює лист "Заявки" на сервері. Порожня
-  // локальна база не є командою очистити Google Sheets: для навмисного
-  // очищення існує окремий сценарій clearAll з двома підтвердженнями.
-  if(tickets.length === 0){
-    showToast('Локальних заявок немає. Масова відправка в Google скасована, щоб випадково не очистити хмарні дані. Для навмисного очищення використовуйте окрему функцію очищення.');
-    return;
-  }
-  const ticketsUrl = getScriptUrl();
-  const shiftsUrl = getShiftsScriptUrl();
-  if(!ticketsUrl && !shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
-  if(ticketsUrl){
-    const ok = await syncEngine.flush();
-    // NEW: раніше після масової відправки статус synced НІЯК не оновлювався —
-    // локально всі заявки назавжди лишались "не синхронізовано", хоча дані вже
-    // потрапили в таблицю. Це не створювало дублів (Apps Script сам відкидає
-    // повтори за id), але зайво ганяло мережу при кожному retry і показувало
-    // невірний банер "є несинхронізовані".
-    if(ok) renderTicketsScreen();
-  }
-  if(shiftsUrl){
-    // Скрипт змін користувача приймає лише по одній зміні через GET (без
-    // масової синхронізації) — емулюємо "відправити все" послідовними
-    // запитами додавання; дублікати за ID скрипт сам відфільтрує.
-    await syncEngine.flush();
-  }
-  showToast('Дані надіслано до хмари');
+  /* Фікс аудиту: кнопка була «мертвою» (тост + return із недосяжним тілом).
+     Повна заміна листа лишається вимкненою — це серверна операція з окремим
+     протоколом відновлення. Натомість кнопка тепер чесна: надсилає ВСЕ
+     несинхронізоване через безпечний журнал (той самий шлях, що й автоматична
+     синхронізація) і нічого не перезаписує цілими таблицями. */
+  if(!getScriptUrl()){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
+  if(!syncEngine){ showToast('Синхронізація тимчасово недоступна — зміни збережено локально'); return; }
+  const pending = syncEngine.pendingCount ? syncEngine.pendingCount() : 0;
+  if(!pending){ showToast('Уже синхронізовано ✅'); renderSyncQueueBanner(); return; }
+  showToast(`Надсилаю ${pending} несинхронізованих змін…`);
+  const ok = await syncEngine.flush();
+  if(document.getElementById('screen-tickets')?.classList.contains('active')) renderTicketsScreen();
+  showToast(ok ? 'Усі зміни надіслано ✅' : 'Не все надіслано — повторимо автоматично, коли з’явиться зв’язок');
 }
 
 /* Окремі функції — працюють ТІЛЬКИ зі змінами, не торкаючись заявок.
@@ -252,12 +243,18 @@ async function loadShiftsFromCloud(){
    в потрібному форматі, але про всяк випадок підтримуємо й конвертацію,
    якщо колись формат зміниться на РРРР-ММ-ДД. */
 async function sendShiftsToCloud(){
-  showToast('Повна синхронізація змін вимкнена до окремого recovery protocol'); return;
-  const shiftsUrl = settings.shiftsScriptUrl ? settings.shiftsScriptUrl.trim() : '';
-  if(!shiftsUrl){ showToast('Спочатку вкажіть URL Apps Script для змін'); return; }
-  showToast(`Надсилання ${shifts.length} змін...`);
-  await syncEngine.flush();
-  showToast('Зміни надіслано до хмари (дублікати за ID пропущені автоматично)');
+  /* Те саме, що й для заявок: безпечна відправка всього несинхронізованого
+     через журнал замість мертвої «повної заміни» (сервер приймає зміни лише
+     поштучно під захистом окремого recovery-протоколу). */
+  const shiftsUrl = settings.shiftsScriptUrl ? String(settings.shiftsScriptUrl).trim() : '';
+  if(!shiftsUrl && !getScriptUrl()){ showToast('Спочатку вкажіть URL Apps Script у налаштуваннях'); return; }
+  if(!syncEngine){ showToast('Синхронізація тимчасово недоступна — зміни збережено локально'); return; }
+  const pending = syncEngine.pendingCount ? syncEngine.pendingCount() : 0;
+  if(!pending){ showToast('Зміни вже синхронізовано ✅'); renderSyncQueueBanner(); return; }
+  showToast(`Надсилаю ${pending} несинхронізованих записів…`);
+  const ok = await syncEngine.flush();
+  if(document.getElementById('screen-shifts')?.classList.contains('active')) renderShiftsScreen();
+  showToast(ok ? 'Зміни надіслано до хмари ✅' : 'Не все надіслано — повторимо автоматично');
 }
 
 /* ---------- 3. Навігація між вкладками ---------- */
@@ -329,10 +326,28 @@ async function init(){
   bindToolsScreen();
   bindSettingsScreen();
 
-  ticketsDb = await openTicketsDb();
-  await loadTicketsFromIdb(); // NEW: підвантажує заявки з IndexedDB (з одноразовою міграцією зі старого localStorage, якщо потрібно) — має відбутись ДО міграції фото нижче, бо та проходиться по tickets
+  /* Фікс аудиту (P0 сталість): кожен етап ініціалізації сховищ ізоляється.
+     Раніше один необроблений reject (журнал синхронізації в приватному режимі
+     Firefox, заблокований IndexedDB) вбивав init() цілком — білий екран замість
+     даних. Тепер збій етапу переводить застосунок у деградований локальний
+     режим із поясненням, а не у білий екран. */
+  try{
+    ticketsDb = await openTicketsDb();
+  }catch(dbOpenError){
+    ticketsDb = null;
+    globalThis.MTSafeError?.reportError?.(dbOpenError,{scope:'tickets-db-open',userMessage:'Локальна база заявок недоступна.'});
+  }
+  try{
+    await loadTicketsFromIdb(); // підвантажує заявки з IndexedDB (з одноразовою міграцією зі старого localStorage) — має відбутись ДО міграції фото
+  }catch(loadError){
+    globalThis.MTSafeError?.reportError?.(loadError,{scope:'tickets-load',userMessage:'Не вдалося прочитати локальну базу заявок.'});
+    try{ const fallbackLegacy=loadJSON('tickets',[]); if(Array.isArray(fallbackLegacy)) tickets=fallbackLegacy; }catch(_legacyError){}
+    showToast('⚠️ Не вдалося відкрити локальну базу заявок. Дані лишаються в аварійному режимі — не закривайте застосунок.');
+  }
   syncTicketsSnapshot = JSON.parse(JSON.stringify(tickets));
   syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
+  if(typeof mtRequestPersistentStorage==='function') mtRequestPersistentStorage(); // фон запит persist(): захист від витіснення сховища ОС
+  try{
   const syncTransport = MTSyncTransport.create({
     fetch: window.fetch.bind(window),
     url: ()=>getScriptUrl(),
@@ -346,6 +361,10 @@ async function init(){
   syncEngine = await new MTSyncEngineRuntime.Engine({
     transport:syncTransport,
     online:()=>navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
+    // Фікс аудиту P1 (продуктивність): незалежні зміни летять паралельно
+    // (макс. 3 з'єднання), а ланцюжки правок одного запису лишаються строго
+    // послідовними — серверний CAS по revision це гарантує.
+    concurrency:3,
     // Зараз shiftsSyncAutoRetryBlocked() завжди повертає false: сервер не віддає
     // окремого коду «немає таблиці змін», тож жодна серверна помилка не вимикає
     // автоматичні повтори смен — вони працюють як звичайно. Хук лишається точкою
@@ -358,14 +377,31 @@ async function init(){
       if(document.getElementById('screen-shifts')?.classList.contains('active')) renderShiftsScreen();
     }
   }).init();
-  await migrateLegacySyncState();
+  }catch(engineError){
+    // Рушій/журнал недоступні — НЕ привід втрачати застосунок: syncEngine=null
+    // — стан, який застосунок підтримував завжди (вимкнена хмара). Дані лишаються
+    // локально, журнал буде відновлено наступного запуску.
+    syncEngine = null;
+    globalThis.MTSafeError?.reportError?.(engineError,{scope:'sync-engine-init',userMessage:'Синхронізацію тимчасово вимкнено.'});
+    showToast('⚠️ Синхронізацію тимчасово вимкнено: журнал недоступний. Застосунок працює локально — усі зміни збережено.');
+  }
+  if(syncEngine){
+    try{ await migrateLegacySyncState(); }
+    catch(migrateError){ globalThis.MTSafeError?.reportError?.(migrateError,{scope:'legacy-sync-migration'}); }
+  }
 
-  photoDb = await openPhotoDb();
-  await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
+  try{
+    photoDb = await openPhotoDb();
+    await migrateLegacyPhotosToIdb(); // переносить старі base64-фото з localStorage в IndexedDB (одноразово)
 
-  backupDb = await openBackupDb();
-  await maybeRunDailyBackup(); // NEW: раз на день — автоматичний знімок заявок/змін у IndexedDB (10 останніх днів по колу)
-  maybeOfferExternalDailyBackup(); // зовнішній файл пропонується раз на день, але завантажується лише після кліку
+    backupDb = await openBackupDb();
+    await maybeRunDailyBackup(); // NEW: раз на день — автоматичний знімок заявок/змін у IndexedDB (10 останніх днів по колу)
+    maybeOfferExternalDailyBackup(); // зовнішній файл пропонується раз на день, але завантажується лише після кліку
+  }catch(auxStorageError){
+    // Фото- та бекап-сховище — другорядні інфраструктури: їх збій не повинен
+    // зупиняти інтерфейс. Решту застосунок зробить без них.
+    globalThis.MTSafeError?.reportError?.(auxStorageError,{scope:'aux-storage-init'});
+  }
 
   renderTicketsScreen();
   resetCalcForm(currentTicketDate);
@@ -385,7 +421,7 @@ async function init(){
   document.getElementById('syncQueueRetryBtn').addEventListener('click', retrySyncQueue);
   window.addEventListener('online', ()=>{
     showToast('Інтернет з\'явився — синхронізую...');
-    syncEngine.flush();
+    if(syncEngine) Promise.resolve(syncEngine.flush()).catch(()=>{}); // у деградованому режимі рушія немає — інакше unhandledRejection на кожен вихід у мережу
     retryPendingTelegramBackups();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
@@ -433,6 +469,33 @@ if('serviceWorker' in navigator){
     if(later) later.onclick=()=>serviceWorkerHideUpdateOffer();
     return true;
   }
+  let serviceWorkerRegistration=null;
+  let serviceWorkerLastUpdateCheck=Date.now();
+  let mtActiveServiceWorkerCacheName=null;
+  /* Фікс аудиту: раніше перевірка оновлення відбулася лише один раз при завантаженні.
+     installer у полі тримає застосунок відкритим годинами — нову версію він міг не
+     побачити ніколи. Додамо делікатний poll: раз на 6 годин + при поверненні
+     в активну вкладку (з годинним троттлом, щоб не ганяти мережу). */
+  function serviceWorkerPollUpdate(){
+    try{
+      if(!serviceWorkerRegistration || typeof serviceWorkerRegistration.update!=='function') return;
+      const now=Date.now();
+      if(now-serviceWorkerLastUpdateCheck<60*60*1000) return;
+      serviceWorkerLastUpdateCheck=now;
+      Promise.resolve(serviceWorkerRegistration.update()).catch(()=>{});
+    }catch(_error){}
+  }
+  // SW сповіщає про активований кеш-набір: запам'ятовуємо його для діагностики;
+  // якщо це оновлення наявного встановлення, а користувач зайнятий — підсвічуємо
+  // банер «оновлення доступно», щоб зміни не залишилися непоміченими.
+  navigator.serviceWorker.addEventListener('message',(event)=>{
+    const data=event&&event.data;
+    if(!data||data.type!=='MT_SW_ACTIVATED') return;
+    mtActiveServiceWorkerCacheName=data.cacheName||null;
+    if(data.upgrade&&!serviceWorkerRefreshing&&typeof showToast==='function'&&!serviceWorkerUpdateIsSafe()){
+      serviceWorkerShowUpdateOffer();
+    }
+  });
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
     if(serviceWorkerUpdateIsSafe()){ serviceWorkerApplyUpdate(); return; }
     try{ saveDraftToLocalStorage(); }catch(e){}
@@ -440,9 +503,18 @@ if('serviceWorker' in navigator){
   });
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'})
-      .then((registration)=>registration.update())
+      .then((registration)=>{
+        serviceWorkerRegistration=registration;
+        serviceWorkerLastUpdateCheck=Date.now();
+        return registration.update();
+      })
       .catch(err=>globalThis.MTSafeError?.reportError?.(err,{scope:'service-worker-update',userMessage:'Не вдалося оновити застосунок.'}));
+    setInterval(serviceWorkerPollUpdate, 6*60*60*1000);
+    if(typeof document!=='undefined'&&document.addEventListener){
+      document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') serviceWorkerPollUpdate(); });
+    }
   });
+  window.__mtServiceWorkerDiagnostics=()=>({cacheName:mtActiveServiceWorkerCacheName, refreshing:serviceWorkerRefreshing});
 }
 
 /* Попередження при закритті вкладки/застосунку, якщо в калькуляторі є

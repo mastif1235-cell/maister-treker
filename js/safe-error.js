@@ -33,11 +33,46 @@
     if(normalized.category==='validation')return'Дані не пройшли безпечну перевірку.';
     return fallback;
   }
+  /* Кільцевий буфер останніх реальних помилок (у пам'яті, нікуди не
+     записується): дає діагностиці «що впало за останні хвилини» навіть якщо
+     консоль закрилась. Однакові помилки в межах 2с не дублюються. */
+  const RECENT_LIMIT=25;
+  const recent=[];
+  let lastSignature='';
+  let lastSignatureAt=0;
   function reportError(error,context={}){
     const normalized=normalizeError(error),result={...normalized,scope:String(context.scope||'app'),userMessage:userSafeMessage(normalized,context.userMessage)};
     if(normalized.cancelled)return result;
+    const signature=`${result.scope}|${normalized.name}|${normalized.message}`;
+    const now=Date.now();
+    if(signature!==lastSignature||now-lastSignatureAt>=2000){
+      lastSignature=signature;lastSignatureAt=now;
+      recent.push({ts:now,scope:result.scope,category:normalized.category,message:normalized.message});
+      if(recent.length>RECENT_LIMIT)recent.shift();
+    }
     try{root.console?.error?.(`[MT_ERROR] ${safeSerialize({scope:result.scope,error:normalized,details:context.details||null})}`);}catch(_loggerError){}
     return result;
   }
-  root.MTSafeError=Object.freeze({redactSecrets,normalizeError,safeSerialize,userSafeMessage,reportError});
+  function recentErrors(){return recent.slice();}
+  /* Останній захисний шар: будь-яка необроблена реєкція/помилка вікна
+     потрапляє в той самий канал (знеособлений, без промптів), замість того
+     щоб тихо зникати. preventDefault НЕ викликаємо — браузер продовжує
+     писати своє повідомлення в консоль. */
+  function installGlobalHandlers(){
+    if(!root||typeof root.addEventListener!=='function'||root.__mtGlobalErrorHandlersInstalled)return false;
+    root.__mtGlobalErrorHandlersInstalled=true;
+    root.addEventListener('unhandledrejection',event=>{
+      const reason=event&&event.reason;
+      const isShaped=reason&&typeof reason==='object'&&typeof reason.message==='string';
+      reportError(isShaped?reason:new Error(String(reason&&reason.type||'Unhandled promise rejection')),{scope:'unhandled-rejection'});
+    });
+    root.addEventListener('error',event=>{
+      const err=event&&event.error;
+      const isShaped=err&&typeof err==='object'&&typeof err.message==='string';
+      reportError(isShaped?err:new Error(String((event&&event.message)||'Window error')),{scope:'window-error'});
+    });
+    return true;
+  }
+  if(typeof root.addEventListener==='function')installGlobalHandlers();
+  root.MTSafeError=Object.freeze({redactSecrets,normalizeError,safeSerialize,userSafeMessage,reportError,recentErrors,installGlobalHandlers});
 })(typeof window!=='undefined'?window:globalThis);

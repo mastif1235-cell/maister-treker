@@ -53,8 +53,8 @@ function bindTicketsScreen(){
       saveTickets(); saveSettings();
       renderTagFilterChips(); renderTicketsScreen();
       showToast('Тег видалено. Синхронізація з хмарою...');
-      if(getScriptUrl()){
-        syncEngine.flush().then(ok=>{
+      if(getScriptUrl() && syncEngine){
+        Promise.resolve(syncEngine.flush()).then(ok=>{
           renderTicketsScreen();
           showToast(ok ? 'Синхронізовано' : 'Синхронізація не вдалась — перевірте інтернет');
         });

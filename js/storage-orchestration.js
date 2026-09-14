@@ -77,6 +77,34 @@ function saveShiftsSafely(){
   }
 }
 
+/* Фікс аудиту (P1 сталість сховища): без запиту persist() Android/IOS може
+   витіснити IndexedDB застосунку під тиском пам'яті — разом із чернетками й
+   невідправленими змінами. Просимо persistent-режим один раз на пристрій:
+   одразу (може спрацювати миттєво в Chrome на десктопі) іще раз — після
+   першого жесту користувача (вимога деяких мобільних браузерів). */
+function mtRequestPersistentStorage(){
+  const mark='mtStoragePersistRequested';
+  try{
+    const nav=typeof navigator!=='undefined'?navigator:null;
+    if(!nav||!nav.storage||typeof nav.storage.persist!=='function')return false;
+    const asked=localStorage.getItem(mark);
+    if(asked==='post-gesture')return false;
+    Promise.resolve(nav.storage.persist()).catch(()=>{});
+    if(!asked){
+      localStorage.setItem(mark,'startup');
+      const once=()=>{
+        try{
+          localStorage.setItem(mark,'post-gesture');
+          Promise.resolve(nav.storage.persist()).catch(()=>{});
+        }catch(_error){}
+        document.removeEventListener('pointerdown',once);
+      };
+      document.addEventListener('pointerdown',once);
+    }
+    return true;
+  }catch(_error){ return false; }
+}
+
 const DAILY_BACKUP_MAX = 10;
 // NEW: викликається раз при старті застосунку — якщо сьогодні ще не було
 // автобекапу, робить знімок і кладе його в IndexedDB, старший за 10-й видаляє

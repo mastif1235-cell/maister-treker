@@ -158,8 +158,14 @@ assertConflict('інший телефон', liveTicket, withFullData(baseRow, fu
 assertConflict('інше ФІО', liveTicket, withFullData(baseRow, full=>{ full.clientName = 'Інша Людина'; }));
 assertConflict('інший login', liveTicket,
   Object.assign({}, baseRow, {backupNote:String(baseRow.backupNote).replace('Логін: client','Логін: hacker')}));
-assertConflict('інший password', liveTicket,
-  Object.assign({}, baseRow, {backupNote:String(baseRow.backupNote).replace('Пароль: secret','Пароль: newpass')}));
+/* Політика з v91.27: у таблицю потрапляє лише маркер «Пароль: @local-only»,
+   відкритий текст пароля в Sheets більше не пишемо. Старі рядки ще можуть
+   містити легенду в колонці — вона НЕ вважається конфліктом даних: пароль
+   заявки тепер локальний секрет, і локальне значення має пріоритет.
+   (Те, що явний «прийняти хмару» не затирає пароль, окремо перевіряє
+   tests/privacy-sync-password.test.js.) */
+assertMatch('legacy відкритий пароль у таблиці не конфліктує з локальним', liveTicket,
+  Object.assign({}, baseRow, {backupNote:String(baseRow.backupNote).replace('Пароль: @local-only','Пароль: newpass')}));
 assertMatch('однакові координати, інший текст ссылки — та сама локація', liveTicket,
   withFullData(baseRow, full=>{ full.geoLink = 'https://www.google.com/maps/search/?api=1&query=50.4501%2C30.5234'; }));
 const linkOnlyTicket = Object.assign(app.blankTicketObject(), {

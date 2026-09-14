@@ -2,6 +2,10 @@
 const UA_MONTHS = ['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];
 function formatUaDate(d){ return `${d.getDate()} ${UA_MONTHS[d.getMonth()]} ${d.getFullYear()} р.`; }
 
+/* Позначка «пароль є, але він лише на пристрої майстра» для стовпця нотаток.
+   Підрядково сумісна: старі рядки з відкритим паролем досі парсяться, а
+   маркер перетворюється на порожній пароль + ознаку passwordLocalOnly. */
+const MT_PASSWORD_LOCAL_MARKER = '@local-only';
 function parseBackupNote(note){
   const result={geoLink:'',masterNote:'',login:'',password:'',fullData:null};
   if(!note)return result;
@@ -22,5 +26,8 @@ function parseBackupNote(note){
     if(matched)continue;
     const full=line.match(/^ПовніДаніJSON:\s*(.+)$/);if(full){try{result.fullData=JSON.parse(full[1].trim());}catch(_e){}}
   }
+  // Маркер «пароль лише на пристрої» — не є паролем: поле лишаємо порожнім,
+  // щоб жоден шлях злиття не записав '@local-only' у реальний пароль заявки.
+  if(result.password===MT_PASSWORD_LOCAL_MARKER){ result.password=''; result.passwordLocalOnly=true; }
   return result;
 }
