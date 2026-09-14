@@ -206,7 +206,7 @@ function bindSettingsScreen(){
   document.getElementById('deletedTicketsList').addEventListener('click', e=>{
     const restoreBtn = e.target.closest('.restore-trash-btn');
     const purgeBtn = e.target.closest('.purge-trash-btn');
-    if(restoreBtn) restoreDeletedTicket(restoreBtn.dataset.deletedAt);
+    if(restoreBtn) Promise.resolve(restoreDeletedTicket(restoreBtn.dataset.deletedAt)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'trash-restore'}));
     if(purgeBtn) Promise.resolve(purgeDeletedTicket(purgeBtn.dataset.deletedAt)).catch(error=>globalThis.MTSafeError?.reportError?.(error,{scope:'trash-purge'}));
   });
   document.getElementById('clearAllBtn').addEventListener('click', async ()=>{

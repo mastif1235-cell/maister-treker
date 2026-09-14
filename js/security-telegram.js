@@ -52,37 +52,38 @@ if(typeof buildTelegramBackupText === 'function'){
   };
 }
 
-// app.js формує ticket-<id>.json без окремого hook. Щоб не переписувати
-// великий backupTicketToTelegramNow(), перехоплюємо ТІЛЬКИ Telegram sendDocument
-// з ticket-*.json і підміняємо вкладення санітизованою копією. Інші fetch,
-// документи, фото, Google sync та dispatcher-повідомлення проходять без змін.
-try{
-  const securityTelegramNativeFetch = window.fetch.bind(window);
-  window.fetch = async function(input, init){
-    try{
-      const url = typeof input === 'string' ? input : (input && input.url) || '';
-      const body = init && init.body;
-      if(/https:\/\/api\.telegram\.org\/bot[^/]+\/sendDocument(?:\?|$)/i.test(url) && body instanceof FormData){
-        const doc = body.get('document');
-        const fileName = doc && typeof doc.name === 'string' ? doc.name : '';
-        if(doc instanceof Blob && /^ticket-.+\.json$/i.test(fileName)){
-          const parsed = JSON.parse(await doc.text());
-          const safe = securityTelegramSanitizeTicketForArchive(parsed);
-          const safeBody = new FormData();
-          for(const [key, value] of body.entries()){
-            if(key === 'document') continue;
-            safeBody.append(key, value);
-          }
-          safeBody.append('document', new Blob([JSON.stringify(safe, null, 2)], {type:'application/json'}), fileName);
-          return securityTelegramNativeFetch(input, {...init, body:safeBody});
-        }
-      }
-    }catch(err){
-      console.error('Telegram security sanitizer failed');
-    }
-    return securityTelegramNativeFetch(input, init);
+// app.js формує ticket-<id>.json без окремого hook. Єдиний реальний
+// consumer sendDocument — telegramBackupFetchJson() з photo-telegram-domain.
+// Загальний window.fetch не змінюємо: санітизуємо лише його точку відправки.
+const SECURITY_TELEGRAM_ARCHIVE_DOCUMENT_RE=/^https:\/\/api\.telegram\.org\/bot[^/]+\/sendDocument(?:\?|$)/i;
+async function securityTelegramArchiveRequestOptions(url,options){
+  const body=options&&options.body;
+  if(!SECURITY_TELEGRAM_ARCHIVE_DOCUMENT_RE.test(String(url||''))||typeof FormData==='undefined'||!(body instanceof FormData))return options;
+  const documentFile=body.get('document');
+  const fileName=documentFile&&typeof documentFile.name==='string'?documentFile.name:'';
+  if(typeof Blob==='undefined'||!(documentFile instanceof Blob)||!/^ticket-.+\.json$/i.test(fileName))return options;
+  let parsed;
+  try{parsed=JSON.parse(await documentFile.text());}
+  catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'telegram-archive-sanitize'});
+    // Не пропускаємо неперевірений archive JSON далі: помилка означає retry,
+    // а не відправку потенційного пароля у приватну групу.
+    throw new Error('TELEGRAM_ARCHIVE_SANITIZE_FAILED');
+  }
+  const safeBody=new FormData();
+  for(const [key,value] of body.entries())if(key!=='document')safeBody.append(key,value);
+  safeBody.append('document',new Blob([JSON.stringify(securityTelegramSanitizeTicketForArchive(parsed),null,2)],{type:'application/json'}),fileName);
+  return {...options,body:safeBody};
+}
+function securityTelegramWrapArchiveFetch(originalFetch){
+  return async function(url,options,ticket,rateRetries){
+    const safeOptions=await securityTelegramArchiveRequestOptions(url,options);
+    return originalFetch.call(this,url,safeOptions,ticket,rateRetries);
   };
-}catch(e){ /* старий WebView: не ламаємо штатну мережеву поведінку */ }
+}
+if(typeof telegramBackupFetchJson==='function'){
+  telegramBackupFetchJson=securityTelegramWrapArchiveFetch(telegramBackupFetchJson);
+}
 
 if(typeof renderSettingsScreen === 'function'){
   const securityTelegramOriginalRenderSettings = renderSettingsScreen;

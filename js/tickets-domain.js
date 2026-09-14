@@ -281,109 +281,166 @@ function openTicketPhotoFullscreen(src){
   openModal('Фото', `<img src="${src}" style="width:100%; border-radius:10px;">`, {});
 }
 async function deleteTicket(id){
-  if(!await openConfirmModal({title:'Видалити цю заявку?',message:'Заявку буде прибрано зі списку та з Google-таблиці. Відновити її можна буде з кошика (Налаштування → Кошик).',confirmLabel:'Видалити',danger:true})) return;
-  const idx = tickets.findIndex(x=>String(x.id)===String(id)); // NEW: id заявок з хмари приходить рядком, а не числом
-  if(idx===-1) return;
-  const t = tickets[idx];
+  if(!await openConfirmModal({title:'Видалити цю заявку?',message:'Заявку буде прибрано зі списку та з Google-таблиці. Відновити її можна буде з кошика (Налаштування → Кошик).',confirmLabel:'Видалити',danger:true})) return false;
+  const idx=tickets.findIndex(ticket=>String(ticket.id)===String(id));
+  if(idx===-1)return false;
+  const ticket=tickets[idx];
+  // Commit the recovery metadata before changing the live list. If the basket
+  // cannot be persisted, the active ticket and every photo reference stay put.
+  const moved=await moveTicketToTrash(ticket);
+  if(!moved.ok){
+    showToast('Не вдалося безпечно зберегти заявку в кошику. Заявка та її фото не видалені.');
+    return false;
+  }
   tickets.splice(idx,1);
-  saveTickets();
-  // NEW: раніше результат цього запиту ніде не перевірявся — якщо видалення
-  // не дійшло до Google Таблиці (немає інтернету саме в цей момент), заявка
-  // все одно йшла в кошик, зникала з tickets, і retrySyncQueue (яка шукає
-  // лише tickets.filter(t=>!t.synced)) більше НІКОЛИ не намагалась
-  // повторити видалення — старий рядок так і лишався в Таблиці назавжди.
-  // Тепер, якщо видалення не вдалось одразу, позначаємо запис у кошику
-  // прапорцем pendingCloudDelete — retrySyncQueue (і кнопка "Повторити", і
-  // подія online) підхоплять його пізніше.
-  // NEW: Telegram-бекап НЕ видаляється разом із заявкою навмисно — навіть якщо
-  // заявку видалили в застосунку (помилково чи ні), її копія назавжди лишається
-  // в групі-архіві. Це і є сенс резервної копії: вона не залежить від дій в
-  // основному застосунку. Синхронізується з групою лише редагування (див.
-  // backupTicketToTelegram), а видалення — ні.
-  // Не видаляємо фото одразу — заявка йде в кошик, фото ще може знадобитись при відновленні.
-  // Ставимо прапорець ДО мережі: якщо застосунок закриється під час await,
-  // наступний запуск усе одно знатиме, що Google-видалення треба повторити.
-  await moveTicketToTrash(t);
+  const localSaved=await saveTickets();
+  if(!localSaved){
+    // Копія вже зафіксована в кошику: не видаємо помилку локального запису
+    // за успішне видалення і не прибираємо жодних фото.
+    showToast('Не вдалося надійно зберегти видалення. Заявка збережена в кошику разом із фото; не закривайте застосунок.');
+    renderTicketsScreen();
+    return false;
+  }
   renderTicketsScreen();
   showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
+  return true;
 }
 
 /* ---- Кошик видалених заявок ------------------------------------------------
    Кількість записів НЕ є приводом назавжди видалити 31-шу заявку чи її фото.
    Кожен запис зберігається 30 днів від свого deletedAt; після цього строку він
    і пов'язані локальні фото очищуються. Таке правило видно в інтерфейсі і не
-   залежить від того, скільки заявок майстер видалив за день. */
+   залежить від того, скільки заявок майстер видалив за день.
+
+   Важливий порядок: спершу зберігаємо наступний стан кошика, і лише після
+   підтвердженого запису прибираємо фізичні байти фото. Помилка localStorage
+   або lock ніколи не є дозволом знищити фото. */
 function deletedTicketExpiryMs(ticket){
   const deletedAt=Number(ticket&&ticket.deletedAt);
   if(!Number.isFinite(deletedAt)||deletedAt<=0)return null; // старі пошкоджені записи не стираємо навмання
-  return deletedAt + DELETED_TICKET_RETENTION_DAYS*24*60*60*1000;
+  return deletedAt+DELETED_TICKET_RETENTION_DAYS*24*60*60*1000;
 }
-
-// Видаляє ВСІ фото заявки (масив photos, або legacy photo) лише при явному
-// остаточному видаленні/завершенні строку. Set захищає від дубльованого ключа.
-async function deleteAllTicketPhotos(t){
-  const keys=(t&&t.photos&&t.photos.length)?t.photos:(t&&t.photo?[t.photo]:[]);
-  await Promise.all([...new Set(keys)].map(key=>deletePhotoKey(key)));
+function ticketPhotoKeys(ticket){
+  const photos=(ticket&&Array.isArray(ticket.photos)&&ticket.photos.length)?ticket.photos:(ticket&&ticket.photo?[ticket.photo]:[]);
+  return [...new Set(photos.filter(key=>String(key||'').startsWith('idb:')))];
 }
-
-async function cleanupExpiredDeletedTickets(now=Date.now()){
+function referencedTicketPhotoKeys(records){
+  const keys=new Set();
+  (records||[]).forEach(ticket=>ticketPhotoKeys(ticket).forEach(key=>keys.add(key)));
+  return keys;
+}
+async function deleteUnreferencedTicketPhotos(expiredTickets,retainedTrash){
+  // A photo key can be shared by legacy records. Keep it while any live ticket
+  // or retained trash item still refers to it.
+  const liveRecords=(typeof tickets!=='undefined'&&Array.isArray(tickets)?tickets:[]).concat(retainedTrash||[]);
+  const retainedKeys=referencedTicketPhotoKeys(liveRecords);
+  const candidates=[...new Set((expiredTickets||[]).flatMap(ticketPhotoKeys))].filter(key=>!retainedKeys.has(key));
+  const results=await Promise.all(candidates.map(async key=>{
+    try{
+      const deleted=await deletePhotoKey(key);
+      return deleted===false?{key,ok:false}:{key,ok:true};
+    }catch(error){
+      globalThis.MTSafeError?.reportError?.(error,{scope:'trash-photo-cleanup'});
+      return {key,ok:false};
+    }
+  }));
+  const failedKeys=results.filter(result=>!result.ok).map(result=>result.key);
+  return {ok:failedKeys.length===0,failedKeys};
+}
+async function deleteAllTicketPhotos(ticket,retainedTrash=deletedTickets){
+  return deleteUnreferencedTicketPhotos([ticket],retainedTrash);
+}
+function splitExpiredDeletedTickets(now=Date.now()){
   const expired=[],retained=[];
   for(const ticket of deletedTickets){
     const expiry=deletedTicketExpiryMs(ticket);
     if(expiry!==null&&expiry<=now)expired.push(ticket);else retained.push(ticket);
   }
-  if(!expired.length)return 0;
-  // Спочатку прибираємо вже прострочені байти фото, потім — посилання з кошика.
-  await Promise.all(expired.map(deleteAllTicketPhotos));
+  return {expired,retained};
+}
+async function cleanupExpiredDeletedTickets(now=Date.now()){
+  const {expired,retained}=splitExpiredDeletedTickets(now);
+  if(!expired.length)return {ok:true,removed:0,cleanupFailed:false};
+  // Durable metadata transition is the commit point. No photo deletion before it.
+  if(!saveDeletedTickets(retained)){
+    showToast('⚠️ Не вдалося зберегти очищення кошика. Фото не видалені; спробуємо пізніше.');
+    return {ok:false,removed:0,cleanupFailed:false};
+  }
   deletedTickets=retained;
-  saveDeletedTickets();
-  return expired.length;
+  const cleanup=await deleteUnreferencedTicketPhotos(expired,retained);
+  if(!cleanup.ok)showToast('⚠️ Кошик очищено, але частину старих фото не вдалося прибрати. Фото збережені на пристрої.');
+  return {ok:true,removed:expired.length,cleanupFailed:!cleanup.ok};
 }
-
-async function moveTicketToTrash(t){
-  const copy=JSON.parse(JSON.stringify(t));
+async function moveTicketToTrash(ticket){
+  const copy=JSON.parse(JSON.stringify(ticket));
   copy.deletedAt=Date.now();
-  deletedTickets.unshift(copy);
-  await cleanupExpiredDeletedTickets(copy.deletedAt);
-  saveDeletedTickets();
-  return copy;
+  const {expired,retained}=splitExpiredDeletedTickets(copy.deletedAt);
+  const next=[copy,...retained];
+  if(!saveDeletedTickets(next))return {ok:false,copy:null,cleanupFailed:false};
+  deletedTickets=next;
+  const cleanup=await deleteUnreferencedTicketPhotos(expired,next);
+  if(!cleanup.ok)showToast('⚠️ Заявку збережено в кошику, але частину прострочених фото не вдалося прибрати. Фото лишились на пристрої.');
+  return {ok:true,copy,cleanupFailed:!cleanup.ok};
 }
 
-function saveDeletedTickets(){
-  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
-  try{ localStorage.setItem('deletedTickets', JSON.stringify(deletedTickets)); }catch(e){ /* сховище повне — не критично, це лише кошик */ }
+function saveDeletedTickets(nextTickets=deletedTickets){
+  if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn())return false;
+  try{localStorage.setItem('deletedTickets',JSON.stringify(nextTickets));return true;}
+  catch(error){
+    globalThis.MTSafeError?.reportError?.(error,{scope:'deleted-tickets-persist'});
+    if(typeof showToast==='function')showToast('⚠️ Не вдалося зберегти кошик. Не закривайте застосунок і звільніть місце.');
+    return false;
+  }
 }
 
-function restoreDeletedTicket(deletedAt){
-  const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
-  if(idx===-1) return;
-  const t = deletedTickets[idx];
-  deletedTickets.splice(idx,1);
-  saveDeletedTickets();
-  const restored = JSON.parse(JSON.stringify(t));
+async function restoreDeletedTicket(deletedAt){
+  const index=deletedTickets.findIndex(ticket=>String(ticket.deletedAt)===String(deletedAt));
+  if(index===-1)return false;
+  const source=deletedTickets[index];
+  const restored=JSON.parse(JSON.stringify(source));
   delete restored.deletedAt;
   // Tombstone старого ID необоротний: restore завжди є новим create.
-  restored.id = MTSyncEngineRuntime.uuid();
+  restored.id=MTSyncEngineRuntime.uuid();
   delete restored.synced;
   delete restored.syncAction;
   delete restored.pendingCloudDelete;
+  // First make the restored record durable. A failure leaves the basket entry
+  // untouched, so its photos and a complete recovery path remain available.
   tickets.push(restored);
-  saveTickets();
-  currentTicketDate = restored.date || currentTicketDate;
+  if(!await saveTickets()){
+    tickets.pop();
+    showToast('Не вдалося надійно відновити заявку. Запис і фото лишились у кошику.');
+    return false;
+  }
+  const next=deletedTickets.filter((_,itemIndex)=>itemIndex!==index);
+  if(!saveDeletedTickets(next)){
+    showToast('⚠️ Заявку відновлено у списку, але запис у кошику не вдалося оновити. Не відновлюйте цей самий запис повторно.');
+    renderTicketsScreen();
+    return false;
+  }
+  deletedTickets=next;
+  currentTicketDate=restored.date||currentTicketDate;
   renderTicketsScreen();
   renderDeletedTicketsList();
   showToast('Заявку відновлено');
+  return true;
 }
 
 async function purgeDeletedTicket(deletedAt){
-  const idx = deletedTickets.findIndex(t=>String(t.deletedAt)===String(deletedAt));
-  if(idx===-1) return;
-  if(!await openConfirmModal({title:'Видалити заявку з кошика остаточно?',message:'Відновити після цього буде неможливо; фото цієї заявки також буде видалено з пристрою.',confirmLabel:'Видалити назавжди',danger:true})) return;
-  const t = deletedTickets[idx];
-  await deleteAllTicketPhotos(t); // усі фото (photos), не лише перше
-  deletedTickets.splice(idx,1);
-  saveDeletedTickets();
+  const index=deletedTickets.findIndex(ticket=>String(ticket.deletedAt)===String(deletedAt));
+  if(index===-1)return false;
+  if(!await openConfirmModal({title:'Видалити заявку з кошика остаточно?',message:'Відновити після цього буде неможливо; фото цієї заявки також буде видалено з пристрою.',confirmLabel:'Видалити назавжди',danger:true}))return false;
+  const ticket=deletedTickets[index];
+  const next=deletedTickets.filter((_,itemIndex)=>itemIndex!==index);
+  if(!saveDeletedTickets(next)){
+    showToast('Не вдалося зберегти кошик. Фото не видалені, заявку можна відновити.');
+    return false;
+  }
+  deletedTickets=next;
+  const cleanup=await deleteAllTicketPhotos(ticket,next);
+  if(!cleanup.ok)showToast('⚠️ Запис прибрано з кошика, але фото не вдалося видалити. Воно лишилось на пристрої.');
   renderDeletedTicketsList();
+  return cleanup.ok;
 }
 
 function renderDeletedTicketsList(){

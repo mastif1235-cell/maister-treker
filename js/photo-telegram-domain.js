@@ -102,9 +102,9 @@ async function storePhoto(dataUrl){
   return key;
 }
 async function deletePhotoKey(key){
-  if(!key || !String(key).startsWith('idb:')) return;
+  if(!key || !String(key).startsWith('idb:')) return false;
   photoCache.delete(key);
-  await photoDbDelete(key);
+  return await photoDbDelete(key);
 }
 function clearAllPhotos(){
   photoCache.clear();

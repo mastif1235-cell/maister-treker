@@ -10,7 +10,7 @@ const settingsSource=fs.readFileSync(path.join(root,'js','settings-core.js'),'ut
 const ticketsSource=fs.readFileSync(path.join(root,'js','tickets-domain.js'),'utf8');
 const appSource=fs.readFileSync(path.join(root,'app.js'),'utf8');
 
-const saveDeletedSource=ticketsSource.slice(ticketsSource.indexOf('function saveDeletedTickets(){'),ticketsSource.indexOf('\nfunction restoreDeletedTicket',ticketsSource.indexOf('function saveDeletedTickets(){')));
+const saveDeletedSource=ticketsSource.slice(ticketsSource.indexOf('function saveDeletedTickets('),ticketsSource.indexOf('\nasync function restoreDeletedTicket',ticketsSource.indexOf('function saveDeletedTickets(')));
 const migrationSource=appSource.slice(appSource.indexOf('async function migrateLegacySyncState(){'),appSource.indexOf('\nfunction isEntitySynced',appSource.indexOf('async function migrateLegacySyncState(){')));
 
 function settingsContext(lock){
