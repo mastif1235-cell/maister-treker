@@ -1,3 +1,14 @@
+# ВНИМАНИЕ / УВАГА / ATTENTION:
+# Этот файл применяет ТОЛЬКО хостинг с поддержкой _headers (Netlify и аналоги).
+# Текущий production-хост — GitHub Pages — файл _headers ИГНОРИРУЕТ: он не
+# добавляет никакие HTTP response headers на github.io. Фактическая защита
+# страниц на GitHub Pages — это meta Content-Security-Policy в index.html,
+# d.html и dogovor-secure.html (meta CSP не может задать frame-ancestors /
+# X-Frame-Options, поэтому анти-фрейминг на текущем хосте НЕ полный —
+# статус Medium, см. SECURITY-REVIEW.md и GATE-3-RESULTS.md).
+# Файл сохранён как готовая политика для хоста, который умеет отдавать
+# заголовки; tests/csp-headers-parity.test.js держит его CSP в паритете
+# с meta CSP index.html. Ничего из CSP здесь не ослаблено.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
