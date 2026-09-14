@@ -395,11 +395,16 @@ function getCurrentTicketText(){
   const isOther = calcState.type === 'Інше';
   assignContractNumberIfNeeded();
   const total = isOther ? 0 : computeTotal();
-  return buildTicketContent({
+  const state={
     ...calcState,
     type:getEffectiveType(),
     freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0
-  }, total);
+  };
+  // Formatter output must use the same effective fee as the live total. This
+  // matters before the form has been saved, when baseCallFee can differ from
+  // the last persisted callFee after an equipment/threshold change.
+  state.callFee=effectiveTicketCallFee(state);
+  return buildTicketContent(state, total);
 }
 
 function getEffectiveType(){

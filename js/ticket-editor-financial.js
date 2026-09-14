@@ -43,7 +43,7 @@ function buildMixedPaymentItems(){
     type: getEffectiveType(),
     freeRepairCallThreshold:Number(settings.freeRepairCallThreshold)||0,
     baseCallFee:ticketBaseCallFee(calcState),
-    callFee: Number(document.getElementById('f_callFee').value)||0,
+    callFee: safeNonNegativeNumber(document.getElementById('f_callFee').value),
     tariff: Number(document.getElementById('f_tariff').value)||0,
     equipment: calcState.equipment, cables: calcState.cables,
     presetWorks: calcState.presetWorks, additionalWork: calcState.additionalWork
