@@ -319,6 +319,18 @@ async function init(){
   applyTheme();
   await ensureAppUnlocked(); // якщо ввімкнено захист входу — чекаємо пароль/відбиток, перш ніж щось малювати чи підвантажувати
   await MTSingleWriterLock.acquire();
+  /* Пункт 16 (аудит v91.27): системні секрети (Telegram-токен, HMAC-ключ
+     синхронізації) відновлюються з шифрованого vault ДО створення sync
+     engine, Telegram-функцій і рендеру налаштувань; legacy plaintext у
+     localStorage автоматично мігрує в vault і стирається. Збій етапу не
+     вбиває init: додаток лишається в legacy-режимі (секрети в пам'яті з
+     localStorage), токен не втрачається. */
+  try{
+    if(typeof backupDb === 'undefined' || !backupDb) backupDb = await openBackupDb();
+    if(typeof mtSettingsSecretsRestoreIntoSettings === 'function') await mtSettingsSecretsRestoreIntoSettings();
+  }catch(secretsVaultError){
+    globalThis.MTSafeError?.reportError?.(secretsVaultError,{scope:'settings-secrets-vault'});
+  }
   bindTabBar();
   bindTicketsScreen();
   bindCalculatorScreen();

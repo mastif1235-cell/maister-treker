@@ -28,6 +28,8 @@ Service Worker remains cache/update-only and is not a module loader.
 
 During this decomposition these bindings remain classic-script globals for compatibility. A domain may read them, but ownership stays singular. New mutable globals are forbidden unless documented here; dependency injection/pure parameters are preferred for newly extracted helpers.
 
+Documented exception (v91.28, audit item 16): `js/settings-secrets-vault.js` owns module-local mutable state (`mtSettingsSecretsVaultSynced`, `mtSettingsSecretsPending`, `mtSettingsSecretsDebounceTimer`, `mtSettingsSecretsWriting`). It keeps `settings.tgBotToken`/`settings.syncHmacSecret` in memory while persisting them encrypted in the `masterTrackerBackups` IndexedDB vault; `settings-core.saveSettings()` and `app.js init()` are its only integration points.
+
 ## Public runtime APIs
 
 - Bootstrap/navigation: `init`, `switchTab`, `openModal`, `closeModal`, `showToast`.
