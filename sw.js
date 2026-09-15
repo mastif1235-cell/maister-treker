@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-68';
+const CACHE_NAME = 'maister-treker-v67-runtime-69';
 const CORE_ASSETS = [
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',
   './js/core-utils.js','./js/safe-error.js','./js/storage-registry.js','./js/app-format-utils.js','./js/phone-utils.js','./js/data-utils.js','./js/map-marker-renderer.js','./js/address-suggestions.js','./js/ticket-time-utils.js','./js/settings-core.js','./js/finance-utils.js','./js/shift-utils.js','./js/report-utils.js',
@@ -10,11 +10,57 @@ const CORE_ASSETS = [
   './app.js','./manifest.json','./icon-192.png','./icon-512.png','./assets/logo-tab-sprite.png'
 ];
 
-/* Критичне ядро: без нього застосунок не стартує офлайн узагалі. Якщо будь-
-   який із цих файлів недоступний — інсталяція нового кешу МАЄ зірватися: тоді
-   браузер лишиться на старому, повному й робочому наборі (best-effort кеш із
-   дірками гірший за відсутність оновлення). Решту активів добираємо окремо. */
+/* Мінімум, без якого неможливо навіть ПРОВЕСТИ перевірку повноти (нижче):
+   якщо ці файли не прекешувалися, index.html не зчитати зі свіжого кешу.
+   Повний же набір «без чого index.html не здатен запустити застосунок
+   офлайн» виводиться автоматично з самого index.html — div MT_BOOT_RUNTIME.
+   Якщо будь-який із цих файлів недоступний — інсталяція нового кешу МАЄ
+   зірватися: тоді браузер лишиться на старому, повному й робочому наборі
+   (best-effort кеш із дірками гірший за відсутність оновлення). Решту
+   активів добираємо окремо. */
 const CRITICAL_CORE_ASSETS=['./','./index.html','./app.js','./styles.css','./manifest.json'];
+
+/* ── Атомарний boot runtime (fix v91.30, HIGH) ───────────────────────────────
+   Єдине джерело істини про обов'язкові boot-файли — сам index.html у НОВОМУ
+   кеші: усі його <script src> + <link rel="stylesheet"> (плюс корінь і
+   manifest). Список фізично не може розсинхронізуватись: новий script у
+   index.html автоматично стає обов'язковим для активації, жоден ручний
+   список у SW не треба пам'ятати. Ліниві (runtime) активи — qrcode.js,
+   vendor/leaflet/*, vendor/maplibre/*, js/tools-map-maplibre.js тощо —
+   index.html синхронно не завантажує, тому їхня відсутність НЕ блокує boot:
+   застосунок здатен завантажитись без них, а дірка лататиметься фоном. */
+function mtNormalizeBootAsset(url){
+  // Зовнішні (CDN/протокольні) URL не прекешируються і не можуть бути у кеші —
+  // вони не роблять install неатомарним і перевірку не блокують.
+  if(/^(?:[a-z][a-z0-9+.\-]*:)?\/\//i.test(url))return null;
+  if(url.startsWith('/'))return url; // кореневий шлях того ж origin
+  return url.startsWith('./')?url:'./'+url;
+}
+function mtBootAssetsFromIndex(html){
+  const assets=new Set(['./','./index.html','./manifest.json']);
+  for(const match of html.matchAll(/<script\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)){
+    const asset=mtNormalizeBootAsset(match[1]||match[2]||match[3]);
+    if(asset)assets.add(asset);
+  }
+  for(const tag of html.matchAll(/<link\b[^>]*>/gi)){
+    if(!/\brel\s*=\s*(?:"[^"]*stylesheet[^"]*"|'[^']*stylesheet[^']*'|[^"'>\s]*stylesheet)/i.test(tag[0]))continue;
+    const href=tag[0].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
+    const asset=href&&mtNormalizeBootAsset(href[1]||href[2]||href[3]);
+    if(asset)assets.add(asset);
+  }
+  return [...assets];
+}
+async function mtAssertBootRuntimeComplete(cache){
+  const pageResponse=await cache.match('./index.html',{ignoreSearch:true});
+  if(!pageResponse)throw new Error('MT_BOOT_RUNTIME_INCOMPLETE: ./index.html');
+  const html=await pageResponse.text();
+  const missing=[];
+  for(const asset of mtBootAssetsFromIndex(html)){
+    try{ if(!await cache.match(asset,{ignoreSearch:true}))missing.push(asset); }
+    catch(_matchError){ missing.push(asset); }
+  }
+  if(missing.length)throw new Error('MT_BOOT_RUNTIME_INCOMPLETE: '+missing.join(', '));
+}
 
 function cacheCoreAssets(cache){
   const requests=CORE_ASSETS.map((asset)=>new Request(asset,{cache:'reload'}));
@@ -39,7 +85,20 @@ function cacheCoreAssets(cache){
 self.addEventListener('install', (e) => {
   e.waitUntil((async()=>{
     const cache=await caches.open(CACHE_NAME);
-    await cacheCoreAssets(cache);
+    try{
+      await cacheCoreAssets(cache);
+      // Атомарність активації: skipWaiting() лише після ДОКАЗАНОЇ повноти
+      // обов'язкового boot runtime у НОВОМУ кеші. Хоч один відсутній
+      // обов'язковий файл → install провалюється: новий SW не стає активним,
+      // старий повний кеш не чіпається, поточна версія працює офлайн далі.
+      await mtAssertBootRuntimeComplete(cache);
+    }catch(bootError){
+      // Недобудований кеш прибираємо: глобальний caches.match не зможе
+      // змішати його файли з активними, і сміття не накопичується.
+      // Старий активний кеш (інший CACHE_NAME) це не торкається.
+      await caches.delete(CACHE_NAME).catch(()=>{});
+      throw bootError;
+    }
     await self.skipWaiting();
   })());
 });

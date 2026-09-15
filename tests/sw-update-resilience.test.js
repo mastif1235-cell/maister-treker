@@ -23,7 +23,7 @@ assert.match(swSource,/const CRITICAL_CORE_ASSETS=\[[^\]]*'\.\/index\.html'[^\]]
 assert.match(swSource,/function cacheCoreAssets\(cache\)\{[\s\S]*?cache\.addAll\(requests\)\.catch\(async[\s\S]*?await cache\.addAll\(requests\); return;/,'install retries addAll once before falling back');
 assert.match(swSource,/for\(const asset of CRITICAL_CORE_ASSETS\)\{ await cache\.add\(/,'critical assets are demanded individually in the fallback');
 assert.match(swSource,/for\(const asset of CORE_ASSETS\)\{[\s\S]*?try\{ await cache\.add\([\s\S]*?catch\(_assetError\)\{ misses\.push\(asset\);/,'non-critical assets degrade to a logged miss list');
-assert.match(swSource,/await cacheCoreAssets\(cache\);\s*\n\s*await self\.skipWaiting\(\);/,'skipWaiting happens only after the complete shell is cached (fallback flow included)');
+assert.match(swSource,/await cacheCoreAssets\(cache\);[\s\S]*?await mtAssertBootRuntimeComplete\(cache\);[\s\S]*?await self\.skipWaiting\(\);/,'skipWaiting happens only after the complete shell is cached AND the boot runtime is verified complete (v91.30 atomic boot)');
 assert.match(swSource,/upgrade:stale\.length>0/,'activation message distinguishes upgrade from first install');
 
 const swr=appSource.slice(appSource.indexOf("if('serviceWorker' in navigator)"));
@@ -40,7 +40,10 @@ function createSwHarness({addAllAttempts=()=>Promise.resolve(), addImpl=null}={}
   const cache={
     addAll:async requests=>{ addAllCalls++; const behavior=addAllAttempts(addAllCalls); if(behavior) await behavior; state.added.push(...requests.map(r=>r.url)); },
     add:async request=>{ if(addImpl) await addImpl(request); state.addedIndividually.push(request.url); },
-    put:async()=>{}
+    put:async()=>{},
+    // v91.30 atomic boot: перевірка повноти читає index.html/manifest із НОВОГО
+    // кешу; у цьому харнесті кеш «здоровий», тож верифікація проходить далі.
+    match:async request=>{const url=String(request&&request.url||request);return /(?:index\.html|manifest\.json|\/)$/.test(url)?{status:200,text:async()=>''}:null;}
   };
   const context={
     console:{log(){},warn(){},error(){}},

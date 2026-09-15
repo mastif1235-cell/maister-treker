@@ -86,7 +86,13 @@ function startStaticServer(dir){
         dir,
         port,
         url: `http://127.0.0.1:${port}`,
-        close: () => new Promise(done => server.close(() => done()))
+        close: () => new Promise(done => {
+          // Chromium тримає keep-alive сокети (SW-оновлення роблять багато
+          // швидких запитів поспіль), і server.close() міг чекати їх до
+          // таймауту — це давало флейк у teardown. Гарантовано рвємо з'єднання.
+          if(typeof server.closeAllConnections === 'function') server.closeAllConnections();
+          server.close(() => done());
+        })
       });
     });
   });
