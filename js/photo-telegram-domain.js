@@ -481,14 +481,22 @@ async function backupTicketToTelegramNow(t){
     t.tgBackupCleanupMsgIds=retryIds;t.tgBackupCleanupAttempts=attempts;
     const previousStale=(t.tgBackupStaleMsgIds||[]).map(Number), staleList=[...stale];
     t.tgBackupStaleMsgIds=staleList;
-    t.tgBackupPending=retryIds.length>0;
+    // Фікс v91.31: pending скидаємо лише коли в заявки є підтверджена копія.
+    // Для залишків НЕВДАЛОЇ спроби (tgBackedUp=false) заявка все ще не має
+    // бекапу — автоматичний повтор має лишитися активним.
+    t.tgBackupPending=retryIds.length>0||t.tgBackedUp!==true;
     await saveTicketsLocalOnly();refreshTicketCardDom(t.id);
     // Актуальна копія вже надіслана раніше — цей блок лише прибирає старіші
     // повідомлення. Тому жодних нових JSON заради очистки не створюємо: або
     // повторюємо видалення пізніше (тимчасова відмова), або чесно лишаємо
     // стару копію в групі й кажемо про це один раз.
     if(!retryIds.length&&staleList.some(id=>!previousStale.includes(id)))showToast('⚠️ Стару копію в Telegram не вдалося видалити — вона може лишитися в групі');
-    return retryIds.length===0;
+    // Фікс v91.31: після успішного прибирання залишків НЕВДАЛОЇ спроби
+    // продовжуємо ПОВНУ відправку одразу (заявка досі без бекапу), замість
+    // того щоб чекати ще один ручний/автоматичний повтор. Для залишків
+    // ПІСЛЯ успішного бекапу (tgBackedUp=true) поведінка незмінна: тільки
+    // очистка, без повторної відправки.
+    if(retryIds.length>0||t.tgBackedUp===true)return retryIds.length===0;
   }
   // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
   // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
@@ -536,13 +544,17 @@ async function backupTicketToTelegramNow(t){
       const addr = [t.city, t.street, t.house].filter(Boolean).join(', ');
       const sepText = `➖➖➖➖➖➖➖➖➖➖\n🧾 ${(t.type||'ЗАЯВКА').toUpperCase()}${t.date? ' · '+t.date:''}${t.time? ' '+t.time:''}${addr? ' · '+addr:''}`;
       if(oldMsgIds.tgSepMsgId){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgSepMsgId,sepText))throw new Error('TELEGRAM_EDIT_SEPARATOR_FAILED');sepOk=true;reusedSep=true;t.tgSepMsgId=oldMsgIds.tgSepMsgId;}
-      else{const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`, {method:'POST', headers:{'Content-Type':'application/json'},body: JSON.stringify({chat_id: chatId, text: sepText})},t);if(data.ok && data.result && data.result.message_id){sepOk=true;t.tgSepMsgId=data.result.message_id;currentAttemptMsgIds.tgSepMsgId=data.result.message_id;}}
+      else{const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`, {method:'POST', headers:{'Content-Type':'application/json'},body: JSON.stringify({chat_id: chatId, text: sepText})},t);if(data.ok && data.result && data.result.message_id){sepOk=true;t.tgSepMsgId=data.result.message_id;currentAttemptMsgIds.tgSepMsgId=data.result.message_id;
+        // Фікс v91.31: зберігаємо прогрес спроби після кожного підтвердженого
+        // повідомлення — kill/reload посередині відправки лишає відновлюваний
+        // слід, і наступна спроба РЕДАГУЄ ці повідомлення замість дублювання.
+        await saveTicketsLocalOnly();}}
     }
     // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
       const text = buildTelegramBackupText(t).slice(0, 4000); // ліміт Telegram на текст повідомлення
       if(oldMsgIds.tgTextMsgId){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgTextMsgId,text))throw new Error('TELEGRAM_EDIT_TEXT_FAILED');textOk=true;reusedText=true;t.tgTextMsgId=oldMsgIds.tgTextMsgId;}
-      else{const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text})},t);if(data.ok&&data.result&&data.result.message_id){textOk=true;t.tgTextMsgId=data.result.message_id;currentAttemptMsgIds.tgTextMsgId=data.result.message_id;}}
+      else{const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text})},t);if(data.ok&&data.result&&data.result.message_id){textOk=true;t.tgTextMsgId=data.result.message_id;currentAttemptMsgIds.tgTextMsgId=data.result.message_id;await saveTicketsLocalOnly();}}
     }
     // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
     // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
@@ -578,6 +590,7 @@ async function backupTicketToTelegramNow(t){
         t.tgPhotoFileIds.push(fileId);
         t.tgPhotoMsgIds.push(data.result.message_id);
         currentAttemptMsgIds.tgPhotoMsgIds.push(data.result.message_id);
+        await saveTicketsLocalOnly(); // фікс v91.31: прогрес кожного фото зафіксовано до наступного
       }
     }
     // NEW: раніше стару копію видаляли, щойно проходив ТЕКСТ (t.tgBackedUp),
@@ -588,8 +601,10 @@ async function backupTicketToTelegramNow(t){
     // відбулись, — успішні).
     const photosOk = reusedPhotos||(photoSendAttempts === photosToSend.length && t.tgPhotoMsgIds.length === photosToSend.length);
     // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
-    t.tgPhotoFileId = t.tgPhotoFileIds[0] || null;
-    t.tgPhotoMsgId = t.tgPhotoMsgIds[0] || null;
+    // Фікс v91.31: легасі-заявки (до впровадження tgPhotoFileIds/tgPhotoMsgIds)
+    // без фото і без цих полів не повинні падати TypeError на [0].
+    t.tgPhotoFileId = (t.tgPhotoFileIds && t.tgPhotoFileIds[0]) || null;
+    t.tgPhotoMsgId = (t.tgPhotoMsgIds && t.tgPhotoMsgIds[0]) || null;
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
     let jsonOk = false;
@@ -605,6 +620,7 @@ async function backupTicketToTelegramNow(t){
         jsonOk = true;
         t.tgJsonMsgId = data.result.message_id;
         currentAttemptMsgIds.tgJsonMsgId = data.result.message_id;
+        await saveTicketsLocalOnly(); // фікс v91.31
       }
     }catch(e){
       if(e && e.telegramAmbiguous) throw e;
@@ -623,8 +639,20 @@ async function backupTicketToTelegramNow(t){
   }catch(e){ambiguousDelivery=e?.telegramAmbiguous===true;globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-backup'});} // тихо — це лише резервна копія, не критична дія
   finally{
     if(!backupSucceeded){
-      await deleteTicketTelegramMessages(currentAttemptMsgIds, token, chatId);
+      const attemptCleanup=await deleteTicketTelegramMessages(currentAttemptMsgIds, token, chatId);
       Object.assign(t, previousBackupState);
+      // Фікс v91.31 (root cause дублів фото): невдалі видалення часткової
+      // спроби більше НЕ викидаються. Якщо мережа флапнула так, що sendPhoto
+      // пройшов, а deleteMessage — ні, ці повідомлення залишалися б у групі
+      // назавжди: наступний успішний бекап додавав би свіжі поруч → «заявка
+      // виглядає надісланою кілька разів». Тепер вони потрапляють у чергу
+      // очищення (tgBackupCleanupMsgIds), яку наступна спроба прибере ДО
+      // повторної відправки. permanentIds класифікує той самий механізм
+      // (старе повідомлення, яке неможливо видалити → tgBackupStaleMsgIds +
+      // одноразове попередження), як і післяуспішне очищення.
+      if(attemptCleanup.failedIds.length||attemptCleanup.permanentIds.length){
+        t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),...attemptCleanup.failedIds,...attemptCleanup.permanentIds])];
+      }
       t.tgBackupAmbiguous=ambiguousDelivery;t.tgBackupPending=!ambiguousDelivery;
     }
     // NEW: раніше saveTickets() викликався лише в кінці "щасливого" шляху —
