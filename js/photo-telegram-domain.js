@@ -570,7 +570,14 @@ async function backupTicketToTelegramNow(t){
     // мовчки не спрацьовував би, якщо локальна копія загубилась.
     const prevTgPhotoFileIds = t.tgPhotoFileIds || [];
     reusedPhotos=photoKeys.length===savedPhotoKeys.length&&photoKeys.every((key,index)=>key===savedPhotoKeys[index])&&(oldMsgIds.tgPhotoMsgIds||[]).length===photoKeys.length;
-    if(!reusedPhotos){t.tgPhotoFileIds = []; t.tgPhotoMsgIds = [];}
+    /* Фікс v91.31 (реальний EDIT-кейс, скриншоти «Золотоосіння»): підтверджені
+       tgPhotoMsgIds/tgPhotoFileIds НЕ витираються на час спроби. Раніше wipe на
+       старті спроби + kill/reload посередині відправки назавжди втрачали
+       зв'язок зі СТАРИМИ фото в групі (вічні сироти-дублі), а частковий
+       прогрес змішувався з підтвердженим станом. Нові id накопичуються у
+       локальних масивах спроби + durably у черзі очищення як НЕПІДТВЕРДЖЕНІ;
+       підтверджений стан підміняється тільки після успіху всієї спроби. */
+    const attemptPhotoFileIds=[],attemptPhotoMsgIds=[];
     let photoSendAttempts = 0; // NEW: скільки фото реально намагались відправити (є локальна копія/fallback)
     for(let pi=0; pi<photosToSend.length&&!reusedPhotos; pi++){
       const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? previousPrimaryPhotoFileId : null);
@@ -587,10 +594,15 @@ async function backupTicketToTelegramNow(t){
       if(data.ok && data.result && data.result.message_id){
         const sizes = data.result.photo || [];
         const fileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
-        t.tgPhotoFileIds.push(fileId);
-        t.tgPhotoMsgIds.push(data.result.message_id);
+        attemptPhotoFileIds.push(fileId);
+        attemptPhotoMsgIds.push(data.result.message_id);
         currentAttemptMsgIds.tgPhotoMsgIds.push(data.result.message_id);
-        await saveTicketsLocalOnly(); // фікс v91.31: прогрес кожного фото зафіксовано до наступного
+        // фікс v91.31: прогрес durably, але як НЕПІДТВЕРДЖЕНИЙ — id одразу в
+        // чергу очищення: якщо спроба помре (kill/reload), наступна спроба
+        // прибере це повідомлення перед повторною відправкою. Підтверджений
+        // tgPhotoMsgIds не рухається до успіху всієї спроби.
+        t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),data.result.message_id])];
+        await saveTicketsLocalOnly();
       }
     }
     // NEW: раніше стару копію видаляли, щойно проходив ТЕКСТ (t.tgBackedUp),
@@ -599,12 +611,7 @@ async function backupTicketToTelegramNow(t){
     // вже видалена. Тепер видаляємо стару копію лише якщо текст пройшов І
     // (фото в заявці не було, або всі спроби відправки фото, які реально
     // відбулись, — успішні).
-    const photosOk = reusedPhotos||(photoSendAttempts === photosToSend.length && t.tgPhotoMsgIds.length === photosToSend.length);
-    // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
-    // Фікс v91.31: легасі-заявки (до впровадження tgPhotoFileIds/tgPhotoMsgIds)
-    // без фото і без цих полів не повинні падати TypeError на [0].
-    t.tgPhotoFileId = (t.tgPhotoFileIds && t.tgPhotoFileIds[0]) || null;
-    t.tgPhotoMsgId = (t.tgPhotoMsgIds && t.tgPhotoMsgIds[0]) || null;
+    const photosOk = reusedPhotos||(photoSendAttempts === photosToSend.length && attemptPhotoMsgIds.length === photosToSend.length);
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
     // "повний бекап" (а не лише те, що влізло в короткий текст вище)
     let jsonOk = false;
@@ -632,7 +639,15 @@ async function backupTicketToTelegramNow(t){
     if(sepOk && textOk && photosOk && jsonOk){
       t.tgBackedUp = true;
       const obsolete={tgSepMsgId:reusedSep?null:oldMsgIds.tgSepMsgId,tgTextMsgId:reusedText?null:oldMsgIds.tgTextMsgId,tgPhotoMsgIds:reusedPhotos?[]:oldMsgIds.tgPhotoMsgIds,tgJsonMsgId:oldMsgIds.tgJsonMsgId};
-      const cleanup=await deleteTicketTelegramMessages(obsolete,token,chatId);t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),...cleanup.failedIds])];t.tgPhotoKeys=photoKeys;t.tgBackupAmbiguous=false;
+      const cleanup=await deleteTicketTelegramMessages(obsolete,token,chatId);t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),...cleanup.failedIds])];
+      // фікс v91.31: підтверджений стан фото підміняється ТІЛЬКИ тут. id нової
+      // спроби виходять із черги очищення (вони вже не сміття, а чинні фото).
+      if(!reusedPhotos){t.tgPhotoMsgIds=attemptPhotoMsgIds;t.tgPhotoFileIds=attemptPhotoFileIds;}
+      t.tgBackupCleanupMsgIds=(t.tgBackupCleanupMsgIds||[]).filter(id=>!attemptPhotoMsgIds.includes(Number(id)));
+      // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
+      t.tgPhotoFileId = (t.tgPhotoFileIds && t.tgPhotoFileIds[0]) || null;
+      t.tgPhotoMsgId = (t.tgPhotoMsgIds && t.tgPhotoMsgIds[0]) || null;
+      t.tgPhotoKeys=photoKeys;t.tgBackupAmbiguous=false;
       backupSucceeded = true;
       t.tgBackupPending = t.tgBackupCleanupMsgIds.length>0;
     }

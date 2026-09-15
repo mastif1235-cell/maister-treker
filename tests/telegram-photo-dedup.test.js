@@ -202,7 +202,13 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
     for(let i=0;i<2000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendPhoto'&&call.photoIndex===2));i++)await new Promise(r=>setTimeout(r,1));
     assert.equal(photoCount(live),1,'10: first photo delivered before the kill');
     const persisted=w1.world.persistedSnapshots[w1.world.persistedSnapshots.length-1];
-    assert.ok(persisted.tgPhotoMsgIds.length===1&&persisted.tgSepMsgId,'10: attempt progress is durably persisted (v91.30 lost it)');
+    /* Контракт v91.31 (після амендменту): підтверджений tgPhotoMsgIds НЕ
+       рухається недоставленою спробою; доставлене фото durably лежить у
+       черзі очищення як НЕПІДТВЕРДЖЕНЕ. Це все, що потрібно наступному
+       запуску, щоб прибрати сироту перед повторною відправкою. */
+    assert.ok((persisted.tgPhotoMsgIds||[]).length===0,'10: confirmed photo state is never overwritten by an unfinished attempt');
+    assert.ok(Array.isArray(persisted.tgBackupCleanupMsgIds)&&persisted.tgBackupCleanupMsgIds.length===1,'10: delivered photo is durably parked in the cleanup queue');
+    assert.ok(persisted.tgSepMsgId&&persisted.tgTextMsgId,'10: separator/text progress is durably persisted');
     const restored=JSON.parse(JSON.stringify(persisted));
     const w2=makeWorld({ticket:restored,live,startId:1000}); // reload: новий контекст, та сама група
     assert.equal(await w2.context.backupTicketToTelegramNow(restored),true,'10: post-reload retry succeeds');
