@@ -8,7 +8,10 @@ async function encryptedRaw(text,password){const salt=webcrypto.getRandomValues(
   const valid={app:'master-tracker',backupVersion:6,tickets:[{id:'safe'}],shifts:[],settings:{theme:'dark'}},envelope=await backup.encrypt(valid,'correct password');
   await assert.rejects(()=>backup.decrypt({...envelope,ciphertext:envelope.ciphertext.slice(0,-8)},'correct password'),'truncated encrypted backup is rejected');
   await assert.rejects(()=>backup.decrypt(envelope,'wrong password'),'wrong password is rejected');
-  const corrupt={...envelope,ciphertext:'A'+envelope.ciphertext.slice(1)};await assert.rejects(()=>backup.decrypt(corrupt,'correct password'),'corrupted cipher is rejected');
+  const corruptFirst=(char)=>char==='A'?'B':'A'; // гарантовано інший Base64-символ
+  const corrupt={...envelope,ciphertext:corruptFirst(envelope.ciphertext[0])+envelope.ciphertext.slice(1)};
+  assert.notEqual(corrupt.ciphertext,envelope.ciphertext,'flake guard: corruption always alters the ciphertext');
+  await assert.rejects(()=>backup.decrypt(corrupt,'correct password'),'corrupted cipher is rejected');
   const brokenJsonEnvelope=await encryptedRaw('{broken','correct password');await assert.rejects(()=>backup.decrypt(brokenJsonEnvelope,'correct password'),'broken decrypted JSON is rejected');
   assert.equal(backup.validatePayload({app:'master-tracker'}),false,'missing collections are rejected');
   assert.equal(backup.validatePayload({app:'master-tracker',tickets:[null],shifts:[],settings:{}}),false,'malformed ticket is rejected');
