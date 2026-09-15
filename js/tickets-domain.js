@@ -393,37 +393,68 @@ function saveDeletedTickets(nextTickets=deletedTickets){
   }
 }
 
+/* Ідемпотентний restore (fix v91.30, MEDIUM). Маркер зв'язку «запис кошика ↔
+   відновлена жива заявка» зберігається НА САМІЙ заявці (restoredFromDeletedAt)
+   тим самим durable-збереженням, що й вона, тому не може відстати від неї.
+   Якщо попередній restore durably зберіг живу заявку, але не встиг прибрати
+   запис кошика (збій сховища, reload), повторний restore того самого запису
+   НЕ створює другий UUID, а лише повторює безпечне очищення кошика. Маркер —
+   optional: старі записи v91.29 і старі живі заявки без нього працюють як
+   раніше; в sync payload (ticketToSyncPayload) він не входить. Подвійний тап
+   / паралельні виклики на той самий запис ігноруємо до завершення першої
+   операції. */
+const MT_RESTORE_IN_FLIGHT=new Set();
 async function restoreDeletedTicket(deletedAt){
-  const index=deletedTickets.findIndex(ticket=>String(ticket.deletedAt)===String(deletedAt));
-  if(index===-1)return false;
-  const source=deletedTickets[index];
-  const restored=JSON.parse(JSON.stringify(source));
-  delete restored.deletedAt;
-  // Tombstone старого ID необоротний: restore завжди є новим create.
-  restored.id=MTSyncEngineRuntime.uuid();
-  delete restored.synced;
-  delete restored.syncAction;
-  delete restored.pendingCloudDelete;
-  // First make the restored record durable. A failure leaves the basket entry
-  // untouched, so its photos and a complete recovery path remain available.
-  tickets.push(restored);
-  if(!await saveTickets()){
-    tickets.pop();
-    showToast('Не вдалося надійно відновити заявку. Запис і фото лишились у кошику.');
-    return false;
-  }
-  const next=deletedTickets.filter((_,itemIndex)=>itemIndex!==index);
-  if(!saveDeletedTickets(next)){
-    showToast('⚠️ Заявку відновлено у списку, але запис у кошику не вдалося оновити. Не відновлюйте цей самий запис повторно.');
+  const restoreKey=String(deletedAt);
+  if(MT_RESTORE_IN_FLIGHT.has(restoreKey))return false;
+  MT_RESTORE_IN_FLIGHT.add(restoreKey);
+  try{
+    const index=deletedTickets.findIndex(ticket=>String(ticket.deletedAt)===String(deletedAt));
+    if(index===-1)return false;
+    const source=deletedTickets[index];
+    // Повторний restore після збійного cleanup: жива заявка з цим маркером
+    // уже існує — використовуємо її, новий UUID не створюємо.
+    const pending=tickets.find(ticket=>ticket&&ticket.restoredFromDeletedAt!=null&&String(ticket.restoredFromDeletedAt)===restoreKey);
+    let restored;
+    if(pending){
+      restored=pending;
+    }else{
+      restored=JSON.parse(JSON.stringify(source));
+      delete restored.deletedAt;
+      // Tombstone старого ID необоротний: restore завжди є новим create.
+      restored.id=MTSyncEngineRuntime.uuid();
+      delete restored.synced;
+      delete restored.syncAction;
+      delete restored.pendingCloudDelete;
+      restored.restoredFromDeletedAt=source.deletedAt;
+      // First make the restored record durable. A failure leaves the basket entry
+      // untouched, so its photos and a complete recovery path remain available.
+      tickets.push(restored);
+      if(!await saveTickets()){
+        tickets.pop();
+        showToast('Не вдалося надійно відновити заявку. Запис і фото лишились у кошику.');
+        return false;
+      }
+    }
+    const next=deletedTickets.filter((_,itemIndex)=>itemIndex!==index);
+    if(!saveDeletedTickets(next)){
+      // Жива заявка durably збережена (маркер усередині неї), запис кошика
+      // лишається: повторний «Відновити» безпечно повторить лише cleanup.
+      showToast(pending
+        ?'⚠️ Цю заявку вже відновлено, але запис у кошику не вдалося оновити. Натисніть «Відновити» ще раз — дубліката не буде.'
+        :'⚠️ Заявку відновлено у списку, але запис у кошику не вдалося оновити. Натисніть «Відновити» ще раз — дубліката не буде.');
+      renderTicketsScreen();
+      return false;
+    }
+    deletedTickets=next;
+    currentTicketDate=restored.date||currentTicketDate;
     renderTicketsScreen();
-    return false;
+    renderDeletedTicketsList();
+    showToast(pending?'Заявку вже було відновлено раніше — повторне відновлення не створило дублікат':'Заявку відновлено');
+    return true;
+  }finally{
+    MT_RESTORE_IN_FLIGHT.delete(restoreKey);
   }
-  deletedTickets=next;
-  currentTicketDate=restored.date||currentTicketDate;
-  renderTicketsScreen();
-  renderDeletedTicketsList();
-  showToast('Заявку відновлено');
-  return true;
 }
 
 async function purgeDeletedTicket(deletedAt){
