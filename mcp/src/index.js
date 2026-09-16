@@ -1,25 +1,38 @@
-/* Maister-Tracker READ-ONLY MCP server — Cloudflare Worker entry point.
+/* Maister-Tracker READ-ONLY MCP server + AI orchestrator — Cloudflare Worker.
 
    Endpoints:
      GET  /healthz — liveness, no data, no auth.
      POST /mcp     — the MCP endpoint (stateless JSON-RPC over Streamable
-                     HTTP; single JSON responses, no SSE stream needed for
-                     this tool-only server). Requires Bearer auth.
+                     HTTP). Requires Bearer auth. READ-ONLY.
+     POST /ask     — server-side AI orchestrator (stage D): Groq reasons, this
+                     Worker executes the whitelisted READ tools itself and
+                     returns the final natural-language answer. Requires
+                     Bearer auth (ASK_BEARER_TOKENS when configured, otherwise
+                     the MCP tokens). Requires the GROQ_API_KEY secret.
      Anything else — 404.
 
-   The Worker stores NO application data: every answer is produced from a
-   signed read against the existing GAS/Sheets sync contract at request time.
-   There are no CORS headers on /mcp on purpose: browser-based callers are not
-   a supported client kind in this stage, and cloud/CLI clients call the
-   endpoint server-side. */
+   Data path: every answer is produced from a signed read against the existing
+   GAS/Sheets sync contract. The optional KV snapshot cache (stage A) stores
+   ONLY the redacted projection for ~5 minutes (stale-while-revalidate) and is
+   refreshed by a Cron Trigger; absence of the KV binding is a transparent
+   passthrough. There are no CORS headers on purpose: browser-based callers
+   are not a supported client kind in this stage.
+
+   A Cron Trigger (crons in wrangler.toml) invokes scheduled() to keep the
+   KV snapshot warm so that most tool calls never touch the slow GAS path. */
 
 import {loadConfig} from './config.js';
 import {createGasClient} from './gas/client.js';
+import {createDataPipeline} from './tools/read.js';
+import {createSnapshotProvider} from './data/snapshot.js';
 import {createReadTools} from './tools/read.js';
 import {createMcpServer} from './mcp/server.js';
 import {authenticate} from './auth/bearer.js';
 import {createRateLimiter} from './ratelimit.js';
 import {parseMessage, makeError, ERROR_CODES, isNotification} from './jsonrpc.js';
+import {createGroqClient} from './ask/groq.js';
+import {createAskOrchestrator} from './ask/orchestrator.js';
+import {TOOL_DEFINITIONS} from './tools/definitions.js';
 
 const SECURITY_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -33,6 +46,11 @@ function jsonResponse(status, body, extraHeaders){
 
 export function createApp(env, deps){
   deps = deps || {};
+  /* Per-request execution context holder: Cloudflare passes a fresh ctx to
+     every fetch/scheduled invocation; the snapshot provider uses it for
+     background writes (stale-while-revalidate). */
+  const ctxHolder = {current:null};
+
   const appPromise = loadConfig(env).then(function(loaded){
     if(!loaded.ok) return {ok:false, reason:loaded.reason};
     const config = loaded.config;
@@ -43,10 +61,86 @@ export function createApp(env, deps){
       timeoutMs: config.gasTimeoutMs,
       listCacheTtlMs: config.listCacheTtlMs
     });
-    const server = createMcpServer({tools: createReadTools({gas})});
+    const pipeline = createDataPipeline(gas);
+    const provider = createSnapshotProvider({
+      fetchFn: function(){ return pipeline.getList(); },
+      kv: (env && env.MT_SNAPSHOT_KV) || null,
+      ttlMs: config.snapshotTtlMs,
+      staleMs: config.snapshotStaleMs,
+      waitUntil: function(promise){
+        const ctx = ctxHolder.current;
+        if(ctx && typeof ctx.waitUntil === 'function'){
+          try{ ctx.waitUntil(promise); }
+          catch(_err){ if(promise && typeof promise.catch === 'function') promise.catch(function(){}); }
+        } else if(promise && typeof promise.catch === 'function'){
+          promise.catch(function(){});
+        }
+      },
+      log: function(message){ console.error('[mcp] ' + message); }
+    });
+    const tools = createReadTools({gas, data: provider});
+    const server = createMcpServer({tools});
     const limiter = deps.limiter || createRateLimiter({limitPerMin: config.rateLimitPerMin});
-    return {ok:true, config, server, limiter};
+
+    /* stage D: the orchestrator shares the SAME tool handlers as /mcp and is
+       disabled (without touching /mcp) when its prerequisites are missing. */
+    let ask = null;
+    let askDisabledReason = null;
+    if(!config.groqApiKey) askDisabledReason = 'GROQ_API_KEY is not configured';
+    else if(config.askTokensError) askDisabledReason = 'ASK_BEARER_TOKENS is invalid';
+    else {
+      const groq = createGroqClient({
+        fetchImpl: deps.fetchImpl || fetch,
+        apiKey: config.groqApiKey,
+        model: config.askModel
+      });
+      ask = createAskOrchestrator({groq, tools, toolDefs: TOOL_DEFINITIONS});
+    }
+    const askAuthTokens = (config.askTokens && config.askTokens.length) ? config.askTokens : config.tokens;
+
+    return {ok:true, config, server, limiter, provider, tools, ask, askDisabledReason, askAuthTokens};
   });
+
+  async function askHandler(request){
+    if(request.method !== 'POST'){
+      return jsonResponse(405, {error:'method_not_allowed', hint:'POST {"question":"..."} to /ask'}, {Allow:'POST'});
+    }
+    const app = await appPromise;
+    if(!app.ok){
+      console.error('[mcp] config rejected:', app.reason);
+      return jsonResponse(503, {error:'server_configuration'});
+    }
+    const auth = await authenticate(request.headers.get('Authorization'), app.askAuthTokens);
+    if(!auth.ok) return jsonResponse(401, {error:'unauthorized'}, {'WWW-Authenticate':'Bearer realm="maister-tracker-mcp", scope="ask"'});
+
+    const rate = app.limiter.check('ask:' + auth.client.name);
+    if(!rate.allowed) return jsonResponse(429, {error:'rate_limited', retry_after_sec:rate.retryAfterSec}, {'Retry-After':String(rate.retryAfterSec)});
+
+    if(!app.ask){
+      console.error('[ask] disabled:', app.askDisabledReason);
+      return jsonResponse(503, {error:'ask_not_configured'});
+    }
+
+    const bodyText = await request.text();
+    if(bodyText.length > 32768) return jsonResponse(413, {error:'payload_too_large'});
+    let body;
+    try{ body = JSON.parse(bodyText); }
+    catch(_err){ return jsonResponse(400, {error:'invalid_json'}); }
+    const question = body && typeof body.question === 'string' ? body.question.trim() : '';
+    if(!question || question.length > 2000){
+      return jsonResponse(400, {error:'invalid_question', hint:'question must be a non-empty string of at most 2000 chars'});
+    }
+
+    let outcome;
+    try{ outcome = await app.ask.handle(question); }
+    catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
+    if(!outcome.ok){
+      const code = String(outcome.code || 'INTERNAL');
+      const upstream = code === 'GROQ_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code.indexOf('HTTP_') === 0;
+      return jsonResponse(upstream ? 502 : 500, {ok:false, error:'ask_failed', code});
+    }
+    return jsonResponse(200, {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}});
+  }
 
   async function handler(request){
     const url = new URL(request.url);
@@ -55,6 +149,8 @@ export function createApp(env, deps){
     if(path === '/healthz'){
       return jsonResponse(200, {ok:true, service:'maister-tracker-mcp', read_only:true});
     }
+
+    if(path === '/ask') return askHandler(request);
 
     if(path !== '/mcp') return jsonResponse(404, {error:'not_found'});
 
@@ -94,20 +190,46 @@ export function createApp(env, deps){
     return jsonResponse(200, outcome.response);
   }
 
-  return {fetch: handler, appPromise};
+  return {fetch: handler, appPromise, ctxHolder};
 }
 
 /* Isolate-level cache so the default export keeps rate-limit state across
    requests while staying compatible with the stateless protocol layer. */
 const appCache = new WeakMap();
 
+function appFor(env, deps){
+  let app = appCache.get(env);
+  if(!app){
+    app = createApp(env, deps);
+    appCache.set(env, app);
+  }
+  return app;
+}
+
 export default {
-  async fetch(request, env, _ctx){
-    let app = appCache.get(env);
-    if(!app){
-      app = createApp(env);
-      appCache.set(env, app);
-    }
+  async fetch(request, env, ctx){
+    const app = appFor(env);
+    app.ctxHolder.current = ctx || null;
     return app.fetch(request);
+  },
+  /* Cron Trigger: refresh the KV snapshot (warm cache). Failures are logged
+     by name only and never affect request serving. */
+  async scheduled(controller, env, ctx){
+    return scheduledHandler(controller, env, ctx);
   }
 };
+
+/* Named export so tests can inject a fetch mock via deps (Cloudflare itself
+   always passes only controller/env/ctx). */
+export async function scheduledHandler(_controller, env, ctx, deps){
+  const app = deps && deps.app ? deps.app : appFor(env, deps);
+  app.ctxHolder.current = ctx || null;
+  const loaded = await app.appPromise;
+  if(!loaded.ok){
+    console.error('[mcp] snapshot refresh skipped: config rejected');
+    return false;
+  }
+  const ok = await loaded.provider.refresh();
+  if(!ok) console.error('[mcp] snapshot refresh failed');
+  return ok;
+}

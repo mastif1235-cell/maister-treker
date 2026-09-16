@@ -7,6 +7,21 @@ import {
   ticketMatchesQuery, parseDateKey
 } from '../gas/mappers.js';
 
+/* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
+   ONLY shape that travels to clients and (in the KV stage) into the cache. */
+export function createDataPipeline(gas){
+  return {
+    async getList(){
+      const result = await gas.getList();
+      if(!result.ok) return result;
+      return {ok:true, data:{
+        tickets: result.data.tickets.map(ticketFromGasRow).map(redactTicket),
+        shifts: result.data.shifts.map(redactShift)
+      }};
+    }
+  };
+}
+
 /* Exact mirror of calculateTicketReportTotals (js/report-utils.js) — the same
    arithmetic the in-app report uses: «Безкоштовно» counts nowhere, «Змішана»
    splits into cashAmount/cardAmount. Parity is proven against the real module
@@ -36,15 +51,15 @@ function round1(value){ return Math.round(value * 10) / 10; }
 
 export function createReadTools(options){
   const gas = options.gas;
+  /* data source: by default the direct redaction pipeline (no cache); when a
+     snapshot provider is supplied (KV stage) it always returns the redacted
+     projection too, so both paths are identical for the tools. */
+  const data = options.data || createDataPipeline(gas);
 
   async function loadRedacted(){
-    const result = await gas.getList();
+    const result = await data.getList();
     if(!result.ok) return result;
-    return {
-      ok: true,
-      tickets: result.data.tickets.map(ticketFromGasRow).map(redactTicket),
-      shifts: result.data.shifts.map(redactShift)
-    };
+    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts};
   }
 
   function inRange(dateStr, from, to){

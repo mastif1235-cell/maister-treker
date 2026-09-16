@@ -146,6 +146,23 @@ npm run check
 HMAC-секрет тот же, что использует PWA (контракт GAS один); ротация — через
 vault PWA + `wrangler secret put`.
 
+## Stage A + D (экспериментальные, ветка feat/ai-groq-orchestrator): KV snapshot + /ask
+
+- **KV snapshot cache (необязательно):** binding `MT_SNAPSHOT_KV` хранит ТОЛЬКО
+  редактированную (whitelist) проекцию данных под версионируемым ключом
+  `mt:snapshot:v1`; свежесть ~5 мин (`MCP_SNAPSHOT_TTL_MS`), stale-while-revalidate,
+  при сбое GAS отдаётся последняя рабочая копия. Нет binding'а — сервер работает
+  как раньше (transparent passthrough). Cron `*/5 * * * *` (опционально) держит
+  снапшот тёплым (`scheduled()`).
+- **POST /ask:** AI-оркестратор. Groq (`openai/gpt-oss-120b`, ключ — только
+  Workers Secret `GROQ_API_KEY`) ТОЛЬКО reasoning и выбирает tool; Worker сам
+  выполняет те же READ-хендлеры (без self-HTTP к /mcp) и возвращает финальный
+  ответ. Защиты: allowlist 7 READ tools, JSON-Schema валидация аргументов,
+  лимиты (tool calls ≤8, rounds ≤12, размер результата/ответа), redaction,
+  rate limit. Auth: `ASK_BEARER_TOKENS` (тот же формат токенов) или, при
+  отсутствии, обычные MCP-токены.
+- Ни один из существующих эндпоинтов/токенов/инструментов не менялся.
+
 ## Дорожная карта следующих этапов
 
 - **E2**: `create_ticket`/`update_ticket` (optimistic concurrency через

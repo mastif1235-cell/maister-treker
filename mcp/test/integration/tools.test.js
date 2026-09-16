@@ -62,7 +62,8 @@ test('all 7 READ tools return data through the signed GAS reads', async () => {
 test('static proof: MCP source contains no write actions and no POST fetches', () => {
   const files = ['src/index.js','src/config.js','src/jsonrpc.js','src/ratelimit.js',
     'src/mcp/server.js','src/tools/definitions.js','src/tools/read.js','src/tools/validate.js',
-    'src/gas/client.js','src/gas/mappers.js','src/gas/sync-contract.js','src/auth/bearer.js'];
+    'src/gas/client.js','src/gas/mappers.js','src/gas/sync-contract.js','src/auth/bearer.js',
+    'src/data/snapshot.js','src/ask/orchestrator.js'];
   const writeActions = /addTicket|updateTicket|deleteTicket|addShift|updateShift|syncAll|deleteRowById|appendRow|setValues|postDataType|text\/plain;charset=utf-8, body:/;
   for(const rel of files){
     const source = readFileSync(path.join(REPO_ROOT, 'mcp', rel), 'utf8');

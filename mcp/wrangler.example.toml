@@ -6,11 +6,40 @@ name = "maister-tracker-mcp"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+# Cron Trigger: keep the KV snapshot warm (~every 5 minutes). Optional — the
+# /mcp and /ask paths work without it (cold cache misses fall back to GAS).
+# Free plan allows up to 5 cron triggers per account; KV writes at this rate
+# (288/day) fit well inside the free 1,000 writes/day quota.
+crons = ["*/5 * * * *"]
+
+# KV namespace used as the READ snapshot cache (stores ONLY the redacted
+# projection, ~5 min freshness + stale-while-revalidate). Create once and
+# paste the returned id:
+#   npx wrangler kv namespace create MT_SNAPSHOT_KV
+# The binding NAME must stay MT_SNAPSHOT_KV. If you remove this block, the
+# server keeps working with a transparent no-cache passthrough.
+[[kv_namespaces]]
+binding = "MT_SNAPSHOT_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
 # Non-secret tunables (safe to keep as plain vars).
 [vars]
 MCP_RATE_LIMIT_PER_MIN = "120"
 MCP_LIST_CACHE_TTL_MS = "15000"
-MCP_GAS_TIMEOUT_MS = "8000"
+# 20000 ms: the cold GAS `list` takes ~6-19 s in production (8 s caused
+# MCP_TOOL_ERROR: NETWORK aborts on real calls).
+MCP_GAS_TIMEOUT_MS = "20000"
+
+# --- stage A: KV snapshot cache knobs (defaults shown) ---
+#MCP_SNAPSHOT_TTL_MS = "300000"     # fresh window, 5 min
+#MCP_SNAPSHOT_STALE_MS = "86400000" # max age still served when GAS fails
+
+# --- stage D: AI /ask (optional; absence never disables /mcp) ---
+#ASK_MODEL = "openai/gpt-oss-120b"        # default model
+#ASK_BEARER_TOKENS = "pwa:mt_...:read"    # optional separate token for the PWA;
+                                          # when absent, /ask accepts the MCP tokens
+# GROQ_API_KEY — ONLY via:  npx wrangler secret put GROQ_API_KEY
+# (never in this file, never in git, never in the frontend).
 
 # Secrets — set each one with:  npx wrangler secret put <NAME>
 #
