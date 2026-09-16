@@ -1,0 +1,42 @@
+# Example Cloudflare Workers configuration for the Maister-Tracker MCP server.
+# Copy to wrangler.toml and fill in your values. NEVER commit wrangler.toml
+# with real secrets — use `wrangler secret put` instead.
+
+name = "maister-tracker-mcp"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Non-secret tunables (safe to keep as plain vars).
+[vars]
+MCP_RATE_LIMIT_PER_MIN = "120"
+MCP_LIST_CACHE_TTL_MS = "15000"
+MCP_GAS_TIMEOUT_MS = "8000"
+
+# Secrets — set each one with:  npx wrangler secret put <NAME>
+#
+# 1) GAS_SYNC_URL
+#    The Google Apps Script Web App deployment URL (the same /exec endpoint the
+#    PWA uses as settings.scriptUrl for ticket sync).
+#
+# 2) GAS_SYNC_HMAC_SECRET
+#    The sync HMAC secret (>= 32 chars). MUST be the same secret the PWA stores
+#    encrypted in its settings vault — the GAS server validates signatures
+#    against exactly one shared secret.
+#
+# 3) MCP_BEARER_TOKENS
+#    Scoped bearer tokens for MCP clients. Format (entries separated by ";" or
+#    newlines, fields by ":"):
+#      name:token:scope
+#    Example:
+#      test-cli:mt_test_cli_0123456789abcdef0123456789abcdef:read
+#    Requirements: name [a-z0-9_-]{1,32}; token [A-Za-z0-9_-]{32,128};
+#    scope must be "read" in this READ-ONLY stage. Tokens are compared in
+#    constant time and never logged.
+#
+# OAuth 2.1 (required by some cloud clients, e.g. ChatGPT custom connectors)
+# is intentionally NOT implemented in this stage; the auth layer is a single
+# pluggable function (authenticate) so an OAuth resource-server layer can be
+# added in front of the same tool handlers without touching them.
+#
+# No D1/KV/R2 bindings are used in this stage: the server stores NO ticket
+# data — every read goes through to the existing GAS/Sheets contract.

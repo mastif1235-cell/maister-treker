@@ -1,0 +1,36 @@
+name: MCP Tests
+
+# Отдельный набор тестов MCP-проекта (mcp/): unit, интеграция, security и
+# паритет с приложением. Основной CI (Tests / E2E) не изменяется.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check (node --check every file)
+        working-directory: mcp
+        run: npm run check
+
+      - name: Run MCP tests
+        working-directory: mcp
+        run: npm test

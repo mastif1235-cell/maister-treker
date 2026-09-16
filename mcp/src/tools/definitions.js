@@ -1,0 +1,97 @@
+/* Tool definitions exposed to MCP clients. Every tool in this READ-ONLY stage
+   is annotated readOnlyHint:true / destructiveHint:false. Input schemas are
+   JSON Schema 2020-12 (the default dialect since spec 2025-11-25). */
+
+const DATE_ARG = {
+  type: 'string',
+  pattern: '^\\d{2}\\.\\d{2}\\.\\d{4}$',
+  description: 'Дата у форматі ДД.ММ.РРРР (як у застосунку).'
+};
+const LIMIT_ARG = {type:'integer', minimum:1, maximum:200, default:50, description:'Максимум заявок у відповіді (1..200).'};
+const OFFSET_ARG = {type:'integer', minimum:0, maximum:10000, description:'Зсув для посторінкового читання.'};
+
+export const TOOL_DEFINITIONS = [
+  {
+    name: 'list_tickets',
+    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна фільтрувати за діапазоном дат і тегами.',
+    inputSchema: {
+      type:'object', additionalProperties:false,
+      properties:{
+        date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
+        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'}),
+        tags: {type:'array', items:{type:'string'}, minItems:1, maxItems:20, description:'Фільтр за тегами: підходить заявка з хоча б одним із перелічених тегів.'},
+        limit: LIMIT_ARG,
+        offset: OFFSET_ARG
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'get_ticket',
+    description: 'Одна заявка за її id (повна структурована картка без приватних полів).',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['ticket_id'],
+      properties:{ ticket_id: {type:'string', minLength:1, maxLength:128, description:'id заявки (рядок).'} }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'search_tickets',
+    description: 'Пошук заявок тих самих полів, що й пошук у застосунку: текст заявки, дата, теги, місто, адреса, імʼя клієнта, сигнал ONU, цифри телефону (включно з додатковими номерами).',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['query'],
+      properties:{
+        query: {type:'string', minLength:1, maxLength:200, description:'Рядок пошуку.'},
+        date_from: Object.assign({}, DATE_ARG, {description:'Обмеження діапазону зліва (включно).'}),
+        date_to: Object.assign({}, DATE_ARG, {description:'Обмеження діапазону справа (включно).'}),
+        limit: LIMIT_ARG,
+        offset: OFFSET_ARG
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'get_tickets_by_date',
+    description: 'Усі заявки за конкретну дату (сортовані за часом, як список у застосунку).',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['date'],
+      properties:{ date: DATE_ARG }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'get_shifts',
+    description: 'Робочі зміни (напарники, години) за діапазон дат.',
+    inputSchema: {
+      type:'object', additionalProperties:false,
+      properties:{
+        date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
+        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'})
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'get_reports',
+    description: 'Поденні зведення за заявками в діапазоні: кількість, загальна сума, готівка, безготівка (та сама арифметика, що звіт у застосунку).',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['date_from', 'date_to'],
+      properties:{ date_from: DATE_ARG, date_to: DATE_ARG }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'get_statistics',
+    description: 'Агрегати за періодом як у звітах застосунку (day/week/month/all від дати-якоря): суми + розбивка за типом робіт і способом оплати. anchor_date за замовчуванням — найпізніша дата заявок у даних.',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['period'],
+      properties:{
+        period: {type:'string', enum:['day','week','month','all'], description:'day=день якоря; week=7 днів від якоря назад; month=календарний місяць якоря; all=усе.'},
+        anchor_date: Object.assign({}, DATE_ARG, {description:'Дата-якір періоду, ДД.ММ.РРРР.'})
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  }
+];
+
+export const TOOL_NAMES = TOOL_DEFINITIONS.map(function(def){ return def.name; });
