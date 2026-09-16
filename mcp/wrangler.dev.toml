@@ -1,0 +1,35 @@
+# ISOLATED DEV/PREVIEW Worker for real-world smoke tests of stages A+D.
+# This is a SEPARATE Worker (maister-tracker-mcp-dev) — production
+# (maister-tracker-mcp) is never touched by this file.
+#
+# One-time setup:
+#   1) create a KV namespace and paste its id below:
+#        npx.cmd wrangler kv namespace create MT_SNAPSHOT_KV
+#   2) npx.cmd wrangler deploy -c wrangler.dev.toml
+#   3) set secrets (same values as production unless noted):
+#        npx.cmd wrangler secret put MCP_BEARER_TOKENS    -c wrangler.dev.toml
+#        npx.cmd wrangler secret put ASK_BEARER_TOKENS    -c wrangler.dev.toml
+#        npx.cmd wrangler secret put GAS_SYNC_URL         -c wrangler.dev.toml
+#        npx.cmd wrangler secret put GAS_SYNC_HMAC_SECRET -c wrangler.dev.toml
+#        npx.cmd wrangler secret put GROQ_API_KEY         -c wrangler.dev.toml
+# NEVER put real secret values in this file (it is committed to git).
+
+name = "maister-tracker-mcp-dev"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# No cron on the dev Worker (minimal footprint): the snapshot is warmed
+# on demand — the first request after the fresh window falls through to
+# GAS and back-fills KV. Enable locally if you want cron behavior tested:
+# crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "MT_SNAPSHOT_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+MCP_RATE_LIMIT_PER_MIN = "120"
+MCP_LIST_CACHE_TTL_MS = "15000"
+# 20000 ms: cold GAS `list` takes ~6-19 s (same rationale as production).
+MCP_GAS_TIMEOUT_MS = "20000"
