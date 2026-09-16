@@ -417,6 +417,19 @@ async function editTelegramBackupTextMessage(ticket,chatId,messageId,text){
   const token=(settings.tgBotToken||'').trim(),data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/editMessageText`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,message_id:Number(messageId),text:String(text||'').slice(0,4000)})},ticket);
   return data.ok||/message is not modified/i.test(String(data.description||''));
 }
+/* v91.33: редагування JSON-документа НА МІСЦІ (editMessageMedia, document→
+   document) — позиція повідомлення в каналі не змінюється, блок заявки лишається
+   єдиним при редагуванні лише тексту/полів. Повторна загрузка того самого
+   вмісту ідемпотентна, тому окремого ambiguous-прапорця не потребує. */
+async function editTelegramBackupDocumentMessage(ticket,chatId,messageId,jsonBlob,filename){
+  const token=(settings.tgBotToken||'').trim(),form=new FormData();
+  form.append('chat_id',String(chatId));
+  form.append('message_id',String(Number(messageId)));
+  form.append('media',JSON.stringify({type:'document',media:'attach://document'}));
+  form.append('document',jsonBlob,filename);
+  const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/editMessageMedia`,{method:'POST',body:form},ticket);
+  return data.ok||/message is not modified/i.test(String(data.description||''));
+}
 // Серіалізуємо backup по stable id. Наступний запит завжди дістає заявку
 // наново з tickets уже після попереднього завершення: save/edit може замінити
 // tickets[idx] новим об'єктом, тож старе async-посилання не можна продовжувати.
@@ -465,6 +478,29 @@ async function backupTicketToTelegramNow(t){
   if(t.tgBackupAmbiguous===true)return false;
   t.tgBackupPending = true;
   await saveTicketsLocalOnly();
+  /* v91.33: Telegram НЕ ВМІЄ переміщувати повідомлення — усе, що надсилається
+     новим (sendMessage/sendMediaGroup/sendDocument), з'являється в КІНЦІ каналу.
+     Тому EDIT не можна робити «гибридно» (щось редагувати на старому місці, щось
+     дописувати в кінець): блок заявки візуально розривається — текст лишається
+     на позиції піврічної давнини, а нові фото опиняються ПІСЛЯ наступних заявок
+     (реальний кейс «Бахан Завоз LNET» від 16.09.2026). Якщо хоча б одну частину
+     доводиться створювати заново — переносимо ВСЮ копію в кінець ОДНИМ блоком:
+     новий розділювач + повний текст + медіа + JSON; СТАРА копія лишається
+     недоторканою до підтвердженого успіху, потім видаляється повністю.
+     In-place (без переносу) можливо лише коли ВСІ частини редагуються на місці:
+     фото не змінювались (альбом чіпати не треба), JSON є і вміє редагуватись
+     через editMessageMedia. */
+  const photosToSendNow = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
+  const photoKeysNow=photosToSendNow.map(String),savedPhotoKeysNow=(t.tgPhotoKeys||[]).map(String);
+  const reusedPhotosNow=photoKeysNow.length===savedPhotoKeysNow.length&&photoKeysNow.every((key,index)=>key===savedPhotoKeysNow[index])&&(t.tgPhotoMsgIds||[]).length===photoKeysNow.length;
+  const hasOldCopy=!!(t.tgSepMsgId||t.tgTextMsgId||t.tgPhotoMsgId||(t.tgPhotoMsgIds||[]).length||t.tgJsonMsgId);
+  const inPlacePossible=reusedPhotosNow&&!!t.tgJsonMsgId&&t.tgJsonInPlaceUnsupported!==true
+    /* незавершений перенос (є durable-знімок старого блоку) ОБОВ'ЯЗКОВО
+       докінчується переносом: інакше стара копія з знімка могла б лишитися
+       назавжди (наприклад, якщо користувач повернув фото назад після
+       kill/reload посередині переносу). */
+    &&!t.tgBackupMoveOldMsgIds;
+  const moveBlock=hasOldCopy&&!inPlacePossible;
   if(Array.isArray(t.tgBackupCleanupMsgIds)&&t.tgBackupCleanupMsgIds.length){
     // Повторюємо видалення лише для тих id, які ще можна видалити. Постійні
     // відмови Telegram (вік повідомлення, права в групі) не мають блокувати
@@ -501,7 +537,12 @@ async function backupTicketToTelegramNow(t){
     // того щоб чекати ще один ручний/автоматичний повтор. Для залишків
     // ПІСЛЯ успішного бекапу (tgBackedUp=true) поведінка незмінна: тільки
     // очистка, без повторної відправки.
-    if(retryIds.length>0||t.tgBackedUp===true)return retryIds.length===0;
+    // v91.33: після успішного бекапу (tgBackedUp=true) — тільки очистка, без
+    // повторної відправки. АЛЕ якщо копія потребує ПЕРЕНОСУ (змінені фото,
+    // блок треба будувати заново в кінці каналу) — продовжуємо повну спробу:
+    // інакше retry після невдалого переносу дочекався б ще одного ручного
+    // збереження, а заявка лишалася б старим блоком.
+    if(retryIds.length>0||(t.tgBackedUp===true&&!moveBlock))return retryIds.length===0;
   }
   // NEW: раніше СПОЧАТКУ видаляли стару копію заявки в групі, а вже ПОТІМ
   // відправляли нову — якщо зв'язок обривався саме між цими двома кроками
@@ -517,6 +558,7 @@ async function backupTicketToTelegramNow(t){
     tgPhotoMsgId: t.tgPhotoMsgId, tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
     tgJsonMsgId: t.tgJsonMsgId
   };
+
   // Поки новий текст, усі фото й JSON не підтверджені, стара повна копія
   // лишається робочою. Тому запам'ятовуємо також file_id та статус: при
   // частковій помилці повторна спроба не повинна втратити шлях до старих фото.
@@ -529,7 +571,8 @@ async function backupTicketToTelegramNow(t){
     tgPhotoMsgId: t.tgPhotoMsgId,
     tgPhotoMsgIds: (t.tgPhotoMsgIds||[]).slice(),
     tgJsonMsgId: t.tgJsonMsgId,
-    tgPhotoKeys:(t.tgPhotoKeys||[]).slice(),tgBackupCleanupMsgIds:(t.tgBackupCleanupMsgIds||[]).slice(),tgBackupAmbiguous:t.tgBackupAmbiguous===true
+    tgPhotoKeys:(t.tgPhotoKeys||[]).slice(),tgBackupCleanupMsgIds:(t.tgBackupCleanupMsgIds||[]).slice(),tgBackupAmbiguous:t.tgBackupAmbiguous===true,
+    tgBackupMoveOldMsgIds:t.tgBackupMoveOldMsgIds||null
   };
   const currentAttemptMsgIds = {
     tgSepMsgId:null, tgTextMsgId:null, tgPhotoMsgId:null,
@@ -542,24 +585,39 @@ async function backupTicketToTelegramNow(t){
     t.tgBackedUp = false;
     let sepOk = false;
     let textOk = false;
+    let reusedJson = false;
+    if(moveBlock&&!t.tgBackupMoveOldMsgIds){
+      /* v91.33: durable-знімок СТАРОГО блоку на старті переносу. Kill/reload
+         посередині переносу не губить старі id: підтверджені поля t можуть уже
+         вказувати на недобудований новий блок, а справжня стара копія чекає
+         тут — її видалить лише успішна спроба (або retry після неї). Знімок
+         НЕ перезаписується: після reload старі поля t вже вказують на
+         частковий новий блок, а не на справжню стару копію. */
+      t.tgBackupMoveOldMsgIds={tgSepMsgId:oldMsgIds.tgSepMsgId||null,tgTextMsgId:oldMsgIds.tgTextMsgId||null,tgPhotoMsgId:oldMsgIds.tgPhotoMsgId||null,tgPhotoMsgIds:(oldMsgIds.tgPhotoMsgIds||[]).slice(),tgJsonMsgId:oldMsgIds.tgJsonMsgId||null};
+      await saveTicketsLocalOnly();
+    }
 
     // 0) розділювач-заголовок — щоб у стрічці групи було одразу видно, де
     // закінчується одна заявка (2-3 повідомлення) і починається наступна
     if(t.content){
       const addr = [t.city, t.street, t.house].filter(Boolean).join(', ');
       const sepText = `➖➖➖➖➖➖➖➖➖➖\n🧾 ${(t.type||'ЗАЯВКА').toUpperCase()}${t.date? ' · '+t.date:''}${t.time? ' '+t.time:''}${addr? ' · '+addr:''}`;
-      if(oldMsgIds.tgSepMsgId){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgSepMsgId,sepText))throw new Error('TELEGRAM_EDIT_SEPARATOR_FAILED');sepOk=true;reusedSep=true;t.tgSepMsgId=oldMsgIds.tgSepMsgId;}
+      if(oldMsgIds.tgSepMsgId&&!moveBlock){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgSepMsgId,sepText))throw new Error('TELEGRAM_EDIT_SEPARATOR_FAILED');sepOk=true;reusedSep=true;t.tgSepMsgId=oldMsgIds.tgSepMsgId;}
       else{const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`, {method:'POST', headers:{'Content-Type':'application/json'},body: JSON.stringify({chat_id: chatId, text: sepText})},t);if(data.ok && data.result && data.result.message_id){sepOk=true;t.tgSepMsgId=data.result.message_id;currentAttemptMsgIds.tgSepMsgId=data.result.message_id;
         // Фікс v91.31: зберігаємо прогрес спроби після кожного підтвердженого
-        // повідомлення — kill/reload посередині відправки лишає відновлюваний
-        // слід, і наступна спроба РЕДАГУЄ ці повідомлення замість дублювання.
+        // повідомлення. v91.33: у режимі ПЕРЕНОСУ старий розділювач не
+        // редагуємо (він залишився б на старій позиції) — шлемо свіжий, а його
+        // id durably ще й у черзі очищення (НЕПІДТВЕРДЖЕНИЙ): kill/reload
+        // посередині переносу лишає недобудований блок, який наступна спроба
+        // прибере перед повторною відправкою; стара копія робоча.
+        if(moveBlock)t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),data.result.message_id])];
         await saveTicketsLocalOnly();}}
     }
     // 1) текст — повна версія, включно з приватною міткою/геолокацією/логіном-паролем
     if(t.content){
       const text = buildTelegramBackupText(t).slice(0, 4000); // ліміт Telegram на текст повідомлення
-      if(oldMsgIds.tgTextMsgId){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgTextMsgId,text))throw new Error('TELEGRAM_EDIT_TEXT_FAILED');textOk=true;reusedText=true;t.tgTextMsgId=oldMsgIds.tgTextMsgId;}
-      else{const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text})},t);if(data.ok&&data.result&&data.result.message_id){textOk=true;t.tgTextMsgId=data.result.message_id;currentAttemptMsgIds.tgTextMsgId=data.result.message_id;await saveTicketsLocalOnly();}}
+      if(oldMsgIds.tgTextMsgId&&!moveBlock){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgTextMsgId,text))throw new Error('TELEGRAM_EDIT_TEXT_FAILED');textOk=true;reusedText=true;t.tgTextMsgId=oldMsgIds.tgTextMsgId;}
+      else{const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text})},t);if(data.ok&&data.result&&data.result.message_id){textOk=true;t.tgTextMsgId=data.result.message_id;currentAttemptMsgIds.tgTextMsgId=data.result.message_id;if(moveBlock)t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),data.result.message_id])];await saveTicketsLocalOnly();}}
     }
     // 2) фото — v91.32: 2–10 фото йдуть ОДНИМ sendMediaGroup (Telegram-альбом,
     //    підпис із датою/адресою лише на першому елементі — повний текст заявки
@@ -580,7 +638,12 @@ async function backupTicketToTelegramNow(t){
     // відправки). Через це повторний бекап/відновлення другого-третього фото
     // мовчки не спрацьовував би, якщо локальна копія загубилась.
     const prevTgPhotoFileIds = t.tgPhotoFileIds || [];
-    reusedPhotos=photoKeys.length===savedPhotoKeys.length&&photoKeys.every((key,index)=>key===savedPhotoKeys[index])&&(oldMsgIds.tgPhotoMsgIds||[]).length===photoKeys.length;
+    /* v91.33: у режимі ПЕРЕНОСУ альбом завжди будується заново в кінці нового
+       блоку — навіть якщо ключі фото не змінювались (наприклад, перенос
+       спричинений недоступним editMessageMedia): «перевикористаний» старий
+       альбом було б ВИДАЛЕНО разом зі старим блоком, і заявка лишилась би
+       без фото в архіві. */
+    reusedPhotos=reusedPhotosNow&&!moveBlock;
     /* Фікс v91.31 (реальний EDIT-кейс, скриншоти «Золотоосіння»): підтверджені
        tgPhotoMsgIds/tgPhotoFileIds НЕ витираються на час спроби. Раніше wipe на
        старті спроби + kill/reload посередині відправки назавжди втрачали
@@ -669,12 +732,31 @@ async function backupTicketToTelegramNow(t){
     // відбулись, — успішні).
     const photosOk = reusedPhotos||(photoSendAttempts === photosToSend.length && attemptPhotoMsgIds.length === photosToSend.length);
     // 3) повний JSON-знімок УСІХ полів заявки — окремим файлом, це і є
-    // "повний бекап" (а не лише те, що влізло в короткий текст вище)
+    // "повний бекап" (а не лише те, що влізло в короткий текст вище).
+    // v91.33: якщо блок лишається НА МІСЦІ (фото не змінювались) — JSON
+    // редагується on place через editMessageMedia: інакше щосбереження
+    // новий JSON опинявся б у самому низу каналу ПІСЛЯ наступних заявок і
+    // блок заявки розривався. У режимі ПЕРЕНОСУ — свіжий sendDocument у
+    // кінець нового блоку (id durably в черзі очищення до успіху).
     let jsonOk = false;
     try{
       const jsonTicket = typeof securityStripSystemSecrets==='function' ? securityStripSystemSecrets(t) : {...t};
       delete jsonTicket.tgBackupPending;
       const jsonBlob = new Blob([JSON.stringify(jsonTicket, null, 2)], {type:'application/json'});
+      if(oldMsgIds.tgJsonMsgId&&!moveBlock){
+        const edited = await editTelegramBackupDocumentMessage(t,chatId,oldMsgIds.tgJsonMsgId,jsonBlob,`ticket-${t.id}.json`);
+        if(edited){
+          jsonOk = true; reusedJson = true;
+          t.tgJsonMsgId = oldMsgIds.tgJsonMsgId;
+          await saveTicketsLocalOnly();
+        }else{
+          // Постійна відмова in-place редагування (наприклад, метод недоступний
+          // для цього бота): запам'ятовуємо durably — наступні спроби підуть
+          // ПОВНИМ переносом блоку (без розривів і без вічно невдалих спроб).
+          t.tgJsonInPlaceUnsupported = true;
+          await saveTicketsLocalOnly();
+        }
+      }else{
       const form = new FormData();
       form.append('chat_id', chatId);
       form.append('document', jsonBlob, `ticket-${t.id}.json`);
@@ -683,7 +765,9 @@ async function backupTicketToTelegramNow(t){
         jsonOk = true;
         t.tgJsonMsgId = data.result.message_id;
         currentAttemptMsgIds.tgJsonMsgId = data.result.message_id;
+        if(moveBlock)t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),data.result.message_id])];
         await saveTicketsLocalOnly(); // фікс v91.31
+      }
       }
     }catch(e){
       if(e && e.telegramAmbiguous) throw e;
@@ -694,12 +778,26 @@ async function backupTicketToTelegramNow(t){
     // цієї заявки) — deleteTicketTelegramMessages просто нічого не робить.
     if(sepOk && textOk && photosOk && jsonOk){
       t.tgBackedUp = true;
-      const obsolete={tgSepMsgId:reusedSep?null:oldMsgIds.tgSepMsgId,tgTextMsgId:reusedText?null:oldMsgIds.tgTextMsgId,tgPhotoMsgIds:reusedPhotos?[]:oldMsgIds.tgPhotoMsgIds,tgJsonMsgId:oldMsgIds.tgJsonMsgId};
+      // v91.33: у режимі ПЕРЕНОСУ видаляємо СТАРИЙ блок ЦІЛИКОМ — за durable-
+      // знімком (id старої копії), бо поточні поля t уже вказують на новий
+      // блок. reused-частини (in-place редагування) зі списку видалення
+      // виключаються, як і раніше.
+      const obsolete=moveBlock
+        ?t.tgBackupMoveOldMsgIds
+        :{tgSepMsgId:reusedSep?null:oldMsgIds.tgSepMsgId,tgTextMsgId:reusedText?null:oldMsgIds.tgTextMsgId,tgPhotoMsgIds:reusedPhotos?[]:oldMsgIds.tgPhotoMsgIds,tgJsonMsgId:reusedJson?null:oldMsgIds.tgJsonMsgId};
       const cleanup=await deleteTicketTelegramMessages(obsolete,token,chatId);t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),...cleanup.failedIds])];
       // фікс v91.31: підтверджений стан фото підміняється ТІЛЬКИ тут. id нової
       // спроби виходять із черги очищення (вони вже не сміття, а чинні фото).
       if(!reusedPhotos){t.tgPhotoMsgIds=attemptPhotoMsgIds;t.tgPhotoFileIds=attemptPhotoFileIds;}
-      t.tgBackupCleanupMsgIds=(t.tgBackupCleanupMsgIds||[]).filter(id=>!attemptPhotoMsgIds.includes(Number(id)));
+      // v91.33: із черги очищення виходять УСІ підтверджені id цього блоку
+      // (альбом і, при переносі, нові sep/текст/JSON; при in-place — старий
+      // JSON, який тепер відредагований на місці).
+      const confirmedNowIds=[...attemptPhotoMsgIds];
+      if(moveBlock||reusedJson){
+        [t.tgSepMsgId,t.tgTextMsgId,t.tgJsonMsgId].forEach(v=>{if(v)confirmedNowIds.push(Number(v));});
+      }
+      t.tgBackupCleanupMsgIds=(t.tgBackupCleanupMsgIds||[]).filter(id=>!confirmedNowIds.includes(Number(id)));
+      if(moveBlock)t.tgBackupMoveOldMsgIds=null;
       // старі поля лишаються дублікатом першого фото — для сумісності зі старим кодом
       t.tgPhotoFileId = (t.tgPhotoFileIds && t.tgPhotoFileIds[0]) || null;
       t.tgPhotoMsgId = (t.tgPhotoMsgIds && t.tgPhotoMsgIds[0]) || null;
