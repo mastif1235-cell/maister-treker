@@ -303,7 +303,8 @@ function telegramDeleteFailureIsPermanent(response, data){
   return /can't be deleted|not enough rights|message_id_invalid|chat_admin_required|bot was kicked|forbidden/i.test(description);
 }
 async function deleteTicketTelegramMessages(t, token, chatId){
-  // NEW: tgPhotoMsgIds — усі повідомлення з фото (до 3), tgPhotoMsgId лишається
+  // tgPhotoMsgIds — усі повідомлення з фото (з v91.32 — включно з альбомами
+  // sendMediaGroup по до 10 id за chunk), tgPhotoMsgId лишається
   // як дублікат першого для сумісності зі старими заявками, тож не дублюємо його
   // в списку, якщо він вже є в масиві.
   const photoIds = (t.tgPhotoMsgIds && t.tgPhotoMsgIds.length) ? t.tgPhotoMsgIds : [t.tgPhotoMsgId].filter(Boolean);
@@ -353,7 +354,11 @@ async function fetchWithRetry(url, opts, retries=1){
   try{
     return await fetch(url, {...opts, signal: controller.signal});
   }catch(e){
-    if(/\/send(?:Message|Photo|Document)(?:\?|$)/i.test(url)){e.telegramAmbiguous=navigator.onLine!==false;throw e;}
+    // sendMediaGroup додає альбом ЦІЛІКОМ однією відповіддю — але так само, як
+    // sendPhoto/sendMessage/sendDocument, відповідь може загубитися в дорозі:
+    // без прапорця ambiguous такий обрив призводив би до другого альбому поруч
+    // зі старим після ручного повтору.
+    if(/\/send(?:Message|Photo|Document|MediaGroup)(?:\?|$)/i.test(url)){e.telegramAmbiguous=navigator.onLine!==false;throw e;}
     if(retries<=0) throw e;
     await new Promise(r=>setTimeout(r, 800));
     return fetchWithRetry(url, opts, retries-1);
@@ -556,9 +561,15 @@ async function backupTicketToTelegramNow(t){
       if(oldMsgIds.tgTextMsgId){if(!await editTelegramBackupTextMessage(t,chatId,oldMsgIds.tgTextMsgId,text))throw new Error('TELEGRAM_EDIT_TEXT_FAILED');textOk=true;reusedText=true;t.tgTextMsgId=oldMsgIds.tgTextMsgId;}
       else{const data=await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text})},t);if(data.ok&&data.result&&data.result.message_id){textOk=true;t.tgTextMsgId=data.result.message_id;currentAttemptMsgIds.tgTextMsgId=data.result.message_id;await saveTicketsLocalOnly();}}
     }
-    // 2) фото — NEW: усі фото заявки (до 3), а не лише перше. Шлемо по черзі
-    // окремими повідомленнями (Telegram sendPhoto — одне фото за раз), кожне
-    // з підписом і номером (1/3, 2/3...), щоб було видно, що це саме ця заявка.
+    // 2) фото — v91.32: 2–10 фото йдуть ОДНИМ sendMediaGroup (Telegram-альбом,
+    //    підпис із датою/адресою лише на першому елементі — повний текст заявки
+    //    і так летить окремим повідомленням вище). Понад 10 — chunks по 10
+    //    (останній самотній чанк-з одне фото йде звичайним sendPhoto зі
+    //    глобальною нумерацією (i/n)); одне фото — як і раніше один sendPhoto.
+    //    Durable-механіка v91.31 НЕЗМІННА: id кожного доставленого повідомлення
+    //    одразу потрапляють у чергу очищення як НЕПІДТВЕРДЖЕНІ (kill/reload
+    //    після альбому лишає відновлюваний слід), підтверджені tgPhotoMsgIds/
+    //    tgPhotoFileIds не рухаються до успіху ВСІЄЇ спроби.
     const photosToSend = (t.photos && t.photos.length) ? t.photos : (t.photo ? [t.photo] : []);
     const photoKeys=photosToSend.map(String),savedPhotoKeys=(t.tgPhotoKeys||[]).map(String);
     // NEW: раніше запасний Telegram file_id (на випадок, якщо локальної копії
@@ -579,29 +590,74 @@ async function backupTicketToTelegramNow(t){
        підтверджений стан підміняється тільки після успіху всієї спроби. */
     const attemptPhotoFileIds=[],attemptPhotoMsgIds=[];
     let photoSendAttempts = 0; // NEW: скільки фото реально намагались відправити (є локальна копія/fallback)
-    for(let pi=0; pi<photosToSend.length&&!reusedPhotos; pi++){
-      const fallbackId = prevTgPhotoFileIds[pi] || (pi===0 ? previousPrimaryPhotoFileId : null);
-      const photoData = await resolvePhotoAsync(photosToSend[pi], fallbackId);
-      if(!photoData) continue;
-      photoSendAttempts++;
-      const blob = await photoSourceToBlob(photoData);
-      const form = new FormData();
-      form.append('chat_id', chatId);
-      const caption = `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim();
-      form.append('caption', (photosToSend.length>1 ? `${caption} (${pi+1}/${photosToSend.length})` : caption).slice(0,1020));
-      form.append('photo', blob, 'foto.jpg');
-      const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form},t);
-      if(data.ok && data.result && data.result.message_id){
-        const sizes = data.result.photo || [];
-        const fileId = sizes.length ? sizes[sizes.length-1].file_id : null; // найбільший варіант — для повноцінного відновлення
-        attemptPhotoFileIds.push(fileId);
-        attemptPhotoMsgIds.push(data.result.message_id);
-        currentAttemptMsgIds.tgPhotoMsgIds.push(data.result.message_id);
-        // фікс v91.31: прогрес durably, але як НЕПІДТВЕРДЖЕНИЙ — id одразу в
-        // чергу очищення: якщо спроба помре (kill/reload), наступна спроба
-        // прибере це повідомлення перед повторною відправкою. Підтверджений
-        // tgPhotoMsgIds не рухається до успіху всієї спроби.
-        t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),data.result.message_id])];
+    const photoCaptionBase = `${t.date||''} ${t.time||''} ${t.city||''} ${t.street||''} ${t.house||''}`.trim();
+    let photoCursor=0;
+    while(photoCursor<photosToSend.length&&!reusedPhotos){
+      // Збираємо chunk до 10 фото (ліміт sendMediaGroup); фото без локальної
+      // копії пропускається, як і раніше — тоді photosOk не зійдеться і спроба
+      // чесно невдала (cleanup прибере доставлене).
+      const chunk=[];
+      while(photoCursor<photosToSend.length&&chunk.length<10){
+        const fallbackId = prevTgPhotoFileIds[photoCursor] || (photoCursor===0 ? previousPrimaryPhotoFileId : null);
+        const photoData = await resolvePhotoAsync(photosToSend[photoCursor], fallbackId);
+        if(photoData){
+          const blob = await photoSourceToBlob(photoData);
+          chunk.push({blob,index:photoCursor});
+        }
+        photoCursor++;
+      }
+      if(!chunk.length)continue;
+      photoSendAttempts+=chunk.length;
+      let delivered=[];
+      try{
+        if(chunk.length===1){
+          // Одинице фото (заявка з 1 фото або «хвостовий» чанк після 10/20…) —
+          // звичайний sendPhoto; нумерація (i/n) глобальна по всій спробі.
+          const idx=chunk[0].index;
+          const caption=(photosToSend.length>1?`${photoCaptionBase} (${idx+1}/${photosToSend.length})`:photoCaptionBase).slice(0,1020);
+          const form = new FormData();
+          form.append('chat_id', chatId);
+          form.append('caption', caption);
+          form.append('photo', chunk[0].blob, 'foto.jpg');
+          const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendPhoto`, {method:'POST', body: form},t);
+          if(data.ok && data.result && data.result.message_id){
+            const sizes = data.result.photo || [];
+            delivered=[{messageId:data.result.message_id,fileId:sizes.length?sizes[sizes.length-1].file_id:null}];
+          }
+        }else{
+          // Альбом: media — JSON-масив InputMediaPhoto з attach://-посиланнями
+          // на поля форми photo<глобальний індекс>. Підпис — лише на першому
+          // елементі; Telegram повертає МАСИВ Message — зберігаємо КОЖЕН
+          // message_id (фото далі обробляються індивідуально: cleanup, edit,
+          // відновлення file_id — усе працює як раніше).
+          const media=chunk.map((item,i)=>(i===0
+            ?{type:'photo',media:`attach://photo${item.index}`,caption:photoCaptionBase.slice(0,1020)}
+            :{type:'photo',media:`attach://photo${item.index}`}));
+          const form=new FormData();
+          form.append('chat_id', chatId);
+          form.append('media', JSON.stringify(media));
+          chunk.forEach(item=>form.append(`photo${item.index}`, item.blob, 'foto.jpg'));
+          const data = await telegramBackupFetchJson(`https://api.telegram.org/bot${token}/sendMediaGroup`, {method:'POST', body: form},t);
+          if(data.ok && Array.isArray(data.result)){
+            delivered=data.result.map(msg=>{
+              const sizes=msg.photo||[];
+              return{messageId:msg.message_id,fileId:sizes.length?sizes[sizes.length-1].file_id:null};
+            }).filter(msg=>msg.messageId);
+          }
+        }
+      }catch(e){
+        if(e&&e.telegramAmbiguous)throw e;
+        globalThis.MTSafeError?.reportError?.(e,{scope:'telegram-photo-backup'});
+      }
+      if(delivered.length===chunk.length){
+        // Durable-прогрес v91.31 без змін: кожен доставлений id — у чергу
+        // очищення як НЕПІДТВЕРДЖЕНИЙ + збереження після кожного чанка.
+        delivered.forEach((d,i)=>{
+          attemptPhotoFileIds.push(d.fileId);
+          attemptPhotoMsgIds.push(d.messageId);
+          currentAttemptMsgIds.tgPhotoMsgIds.push(d.messageId);
+          t.tgBackupCleanupMsgIds=[...new Set([...(t.tgBackupCleanupMsgIds||[]),d.messageId])];
+        });
         await saveTicketsLocalOnly();
       }
     }

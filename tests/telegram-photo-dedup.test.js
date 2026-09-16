@@ -1,9 +1,11 @@
 'use strict';
-/* Регресія v91.31: дедуплікація Telegram-фотографій заявки.
+/* Регресія v91.31 (розширена v91.32): дедуплікація Telegram-фотографій заявки.
    Харнест виконує РЕАЛЬНИЙ js/photo-telegram-domain.js (vm) і рахує всі
-   виклики Telegram API (sendMessage/sendPhoto/sendDocument/deleteMessage/
-   editMessageText). Група-архів — спільна Map, «reload» — новий контекст на
-   останньому durable-знімку (saveTicketsLocalOnly) з тією самою групою.
+   виклики Telegram API (sendMessage/sendPhoto/sendMediaGroup/sendDocument/
+   deleteMessage/editMessageText). З v91.32 2–10 фото летять ОДНИМ sendMediaGroup
+   (альбом), >10 — chunks по 10; гарантії дедуплікації незмінні. Група-архів —
+   спільна Map, «reload» — новий контекст на останньому durable-знімку
+   (saveTicketsLocalOnly) з тією самою групою.
    Гарантії, які фіксує файл:
      - кожна фотографія заявки доставляється в групу рівно один раз
        (поза «подвійними ключами», які задані у самій заявці навмисно);
@@ -46,6 +48,21 @@ function makeWorld({ticket,live,startId=100}){
         world.apiLog.push({endpoint:'editMessageText',id:body.message_id});
         if(!world.live.has(body.message_id))return response({ok:false,description:'message to edit not found'},400);
         return response({ok:true,result:{message_id:body.message_id}});
+      }
+      if(/\/sendMediaGroup$/.test(url)){
+        // v91.32: альбом = одна відповідь-МАСИВ Message; індекси фото беруться
+        // з полів attach://photo<глобальний індекс> (їх виставляє production).
+        const media=JSON.parse(opts.body.get('media'));
+        const idxs=media.map(item=>Number(String(item.media).replace('attach://photo','')));
+        world.apiLog.push({endpoint:'sendMediaGroup',photoIndexes:idxs});
+        if(idxs.some(i=>world.hangPhotoIndex===i+1))return new Promise(()=>{}); // «застосунок убито» під час відправки альбому
+        if(idxs.some(i=>world.sendPhotoNetworkFailOnce.has(i+1))){idxs.forEach(i=>world.sendPhotoNetworkFailOnce.delete(i+1));throw new Error('fetch failed');}
+        if(idxs.some(i=>world.sendPhotoFailOnce.has(i+1))){idxs.forEach(i=>world.sendPhotoFailOnce.delete(i+1));return response({ok:false,error_code:500,description:'Internal Server Error'},500);}
+        const msgs=idxs.map(idx=>{
+          const id=++nextId;world.live.set(id,{kind:'photo',photoIndex:idx+1,caption:idxs[0]===idx?String(media[0].caption||''):''});
+          return{message_id:id,photo:[{file_id:'fid-'+id}]};
+        });
+        return response({ok:true,result:msgs});
       }
       if(/\/sendPhoto$/.test(url)){
         const caption=String(opts.body.get('caption')||'');
@@ -90,24 +107,29 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
     assert.equal(sends(world,'sendPhoto')[0].photoIndex,1,'1: single photo has no (i/n) split caption');
   }
 
-  /* 2. Кілька фото (3): три sendPhoto, підписи 1/3..3/3, по одній копії. */
+  /* 2. Кілька фото (3): ОДИН sendMediaGroup-альбом, порядок 1→2→3, по одній
+        копії; підпис із датою/адресою лише на першому елементі, без (i/n). */
   {
     const ticket={...TICKET_BASE,id:'p3',photos:['idb:a','idb:b','idb:c']};
     const {context,world}=makeWorld({ticket});
     assert.equal(await context.backupTicketToTelegramNow(ticket),true,'2: three-photo backup succeeds');
-    assert.deepEqual(sends(world,'sendPhoto').map(call=>call.photoIndex),[1,2,3],'2: sequential sendPhoto 1..3');
+    assert.equal(sends(world,'sendPhoto').length,0,'2: no per-photo sendPhoto for an album');
+    assert.deepEqual(sends(world,'sendMediaGroup').map(call=>call.photoIndexes),[[0,1,2]],'2: one media group, photos in ticket order');
     assert.deepEqual(summarize(world.live),{sep:1,text:1,'photo:1':1,'photo:2':1,'photo:3':1,json:1},'2: single copy of every message');
-    assert.ok([...world.live.values()].every(info=>info.kind!=='photo'||/\(1\/3\)|\(2\/3\)|\(3\/3\)/.test(info.caption)),'2: split captions present');
+    const infos=[...world.live.values()].filter(info=>info.kind==='photo');
+    assert.ok(/15\.09\.2026.*Слобожанський/.test(infos[0].caption)&&!/\(\d\/\d\)/.test(infos[0].caption),'2: album caption is the date/address line, no (i/n) split');
+    assert.ok(infos.slice(1).every(info=>!info.caption),'2: caption only on the first album element');
   }
 
-  /* 3. Понад ліміт media group (10 фото): sendMediaGroup не існує, 10 sendPhoto, жодних дублів. */
+  /* 3. Рівно 10 фото: межа sendMediaGroup — все ще ОДИН альбом, без sendPhoto. */
   {
     const ticket={...TICKET_BASE,id:'p10',photos:Array.from({length:10},(_,i)=>'idb:m'+i)};
     const {context,world}=makeWorld({ticket});
     assert.equal(await context.backupTicketToTelegramNow(ticket),true,'3: 10-photo backup succeeds');
-    assert.equal(sends(world,'sendPhoto').length,10,'3: ten sendPhoto calls, one per photo');
+    assert.equal(sends(world,'sendMediaGroup').length,1,'3: ten photos fit in ONE media group (Telegram limit)');
+    assert.deepEqual(sends(world,'sendMediaGroup')[0].photoIndexes,Array.from({length:10},(_,i)=>i),'3: all ten photos in ticket order');
+    assert.equal(sends(world,'sendPhoto').length,0,'3: no sendPhoto fallback at the exact limit');
     assert.equal(photoCount(world.live),10,'3: ten photo messages, each once');
-    assert.equal(sends(world,'sendMediaGroup').length,0,'3: no media-group batching exists to miscount chunks');
   }
 
   /* 4. Дублікати photo key у самій заявці: надсилаються навмисно (як локально),
@@ -116,9 +138,9 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
     const ticket={...TICKET_BASE,id:'dup',photos:['idb:same','idb:same']};
     const {context,world}=makeWorld({ticket});
     assert.equal(await context.backupTicketToTelegramNow(ticket),true,'4: duplicate-key backup succeeds');
-    assert.equal(sends(world,'sendPhoto').length,2,'4: both entries sent deliberately (mirrors the ticket)');
+    assert.equal(sends(world,'sendMediaGroup').length,1,'4: both entries sent deliberately (mirrors the ticket)');
     await context.backupTicketToTelegramNow(ticket);
-    assert.equal(sends(world,'sendPhoto').length,2,'4: retry reuses the confirmed copy — no multiplication');
+    assert.equal(sends(world,'sendMediaGroup').length,1,'4: retry reuses the confirmed copy — no multiplication');
   }
 
   /* 5. Double tap: два паралельні виклиКИ через реальний шлях UI
@@ -129,7 +151,7 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
     const {context,world}=makeWorld({ticket});
     const results=await Promise.all([context.backupTicketToTelegram(ticket),context.backupTicketToTelegram(ticket)]);
     assert.deepEqual(results,[true,true],'5: double tap — both queued runs settle');
-    assert.equal(sends(world,'sendPhoto').length,2,'5: double tap sends each photo exactly once');
+    assert.equal(sends(world,'sendMediaGroup').length,1,'5: double tap sends each photo exactly once (one album)');
     assert.deepEqual(summarize(world.live),{sep:1,text:1,'photo:1':1,'photo:2':1,json:1},'5: single set remains');
   }
 
@@ -167,7 +189,7 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
     world.failDeletes=true; // та сама флапнувша мережа ламає і deleteMessage
     assert.equal(await context.backupTicketToTelegramNow(ticket),false,'8: partial attempt is not acknowledged');
     assert.ok(ticket.tgBackupCleanupMsgIds.length>0,'8: failed cleanups are durably tracked (was silently discarded in v91.30)');
-    const orphans=photoCount(world.live);
+    const orphans=world.live.size; // невдалі видалення лишили sep/текст у групі
     assert.equal(await context.backupTicketToTelegramNow(ticket),false,'8: still-failing network keeps the attempt unacknowledged');
     world.failDeletes=false;
     assert.equal(await context.backupTicketToTelegramNow(ticket),true,'8: converges after the network recovers');
@@ -195,24 +217,25 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
      знімка і ТАЄЇ Ж групи сходиться до одної копії кожного фото. */
   {
     const live=new Map(); // та сама Telegram-група для обох «запусків»
-    const before={...TICKET_BASE,id:'kill',photos:['idb:a','idb:b','idb:c']};
+    const before={...TICKET_BASE,id:'kill',photos:Array.from({length:11},(_,i)=>'idb:m'+i)};
     const w1=makeWorld({ticket:before,live});
-    w1.world.hangPhotoIndex=2;
-    const attempt=w1.context.backupTicketToTelegramNow(before); // «застосунок вбито» — не await
-    for(let i=0;i<2000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendPhoto'&&call.photoIndex===2));i++)await new Promise(r=>setTimeout(r,1));
-    assert.equal(photoCount(live),1,'10: first photo delivered before the kill');
+    w1.world.hangPhotoIndex=11; // «застосунок вбито» під час відправки другого chunkа (10+1)
+    const attempt=w1.context.backupTicketToTelegramNow(before); // не await
+    for(let i=0;i<3000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendMediaGroup'&&call.photoIndexes.includes(10)));i++)await new Promise(r=>setTimeout(r,1));
+    assert.equal(photoCount(live),10,'10: the first album (10 photos) was delivered before the kill');
     const persisted=w1.world.persistedSnapshots[w1.world.persistedSnapshots.length-1];
     /* Контракт v91.31 (після амендменту): підтверджений tgPhotoMsgIds НЕ
        рухається недоставленою спробою; доставлене фото durably лежить у
        черзі очищення як НЕПІДТВЕРДЖЕНЕ. Це все, що потрібно наступному
        запуску, щоб прибрати сироту перед повторною відправкою. */
     assert.ok((persisted.tgPhotoMsgIds||[]).length===0,'10: confirmed photo state is never overwritten by an unfinished attempt');
-    assert.ok(Array.isArray(persisted.tgBackupCleanupMsgIds)&&persisted.tgBackupCleanupMsgIds.length===1,'10: delivered photo is durably parked in the cleanup queue');
+    assert.ok(Array.isArray(persisted.tgBackupCleanupMsgIds)&&persisted.tgBackupCleanupMsgIds.length===10,'10: delivered album ids are durably parked in the cleanup queue');
     assert.ok(persisted.tgSepMsgId&&persisted.tgTextMsgId,'10: separator/text progress is durably persisted');
     const restored=JSON.parse(JSON.stringify(persisted));
     const w2=makeWorld({ticket:restored,live,startId:1000}); // reload: новий контекст, та сама група
     assert.equal(await w2.context.backupTicketToTelegramNow(restored),true,'10: post-reload retry succeeds');
-    assert.deepEqual(summarize(live),{sep:1,text:1,'photo:1':1,'photo:2':1,'photo:3':1,json:1},'10: reload+retry converges to a single copy of everything');
+    const expected={sep:1,text:1,json:1};for(let i=1;i<=11;i++)expected['photo:'+i]=1;
+    assert.deepEqual(summarize(live),expected,'10: reload+retry converges to a single copy of everything');
   }
 
   /* 11. Таймаут/обрив із втраченою відповіддю: неоднозначна доставка —
@@ -247,14 +270,14 @@ const photosOf=(world,idx)=>[...world.live.entries()].filter(([,info])=>info.kin
   }
 
   /* 14. Telegram backup/archive не робить другої відправки тих самих фото:
-     повторний виклик по незміненій підтвердженій заявці — жодного sendPhoto. */
+     повторний виклик по незміненій підтвердженій заявці — жодного альбому. */
   {
     const ticket={...TICKET_BASE,id:'idem',photos:['idb:a','idb:b']};
     const {context,world}=makeWorld({ticket});
     await context.backupTicketToTelegramNow(ticket);
-    const afterFirst=sends(world,'sendPhoto').length;
+    const afterFirst=sends(world,'sendMediaGroup').length;
     await context.backupTicketToTelegramNow(ticket); // повторний backup/archive
-    assert.equal(sends(world,'sendPhoto').length,afterFirst,'14: idempotent re-archive never re-sends confirmed photos');
+    assert.equal(sends(world,'sendMediaGroup').length,afterFirst,'14: idempotent re-archive never re-sends confirmed photos');
     assert.deepEqual(summarize(world.live),{sep:1,text:1,'photo:1':1,'photo:2':1,json:1},'14: archive still holds a single set');
   }
   console.log('PASS telegram photo dedup: single delivery per photo across partial failure, cleanup-failure, retry, kill/reload, ambiguous parking and idempotent re-archive');

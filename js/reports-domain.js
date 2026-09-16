@@ -219,13 +219,19 @@ async function runBulkImport(text){
   }
   return imported;
 }/* ---- Звіти ---- */
+let mtReportState={range:'day',anchor:null};
 function openReportModal(){
   openModal('Звіти', `
-    <div class="row wrap" style="margin-bottom:12px;">
-      <button class="btn btn-sm" data-rep="day">За день</button>
-      <button class="btn btn-sm" data-rep="week">За тиждень</button>
-      <button class="btn btn-sm" data-rep="month">За місяць</button>
-      <button class="btn btn-sm" data-rep="all">Всі</button>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+      <button class="btn" data-rep="day">За день</button>
+      <button class="btn" data-rep="week">За тиждень</button>
+      <button class="btn" data-rep="month">За місяць</button>
+      <button class="btn" data-rep="all">За весь час</button>
+    </div>
+    <div id="reportNavRow" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+      <button type="button" class="btn" id="reportPrevBtn" aria-label="Попередній період" style="flex:0 0 46px;">←</button>
+      <span id="reportPeriodLabel" style="flex:1; text-align:center; font-size:13.5px; font-weight:600; color:var(--text);"></span>
+      <button type="button" class="btn" id="reportNextBtn" aria-label="Наступний період" style="flex:0 0 46px;">→</button>
     </div>
     <label class="row" style="align-items:center; gap:8px; margin-bottom:10px; font-size:13px; color:var(--text-dim);">
       <input type="checkbox" id="reportFullToggle"> Повний текст кожної заявки (а не короткий рядок)
@@ -240,22 +246,37 @@ function openReportModal(){
       <button class="btn" id="shareReportBtn" style="flex:1 1 45%;">📤 Надіслати</button>
     </div>
   `, {onOpen:(body)=>{
-    let currentRange = 'day';
+    mtReportState={range:'day',anchor:currentTicketDate};
     body.querySelectorAll('[data-rep]').forEach(btn=>{
-      btn.onclick = ()=>{ currentRange = btn.dataset.rep; renderReport(currentRange); };
+      btn.onclick = ()=>{
+        mtReportState.range = btn.dataset.rep;
+        renderReport(mtReportState.range);
+      };
     });
-    document.getElementById('reportFullToggle').addEventListener('change', ()=> renderReport(currentRange));
-    document.getElementById('reportCommentInput').addEventListener('input', ()=> renderReport(currentRange));
+    // ←/→: зсув якоря на ±1 ОБРАНИЙ період; перерахунок одразу, без повторного
+    // натискання кнопки періоду чи перевідкриття модалки.
+    const shiftReport=(dir)=>{
+      if(mtReportState.range==='all')return;
+      mtReportState.anchor=shiftReportAnchor(mtReportState.range, mtReportState.anchor||currentTicketDate, dir);
+      renderReport(mtReportState.range);
+    };
+    document.getElementById('reportPrevBtn').addEventListener('click', ()=>shiftReport(-1));
+    document.getElementById('reportNextBtn').addEventListener('click', ()=>shiftReport(1));
+    document.getElementById('reportFullToggle').addEventListener('change', ()=> renderReport(mtReportState.range));
+    document.getElementById('reportCommentInput').addEventListener('input', ()=> renderReport(mtReportState.range));
     renderReport('day');
   }});
 }
 
 function renderReport(range){
-  const ref = parseDate(currentTicketDate);
+  // v91.32: усі періоди рахуються від якоря mtReportState.anchor (за замовчуванням
+  // — обрана дата заявок). Сам якір ←/→ зсувають; розрахунки сум не змінено.
+  const anchorStr = mtReportState.anchor || currentTicketDate;
+  const ref = parseDate(anchorStr);
   let list;
   let title;
   if(range==='day'){
-    list = ticketsForDate(currentTicketDate); title = `за ${currentTicketDate}`;
+    list = ticketsForDate(anchorStr); title = `за ${anchorStr}`;
   } else if(range==='week'){
     const start = new Date(ref); start.setDate(start.getDate() - 6);
     list = tickets.filter(t=>{ const d=parseDate(t.date); return d>=start && d<=ref; }); title = 'за останні 7 днів';
@@ -264,6 +285,10 @@ function renderReport(range){
   } else {
     list = [...tickets]; title = 'за весь час';
   }
+  const navRow=document.getElementById('reportNavRow');
+  if(navRow)navRow.style.display = range==='all' ? 'none' : 'flex';
+  const labelEl=document.getElementById('reportPeriodLabel');
+  if(labelEl)labelEl.textContent = reportPeriodLabel(range, anchorStr);
   list = list.sort((a,b)=> parseDate(a.date)-parseDate(b.date) || (a.time||'').localeCompare(b.time||''));
   const {count, total, cashTotal, cardTotal} = calculateTicketReportTotals(list);
   // NEW: суми окремо готівкою й безготівкою — щоб не рахувати вручну, скільки
