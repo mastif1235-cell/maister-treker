@@ -31,7 +31,7 @@ test('chat sends the documented request shape; key only in Authorization header'
   assert.equal(seen.body.tool_choice, 'auto');
   // gpt-oss on Groq: documented token param, no temperature by default,
   // reasoning hidden while tools are attached
-  assert.equal(seen.body.max_completion_tokens, 8192);
+  assert.equal(seen.body.max_completion_tokens, 4096);
   assert.equal(seen.body.max_tokens, undefined);
   assert.equal(seen.body.temperature, undefined);
   assert.equal(seen.body.reasoning_format, 'hidden');

@@ -34,8 +34,10 @@ export function createGroqClient(options){
      reasoning_format "parsed" or "hidden" when tools are used — "hidden"
      keeps reasoning out of the assistant messages we echo back in the tool
      loop. temperature is omitted unless set explicitly, so the model's
-     documented default applies. */
-  const maxTokens = Number(options.maxTokens) || 8192;
+     documented default applies. 4096 leaves ample room for hidden reasoning
+     plus a short data answer while halving the per-call completion reserve
+     (Groq free tier is 8000 TPM for this model). */
+  const maxTokens = Number(options.maxTokens) || 4096;
   const temperature = options.temperature == null ? null : Number(options.temperature);
   const reasoningFormat = String(options.reasoningFormat || 'hidden');
 

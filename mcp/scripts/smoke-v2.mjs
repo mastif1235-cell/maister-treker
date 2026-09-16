@@ -98,16 +98,41 @@ const mcp = (auth, body, sid) => req('/mcp', {
   const a0 = await req('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'тест' }) }, 30000);
   ok(a0.status === 401, '5/9 POST /ask no token -> 401', 'got ' + a0.status);
 
-  // 6-9. /ask with ASK token: cold/stale first, then KV-hit
+  // 6-9. /ask with ASK token: cold/stale first, then KV-hit.
+  // Groq free tier is ~8000 TPM -> 429s are EXPECTED between consecutive
+  // asks; they are quota, not backend errors. Retry with backoff, honoring
+  // the wait suggested in the sanitized detail when present.
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const retryAfterFrom = (text) => {
+    const m = /(\d{1,3})\s*(сек|sec)/i.exec(text || '');
+    return m ? Math.min(120, Number(m[1]) + 2) : null;
+  };
   const ask = async (q) => req('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AT }, body: JSON.stringify({ question: q }) });
-  const q1 = await ask('Сколько всего заявок и какая общая сумма по всем данным? Ответь одной короткой строкой.');
-  const q1j = json(q1.text) || {};
-  ok(q1j.ok === true, '6-7/9 /ask Q1 (cold/stale path + real Groq)', q1.status + ' ' + q1.ms + 's | ' + (q1j.ok ? 'rounds=' + (q1j.meta && q1j.meta.rounds) + ' tool_calls=' + JSON.stringify(q1j.meta && q1j.meta.tool_calls) + ' | ' + String(q1j.answer).slice(0, 250) : JSON.stringify(q1j).slice(0, 400)));
+  const askWithRetry = async (q, label) => {
+    let r, j;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      r = await ask(q);
+      j = json(r.text) || {};
+      if (j.ok === true) return { r, j, attempts: attempt };
+      const rateLimited = j.code === 'HTTP_429' || /rate limit/i.test(String(j.detail || ''));
+      if (!rateLimited || attempt === 3) return { r, j, attempts: attempt };
+      const waitSec = retryAfterFrom(j.detail) || 25 * attempt;
+      console.log('[wait] ' + label + ': Groq rate limit (attempt ' + attempt + '/3), retrying in ~' + waitSec + 's...');
+      await sleep(waitSec * 1000);
+    }
+    return { r, j, attempts: 3 };
+  };
 
-  const q2 = await ask('Разбей заявки по статусам с количеством. Ответь одной короткой строкой.');
-  const q2j = json(q2.text) || {};
-  const faster = q2j.ok === true && q2.ms < q1.ms;
-  ok(q2j.ok === true, '8-9/9 /ask Q2 (KV snapshot warm + real Groq)', q2.status + ' ' + q2.ms + 's (Q1 was ' + q1.ms + 's' + (faster ? ', faster => KV hit likely' : '') + ') | ' + (q2j.ok ? 'rounds=' + (q2j.meta && q2j.meta.rounds) + ' | ' + String(q2j.answer).slice(0, 250) : JSON.stringify(q2j).slice(0, 400)));
+  const q1 = await askWithRetry('Сколько всего заявок и какая общая сумма по всем данным? Ответь одной короткой строкой.', 'Q1');
+  const q1j = q1.j;
+  ok(q1j.ok === true, '6-7/9 /ask Q1 (cold/stale path + real Groq)', q1.r.status + ' ' + q1.r.ms + 's attempts=' + q1.attempts + ' | ' + (q1j.ok ? 'rounds=' + (q1j.meta && q1j.meta.rounds) + ' tool_calls=' + JSON.stringify(q1j.meta && q1j.meta.tool_calls) + ' | ' + String(q1j.answer).slice(0, 250) : JSON.stringify(q1j).slice(0, 400)));
+
+  console.log('[wait] pausing ~25s before the KV-warm repeat (Groq TPM window clears)...');
+  await sleep(25000);
+  const q2 = await askWithRetry('Разбей заявки по статусам с количеством. Ответь одной короткой строкой.', 'Q2');
+  const q2j = q2.j;
+  const faster = q2j.ok === true && q2.r.ms < q1.r.ms;
+  ok(q2j.ok === true, '8-9/9 /ask Q2 (KV snapshot warm + real Groq)', q2.r.status + ' ' + q2.r.ms + 's attempts=' + q2.attempts + ' (Q1 GAS-inclusive was ' + q1.r.ms + 's' + (faster ? ', faster => KV hit likely' : '') + ') | ' + (q2j.ok ? 'rounds=' + (q2j.meta && q2j.meta.rounds) + ' | ' + String(q2j.answer).slice(0, 250) : JSON.stringify(q2j).slice(0, 400)));
 
   console.log('\n===== SUMMARY: ' + pass + ' PASS, ' + fail + ' FAIL =====');
   process.exit(fail ? 1 : 0);
