@@ -47,6 +47,27 @@ test('happy path: one tool call -> tool result -> final answer', async () => {
   assert.deepEqual(record, [['list_tickets', {limit:5}]]);
 });
 
+test('tools sent to Groq use the OpenAI wire format (type/function/parameters)', async () => {
+  // Regression: raw MCP defs ({name, inputSchema}) made Groq reject the whole
+  // request with HTTP 400 "property 'type' is missing".
+  let seenTools = null;
+  const groq = {chat: async function(_messages, tools){ seenTools = tools; return finalResponse('ok'); }};
+  const orch = createAskOrchestrator({groq, tools:stubTools([]), toolDefs:TOOL_DEFINITIONS});
+  await orch.handle('тест');
+  assert.ok(Array.isArray(seenTools) && seenTools.length === TOOL_DEFINITIONS.length);
+  for(const tool of seenTools){
+    assert.equal(tool.type, 'function');
+    assert.ok(tool.function && typeof tool.function.name === 'string');
+    assert.ok(typeof tool.function.description === 'string' && tool.function.description.length > 0);
+    assert.equal(tool.function.parameters.type, 'object');
+    assert.equal(tool.inputSchema, undefined, 'MCP field inputSchema must not leak to Groq');
+    assert.equal(tool.annotations, undefined, 'MCP field annotations must not leak to Groq');
+  }
+  const byName = Object.fromEntries(seenTools.map(t => [t.function.name, t.function]));
+  assert.ok(byName.list_tickets && byName.get_statistics);
+  assert.deepEqual(byName.get_statistics.parameters.required, ['period']);
+});
+
 test('unknown tool name -> UNKNOWN_TOOL fed back, tool never executed', async () => {
   const record = [];
   const groq = scriptedGroq([

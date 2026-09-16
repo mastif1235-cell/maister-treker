@@ -45,6 +45,23 @@ export function createAskOrchestrator(options){
   const toolDefs = options.toolDefs;
   const limits = Object.assign({}, ASK_LIMITS, options.limits || {});
 
+  /* Groq/OpenAI wire format for tools: {type:'function', function:{name,
+     description, parameters}}. Our TOOL_DEFINITIONS are MCP-style
+     {name, description, inputSchema, annotations} — sending them raw makes
+     Groq reject the whole request with HTTP 400 "property 'type' is
+     missing". Convert once here; the allowlist/validation below keeps
+     working on the original MCP defs. */
+  const groqTools = toolDefs.map(function(def){
+    return {
+      type: 'function',
+      function: {
+        name: def.name,
+        description: String(def.description || ''),
+        parameters: def.inputSchema || {type:'object', properties:{}}
+      }
+    };
+  });
+
   function allowedDef(name){
     return toolDefs.find(function(def){ return def.name === name; }) || null;
   }
@@ -87,7 +104,7 @@ export function createAskOrchestrator(options){
     for(;;){
       if(rounds >= limits.maxRounds) return {ok:false, code:'TOO_MANY_ROUNDS', meta:{rounds, toolCallsMade}};
       rounds++;
-      const response = await groq.chat(messages, toolDefs);
+      const response = await groq.chat(messages, groqTools);
       if(!response.ok) return {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
       if(response.toolCalls.length){
         // Echo the assistant message back exactly as the API returned it

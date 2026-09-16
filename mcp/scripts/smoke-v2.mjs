@@ -89,7 +89,7 @@ const mcp = (auth, body, sid) => req('/mcp', {
   ok(tl.status === 200 && names.length === 7 && allRead, '3/9 tools/list -> exactly 7 READ tools', names.length + ' tools: ' + names.join(', '));
 
   // 4. get_statistics (real GAS data)
-  const st = await mcp(MT, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_statistics', arguments: {} } }, sid);
+  const st = await mcp(MT, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_statistics', arguments: { period: 'all' } } }, sid);
   const stj = json(st.text) || {};
   const stTxt = stj.result && stj.result.content ? JSON.stringify(stj.result.content).slice(0, 300) : st.text.slice(0, 300);
   ok(st.status === 200 && stj.result, '4/9 get_statistics', st.status + ' ' + st.ms + 's | ' + stTxt);
