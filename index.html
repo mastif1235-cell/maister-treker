@@ -685,6 +685,13 @@
         <button type="button" class="btn btn-accent btn-sm btn-block" id="tgRestoreOneBtn" style="margin-top:10px;">♻️ Відновити ОДНУ заявку з Telegram</button>
         <div style="font-size:11px; color:var(--text-faint); margin-top:4px;">Якщо заявку видалили на телефоні (і вона вже випала з Кошика нижче) — її можна повернути з архівної групи: там при кожній заявці лежить файл <span style="font-family:var(--mono); font-size:11px;">ticket-XXXXXXXXXXXXX.json</span> з усіма полями. Натисніть кнопку, вставте вміст цього файлу — і заявка з'явиться в застосунку знову.</div>
 
+        <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">🚨 Аварійне відновлення — повний снапшот</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Один JSON-файл із ВСІМА заявками (без фото-бінарників і системних секретів), закріплений у групі-архіві. Якщо телефон загублено/зламано або застосунок перевстановлено — бот знайде закріплений снапшот і поверне заявки (фото підтягнуться з групи за file_id).</div>
+        <button type="button" class="btn btn-sm btn-block" id="mtFullSnapshotCreateBtn">📸 Створити повний снапшот і закріпити</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:4px;">Спершу файл повністю надсилається і лише потім закріплюється. Попередній снапшот не видаляється — він лишається резервною точкою відновлення. Робіть це періодично, особливо після великих змін.</div>
+        <button type="button" class="btn btn-sm btn-block" id="mtFullSnapshotRestoreBtn" style="margin-top:10px;">♻️ Відновити з Telegram (повний снапшот)</button>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:4px;">Для чистого встановлення або нового телефону: заповніть цей самий токен і Chat ID архіву — застосунок знайде закріплений снапшот, покаже, скільки заявок нових/існуючих, і відновить їх з оригінальними id. Нічого не видаляє, нікуди повторно не надсилає.</div>
+
         <div style="font-weight:700; font-size:13.5px; margin:18px 0 6px;">3️⃣ Місячний звіт — раз на місяць, автоматично</div>
         <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">1-го числа кожного місяця бот сам надсилає вам особисто короткий звіт за щойно завершений місяць: скільки змін/годин, скільки заявок і на яку суму, яке обладнання і скільки встановлено.</div>
         <div class="field">
@@ -880,6 +887,7 @@
 <script src="js/reports-domain.js"></script>
 <script src="js/settings-domain.js"></script>
 <script src="js/photo-telegram-domain.js"></script>
+<script src="js/telegram-full-snapshot.js"></script>
 <script src="js/shifts-domain.js"></script>
 <script src="js/ticket-editor-domain.js"></script>
 <script src="js/ticket-editor-financial.js"></script>
