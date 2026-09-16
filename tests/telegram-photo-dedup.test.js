@@ -49,6 +49,14 @@ function makeWorld({ticket,live,startId=100}){
         if(!world.live.has(body.message_id))return response({ok:false,description:'message to edit not found'},400);
         return response({ok:true,result:{message_id:body.message_id}});
       }
+      if(/\/editMessageMedia$/.test(url)){
+        // v91.33: JSON редагується НА МІСЦІ (in-place блок без переносу)
+        const id=Number(opts.body.get('message_id'));
+        world.apiLog.push({endpoint:'editMessageMedia',id});
+        if(!world.live.has(id))return response({ok:false,description:'message to edit not found'},400);
+        world.live.set(id,{kind:'json'});
+        return response({ok:true,result:{message_id:id}});
+      }
       if(/\/sendMediaGroup$/.test(url)){
         // v91.32: альбом = одна відповідь-МАСИВ Message; індекси фото беруться
         // з полів attach://photo<глобальний індекс> (їх виставляє production).

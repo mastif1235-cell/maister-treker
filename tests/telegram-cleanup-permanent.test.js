@@ -19,7 +19,11 @@ function harness(options){
   const ticket = {
     id:'tg-clean', type:'Ремонт', date:'05.09.2026', time:'12:00', content:'backup text',
     photos:[], sum:0, tgBackedUp:true, tgBackupPending:true,
-    tgSepMsgId:11, tgTextMsgId:12, tgPhotoMsgId:13, tgPhotoMsgIds:[13], tgJsonMsgId:14,
+    /* v91.33: копія консистентна із заявкою (без фото — без фото-id): інакше
+     класифікація розцінила б це як «видалено фото» і зробила б повний
+     перенос блоку, а цей файл тестує саме CLEANUP-семантику підтвердженої
+     копії без перебудови. */
+    tgSepMsgId:11, tgTextMsgId:12, tgPhotoMsgId:null, tgPhotoMsgIds:[], tgJsonMsgId:14,
     tgBackupCleanupMsgIds:options.cleanupIds || [], tgBackupCleanupAttempts:{}, tgBackupStaleMsgIds:[]
   };
   const toasts = [];

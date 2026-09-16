@@ -48,7 +48,10 @@ function makeHarness({photo=true,failAt=''}){
 
   const c=makeHarness({});
   assert.equal(await c.context.backupTicketToTelegramNow(c.ticket),true,'TG-C complete attempt succeeds');
-  assert.deepEqual(c.oldIds.filter(id=>c.live.has(id)),[11,12],'TG-C reuses editable separator/text and removes replaced photo/JSON only after success');
+  /* v91.33: замінене фото => блок ПЕРЕНОСИТЬСЯ в кінець ціликом (жодна частина
+     не лишається редагованою на старій позиції — інакше блок розривався);
+     стара копія видаляється лише після підтвердженого успіху. */
+  assert.deepEqual(c.oldIds.filter(id=>c.live.has(id)),[],'TG-C moves the whole block (no in-place reuse) and deletes the old copy only after success');
   assert.equal(c.live.size,4,'TG-C keeps one logical separator/text/photo/JSON set');
   assert.equal(c.ticket.tgBackedUp,true);assert.equal(c.ticket.tgBackupPending,false);
 

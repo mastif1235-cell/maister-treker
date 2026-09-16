@@ -17,7 +17,7 @@ const TICKET={type:'ПІДКЛЮЧЕННЯ',date:'13.08.2026',time:'16:14',conte
 
 function makeWorld({ticket,live,startId=100}){
   let nextId=startId;
-  const world={apiLog:[],live:live||new Map(),persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),sendPhotoNetworkFailOnce:new Set(),jsonSoftFail:false,hangPhotoIndex:null};
+  const world={apiLog:[],live:live||new Map(),persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),sendPhotoNetworkFailOnce:new Set(),jsonSoftFail:false,jsonInPlaceFailPerm:false,hangPhotoIndex:null};
   const context={
     AbortController,Blob,FormData,atob:globalThis.atob,clearTimeout,setTimeout,
     console:{error(){},warn(){},log(){}},navigator:{onLine:true},
@@ -41,11 +41,20 @@ function makeWorld({ticket,live,startId=100}){
   // Підміни СТРОГО після runInContext (hoisting джерела перетирає попередні).
   context.resolvePhotoAsync=async()=>'data:image/jpeg;base64,AA==';
   context.fetchWithRetry=async function(url,opts){
-    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendMediaGroup|sendDocument|editMessageText)$/)?.[1];
+    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendMediaGroup|sendDocument|editMessageText|editMessageMedia)$/)?.[1];
     if(endpoint==='sendMessage'){
       const text=String(JSON.parse(opts.body).text);
       const id=++nextId,kind=/➖/.test(text)?'sep':'text';
       world.live.set(id,{kind});world.apiLog.push({endpoint:'sendMessage',kind});
+      return response({ok:true,result:{message_id:id}});
+    }
+    if(endpoint==='editMessageMedia'){
+      // v91.33: JSON редагується НА МІСЦІ (in-place блок без переносу)
+      const id=Number(opts.body.get('message_id'));
+      world.apiLog.push({endpoint:'editMessageMedia',id});
+      if(world.jsonInPlaceFailPerm)return response({ok:false,error_code:400,description:'Bad Request: there is no document in the message'},400);
+      if(!world.live.has(id))return response({ok:false,description:'message to edit not found'},400);
+      world.live.set(id,{kind:'json'});
       return response({ok:true,result:{message_id:id}});
     }
     if(endpoint==='editMessageText'){
@@ -127,12 +136,12 @@ const SINGLE_SET={sep:1,text:1,'photo:1':1,'photo:2':1,json:1};
     assert.deepEqual(summarize(live),SINGLE_SET,'E1: repeated saves stay idempotent (L)');
   }
 
-  /* E2 (C/E + J + I) — ТОЧНО СЦЕНАРІЙ СКРИНШОТІВ: замінено фото2 → спроба
-     надсилає обидва фото з підписами (1/2)(2/2), JSON падає м'яко (ok:false),
-     cleanup-видалення свіжих фото ловить 429 тієї ж флапнутої мережі.
-     v≤v91.30: результат cleanup викидався → вічні сироти (фото ×2).
-     v91.31: id у черзі очищення → наступна спроба СПЕРШУ прибирає сиріт і
-     лише потім продовжує; фінал — один набір. */
+  /* E2 (C/E + J + I) — РОЗВИТОК СЦЕНАРІЮ СКРИНШОТІВ для v91.33: замінено фото →
+     блок ПЕРЕНОСИТЬСЯ в кінець ЦІЛИКОМ (старий не редагується на місці — інакше
+     блок розривався: текст зверху, нові фото після наступних заявок).
+     Невдала спроба (JSON падає м'яко + deleteMessage 429 тієї ж мережі):
+     СТАРА копія ціла, недобудований новий блок durably у черзі очищення (R1);
+     retry прибирає сироти, будує повний новий блок і лише потім видаляє старий. */
   {
     const live=new Map();seedArchived(live);
     const t=archivedTicket('e2');
@@ -140,42 +149,43 @@ const SINGLE_SET={sep:1,text:1,'photo:1':1,'photo:2':1,json:1};
     t.photos=['idb:a','idb:new']; // заміна другого фото
     world.jsonSoftFail=true;world.failDeletes=true;
     assert.equal(await context.backupTicketToTelegramNow(t),false,'E2: partial attempt is not acknowledged');
-    assert.equal(photoCopies(live,1),2,'E2: reproduced the screenshot state — a second photo-1 copy appeared');
-    assert.equal(photoCopies(live,2),2,'E2: …and a second photo-2 copy (fresh album next to the old one)');
-    assert.ok([...live.values()].some(info=>info.kind==='photo'&&info.photoIndex===2&&info.caption===''),'E2: the fresh album carries no duplicated caption on every element (v91.32)');
-    assert.ok(t.tgBackupCleanupMsgIds.length>=2,'E2: orphan ids are durably tracked (R1 fix — was discarded before)');
-    const oldSetIds=[11,12,13,14,15];
-    assert.ok(oldSetIds.every(id=>live.has(id)),'E2: previous confirmed copy remains intact');
+    assert.equal(photoCopies(live,1),2,'E2: the delivered fresh album sits beside the old one — BUT it is parked, not lost (screenshot state)');
+    assert.equal(photoCopies(live,2),2,'E2: …for both photos of the album');
+    assert.ok([11,12,13,14,15].every(id=>live.has(id)),'E2: the whole previous copy remains while the new one is unfinished');
+    assert.equal(t.tgBackupCleanupMsgIds.length,4,'E2: the partial NEW block (sep+text+album×2) is durably parked for cleanup (R1 fix — was discarded in v91.30)');
     world.failDeletes=false;world.jsonSoftFail=false;
-    const sendPhotoBefore=sendPhotoCalls(world).length;
     assert.equal(await context.backupTicketToTelegramNow(t),true,'E2: recovery attempt succeeds');
-    assert.equal(sendPhotoCalls(world).length,sendPhotoBefore,'E2: the cleanup-first pass does NOT re-send photos');
-    assert.deepEqual(summarize(live),SINGLE_SET,'E2: archive converges to a single set — duplicates removed, none added');
-    assert.equal(photoCopies(live,1),1,'E2: exactly one (1/2) remains');
-    assert.equal(photoCopies(live,2),1,'E2: exactly one (2/2) remains');
+    assert.deepEqual([...live.keys()].sort((a,b)=>a-b).length,5,'E2: exactly five messages remain — one full block');
+    assert.ok(!live.has(11)&&!live.has(12)&&!live.has(13)&&!live.has(14)&&!live.has(15),'E2: the OLD block was fully deleted only after the new one was confirmed');
+    assert.deepEqual(summarize(live),SINGLE_SET,'E2: single consistent set (new sep/text/album/json)');
   }
 
-  /* E3 (K) — kill/reload посередині EDIT-збереження із заміною фото.
-     R2-фікс: підтверджені tgPhotoMsgIds переживають kill у durable-стані,
-     недоставлене фото — у черзі очищення; reload+retry сходиться до одного
-     набору (на коді до амендменту тут залишалось photo ×2). */
+  /* E3 (K) — kill/reload посередині ПЕРЕНОСУ блоку (EDIT із заміною фото).
+     v91.33: стара копія неушкоджена і durably знята у tgBackupMoveOldMsgIds;
+     недобудований новий блок (sep/текст) — у черзі очищення; підтверджені
+     tgPhotoMsgIds не перевертаються (R2). Reload+retry: cleanup-first прибирає
+     недобудований блок, будується повний новий, стара копія видаляється —
+     рівно один блок, порядок збережено. */
   {
     const live=new Map();seedArchived(live);
     const t=archivedTicket('e3');
     const w1=makeWorld({ticket:t,live});
     t.photos=['idb:a','idb:new'];
-    w1.world.hangPhotoIndex=2; // v91.32: обидва фото летять ОДИМ sendMediaGroup — kill під час його відповіді
+    w1.world.hangPhotoIndex=2; // обидва фото летять ОДИМ sendMediaGroup — kill під час його відповіді
     const attempt=w1.context.backupTicketToTelegramNow(t); // «застосунок вбито» — не await
     for(let i=0;i<3000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendMediaGroup'));i++)await new Promise(r=>setTimeout(r,1));
     assert.equal(photoCopies(live,1),1,'E3: kill happened before the fresh album was confirmed — no second copy');
     assert.equal(photoCopies(live,2),1,'E3: …for neither of the two photos');
     const persisted=w1.world.persistedSnapshots[w1.world.persistedSnapshots.length-1];
     assert.deepEqual((persisted.tgPhotoMsgIds||[]).sort(),[13,14],'E3: confirmed old photo ids survive the kill (R2 fix — were wiped before)');
-    assert.equal((persisted.tgBackupCleanupMsgIds||[]).length,0,'E3: nothing was delivered by the killed album request — nothing to park, zero orphans');
+    assert.equal((persisted.tgBackupCleanupMsgIds||[]).length,2,'E3: the unfinished new block (fresh sep+text) is durably parked for cleanup');
+    const mv=persisted.tgBackupMoveOldMsgIds;
+    assert.ok(mv&&[mv.tgSepMsgId,mv.tgTextMsgId].join()==='11,12'&&JSON.stringify([...(mv.tgPhotoMsgIds||[])].sort())==='[13,14]'&&mv.tgJsonMsgId===15,'E3: the TRUE old block is durably snapshotted (survives the reload, deleted only after success)');
     const restored=JSON.parse(JSON.stringify(persisted));
     const w2=makeWorld({ticket:restored,live,startId:1000}); // reload: новий контекст, та сама група
     assert.equal(await w2.context.backupTicketToTelegramNow(restored),true,'E3: first post-reload attempt succeeds');
-    assert.deepEqual(summarize(live),SINGLE_SET,'E3: reload converges to a single set — no photo ×2');
+    assert.deepEqual(summarize(live),SINGLE_SET,'E3: reload converges to a single set — no photo ×2, no double block');
+    assert.ok(!live.has(11)&&!live.has(12)&&!live.has(13)&&!live.has(14)&&!live.has(15),'E3: old block removed after the moved block was confirmed');
     assert.equal(await w2.context.backupTicketToTelegramNow(restored),true,'E3: subsequent save stays idempotent');
     assert.deepEqual(summarize(live),SINGLE_SET,'E3: single set after repeated saves');
   }

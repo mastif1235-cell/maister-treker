@@ -20,7 +20,7 @@ const TICKET_BASE={type:'Інтернет',date:'15.09.2026',time:'10:00',conten
 
 function makeWorld({ticket,live,startId=100}){
   let nextId=startId;
-  const world={apiLog:[],live:live||new Map(),deleted:[],persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),sendPhotoNetworkFailOnce:new Set(),group429Once:false,hangPhotoIndex:null};
+  const world={apiLog:[],live:live||new Map(),deleted:[],persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),sendPhotoNetworkFailOnce:new Set(),group429Once:false,jsonInPlaceFailPerm:false,hangPhotoIndex:null};
   const context={
     AbortController,Blob,FormData,atob:globalThis.atob,clearTimeout,setTimeout,
     console:{error(){},warn(){},log(){}},navigator:{onLine:true},
@@ -48,6 +48,15 @@ function makeWorld({ticket,live,startId=100}){
         world.apiLog.push({endpoint:'editMessageText',id:body.message_id});
         if(!world.live.has(body.message_id))return response({ok:false,description:'message to edit not found'},400);
         return response({ok:true,result:{message_id:body.message_id}});
+      }
+      if(/\/editMessageMedia$/.test(url)){
+        // v91.33: JSON редагується НА МІСЦІ (in-place блок без переносу)
+        const id=Number(opts.body.get('message_id'));
+        world.apiLog.push({endpoint:'editMessageMedia',id});
+        if(world.jsonInPlaceFailPerm)return response({ok:false,error_code:400,description:'Bad Request: there is no document in the message'},400);
+        if(!world.live.has(id))return response({ok:false,description:'message to edit not found'},400);
+        world.live.set(id,{kind:'json'});
+        return response({ok:true,result:{message_id:id}});
       }
       if(/\/sendMediaGroup$/.test(url)){
         const media=JSON.parse(opts.body.get('media'));
@@ -305,7 +314,7 @@ function seedArchived(live,keys,msgIds){
     assert.equal(await context.backupTicketToTelegramNow(t),true,'M17: backup succeeds even when old-album cleanup fails');
     assert.deepEqual(mgCalls(world).length,1,'M17: exactly one fresh album');
     assert.deepEqual(t.tgPhotoMsgIds.length,2,'M17: confirmed state = the fresh album only');
-    assert.deepEqual([...t.tgBackupCleanupMsgIds].sort((a,b)=>a-b),[13,14,15],'M17: stale old album + old json durably tracked for cleanup (not silently lost)');
+    assert.deepEqual([...t.tgBackupCleanupMsgIds].sort((a,b)=>a-b),[11,12,13,14,15],'M17: the ENTIRE stale old block (sep/text/album/json) durably tracked for cleanup (v91.33 move semantics — not silently lost)');
     world.failDeletes=false;
     assert.equal(await context.backupTicketToTelegramNow(t),true,'M17: next run cleans the stale album');
     assert.equal(photoCopiesOf(live,1),1,'M17: exactly one photo-1 remains');
