@@ -2,25 +2,47 @@
    9 points: healthz / mcp-401 / tools-list(7 READ) / get_statistics /
    ask-401 / ask cold / ask KV-hit / real Groq answer.
 
-   Usage (CMD, from the folder where you saved this file):
-     node smoke-v2.mjs https://maister-tracker-mcp-dev.mastif1235.workers.dev "MCP_BEARER_TOKENS_value" "ASK_BEARER_TOKENS_value"
+   Usage:  node smoke-v2.mjs <BASE_URL> [MCP_token|@file] [ASK_token|@file]
 
-   The 2nd/3rd arguments are the SAME strings you put into the dev secrets —
-   either full lines (name:token:scope) or bare tokens; both are accepted.
-   This script contains NO secrets: never put real token values here.
-   The script only SENDS the bare token part in the Authorization header.
-   No secrets are printed; output shows PASS/FAIL per point. */
+   Tokens are resolved automatically, in this order:
+     1) CLI args (optional): @C:\path\to\file.txt or the value itself;
+     2) env vars SMOKE_MCP_FILE / SMOKE_ASK_FILE (file paths);
+     3) default local files: C:\mcp\dev-mcp-token.txt, C:\mcp\dev-ask-token.txt.
+   Accepted contents: a bare token OR the full "name:token:scope" line.
+   Token values are NEVER printed by this script. No secrets are stored here. */
+
+import fs from 'node:fs';
 
 const BASE = (process.argv[2] || '').replace(/\/+$/, '');
-const MCP_LINE = process.argv[3] || '';
-const ASK_LINE = process.argv[4] || '';
 if (typeof fetch !== 'function') { console.error('Node 18+ is required (global fetch missing).'); process.exit(2); }
-if (!BASE || !MCP_LINE || !ASK_LINE) {
-  console.error('Usage: node smoke-v2.mjs <BASE_URL> <MCP_BEARER_TOKENS_value> <ASK_BEARER_TOKENS_value>');
+
+function readTokenFile(path) {
+  try {
+    let s = fs.readFileSync(path, 'utf8').replace(/^\uFEFF/, '').replace(/\r/g, '\n').trim();
+    if (s.includes('\u0000')) return ''; // UTF-16 file: ask user to re-save as UTF-8
+    return s;
+  } catch (_) { return ''; }
+}
+function resolveToken(cliValue, envVar, defaultFile) {
+  const v = (cliValue || '').trim();
+  if (v.startsWith('@')) return { value: readTokenFile(v.slice(1)), source: v.slice(1) };
+  if (v) return { value: v, source: 'argv' };
+  const envFile = (process.env[envVar] || '').trim();
+  if (envFile) return { value: readTokenFile(envFile), source: 'env ' + envVar };
+  return { value: readTokenFile(defaultFile), source: defaultFile };
+}
+if (!BASE) {
+  console.error('Usage: node smoke-v2.mjs <BASE_URL> [MCP_token|@file] [ASK_token|@file]');
+  console.error('Tokens default to C:\\mcp\\dev-mcp-token.txt and C:\\mcp\\dev-ask-token.txt');
   process.exit(2);
 }
 const mid = (s) => { const p = String(s).trim().split(':'); return p.length >= 3 ? p[p.length - 2] : String(s).trim(); };
-const MT = mid(MCP_LINE), AT = mid(ASK_LINE);
+const mcpTok = resolveToken(process.argv[3], 'SMOKE_MCP_FILE', 'C:\\mcp\\dev-mcp-token.txt');
+const askTok = resolveToken(process.argv[4], 'SMOKE_ASK_FILE', 'C:\\mcp\\dev-ask-token.txt');
+if (!mcpTok.value) { console.error('ERROR: MCP token is empty (checked argv, SMOKE_MCP_FILE, C:\\mcp\\dev-mcp-token.txt). Re-save the file as UTF-8 if needed.'); process.exit(2); }
+if (!askTok.value) { console.error('ERROR: ASK token is empty (checked argv, SMOKE_ASK_FILE, C:\\mcp\\dev-ask-token.txt). Re-save the file as UTF-8 if needed.'); process.exit(2); }
+console.log('MCP token source: ' + mcpTok.source + ' | ASK token source: ' + askTok.source + ' (values not shown)');
+const MT = mid(mcpTok.value), AT = mid(askTok.value);
 
 let pass = 0, fail = 0;
 const ok = (cond, label, extra) => { console.log((cond ? '[PASS] ' : '[FAIL] ') + label + (extra ? ' | ' + extra : '')); cond ? pass++ : fail++; };
