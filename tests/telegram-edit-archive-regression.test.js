@@ -17,7 +17,7 @@ const TICKET={type:'ПІДКЛЮЧЕННЯ',date:'13.08.2026',time:'16:14',conte
 
 function makeWorld({ticket,live,startId=100}){
   let nextId=startId;
-  const world={apiLog:[],live:live||new Map(),persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),jsonSoftFail:false,hangPhotoIndex:null};
+  const world={apiLog:[],live:live||new Map(),persistedSnapshots:[],failDeletes:false,sendPhotoFailOnce:new Set(),sendPhotoNetworkFailOnce:new Set(),jsonSoftFail:false,hangPhotoIndex:null};
   const context={
     AbortController,Blob,FormData,atob:globalThis.atob,clearTimeout,setTimeout,
     console:{error(){},warn(){},log(){}},navigator:{onLine:true},
@@ -41,7 +41,7 @@ function makeWorld({ticket,live,startId=100}){
   // Підміни СТРОГО після runInContext (hoisting джерела перетирає попередні).
   context.resolvePhotoAsync=async()=>'data:image/jpeg;base64,AA==';
   context.fetchWithRetry=async function(url,opts){
-    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendDocument|editMessageText)$/)?.[1];
+    const endpoint=String(url).match(/\/(sendMessage|sendPhoto|sendMediaGroup|sendDocument|editMessageText)$/)?.[1];
     if(endpoint==='sendMessage'){
       const text=String(JSON.parse(opts.body).text);
       const id=++nextId,kind=/➖/.test(text)?'sep':'text';
@@ -61,6 +61,20 @@ function makeWorld({ticket,live,startId=100}){
       const id=++nextId;world.live.set(id,{kind:'json'});
       return response({ok:true,result:{message_id:id}});
     }
+    if(endpoint==='sendMediaGroup'){
+      // v91.32: альбом — одна відповідь-масив; індекси — з attach://photo<K>.
+      const media=JSON.parse(opts.body.get('media'));
+      const idxs=media.map(item=>Number(String(item.media).replace('attach://photo','')));
+      world.apiLog.push({endpoint:'sendMediaGroup',photoIndexes:idxs});
+      if(idxs.some(i=>world.hangPhotoIndex===i+1))return new Promise(()=>{}); // «застосунок убито» під час відправки альбому
+      if(idxs.some(i=>world.sendPhotoNetworkFailOnce.has(i+1))){idxs.forEach(i=>world.sendPhotoNetworkFailOnce.delete(i+1));throw new Error('fetch failed');}
+      if(idxs.some(i=>world.sendPhotoFailOnce.has(i+1))){idxs.forEach(i=>world.sendPhotoFailOnce.delete(i+1));return response({ok:false,error_code:500,description:'Internal Server Error'},500);}
+      const msgs=idxs.map(idx=>{
+        const id=++nextId;world.live.set(id,{kind:'photo',photoIndex:idx+1,caption:idxs[0]===idx?String(media[0].caption||''):''});
+        return{message_id:id,photo:[{file_id:'fid-'+id}]};
+      });
+      return response({ok:true,result:msgs});
+    }
     if(endpoint==='sendPhoto'){
       const caption=String(opts.body.get('caption')||'');
       const m=caption.match(/\((\d+)\/(\d+)\)/),idx=m?Number(m[1]):1,total=m?Number(m[2]):1;
@@ -79,7 +93,7 @@ function summarize(live){
   return kinds;
 }
 const photoCopies=(live,idx)=>[...live.values()].filter(info=>info.kind==='photo'&&info.photoIndex===idx).length;
-const sendPhotoCalls=world=>world.apiLog.filter(call=>call.endpoint==='sendPhoto');
+const sendPhotoCalls=world=>world.apiLog.filter(call=>call.endpoint==='sendPhoto'||call.endpoint==='sendMediaGroup');
 const newSendMessages=world=>world.apiLog.filter(call=>call.endpoint==='sendMessage').length;
 function archivedTicket(id){
   return {...TICKET,id,photos:['idb:a','idb:b'],tgBackedUp:true,tgBackupPending:false,
@@ -126,9 +140,9 @@ const SINGLE_SET={sep:1,text:1,'photo:1':1,'photo:2':1,json:1};
     t.photos=['idb:a','idb:new']; // заміна другого фото
     world.jsonSoftFail=true;world.failDeletes=true;
     assert.equal(await context.backupTicketToTelegramNow(t),false,'E2: partial attempt is not acknowledged');
-    assert.equal(photoCopies(live,1),2,'E2: reproduced the screenshot state — a second (1/2) copy appeared');
-    assert.equal(photoCopies(live,2),2,'E2: …and a second (2/2) copy');
-    assert.ok([...live.values()].some(info=>info.kind==='photo'&&info.photoIndex===2&&/\(2\/2\)/.test(info.caption)),'E2: copies carry the same (i/n) captions as reported');
+    assert.equal(photoCopies(live,1),2,'E2: reproduced the screenshot state — a second photo-1 copy appeared');
+    assert.equal(photoCopies(live,2),2,'E2: …and a second photo-2 copy (fresh album next to the old one)');
+    assert.ok([...live.values()].some(info=>info.kind==='photo'&&info.photoIndex===2&&info.caption===''),'E2: the fresh album carries no duplicated caption on every element (v91.32)');
     assert.ok(t.tgBackupCleanupMsgIds.length>=2,'E2: orphan ids are durably tracked (R1 fix — was discarded before)');
     const oldSetIds=[11,12,13,14,15];
     assert.ok(oldSetIds.every(id=>live.has(id)),'E2: previous confirmed copy remains intact');
@@ -150,14 +164,14 @@ const SINGLE_SET={sep:1,text:1,'photo:1':1,'photo:2':1,json:1};
     const t=archivedTicket('e3');
     const w1=makeWorld({ticket:t,live});
     t.photos=['idb:a','idb:new'];
-    w1.world.hangPhotoIndex=2;
+    w1.world.hangPhotoIndex=2; // v91.32: обидва фото летять ОДИМ sendMediaGroup — kill під час його відповіді
     const attempt=w1.context.backupTicketToTelegramNow(t); // «застосунок вбито» — не await
-    for(let i=0;i<3000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendPhoto'&&call.photoIndex===2));i++)await new Promise(r=>setTimeout(r,1));
-    assert.equal(photoCopies(live,2),1,'E3: kill happened before photo 2 was delivered');
-    assert.equal(photoCopies(live,1),2,'E3: fresh (1/2) was delivered by the killed attempt');
+    for(let i=0;i<3000&&!(w1.world.apiLog.some(call=>call.endpoint==='sendMediaGroup'));i++)await new Promise(r=>setTimeout(r,1));
+    assert.equal(photoCopies(live,1),1,'E3: kill happened before the fresh album was confirmed — no second copy');
+    assert.equal(photoCopies(live,2),1,'E3: …for neither of the two photos');
     const persisted=w1.world.persistedSnapshots[w1.world.persistedSnapshots.length-1];
     assert.deepEqual((persisted.tgPhotoMsgIds||[]).sort(),[13,14],'E3: confirmed old photo ids survive the kill (R2 fix — were wiped before)');
-    assert.equal((persisted.tgBackupCleanupMsgIds||[]).length,1,'E3: the unfinished attempt photo is durably parked for cleanup');
+    assert.equal((persisted.tgBackupCleanupMsgIds||[]).length,0,'E3: nothing was delivered by the killed album request — nothing to park, zero orphans');
     const restored=JSON.parse(JSON.stringify(persisted));
     const w2=makeWorld({ticket:restored,live,startId:1000}); // reload: новий контекст, та сама група
     assert.equal(await w2.context.backupTicketToTelegramNow(restored),true,'E3: first post-reload attempt succeeds');
