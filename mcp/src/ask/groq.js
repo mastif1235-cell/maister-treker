@@ -12,13 +12,32 @@
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+/* Redacts anything that could be a secret from a Groq error body before it
+   is logged or returned to clients: our own key value, gsk_… lookalikes and
+   Bearer/sk token-like strings. Caps the length. */
+function sanitizeDetail(text, apiKey){
+  let out = String(text || '');
+  if(apiKey && out.indexOf(apiKey) !== -1) out = out.split(apiKey).join('[redacted]');
+  out = out.replace(/gsk_[A-Za-z0-9_-]{8,}/g, '[redacted]');
+  out = out.replace(/\b(sk|Bearer)[\s_-]+[A-Za-z0-9._-]{16,}/gi, '[redacted]');
+  out = out.replace(/\s+/g, ' ').trim();
+  return out.slice(0, 400);
+}
+
 export function createGroqClient(options){
   const fetchImpl = options.fetchImpl;
   const apiKey = String(options.apiKey || '');
   const model = String(options.model || 'openai/gpt-oss-120b');
   const timeoutMs = Number(options.timeoutMs) || 30000;
-  const maxTokens = Number(options.maxTokens) || 2048;
-  const temperature = options.temperature == null ? 0.2 : Number(options.temperature);
+  /* gpt-oss on Groq documents max_completion_tokens (bare max_tokens is
+     rejected by newer OpenAI-format models with HTTP 400) and requires
+     reasoning_format "parsed" or "hidden" when tools are used — "hidden"
+     keeps reasoning out of the assistant messages we echo back in the tool
+     loop. temperature is omitted unless set explicitly, so the model's
+     documented default applies. */
+  const maxTokens = Number(options.maxTokens) || 8192;
+  const temperature = options.temperature == null ? null : Number(options.temperature);
+  const reasoningFormat = String(options.reasoningFormat || 'hidden');
 
   async function chat(messages, tools){
     const controller = new AbortController();
@@ -29,14 +48,31 @@ export function createGroqClient(options){
         method:'POST',
         signal:controller.signal,
         headers:{'Content-Type':'application/json', Authorization:'Bearer ' + apiKey},
-        body:JSON.stringify({model, messages, tools, tool_choice:'auto', temperature, max_tokens:maxTokens})
+        body:JSON.stringify(Object.assign(
+          {model, messages, tools, tool_choice:'auto', reasoning_format:reasoningFormat, max_completion_tokens:maxTokens},
+          temperature == null ? {} : {temperature}
+        ))
       });
     }catch(err){
       return {ok:false, code:'NETWORK', message:String(err && err.name || err)};
     }finally{
       clearTimeout(timer);
     }
-    if(!response.ok) return {ok:false, code:'HTTP_' + response.status, message:'Groq responded ' + response.status};
+    if(!response.ok){
+      /* Keep a SHORT, sanitized excerpt of Groq's error body: it names the
+         exact 4xx cause (unsupported param, model limits). The API key and
+         token lookalikes are redacted before logging / returning. */
+      let raw = '';
+      try{ raw = await response.text(); }catch(_err){ raw = ''; }
+      let detail = raw;
+      try{
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.error && typeof parsed.error.message === 'string') detail = parsed.error.message;
+      }catch(_err){ /* non-JSON body: keep sanitized raw text */ }
+      detail = sanitizeDetail(detail, apiKey);
+      console.error('[ask] groq http error:', response.status, detail);
+      return {ok:false, code:'HTTP_' + response.status, message:'Groq responded ' + response.status, detail};
+    }
     let data;
     try{ data = JSON.parse(await response.text()); }
     catch(_err){ return {ok:false, code:'MALFORMED', message:'Groq returned non-JSON payload'}; }

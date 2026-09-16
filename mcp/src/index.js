@@ -137,7 +137,12 @@ export function createApp(env, deps){
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
       const upstream = code === 'GROQ_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code.indexOf('HTTP_') === 0;
-      return jsonResponse(upstream ? 502 : 500, {ok:false, error:'ask_failed', code});
+      /* `detail` is a pre-sanitized excerpt of the upstream error (no
+         secrets, see groq.js) — exposes the exact Groq 4xx cause without
+         leaking credentials. */
+      const payload = {ok:false, error:'ask_failed', code};
+      if(typeof outcome.detail === 'string' && outcome.detail) payload.detail = outcome.detail;
+      return jsonResponse(upstream ? 502 : 500, payload);
     }
     return jsonResponse(200, {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}});
   }

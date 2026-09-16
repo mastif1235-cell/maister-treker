@@ -29,8 +29,24 @@ test('chat sends the documented request shape; key only in Authorization header'
   assert.equal(seen.body.model, 'openai/gpt-oss-120b');
   assert.deepEqual(seen.body.tools, TOOLS);
   assert.equal(seen.body.tool_choice, 'auto');
+  // gpt-oss on Groq: documented token param, no temperature by default,
+  // reasoning hidden while tools are attached
+  assert.equal(seen.body.max_completion_tokens, 8192);
+  assert.equal(seen.body.max_tokens, undefined);
+  assert.equal(seen.body.temperature, undefined);
+  assert.equal(seen.body.reasoning_format, 'hidden');
   // the key must never travel in the body
   assert.ok(!JSON.stringify(seen.body).includes(KEY));
+});
+
+test('explicit temperature is forwarded', async () => {
+  let body = null;
+  const fetchImpl = async function(url, init){
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({choices:[{message:{role:'assistant', content:'ok'}}]}), {status:200});
+  };
+  await createGroqClient({fetchImpl, apiKey:KEY, temperature:0.2}).chat([], TOOLS);
+  assert.equal(body.temperature, 0.2);
 });
 
 test('tool_calls are parsed into {id, name, argsRaw}', async () => {
@@ -61,7 +77,34 @@ test('HTTP errors map to stable codes without leaking the key', async () => {
   const fetchImpl = async function(){ return new Response('Unauthorized', {status:401}); };
   const client = createGroqClient({fetchImpl, apiKey:KEY});
   const result = await client.chat([], TOOLS);
-  assert.deepEqual(result, {ok:false, code:'HTTP_401', message:'Groq responded 401'});
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'HTTP_401');
+  assert.equal(result.message, 'Groq responded 401');
+  assert.equal(result.detail, 'Unauthorized');
+});
+
+test('Groq 400 body becomes sanitized detail: exact cause, no key leak', async () => {
+  const logged = [];
+  const origError = console.error;
+  console.error = function(){ logged.push(Array.from(arguments).map(String).join(' ')); };
+  try{
+    const groqMessage = "'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead. (key=" + KEY + ', echo gsk_lookalike123456789)';
+    const fetchImpl = async function(){
+      return new Response(JSON.stringify({error:{message:groqMessage, type:'invalid_request_error'}}), {status:400});
+    };
+    const client = createGroqClient({fetchImpl, apiKey:KEY});
+    const result = await client.chat([], TOOLS);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'HTTP_400');
+    assert.ok(result.detail.includes('max_completion_tokens'), 'detail must carry the real cause');
+    assert.ok(!result.detail.includes(KEY), 'detail must not contain the API key');
+    assert.ok(!result.detail.includes('gsk_lookalike'), 'detail must not contain token lookalikes');
+    const logText = logged.join('\n');
+    assert.ok(!logText.includes(KEY), 'log must not contain the API key');
+    assert.ok(!logText.includes('gsk_lookalike'), 'log must not contain token lookalikes');
+  }finally{
+    console.error = origError;
+  }
 });
 
 test('malformed payloads map to MALFORMED', async () => {

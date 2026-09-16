@@ -88,7 +88,7 @@ export function createAskOrchestrator(options){
       if(rounds >= limits.maxRounds) return {ok:false, code:'TOO_MANY_ROUNDS', meta:{rounds, toolCallsMade}};
       rounds++;
       const response = await groq.chat(messages, toolDefs);
-      if(!response.ok) return {ok:false, code:response.code || 'GROQ_ERROR', meta:{rounds, toolCallsMade}};
+      if(!response.ok) return {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
       if(response.toolCalls.length){
         // Echo the assistant message back exactly as the API returned it
         // (standard continuation for tool results).
