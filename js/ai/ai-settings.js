@@ -106,8 +106,12 @@ function build(){
     const mode = $('aiBackendModeSelect').value;
     const inp = $('aiBackendUrlInput');
     if(mode === 'shared'){
-      inp.value = MTAI.config.SHARED_BACKEND;
+      /* Локальний preview -> dev Worker; продакшен-PWA -> prod Worker.
+         Storage синхронізуємо завжди: він міг містити хост іншого середовища. */
+      const url = MTAI.config.sharedBackend();
+      inp.value = url;
       inp.readOnly = true;
+      if(MTAI.storage.get().backendUrl !== url) MTAI.storage.update({ backendUrl: url });
     }else{
       inp.readOnly = false;
     }
@@ -159,7 +163,7 @@ function build(){
   $('aiBackendModeSelect').addEventListener('change', function(){
     applyModeUi();
     const mode = $('aiBackendModeSelect').value;
-    MTAI.storage.update({ backendMode: mode, backendUrl: mode === 'shared' ? MTAI.config.SHARED_BACKEND : $('aiBackendUrlInput').value });
+    MTAI.storage.update({ backendMode: mode, backendUrl: mode === 'shared' ? MTAI.config.sharedBackend() : $('aiBackendUrlInput').value });
     $('aiBackendUrlInput').value = MTAI.storage.get().backendUrl;
   });
   /* Онбординг: токен -> health -> /ai/config (providers/models) -> save.

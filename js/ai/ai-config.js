@@ -18,6 +18,19 @@ MTAI.config = {
     'https://maister-tracker-mcp-dev.mastif1235.workers.dev'
   ],
   SHARED_BACKEND: 'https://maister-tracker-mcp.mastif1235.workers.dev',
+  /* Dev-воркер для локального preview: хост обирає sharedBackend() за
+     origin сторінки — користувач URL спільного бекенда не редагує. */
+  DEV_SHARED_BACKEND: 'https://maister-tracker-mcp-dev.mastif1235.workers.dev',
+  /* Локальний preview (localhost/127.0.0.1/::1) = dev-оточення -> dev Worker;
+     усе інше (продакшен-PWA, node-тести без location) -> спільний prod. */
+  sharedBackend: function(){
+    try{
+      const host = String((globalRef.location && globalRef.location.hostname) || '');
+      return /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(host) ? MTAI.config.DEV_SHARED_BACKEND : MTAI.config.SHARED_BACKEND;
+    }catch(_err){
+      return MTAI.config.SHARED_BACKEND;
+    }
+  },
   DEFAULT_PROVIDER: 'groq',
   DEFAULT_MODEL: 'openai/gpt-oss-120b',
   LIMITS: {
