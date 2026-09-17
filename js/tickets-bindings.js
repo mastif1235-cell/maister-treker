@@ -309,6 +309,11 @@ if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocomplete
     calcState.baseCallFee=safeNonNegativeNumber(event.target.value);
   }, {capture:true});
   document.getElementById('f_tariff').addEventListener('input', ()=>{ tariffIsAutoDefault = false; }, {capture:true});
+  /* NEW (💰 Ціни): зміна населеного пункту переобчислює автопідставлену суму —
+     місто з індивідуальною ціною одразу дає свою. Вручну введену суму це не
+     чіпає: applyDefaultCallFee/applyDefaultTariff мовчки виходять, щойно
+     feeIsAutoDefault/tariffIsAutoDefault стали false. */
+  document.getElementById('f_city').addEventListener('change', ()=>{ applyDefaultCallFee(); applyDefaultTariff(); });
   /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
    Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому
    працює і офлайн. Якщо браузер API не підтримує — просто ховаємо кнопку

@@ -470,9 +470,10 @@ function applyDefaultCallFee(){
   const type = getEffectiveType();
   let baseFee;
   if(feeIsAutoDefault){
-    if(type === 'Підключення') baseFee = Number(settings.defaultConnectFee) || 0;
-    else if(type === 'Ремонт') baseFee = Number(settings.defaultRepairCallFee) || 0;
-    else baseFee = 0;
+    // NEW (💰 Ціни): якщо для населеного пункту заявки задана індивідуальна
+    // ціна — підставляємо саме її, інакше загальну. Автопідстановка працює
+    // лише поки майстер не ввів суму вручну (feeIsAutoDefault).
+    baseFee = pricingAutofillFor(type).callFee;
     calcState.baseCallFee=safeNonNegativeNumber(baseFee);
   }else{
     baseFee=ticketBaseCallFee(calcState);
@@ -492,9 +493,23 @@ function applyDefaultCallFee(){
 // для ремонту та інших типів заявок тарифу бути не повинно.
 function applyDefaultTariff(){
   if(!tariffIsAutoDefault || calcState.cloudImported) return;
-  const type = getEffectiveType();
-  document.getElementById('f_tariff').value = (type === 'Підключення') ? (Number(settings.defaultTariff) || 0) : 0;
+  // NEW (💰 Ціни): тариф теж враховує індивідуальну ціну населеного пункту.
+  document.getElementById('f_tariff').value = pricingAutofillFor(getEffectiveType()).tariff;
   computeTotal();
+}
+
+/* NEW (💰 Ціни): суми для автопідстановки за поточним типом заявки й містом
+   у формі. Місто з індивідуальною ціною дає свою суму, решта наслідують
+   загальну. Якщо модуль цін недоступний (наприклад, старий кеш) —
+   повертаємось до попередньої поведінки на загальних налаштуваннях. */
+function pricingAutofillFor(type){
+  const city = document.getElementById('f_city') ? document.getElementById('f_city').value : '';
+  if(typeof MTPricingService !== 'undefined' && MTPricingService){
+    return MTPricingService.autofillFor(settings, type, city);
+  }
+  if(type === 'Підключення') return {callFee:Number(settings.defaultConnectFee)||0, tariff:Number(settings.defaultTariff)||0};
+  if(type === 'Ремонт') return {callFee:Number(settings.defaultRepairCallFee)||0, tariff:0};
+  return {callFee:0, tariff:0};
 }
 
 function syncFormToState(){

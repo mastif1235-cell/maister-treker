@@ -1,6 +1,9 @@
 /* ---- Візуальний рендеринг екрана налаштувань ----
    Читає лише settings і оновлює DOM. */
 function renderSettingsScreen(){
+  // NEW (💰 Ціни): розділ додається в DOM ДО побудови хаба, щоб потрапити
+  // у групу «Калькулятор і ціни», а не в «Інше».
+  if(typeof MTPricingUI !== 'undefined' && MTPricingUI){ MTPricingUI.build(); MTPricingUI.render(); }
   ensureSettingsHub();
   document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`;
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
@@ -200,7 +203,7 @@ let settingsHubCurrentKey = '';
 
 const SETTINGS_HUB_SECTIONS = [
   {key:'address', icon:'📍', title:'Адреси', sub:'Міста та вулиці', match:['Міста','Вулиці']},
-  {key:'calculator', icon:'🧮', title:'Калькулятор і ціни', sub:'Теги, матеріали, роботи, кабелі та тарифи', match:['Теги','Матеріали','Роботи з переліку','Типи кабелів','Ціни за замовчуванням']},
+  {key:'calculator', icon:'🧮', title:'Калькулятор і ціни', sub:'Теги, матеріали, роботи, кабелі та тарифи', match:['Теги','Матеріали','Роботи з переліку','Типи кабелів','Ціни за замовчуванням','Ціни']},
   {key:'people', icon:'👷', title:'Люди і контакти', sub:'Майстри, напарники, швидкий набір, візитка й договір', match:['Напарники','Майстри','Візитка та договір','Швидкий набір']},
   {key:'sync', icon:'☁️', title:'Синхронізація', sub:'Google для заявок і змін', match:['Синхронізація — Заявки','Синхронізація — Зміни']},
   {key:'telegram', icon:'✈️', title:'Telegram', sub:'Диспетчери, архів і звіти', match:['Telegram-бот']},
