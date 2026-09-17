@@ -71,14 +71,18 @@ MTAI.createClient = function(options){
     }
   }
 
-  /* Публічний дескриптор можливостей бекенда (без секретів). */
+  /* Публічний дескриптор можливостей бекенда (без секретів у відповіді).
+     Authorization додаємо: «свій backend» може вимагати токен навіть тут. */
   async function config(){
     const cfg = getConfig();
     try{
-      const res = await fetchImpl(cfg.backendUrl + '/ai/config', { method:'GET' });
+      const res = await fetchImpl(cfg.backendUrl + '/ai/config', {
+        method:'GET',
+        headers: cfg.bearer ? { 'Authorization':'Bearer ' + cfg.bearer } : {}
+      });
       const payload = await res.json().catch(function(){ return null; });
       if(!res.ok || !payload || !payload.ok) return { ok:false, status:res.status };
-      return { ok:true, config: payload };
+      return { ok:true, status:res.status, config: payload };
     }catch(_err){
       return { ok:false, status:0 };
     }

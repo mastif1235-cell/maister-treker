@@ -13,7 +13,7 @@ function $(id){ return doc.getElementById(id); }
 function build(){
   const screen = $('screen-settings');
   if(!screen || $('aiSettingsCard')) return;
-  const cfg = MTAI.provider.ensure(MTAI.storage);
+  let cfg = MTAI.provider.ensure(MTAI.storage); // let: оновлюється після change provider
   const details = doc.createElement('details');
   details.className = 'card acc-card';
   details.id = 'aiSettingsCard';
@@ -125,7 +125,7 @@ function build(){
   });
   $('aiProviderSelect').addEventListener('change', function(e){
     MTAI.storage.update({ provider: e.target.value, model: (MTAI.providers.get(e.target.value).models[0] || {}).id });
-    cfg = MTAI.provider.ensure(MTAI.storage);
+    cfg = MTAI.provider.ensure(MTAI.storage); // settings.ai (той самий об'єкт)
     refreshModels(); refreshInfo();
   });
   $('aiModelSelect').addEventListener('change', function(e){
@@ -162,70 +162,95 @@ function build(){
     MTAI.storage.update({ backendMode: mode, backendUrl: mode === 'shared' ? MTAI.config.SHARED_BACKEND : $('aiBackendUrlInput').value });
     $('aiBackendUrlInput').value = MTAI.storage.get().backendUrl;
   });
-  /* Онбординг: токен -> перевірка -> /ai/config (providers/models) -> save.
-     Успіх автоматично вмикає AI і показує кнопку в Інструментах. */
+  /* Онбординг: токен -> health -> /ai/config (providers/models) -> save.
+     Бронебойний: будь-яка помилка — ВИДиме повідомлення (ніколи не silent);
+     кнопка блокується на час підключення; токен береться з поля або з vault. */
   $('aiOnboardBtn').addEventListener('click', async function(){
+    const btn = $('aiOnboardBtn');
     const status = $('aiOnboardStatus');
-    const mode = $('aiBackendModeSelect').value;
-    const token = $('aiTokenInput').value.trim();
-    const backendUrl = $('aiBackendUrlInput').value.trim().replace(/\/+$/, '');
-    function say(t){ status.textContent = t; }
-    if(!/^https:\/\/[^\s]+$/i.test(backendUrl)){ say('❌ Вкажіть https-адресу бекенда'); return; }
-    if(mode === 'shared' && !MTAI.storage.isAllowedBackend(backendUrl)){ say('❌ Цей хост не є дозволеним спільним бекендом'); return; }
-    if(!token){ say('❌ Вставте ваш персональний access-токен (крок 4)'); return; }
-    say('⏳ Крок 1/4: зберігаю токен…');
-    MTAI.storage.update({ backendMode: mode, backendUrl: backendUrl });
-    MTAI.storage.setToken(token);
-    $('aiTokenInput').value = '';
-    $('aiTokenInput').placeholder = '•••••••• (збережено)';
-    $('aiTokenState').textContent = '✓ Токен збережено (у зашифрованому vault, не відображається).';
-    say('⏳ Крок 2/4: перевіряю бекенд…');
-    const health = await MTAI.client.health();
-    if(!health.online){ say('📴 Бекенд недоступний (' + (health.status || 'мережа') + '). Перевірте адресу.'); return; }
-    say('⏳ Крок 3/4: читаю providers/models…');
-    let providers = null;
-    const cfgRes = await MTAI.client.config();
-    if(cfgRes.ok && cfgRes.config && Array.isArray(cfgRes.config.providers)){
-      providers = cfgRes.config.providers;
-      providers.forEach(function(p){
-        if(!MTAI.providers.get(p.id)){
-          MTAI.providers.register({
-            id: p.id, name: p.name || p.id, enabled: p.enabled !== false,
-            capabilities: { text:true, tools:true },
-            models: (p.models || []).map(function(m){
-              const caps = Array.isArray(m.capabilities) ? m.capabilities : [];
-              return { id:m.id, label:m.id, capabilities:{
-                text: caps.indexOf('text') !== -1 || caps.length === 0,
-                vision: caps.indexOf('vision') !== -1,
-                tools: caps.indexOf('tools') !== -1,
-                reasoning: caps.indexOf('reasoning') !== -1,
-                audioInput: caps.indexOf('audio_input') !== -1
-              } };
-            })
-          });
-        }
-      });
-      const sel = $('aiProviderSelect');
-      while(sel.firstChild) sel.removeChild(sel.firstChild);
-      MTAI.providers.enabledList().forEach(function(pp){
-        const o = doc.createElement('option'); o.value = pp.id; o.textContent = pp.name;
-        if(pp.id === (providers[0] && providers[0].id)) o.selected = true;
-        sel.appendChild(o);
-      });
-      sel.dispatchEvent(new Event('change'));
-      if(cfgRes.config.mode && cfgRes.config.mode !== 'read-only'){
-        say('ℹ️ Бекенд повідомив режим: ' + cfgRes.config.mode);
+    const say = function(t){ status.textContent = t; };
+    if(btn.disabled) return;
+    btn.disabled = true;
+    say('⏳ Підключення…');
+    try{
+      const mode = $('aiBackendModeSelect').value;
+      const tokenField = $('aiTokenInput');
+      const token = String(tokenField.value || '').trim();
+      const backendUrl = $('aiBackendUrlInput').value.trim().replace(/\/+$/, '');
+      if(!/^https:\/\/[^\s]+$/i.test(backendUrl)){ say('❌ Вкажіть https-адресу бекенда'); return; }
+      if(mode === 'shared' && !MTAI.storage.isAllowedBackend(backendUrl)){ say('❌ Цей хост не є дозволеним спільним бекендом'); return; }
+      if(!token && !MTAI.storage.hasToken()){ say('❌ Вставте ваш персональний access-токен'); return; }
+      say('⏳ Крок 1/4: зберігаю токен…');
+      MTAI.storage.update({ backendMode: mode, backendUrl: backendUrl });
+      if(token){
+        MTAI.storage.setToken(token);
+        tokenField.value = '';
+        tokenField.placeholder = '•••••••• (збережено)';
+        $('aiTokenState').textContent = '✓ Токен збережено (у зашифрованому vault, не відображається).';
       }
-    }else{
-      say('ℹ️ Бекенд не віддав /ai/config — використовую локальний реєстр (Groq)');
+      say('⏳ Крок 2/4: перевіряю бекенд…');
+      const health = await MTAI.client.health();
+      if(health.status === 404){ say('❌ Endpoint не знайдено (404). Перевірте адресу бекенда.'); return; }
+      if(health.status === 401 || health.status === 403){ say('❌ Невірний токен або доступ заборонено (' + health.status + ').'); return; }
+      if(!health.online){
+        say(health.status ? ('❌ Бекенд відповів ' + health.status + '.') : '❌ Мережа/CORS: бекенд недоступний з браузера. Перевірте адресу та HTTPS.');
+        return;
+      }
+      say('⏳ Крок 3/4: читаю providers/models (/ai/config)…');
+      const cfgRes = await MTAI.client.config();
+      if(cfgRes.status === 401){ say('❌ Невірний токен (401 від /ai/config)'); return; }
+      if(cfgRes.status === 404){ say('❌ Endpoint /ai/config не знайдено (404) — оновіть Worker'); return; }
+      if(cfgRes.ok && cfgRes.config && Array.isArray(cfgRes.config.providers)){
+        cfgRes.config.providers.forEach(function(p){
+          if(!MTAI.providers.get(p.id)){
+            MTAI.providers.register({
+              id: p.id, name: p.name || p.id, enabled: p.enabled !== false,
+              capabilities: { text:true, tools:true },
+              models: (p.models || []).map(function(m){
+                const caps = Array.isArray(m.capabilities) ? m.capabilities : [];
+                return { id:m.id, label:m.id, capabilities:{
+                  text: caps.indexOf('text') !== -1 || caps.length === 0,
+                  vision: caps.indexOf('vision') !== -1,
+                  tools: caps.indexOf('tools') !== -1,
+                  reasoning: caps.indexOf('reasoning') !== -1,
+                  audioInput: caps.indexOf('audio_input') !== -1
+                } };
+              })
+            });
+          }
+        });
+        // Перебудова селекта провайдерів БЕЗ синтетичних подій:
+        // зберігаємо вибір у storage, потім оновлюємо моделі/статус.
+        const firstEnabled = (cfgRes.config.providers.find(function(p){ return p.enabled !== false; }) || cfgRes.config.providers[0] || {});
+        MTAI.storage.update({ provider: firstEnabled.id || MTAI.config.DEFAULT_PROVIDER, model: ((MTAI.providers.get(firstEnabled.id) || {models:[{}]}).models[0] || {}).id || MTAI.config.DEFAULT_MODEL });
+        cfg = MTAI.provider.ensure(MTAI.storage);
+        const sel = $('aiProviderSelect');
+        while(sel.firstChild) sel.removeChild(sel.firstChild);
+        MTAI.providers.enabledList().forEach(function(pp){
+          const o = doc.createElement('option');
+          o.value = pp.id; o.textContent = pp.name;
+          if(pp.id === cfg.provider) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.value = cfg.provider;
+        if(cfgRes.config.mode && cfgRes.config.mode !== 'read-only'){
+          say('ℹ️ Бекенд повідомив режим: ' + cfgRes.config.mode);
+        }
+      }else{
+        say('ℹ️ Бекенд не віддав /ai/config — використовую локальний реєстр (Groq)');
+      }
+      say('⏳ Крок 4/4: зберігаю…');
+      MTAI.storage.update({ enabled: true, showInTools: true });
+      $('aiEnabledToggle').checked = true;
+      $('aiShowInToolsToggle').checked = true;
+      refreshModels(); refreshInfo();
+      say('✅ Підключено! Кнопка 🤖 з\u2019явилася в «Інструментах».');
+      showToast && showToast('AI підключено');
+    }catch(err){
+      say('❌ Помилка підключення: ' + String((err && err.message) || err).slice(0, 200));
+    }finally{
+      btn.disabled = false;
     }
-    say('⏳ Крок 4/4: зберігаю…');
-    MTAI.storage.update({ enabled: true, showInTools: true });
-    $('aiEnabledToggle').checked = true;
-    $('aiShowInToolsToggle').checked = true;
-    refreshModels(); refreshInfo();
-    say('✅ Готово! Кнопка 🤖 з\u2019явилася в «Інструментах». Токен — у зашифрованому vault.');
-    showToast && showToast('AI підключено');
   });
   $('aiTestBtn').addEventListener('click', async function(){
     const out = $('aiConnStatus');
