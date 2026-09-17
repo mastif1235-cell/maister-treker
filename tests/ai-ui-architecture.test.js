@@ -26,9 +26,15 @@ assert.equal(scripts[scripts.length-1],'js/ai/ai-settings.js','ai modules load l
 // 3) SW pre-cache покриває всі ai-модулі (офлайн-запуск без мережі)
 for(const f of AI_FILES) assert.ok(sw.includes("'./"+f+"'"),'sw CORE_ASSETS: '+f);
 
-// 4) Кнопка у «Інструментах» + роутер дії
-assert.match(tools,/data-tools-action="ai-assistant"[^>]*>[\s\S]{0,80}?AI Асистент/,'🤖 AI Асистент button in tools grid');
+// 4) Кнопка у «Інструментах»: УМОВНА (enabled+showInTools) + роутер дії
+assert.match(tools,/settings&&settings\.ai&&settings\.ai\.enabled&&settings\.ai\.showInTools\)\?'<button[^>]*data-tools-action="ai-assistant"/,'AI button conditional (hidden by default)');
 assert.match(tools,/action==='ai-assistant'\)\{\s*if\(window\.MTAI&&MTAI\.ui\)MTAI\.ui\.open\(\);\s*\}/,'tools router opens AI chat');
+// onboarding: майстер підключення + тоггл видимості
+const settingsUi=read('js/ai/ai-settings.js');
+assert.match(settingsUi,/aiOnboardBtn/,'onboarding wizard button');
+assert.match(settingsUi,/aiShowInToolsToggle/,'show-in-tools toggle');
+assert.match(settingsUi,/ai\/config/,'onboarding reads /ai/config');
+assert.match(read('js/ai/ai-client.js'),/'\/ai\/config'/,'client exposes GET /ai/config');
 
 // 5) CSP: рівно два наші Workers-хости, паритет index/_headers
 for(const [name,src] of [['index.html',html],['_headers',read('_headers')]]){
@@ -62,7 +68,7 @@ assert.doesNotMatch(chatCode,/\.innerHTML\s*=/,'chat never assigns innerHTML');
 // 7) Мережа: клієнт ходить лише у /ask і /healthz нашого бекенда; жодних
 //    Groq/DeepSeek endpoint'ів чи ключів у фронтенді
 const urls=[...client.matchAll(/backendUrl\s*\+\s*'([^']+)'/g)].map(m=>m[1]).sort();
-assert.deepEqual(urls,['/ask','/healthz'],'client calls only /ask and /healthz');
+assert.deepEqual(urls,['/ai/config','/ask','/healthz'],'client calls only /ai/config, /ask and /healthz');
 for(const f of AI_FILES){
   const code=read(f);
   assert.doesNotMatch(code,/api\.groq\.com|api\.deepseek\.com|gsk_|DEEPSEEK_API_KEY|sk-[a-z0-9]{8}/i,f+': no provider endpoints/keys');

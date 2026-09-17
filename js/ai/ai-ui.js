@@ -188,11 +188,47 @@ function build(){
   updateStatusLine();
 }
 
-function open(){
-  if(!MTAI.storage.isReady()){
-    showToast && showToast('AI не налаштований: Налаштування → 🤖 AI-асистент');
-    return;
+/* Блокуючий екран з явним поясненням і кнопкою переходу в налаштування —
+   жодних silent no-op. kind: 'unconfigured' | 'disabled' */
+function openBlocked(kind){
+  let overlay = $('aiBlockedPanel');
+  if(!overlay){
+    overlay = doc.createElement('div');
+    overlay.id = 'aiBlockedPanel';
+    overlay.className = 'hidden';
+    overlay.innerHTML = `
+      <div class="ai-panel-card" style="max-width:420px;margin:0 auto 12vh;">
+        <div class="ai-panel-head"><span class="ai-panel-title">🤖 AI-асистент</span>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-icon btn-sm" id="aiBlockedClose" aria-label="Закрити">✕</button></div>
+        <div id="aiBlockedText" style="font-size:14px;line-height:1.5;padding:4px 2px 10px;"></div>
+        <button type="button" class="btn btn-accent" id="aiBlockedGo" style="width:100%;">Перейти в налаштування AI</button>
+      </div>`;
+    doc.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.classList.add('hidden'); });
+    $('aiBlockedClose').addEventListener('click', function(){ overlay.classList.add('hidden'); });
+    $('aiBlockedGo').addEventListener('click', function(){
+      overlay.classList.add('hidden');
+      try{
+        if(typeof switchTab === 'function') switchTab('settings');
+        const card = $('aiSettingsCard');
+        if(card){ card.open = true; card.scrollIntoView({ behavior:'smooth', block:'center' }); }
+        else if(typeof showToast === 'function') showToast('Налаштування → 🤖 AI-асистент');
+      }catch(_e){}
+    });
   }
+  $('aiBlockedText').textContent = kind === 'disabled'
+    ? 'AI вимкнено. Увімкніть його в Налаштуваннях → 🤖 AI-асистент (кнопка в «Інструментах» з’явиться після підключення).'
+    : 'AI не налаштований. Потрібні: адреса AI-бекенда і ваш персональний access-токен. Налаштування → 🤖 AI-асистент → «Підключити AI».';
+  overlay.classList.remove('hidden');
+}
+
+function open(){
+  /* Явні стани: A) готовий → чат; B) не налаштований → підказка + перехід
+     у налаштування; C) вимкнений → пояснення. Повторне відкриття/закриття
+     просто перемикає overlay. */
+  if(!MTAI.storage.get().enabled){ openBlocked('disabled'); return; }
+  if(!MTAI.storage.isReady()){ openBlocked('unconfigured'); return; }
   build();
   $('aiChatPanel').classList.remove('hidden');
   setTimeout(function(){ const inp = $('aiInput'); if(inp) inp.focus(); }, 60);

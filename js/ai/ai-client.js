@@ -71,7 +71,20 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health };
+  /* Публічний дескриптор можливостей бекенда (без секретів). */
+  async function config(){
+    const cfg = getConfig();
+    try{
+      const res = await fetchImpl(cfg.backendUrl + '/ai/config', { method:'GET' });
+      const payload = await res.json().catch(function(){ return null; });
+      if(!res.ok || !payload || !payload.ok) return { ok:false, status:res.status };
+      return { ok:true, config: payload };
+    }catch(_err){
+      return { ok:false, status:0 };
+    }
+  }
+
+  return { ask: ask, health: health, config: config };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут

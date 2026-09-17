@@ -12,7 +12,9 @@ MTAI.storage = (function(){
         enabled:false,
         provider:MTAI.config.DEFAULT_PROVIDER,
         model:MTAI.config.DEFAULT_MODEL,
-        backendUrl:MTAI.config.DEFAULT_BACKEND
+        backendUrl:MTAI.config.DEFAULT_BACKEND,
+        backendMode:'',
+        showInTools:false
       };
     }
     const ai = settings.ai;
@@ -21,6 +23,8 @@ MTAI.storage = (function(){
     if(typeof ai.model !== 'string' || !ai.model) ai.model = MTAI.config.DEFAULT_MODEL;
     if(typeof ai.backendUrl !== 'string') ai.backendUrl = MTAI.config.DEFAULT_BACKEND;
     ai.backendUrl = ai.backendUrl.trim().replace(/\/+$/, '');
+    if(ai.backendMode !== 'shared' && ai.backendMode !== 'custom') ai.backendMode = ai.backendUrl ? 'custom' : '';
+    if(typeof ai.showInTools !== 'boolean') ai.showInTools = false;
     if(typeof settings.aiBearerToken !== 'string') settings.aiBearerToken = '';
     return ai;
   }
@@ -29,8 +33,10 @@ MTAI.storage = (function(){
     const ai = ensure();
     Object.keys(patch || {}).forEach(function(key){
       if(key === 'enabled') ai.enabled = patch.enabled === true;
+      else if(key === 'showInTools') ai.showInTools = patch.showInTools === true;
       else if(key === 'provider' && typeof patch.provider === 'string') ai.provider = patch.provider;
       else if(key === 'model' && typeof patch.model === 'string') ai.model = patch.model;
+      else if(key === 'backendMode' && (patch.backendMode === 'shared' || patch.backendMode === 'custom' || patch.backendMode === '')) ai.backendMode = patch.backendMode;
       else if(key === 'backendUrl' && typeof patch.backendUrl === 'string') ai.backendUrl = patch.backendUrl.trim().replace(/\/+$/, '');
     });
     saveSettings();
@@ -48,10 +54,20 @@ MTAI.storage = (function(){
   function isAllowedBackend(url){
     return MTAI.config.ALLOWED_BACKENDS.indexOf(String(url || '').trim().replace(/\/+$/, '')) !== -1;
   }
+  /* Готовність: AI увімкнений + валідний https-бекенд (спільний — з
+     allowlist, свій — будь-який https на відповідальність власника) +
+     токен доступу. Токен обов'язковий ЗАВЖДИ: спільний backend без
+     персонального токена не працює (нічий ліміт не витрачається). */
   function isReady(){
     const ai = ensure();
-    return !!(ai.enabled && ai.backendUrl && isAllowedBackend(ai.backendUrl) && settings.aiBearerToken);
+    const httpsOk = /^https:\/\/[^\s]+$/i.test(ai.backendUrl);
+    const backendOk = ai.backendUrl && httpsOk && (ai.backendMode === 'custom' || isAllowedBackend(ai.backendUrl));
+    return !!(ai.enabled && backendOk && settings.aiBearerToken);
   }
-  return { ensure: ensure, get: get, update: update, setToken: setToken, hasToken: hasToken, bearer: bearer, isAllowedBackend: isAllowedBackend, isReady: isReady };
+  function isConfigured(){
+    const ai = ensure();
+    return !!(ai.backendUrl && settings.aiBearerToken);
+  }
+  return { ensure: ensure, get: get, update: update, setToken: setToken, hasToken: hasToken, bearer: bearer, isAllowedBackend: isAllowedBackend, isReady: isReady, isConfigured: isConfigured };
 })();
 })();

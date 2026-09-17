@@ -59,7 +59,7 @@ function toolsHomeHtml(){
   return `<div class="tools-grid">
     <button type="button" class="btn" data-tools-view="map"><span class="tools-icon">🗺️</span>Карта</button>
     <button type="button" class="btn" data-tools-action="quick-diagnostics"><span class="tools-icon">🛠</span>Діагностика</button>
-    <button type="button" class="btn" data-tools-action="ai-assistant"><span class="tools-icon">🤖</span>AI Асистент</button>
+    ${(settings&&settings.ai&&settings.ai.enabled&&settings.ai.showInTools)?'<button type="button" class="btn" data-tools-action="ai-assistant"><span class="tools-icon">🤖</span>AI Асистент</button>':''}
   </div>
   <div class="card" style="margin-top:12px;font-size:12px;color:var(--text-dim);">Інструменти зберігають дані лише на цьому пристрої. Діагностика не створює записів без явного натискання «Зберегти».</div>`;
 }

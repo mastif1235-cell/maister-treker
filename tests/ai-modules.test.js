@@ -33,14 +33,21 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   const sb=load(...CORE);
   const M=sb.MTAI;
   sb.settings={}; sb.saveSettings=function(){ sb.saved=true; };
-  M.storage.ensure();
-  assert.equal(M.storage.get().backendUrl,M.config.DEFAULT_BACKEND,'defaults applied');
-  assert.equal(M.storage.isReady(),false,'not ready by default (disabled, no token)');
-  M.storage.update({ enabled:true, backendUrl:'https://evil.example.com' });
-  assert.equal(M.storage.isAllowedBackend('https://evil.example.com'),false,'arbitrary host rejected');
-  M.storage.update({ backendUrl:M.config.ALLOWED_BACKENDS[1] });
+  const ai=M.storage.ensure();
+  assert.equal(ai.enabled,false,'fresh: AI OFF');
+  assert.equal(ai.backendUrl,'','fresh: backend unset (no default URL)');
+  assert.equal(ai.showInTools,false,'fresh: tools button hidden');
+  assert.equal(M.storage.isReady(),false,'fresh: not ready (disabled, no backend, no token)');
   M.storage.setToken('dev-name:devtoken1234567890abcdef:read');
   assert.equal(M.storage.bearer(),'devtoken1234567890abcdef','bearer = middle part only');
+  M.storage.update({ enabled:true, backendUrl:'https://evil.example.com', backendMode:'shared' });
+  assert.equal(M.storage.isAllowedBackend('https://evil.example.com'),false,'arbitrary host rejected for shared mode');
+  assert.equal(M.storage.isReady(),false,'unlisted host + shared mode => not ready');
+  M.storage.update({ backendMode:'custom' });
+  assert.equal(M.storage.isReady(),true,'custom mode allows own https backend (owner responsibility)');
+  M.storage.update({ backendUrl:'http://insecure.example.com' });
+  assert.equal(M.storage.isReady(),false,'plain http rejected in custom mode too');
+  M.storage.update({ backendUrl:M.config.ALLOWED_BACKENDS[1], backendMode:'shared' });
   assert.equal(M.storage.isReady(),true,'ready with enabled+allowed backend+token');
   console.log('PASS ai-storage: allowlist enforced, bearer mid-part, readiness');
 }

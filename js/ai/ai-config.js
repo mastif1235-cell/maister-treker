@@ -6,13 +6,18 @@ const globalRef = typeof globalThis !== 'undefined' ? globalThis : window;
 const MTAI = globalRef.MTAI = globalRef.MTAI || {};
 
 MTAI.config = {
-  DEFAULT_BACKEND: 'https://maister-tracker-mcp.mastif1235.workers.dev',
-  /* Єдиний дозволений список бекендів (CSP connect-src має їм відповідати —
-     див. tests/ai-ui-architecture.test.js). Довільні URL заборонені. */
+  /* Fresh install: бекенд НЕ налаштований, AI вимкнений, жодних запитів.
+     Спільний backend пропонується лише в онбордингу й без власного
+     access-токена користувача не працює (ліміти власника не витрачаються). */
+  DEFAULT_BACKEND: '',
+  /* Єдиний дозволений список «спільних» бекендів (CSP connect-src має їм
+     відповідати — див. tests/ai-ui-architecture.test.js). Довільні URL
+     дозволені лише в режимі «свій backend» (https-валідація). */
   ALLOWED_BACKENDS: [
     'https://maister-tracker-mcp.mastif1235.workers.dev',
     'https://maister-tracker-mcp-dev.mastif1235.workers.dev'
   ],
+  SHARED_BACKEND: 'https://maister-tracker-mcp.mastif1235.workers.dev',
   DEFAULT_PROVIDER: 'groq',
   DEFAULT_MODEL: 'openai/gpt-oss-120b',
   LIMITS: {
