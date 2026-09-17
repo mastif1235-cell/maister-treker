@@ -21,7 +21,7 @@
    Міграція повторюється при кожному наступному старті.
    ===================================================================== */
 
-const MT_SETTINGS_SECRET_KEYS = ['tgBotToken', 'syncHmacSecret'];
+const MT_SETTINGS_SECRET_KEYS = ['tgBotToken', 'syncHmacSecret', 'aiBearerToken'];
 const MT_SETTINGS_SECRETS_KEY_RECORD = '__settingsSecretsKeyV1';
 const MT_SETTINGS_SECRETS_RECORD = '__settingsSecretsV1';
 const MT_SETTINGS_SECRETS_DEBOUNCE_MS = 300;

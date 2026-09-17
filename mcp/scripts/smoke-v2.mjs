@@ -104,19 +104,22 @@ const mcp = (auth, body, sid) => req('/mcp', {
   // the wait suggested in the sanitized detail when present.
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   const retryAfterFrom = (text) => {
-    const m = /(\d{1,3})\s*(сек|sec)/i.exec(text || '');
-    return m ? Math.min(120, Number(m[1]) + 2) : null;
+    const t = String(text || '');
+    let m = /(\d{1,3})\s*(секунд|секунди|сек|seconds?|sec)/i.exec(t);
+    if (!m) m = /retry[-\s]?after\D{0,12}(\d{1,3})/i.exec(t);
+    return m ? Math.min(150, Number(m[1]) + 3) : null;
   };
   const ask = async (q) => req('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AT }, body: JSON.stringify({ question: q }) });
   const askWithRetry = async (q, label) => {
     let r, j;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 4; attempt++) {
       r = await ask(q);
       j = json(r.text) || {};
       if (j.ok === true) return { r, j, attempts: attempt };
       const rateLimited = j.code === 'HTTP_429' || /rate limit/i.test(String(j.detail || ''));
-      if (!rateLimited || attempt === 3) return { r, j, attempts: attempt };
-      const waitSec = retryAfterFrom(j.detail) || 25 * attempt;
+      if (!rateLimited || attempt === 4) return { r, j, attempts: attempt };
+      // never retry sooner than Groq asked: wait >= suggested, min 25s
+      const waitSec = Math.max(retryAfterFrom(j.detail) || 0, 25);
       console.log('[wait] ' + label + ': Groq rate limit (attempt ' + attempt + '/3), retrying in ~' + waitSec + 's...');
       await sleep(waitSec * 1000);
     }
