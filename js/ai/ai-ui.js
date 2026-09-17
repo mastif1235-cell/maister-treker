@@ -1,7 +1,7 @@
 /* AI: UI — панель чата. DOM строится программно, все данные через
-   textContent (XSS-safe). Кнопка в «Инструментах» — делегированный
-   обработчик на data-tools-action="ai-assistant" (кнопку рендерит
-   tools-domain.js, см. патч toolsHomeHtml). */
+   textContent (XSS-safe). Кнопка в «Инструментах» рендерится
+   tools-domain.js (условная: enabled+showInTools); клик ловится
+   делегированным обработчиком. */
 (function(){
 'use strict';
 if(typeof document === 'undefined') return; // unit-тесты в node
@@ -12,13 +12,91 @@ let built = false, chat = null, attachments = null, voice = null;
 
 function $(id){ return doc.getElementById(id); }
 
+/* Чистая функция состояний (тестируется в node без DOM):
+   disabled -> unconfigured -> chat. */
+function resolveAction(state){
+  const s = state || MTAI.storage.get();
+  if(!s.enabled) return 'disabled';
+  if(!MTAI.storage.isReady()) return 'unconfigured';
+  return 'chat';
+}
+
+/* ── Блокирующий экран: явные состояния вместо silent no-op ──
+   Собственные стили инжектятся ВСЕГДА (раньше стили появлялись только из
+   build() чата, и панель показывалась нестилизованным div внизу страницы —
+   визуально «ничего не происходило»). */
+function openBlocked(kind){
+  if(!$('aiBlockedStyles')){
+    const style = doc.createElement('style');
+    style.id = 'aiBlockedStyles';
+    style.textContent = [
+      '#aiBlockedPanel{position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;}',
+      '.ai-blocked-card{width:100%;max-width:400px;background:var(--surface,#fff);color:var(--text,#111);border-radius:14px;padding:16px;box-sizing:border-box;box-shadow:0 10px 30px rgba(0,0,0,.35);}',
+      '.ai-blocked-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}',
+      '.ai-blocked-title{font-weight:800;font-size:15px;flex:1;}',
+      '.ai-blocked-text{font-size:14px;line-height:1.5;margin-bottom:12px;white-space:pre-line;}'
+    ].join('\n');
+    doc.head.appendChild(style);
+  }
+  let overlay = $('aiBlockedPanel');
+  if(!overlay){
+    overlay = doc.createElement('div');
+    overlay.id = 'aiBlockedPanel';
+    overlay.style.display = 'none';
+    const card = doc.createElement('div');
+    card.className = 'ai-blocked-card';
+    const head = doc.createElement('div');
+    head.className = 'ai-blocked-head';
+    const title = doc.createElement('span');
+    title.className = 'ai-blocked-title';
+    title.textContent = '🤖 AI-асистент';
+    const closeBtn = doc.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn btn-icon btn-sm';
+    closeBtn.setAttribute('aria-label', 'Закрити');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', function(){ overlay.style.display = 'none'; });
+    head.appendChild(title); head.appendChild(closeBtn);
+    const text = doc.createElement('div');
+    text.className = 'ai-blocked-text';
+    text.id = 'aiBlockedText';
+    const go = doc.createElement('button');
+    go.type = 'button';
+    go.className = 'btn btn-accent';
+    go.id = 'aiBlockedGo';
+    go.style.width = '100%';
+    go.addEventListener('click', function(){
+      overlay.style.display = 'none';
+      try{
+        if(typeof switchTab === 'function') switchTab('settings');
+        const cardEl = $('aiSettingsCard');
+        if(cardEl){ cardEl.open = true; if(typeof cardEl.scrollIntoView === 'function') cardEl.scrollIntoView({ behavior:'smooth', block:'center' }); }
+        else if(typeof showToast === 'function') showToast('Налаштування → 🤖 AI-асистент');
+      }catch(_e){}
+    });
+    card.appendChild(head); card.appendChild(text); card.appendChild(go);
+    overlay.appendChild(card);
+    overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.style.display = 'none'; });
+    doc.body.appendChild(overlay);
+  }
+  const text = $('aiBlockedText'), go = $('aiBlockedGo');
+  if(kind === 'disabled'){
+    text.textContent = '🔒 AI вимкнено.\nУвімкніть AI у Налаштуваннях → 🤖 AI-асистент — кнопка в «Інструментах» з\u2019явиться після підключення.';
+    go.textContent = 'Увімкнути в налаштуваннях';
+  }else{
+    text.textContent = '⚙️ AI не налаштований.\nПотрібні адреса AI-бекенда і ваш персональний access-токен. Налаштування → 🤖 AI-асистент → «Підключити AI».';
+    go.textContent = 'Перейти в налаштування AI';
+  }
+  overlay.style.display = 'flex';
+}
+
 function build(){
   if(built) return;
   built = true;
 
   const panel = doc.createElement('div');
   panel.id = 'aiChatPanel';
-  panel.className = 'hidden';
+  panel.style.display = 'none';
   panel.innerHTML = `
     <div class="ai-panel-card">
       <div class="ai-panel-head">
@@ -45,8 +123,7 @@ function build(){
   const style = doc.createElement('style');
   style.id = 'aiPanelStyles';
   style.textContent = `
-    #aiChatPanel{position:fixed;inset:0;z-index:85;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;}
-    #aiChatPanel.hidden{display:none;}
+    #aiChatPanel{position:fixed;inset:0;z-index:85;background:rgba(0,0,0,.45);align-items:flex-end;}
     .ai-panel-card{width:100%;max-height:86vh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#111);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom));box-sizing:border-box;}
     .ai-panel-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
     .ai-panel-title{font-weight:800;font-size:15px;}
@@ -92,7 +169,7 @@ function build(){
   voice = MTAI.createVoiceInput({
     onStatus: function(state, text){ $('aiVoiceStatus').textContent = text || ''; },
     onResult: function(text){ const inp = $('aiInput'); inp.value = (inp.value ? inp.value + ' ' : '') + text; inp.focus(); },
-    onError: function(err){ $('aiVoiceStatus').textContent = err.message; showToast && showToast(err.message); }
+    onError: function(err){ $('aiVoiceStatus').textContent = err.message; if(typeof showToast === 'function') showToast(err.message); }
   });
   chat = MTAI.createChatController({
     client: MTAI.client,
@@ -101,7 +178,6 @@ function build(){
     hooks: {
       user: function(text){
         const b = msgBubble('user'); renderer.renderUserBubble(b, text);
-        MTAI.config.quickPrompts(); // no-op keep
       },
       busy: function(on){
         if(on){ const b = msgBubble('loading'); b.id = 'aiLoading'; b.textContent = '⏳ AI думає…'; }
@@ -181,56 +257,21 @@ function build(){
     if(voice.isActive()){ voice.stop(); } else { voice.start(); }
   });
   $('aiClearBtn').addEventListener('click', function(){ chat.clear(); });
-  $('aiCloseBtn').addEventListener('click', function(){ panel.classList.add('hidden'); });
-  panel.addEventListener('click', function(e){ if(e.target === panel) panel.classList.add('hidden'); });
+  $('aiCloseBtn').addEventListener('click', function(){ panel.style.display = 'none'; });
+  panel.addEventListener('click', function(e){ if(e.target === panel) panel.style.display = 'none'; });
 
   renderQuick();
   updateStatusLine();
 }
 
-/* Блокуючий екран з явним поясненням і кнопкою переходу в налаштування —
-   жодних silent no-op. kind: 'unconfigured' | 'disabled' */
-function openBlocked(kind){
-  let overlay = $('aiBlockedPanel');
-  if(!overlay){
-    overlay = doc.createElement('div');
-    overlay.id = 'aiBlockedPanel';
-    overlay.className = 'hidden';
-    overlay.innerHTML = `
-      <div class="ai-panel-card" style="max-width:420px;margin:0 auto 12vh;">
-        <div class="ai-panel-head"><span class="ai-panel-title">🤖 AI-асистент</span>
-        <span style="flex:1"></span>
-        <button type="button" class="btn btn-icon btn-sm" id="aiBlockedClose" aria-label="Закрити">✕</button></div>
-        <div id="aiBlockedText" style="font-size:14px;line-height:1.5;padding:4px 2px 10px;"></div>
-        <button type="button" class="btn btn-accent" id="aiBlockedGo" style="width:100%;">Перейти в налаштування AI</button>
-      </div>`;
-    doc.body.appendChild(overlay);
-    overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.classList.add('hidden'); });
-    $('aiBlockedClose').addEventListener('click', function(){ overlay.classList.add('hidden'); });
-    $('aiBlockedGo').addEventListener('click', function(){
-      overlay.classList.add('hidden');
-      try{
-        if(typeof switchTab === 'function') switchTab('settings');
-        const card = $('aiSettingsCard');
-        if(card){ card.open = true; card.scrollIntoView({ behavior:'smooth', block:'center' }); }
-        else if(typeof showToast === 'function') showToast('Налаштування → 🤖 AI-асистент');
-      }catch(_e){}
-    });
-  }
-  $('aiBlockedText').textContent = kind === 'disabled'
-    ? 'AI вимкнено. Увімкніть його в Налаштуваннях → 🤖 AI-асистент (кнопка в «Інструментах» з’явиться після підключення).'
-    : 'AI не налаштований. Потрібні: адреса AI-бекенда і ваш персональний access-токен. Налаштування → 🤖 AI-асистент → «Підключити AI».';
-  overlay.classList.remove('hidden');
-}
-
 function open(){
-  /* Явні стани: A) готовий → чат; B) не налаштований → підказка + перехід
-     у налаштування; C) вимкнений → пояснення. Повторне відкриття/закриття
-     просто перемикає overlay. */
-  if(!MTAI.storage.get().enabled){ openBlocked('disabled'); return; }
-  if(!MTAI.storage.isReady()){ openBlocked('unconfigured'); return; }
-  build();
-  $('aiChatPanel').classList.remove('hidden');
+  /* Явные состояния: chat / unconfigured / disabled. Никаких silent no-op. */
+  const action = resolveAction();
+  if(action === 'disabled'){ openBlocked('disabled'); return; }
+  if(action === 'unconfigured'){ openBlocked('unconfigured'); return; }
+  MTAI.ui.build();
+  const panel = $('aiChatPanel');
+  panel.style.display = 'flex';
   setTimeout(function(){ const inp = $('aiInput'); if(inp) inp.focus(); }, 60);
 }
 
@@ -241,5 +282,5 @@ doc.addEventListener('click', function(e){
   if(btn){ e.preventDefault(); open(); }
 });
 
-window.MTAI.ui = { open: open, build: build };
+window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction };
 })();

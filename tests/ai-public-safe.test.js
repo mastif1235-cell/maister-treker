@@ -57,14 +57,14 @@ const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 {
   const ui=read('js/ai/ai-ui.js');
   assert.match(ui,/openBlocked/,'blocked panel exists');
-  assert.match(ui,/storage\.get\(\)\.enabled/,'disabled state checked first');
-  assert.match(ui,/isReady\(\)/,'ready state checked');
+  assert.match(ui,/if\(!s\.enabled\) return 'disabled'/,'disabled state checked first');
+  assert.match(ui,/isReady\(\)\) return 'unconfigured'/,'ready state checked');
   assert.match(ui,/AI не налаштований/,'unconfigured message');
   assert.match(ui,/AI вимкнено/,'disabled message');
   assert.match(ui,/Перейти в налаштування AI/,'settings navigation button');
-  // двойной гард: chat panel не создаётся до isReady
-  const openBody=ui.slice(ui.indexOf('function open()'),ui.indexOf('window.MTAI.ui'));
-  assert.ok(openBody.indexOf('isReady')>=0 && openBody.indexOf('build()')>=0 && openBody.indexOf('build()')>openBody.indexOf('isReady'),'build() only after readiness guard');
+  // resolveAction: чистая функция состояний; DOM-интеграционные сценарии — tests/ai-ui-dom.test.js
+  assert.match(ui,/function resolveAction/,'resolveAction exists');
+  assert.match(ui,/resolveAction\(\)/,'open() routes through resolveAction');
   console.log('PASS button states: chat / unconfigured->settings / disabled, reopen-safe');
 }
 

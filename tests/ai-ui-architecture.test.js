@@ -88,6 +88,9 @@ assert.doesNotMatch(client,/console\.(log|info|debug)/,'client never logs');
 assert.match(read('js/ai/ai-settings.js'),/•••••••• \(збережено\)/,'token is never displayed after save');
 
 // 10) Chat open guard: вимкнений/неналаштований AI не відкриває чат
-assert.match(read('js/ai/ai-ui.js'),/storage\.isReady\(\)/,'open() checks storage.isReady()');
+//     (resolveAction -> blocked-екран; DOM-сценарії — tests/ai-ui-dom.test.js)
+assert.match(read('js/ai/ai-ui.js'),/function resolveAction/,'resolveAction guard');
+assert.match(read('js/ai/ai-ui.js'),/openBlocked/,'blocked screen for non-ready states');
+assert.match(read('js/ai/ai-ui.js'),/aiBlockedStyles/,'blocked screen injects its own styles (no unstyled no-op)');
 
 console.log('PASS ai-ui architecture: modules, wiring, CSP/SW, no provider keys, READ-ONLY, safe rendering');
