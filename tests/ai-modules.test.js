@@ -72,7 +72,7 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
     assert.equal(seen[0].url,'https://w.example.dev/ask','exact /ask url');
     assert.equal(seen[0].init.method,'POST');
     assert.equal(seen[0].init.headers.Authorization,'Bearer tok1234567890abcdef','mid-token in header');
-    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?'},'/ask body: question only');
+    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?',history:[]},'/ask body: question + empty history on first ask');
     const e401=await client.ask('x'); assert.equal(e401.error.kind,'auth');
     const e429=await client.ask('x'); assert.equal(e429.error.kind,'rate_limit'); assert.equal(e429.error.retryAfterSec,20,'retry-after parsed from Ukrainian detail');
     const e500=await client.ask('x'); assert.equal(e500.error.kind,'server');

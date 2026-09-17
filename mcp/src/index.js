@@ -167,8 +167,11 @@ export function createApp(env, deps){
       return jsonResponse(400, {error:'invalid_question', hint:'question must be a non-empty string of at most 2000 chars'});
     }
 
+    /* Обмежена історія поточної AI-сесії з PWA (follow-up «а за август?»,
+       «там» тощо). Тільки user/assistant-рядки — див. sanitizeHistory. */
+    const history = Array.isArray(body.history) ? body.history : [];
     let outcome;
-    try{ outcome = await app.ask.handle(question); }
+    try{ outcome = await app.ask.handle(question, {history: history}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');

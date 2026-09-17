@@ -68,20 +68,40 @@ function load(files, fetchImpl, extra){
     console.log('PASS 503: provider-disabled guidance');
   }
 
-  /* 5) Быстрые вопросы: 7 штук по ТЗ */
+  /* 5) Быстрые вопросы: 8 монтажных по ТЗ-16 */
   {
     const sb=load(CORE, async function(){ throw new Error('no network'); });
     const q=sb.MTAI.config.quickPrompts();
-    assert.equal(q.length,7,'7 quick prompts');
-    assert.match(q[0],/останні 5 заявок/);
-    assert.match(q[1],/сьогодні/);
-    assert.match(q[2],/зароблено/);
-    assert.match(q[3],/ремонтів/);
-    assert.match(q[4],/підключень/);
-    assert.match(q[5],/годин/);
-    assert.match(q[6],/Знайди заявку за адресою/);
-    assert.match(q[2],/\d{4}/,'month+year dynamic');
-    console.log('PASS quick prompts: 7 (last5/today/earnings/repairs/connections/hours/find-by-address)');
+    assert.equal(q.length,8,'8 quick prompts');
+    assert.match(q[0],/сьогодні/);
+    assert.match(q[1],/Останні 5 заявок/);
+    assert.match(q[2],/за адресою/);
+    assert.match(q[3],/Ремонти/);
+    assert.match(q[4],/Підключення/);
+    assert.match(q[5],/зароблено/);
+    assert.match(q[6],/годин/);
+    assert.match(q[7],/слабкий сигнал/);
+    assert.match(q[5],/\d{4}/,'month+year dynamic');
+    console.log('PASS quick prompts: 8 field prompts (today/last5/address/repairs/connections/earnings/hours/weak-signal)');
+  }
+
+  /* 5b) chat controller отправляет bounded history в ask */
+  {
+    const sb=load(['js/ai/ai-config.js','js/ai/ai-chat.js'], null);
+    const seen=[];
+    const ctrl=sb.MTAI.createChatController({
+      client:{ ask:async function(q,h){ seen.push(h||[]); return { ok:true, answer:'ok', meta:{}, tickets:[] }; } }
+    });
+    await ctrl.send('первый вопрос');
+    await ctrl.send('а за август?');
+    assert.equal(seen.length,2);
+    assert.equal(seen[0].length,0,'first question: no history yet');
+    assert.equal(seen[1].length,2,'second question carries previous turn (user + assistant)');
+    assert.equal(seen[1][0].role,'user');
+    assert.equal(seen[1][0].text,'первый вопрос','history excludes the current question');
+    assert.equal(seen[1][1].role,'assistant');
+    assert.equal(seen[1][1].text,'ok');
+    console.log('PASS chat controller: bounded session history sent to /ask');
   }
 
   /* 6) chat controller прокидывает tickets в assistant hook */

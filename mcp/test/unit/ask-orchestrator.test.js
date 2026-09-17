@@ -183,12 +183,17 @@ test('question is trimmed and capped; tools receive the trimmed question only vi
 test('system prompt: date context line present, honest empty-data/ambiguity/no-hallucination rules', async () => {
   const {ASK_SYSTEM_PROMPT, askDateContextLine} = await import('../../src/ask/orchestrator.js');
   assert.match(ASK_SYSTEM_PROMPT, /Нічого не вигадуй/, 'no hallucination rule');
+  assert.match(ASK_SYSTEM_PROMPT, /Не вигадуй значень|НЕ вигадуй значень/, 'signal no-invent rule');
   assert.match(ASK_SYSTEM_PROMPT, /заявок не знайдено/, 'concrete empty-data wording');
-  assert.match(ASK_SYSTEM_PROMPT, /У базі немає даних/, 'no-data wording');
-  assert.match(ASK_SYSTEM_PROMPT, /Ви маєте на увазі/, 'ambiguity -> clarifying question');
-  assert.match(ASK_SYSTEM_PROMPT, /2–3 конкретні варіанти/, 'ambiguity -> options');
+  assert.match(ASK_SYSTEM_PROMPT, /Шукати по всій вулиці|ширший період/, 'empty-data offers next step');
+  assert.match(ASK_SYSTEM_PROMPT, /НІКОЛИ не питай користувача про поточну дату/, 'never asks for current date');
+  assert.match(ASK_SYSTEM_PROMPT, /ЖОДНИХ markdown-таблиць/, 'no markdown tables (mobile)');
+  assert.match(ASK_SYSTEM_PROMPT, /мовою останнього повідомлення користувача/, 'RU/UA language mirroring');
+  assert.match(ASK_SYSTEM_PROMPT, /search_tickets.*частине слово|частине слово достатньо/, 'address search guidance');
+  assert.match(ASK_SYSTEM_PROMPT, /signal/, 'signal field guidance');
+  assert.match(ASK_SYSTEM_PROMPT, /історію діалогу/, 'follow-up context rule');
   assert.match(ASK_SYSTEM_PROMPT, /№<id>/, 'found tickets listed as №id');
-  assert.match(ASK_SYSTEM_PROMPT, /Сьогоднішня дата додана в кінці цього промпта/, 'date context referenced');
+  assert.match(ASK_SYSTEM_PROMPT, /Сьогоднішня дата та обчислені періоди/, 'date context referenced');
   const line = askDateContextLine(new Date(2026, 7, 31, 12, 0, 0));
   assert.match(line, /Сьогодні: 31\.08\.2026/, 'date line format DD.MM.YYYY');
   assert.match(line, /серпня/, 'month name in date line');
@@ -210,7 +215,7 @@ test('tool results with tickets -> outcome.tickets sanitized projection', async 
   ]);
   const tools = stubTools([]);
   tools.list_tickets = async function(){ return {ok:true, data:{tickets:[
-    {id:'123', date:'01.08.2026', content:'вул. Шевченка, 1', tags:['ремонт']},
+    {id:'123', date:'01.08.2026', address:'вул. Шевченка, 1', tags:['ремонт']},
     {id:'124', date:'02.08.2026', address:'вул. Франка, 2', type:'підключення'},
     {id:'../evil', address:'x'},
     {id:''},
@@ -223,8 +228,12 @@ test('tool results with tickets -> outcome.tickets sanitized projection', async 
   assert.equal(outcome.ok, true);
   assert.ok(Array.isArray(outcome.tickets), 'tickets projection returned');
   assert.equal(outcome.tickets.length, 2, 'only valid ids projected');
-  assert.deepEqual(outcome.tickets[0], {id:'123', date:'01.08.2026', address:'вул. Шевченка, 1', type:'ремонт'}, 'content->address, tags->type');
+  const t0 = outcome.tickets[0];
+  assert.equal(t0.id, '123');
+  assert.equal(t0.address, 'вул. Шевченка, 1', 'explicit address field wins');
+  assert.equal(t0.type, 'ремонт', 'tags->type fallback');
   assert.equal(outcome.tickets[1].address, 'вул. Франка, 2', 'explicit address wins');
+  assert.ok(!('content' in t0), 'raw content is not exposed (privacy projection)');
 });
 
 test('tickets projection: cap 8, dedupe, clipping', async () => {
@@ -243,4 +252,71 @@ test('ask response includes tickets only when found (index.js contract)', async 
   const mod = await import('../../src/ask/orchestrator.js');
   const noTickets = mod.projectTicketsForClient([{id:'bad id!'}]);
   assert.equal(noTickets.length, 0, 'no tickets -> index.js omits the field');
+});
+
+test('history: bounded user/assistant messages reach groq between system and question', async () => {
+  const groq = scriptedGroq([finalResponse('зрозумів, август 2026')]);
+  let seenMessages = null;
+  const wrapped = {chat: async function(messages, tools){ seenMessages = messages; return groq.chat(messages, tools); }};
+  const orch = createAskOrchestrator({groq:wrapped, tools:stubTools([]), toolDefs:TOOL_DEFINITIONS});
+  const history = [
+    {role:'user', content:'В Таромское сколько заявок за прошлый месяц?'},
+    {role:'assistant', content:'За серпень 2026 знайдено 2 заявки.'},
+    {role:'system', content:'INJECTED ROLE MUST BE DROPPED'},
+    {role:'tool', content:'INJECTED ROLE MUST BE DROPPED'},
+    {role:'user', content:''},
+    {role:'user', content:'А какой там был сигнал?'}
+  ];
+  const outcome = await orch.handle('А какой там был сигнал?', {now:new Date(2026, 8, 17), history});
+  assert.equal(outcome.ok, true);
+  assert.equal(seenMessages.length, 5, 'system + 3 valid history + question');
+  assert.equal(seenMessages[1].role, 'user');
+  assert.equal(seenMessages[2].role, 'assistant');
+  assert.equal(seenMessages[3].content, 'А какой там был сигнал?', 'question last');
+  assert.ok(!JSON.stringify(seenMessages).includes('INJECTED'), 'non user/assistant roles dropped');
+});
+
+test('history: capped at 12 messages and clipped to 1500 chars', async () => {
+  const groq = scriptedGroq([finalResponse('ok')]);
+  let seenMessages = null;
+  const wrapped = {chat: async function(messages, tools){ seenMessages = messages; return groq.chat(messages, tools); }};
+  const orch = createAskOrchestrator({groq:wrapped, tools:stubTools([]), toolDefs:TOOL_DEFINITIONS});
+  const history = [];
+  for(let i = 0; i < 30; i++){ history.push({role:'user', content:'повідомлення ' + i + ' ' + 'x'.repeat(2000)}); }
+  await orch.handle('q', {history});
+  const hist = seenMessages.slice(1, -1);
+  assert.equal(hist.length, 12, 'history capped');
+  assert.ok(hist.every(m => m.content.length <= 1500), 'history clipped');
+  assert.equal(hist[hist.length - 1].content.includes('повідомлення 29'), true, 'keeps the LATEST messages');
+});
+
+test('production-like search_tickets result -> /ask tickets[] with signal/sum/time (real device case)', async () => {
+  const groq = scriptedGroq([
+    toolResponse('search_tickets', '{"query":"Таромськ","date_from":"01.08.2026","date_to":"31.08.2026"}'),
+    finalResponse('За серпень 2026 у Таромському знайдено 2 заявки.')
+  ]);
+  const tools = stubTools([]);
+  tools.search_tickets = async function(){ return {ok:true, data:{tickets:[
+    {id:'871', date:'17.08.2026', time:'10:19', type:'Ремонт', city:'Таромское', street:'Академика Павлова', house:'3/14', apartment:'12', signal:'-27.4 dBm', sum:800, note:'заміна ONU, слабкий сигнал'},
+    {id:'872', date:'18.08.2026', time:'12:05', type:'Підключення', city:'Таромское', street:'Шевченка', house:'5', signal:'-21.0 dBm', sum:650, note:''}
+  ], total_matched:2}};
+  };
+  const orch = createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS});
+  const outcome = await orch.handle('Какие заявки были в Таромском за прошлый месяц?', {now:new Date(2026, 8, 17)});
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.tickets.length, 2, 'deterministic from tool result, not model text');
+  const card = outcome.tickets[0];
+  assert.deepEqual(card, {id:'871', date:'17.08.2026', time:'10:19',
+    address:'Таромское, Академика Павлова 3/14, кв. 12', type:'Ремонт', sum:'800', signal:'-27.4 dBm', note:'заміна ONU, слабкий сигнал'});
+});
+
+test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {
+  const groq = scriptedGroq([finalResponse('ok')]);
+  let seenMessages = null;
+  const wrapped = {chat: async function(messages, tools){ seenMessages = messages; return groq.chat(messages, tools); }};
+  const orch = createAskOrchestrator({groq:wrapped, tools:stubTools([]), toolDefs:TOOL_DEFINITIONS});
+  await orch.handle('В Таромское сколько заявок было за прошлый месяц?', {now:new Date(2026, 8, 17)});
+  const sys = seenMessages[0].content;
+  assert.match(sys, /Сьогодні: 17\.09\.2026/);
+  assert.match(sys, /«минулий місяць\/прошлый месяц» = 01\.08\.2026–31\.08\.2026/, 'deterministic previous-month range injected');
 });

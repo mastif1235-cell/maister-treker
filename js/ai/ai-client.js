@@ -49,18 +49,38 @@ MTAI.createClient = function(options){
       if(!item || typeof item !== 'object') continue;
       const id = String(item.id == null ? '' : item.id).trim().slice(0, 64);
       if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id)) continue;
+      const sum = (typeof item.sum === 'number' && isFinite(item.sum)) ? String(Math.round(item.sum * 100) / 100) : String(item.sum == null ? '' : item.sum).trim().slice(0, 16);
       out.push({
         id: id,
         date: String(item.date == null ? '' : item.date).trim().slice(0, 32),
+        time: String(item.time == null ? '' : item.time).trim().slice(0, 16),
         address: String(item.address == null ? '' : item.address).trim().slice(0, 200),
-        type: String(item.type == null ? '' : item.type).trim().slice(0, 100)
+        type: String(item.type == null ? '' : item.type).trim().slice(0, 100),
+        sum: sum,
+        signal: String(item.signal == null ? '' : item.signal).trim().slice(0, 32),
+        note: String(item.note == null ? '' : item.note).trim().slice(0, 120)
       });
       if(out.length >= 8) break;
     }
     return out;
   }
 
-  async function ask(question){
+  /* История текущей AI-сессии (bounded: последние 12 user/assistant). */
+  function sanitizeHistory(raw){
+    if(!Array.isArray(raw)) return [];
+    const out = [];
+    for(const item of raw.slice(-50)){
+      if(!item || typeof item !== 'object') continue;
+      const role = item.role === 'assistant' ? 'assistant' : (item.role === 'user' ? 'user' : null);
+      if(!role) continue;
+      const text = String(item.text == null ? '' : item.text).trim().slice(0, 1500);
+      if(!text) continue;
+      out.push({ role: role, content: text });
+    }
+    return out.slice(-12);
+  }
+
+  async function ask(question, history){
     const cfg = getConfig();
     const ctrl = new AbortController();
     const timer = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
@@ -68,7 +88,10 @@ MTAI.createClient = function(options){
       const res = await fetchImpl(cfg.backendUrl + '/ask', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + cfg.bearer },
-        body: JSON.stringify({ question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars) }),
+        body: JSON.stringify({
+          question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
+          history: sanitizeHistory(history)
+        }),
         signal: ctrl.signal
       });
       const payload = await res.json().catch(function(){ return null; });
@@ -111,7 +134,7 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets };
+  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, sanitizeHistory: sanitizeHistory };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут

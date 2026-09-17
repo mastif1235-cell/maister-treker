@@ -9,6 +9,7 @@ const MTAI = window.MTAI;
 const doc = document;
 
 let built = false, chat = null, attachments = null, voice = null;
+let quickExpanded = false; // 💡-панель подсказок: свёрнута после первого вопроса
 
 function $(id){ return doc.getElementById(id); }
 
@@ -112,7 +113,7 @@ function build(){
       <form class="ai-inputrow" id="aiForm">
         <input type="file" id="aiFileInput" accept="image/*" multiple class="hidden">
         <button type="button" class="btn btn-icon btn-sm" id="aiAttachBtn" aria-label="Прикріпити фото">📎</button>
-        <input type="text" id="aiInput" placeholder="Питання по заявках…" autocomplete="off" enterkeyhint="send">
+        <textarea id="aiInput" rows="1" placeholder="Питання по заявках…" autocomplete="off" enterkeyhint="send"></textarea>
         <button type="button" class="btn btn-icon btn-sm" id="aiVoiceBtn" aria-label="Надиктувати питання">🎤</button>
         <button type="submit" class="btn btn-accent btn-sm" id="aiSendBtn" aria-label="Надіслати">➤</button>
       </form>
@@ -124,12 +125,13 @@ function build(){
   style.id = 'aiPanelStyles';
   style.textContent = `
     #aiChatPanel{position:fixed;inset:0;z-index:85;background:rgba(0,0,0,.45);align-items:flex-end;}
-    .ai-panel-card{width:100%;max-height:86vh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#111);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom));box-sizing:border-box;}
-    .ai-panel-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
-    .ai-panel-title{font-weight:800;font-size:15px;}
-    .ai-badge-ro{font-size:10px;font-weight:800;background:rgba(46,160,67,.15);color:#2ea043;border-radius:6px;padding:2px 6px;}
-    .ai-panel-status{font-size:11px;color:var(--text-dim);width:100%;}
-    .ai-messages{flex:1;overflow-y:auto;min-height:200px;max-height:56vh;display:flex;flex-direction:column;gap:8px;padding:4px 2px;}
+    .ai-panel-card{width:100%;height:92dvh;max-height:92dvh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#111);border-radius:16px 16px 0 0;padding:10px 10px calc(8px + env(safe-area-inset-bottom));box-sizing:border-box;}
+    @media (min-width:600px){ .ai-panel-card{height:auto;max-height:86vh;} }
+    .ai-panel-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;flex:0 0 auto;}
+    .ai-panel-title{font-weight:800;font-size:14px;}
+    .ai-badge-ro{font-size:9.5px;font-weight:800;background:rgba(46,160,67,.15);color:#2ea043;border-radius:6px;padding:2px 5px;white-space:nowrap;}
+    .ai-panel-status{font-size:10.5px;color:var(--text-dim);width:100%;}
+    .ai-messages{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:120px;display:flex;flex-direction:column;gap:8px;padding:4px 2px;}
     .ai-msg{max-width:88%;padding:8px 11px;border-radius:12px;font-size:14px;line-height:1.45;}
     .ai-msg-user{align-self:flex-end;background:var(--accent,#4c7dff);color:#fff;border-bottom-right-radius:4px;white-space:pre-wrap;word-break:break-word;}
     .ai-msg-assistant{align-self:flex-start;background:rgba(127,127,127,.14);border-bottom-left-radius:4px;}
@@ -143,16 +145,26 @@ function build(){
     .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
     .ai-card-title{font-size:13px;font-weight:700;}
     .ai-card-desc{font-size:12px;color:var(--text-dim,#555);margin:2px 0 5px;word-break:break-word;}
-    .ai-quick{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0;}
-    .ai-quick button{font-size:12px;}
+    .ai-quick{display:flex;gap:6px;align-items:center;margin:6px 0 0;flex:0 0 auto;}
+    .ai-quick-toggle{flex:0 0 auto;font-size:12px;padding:5px 9px;}
+    .ai-chips{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+    .ai-chips button{flex:0 0 auto;font-size:12px;padding:5px 10px;white-space:nowrap;border-radius:999px;}
     .ai-attach-previews{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
     .ai-attach-previews:empty{display:none;}
     .ai-att{width:76px;border:1px solid rgba(127,127,127,.35);border-radius:8px;padding:4px;font-size:10px;text-align:center;}
     .ai-att img{width:64px;height:64px;object-fit:cover;border-radius:6px;display:block;margin:0 auto;}
     .ai-att select{width:100%;font-size:10px;margin-top:2px;}
-    .ai-inputrow{display:flex;gap:6px;margin-top:8px;align-items:center;}
-    .ai-inputrow input[type=text]{flex:1;min-width:0;font-size:16px;}
-    .ai-foot{font-size:11px;color:var(--text-faint);margin-top:5px;min-height:14px;}
+    .ai-inputrow{display:flex;gap:6px;margin-top:8px;align-items:flex-end;flex:0 0 auto;}
+    .ai-inputrow textarea{flex:1;min-width:0;font-size:16px;resize:none;min-height:38px;max-height:96px;line-height:1.35;border-radius:10px;padding:8px 10px;font-family:inherit;box-sizing:border-box;}
+    .ai-foot{font-size:10.5px;color:var(--text-faint);margin-top:4px;min-height:13px;flex:0 0 auto;}
+    .ai-cards{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+    .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
+    .ai-card-title{font-size:13px;font-weight:700;}
+    .ai-card-addr{font-size:12.5px;margin-top:1px;word-break:break-word;}
+    .ai-card-facts{font-size:11.5px;color:var(--text-dim,#555);margin-top:2px;}
+    .ai-card-note{font-size:11.5px;color:var(--text-dim,#555);margin-top:2px;font-style:italic;word-break:break-word;}
+    .ai-card .ai-card-open{margin-top:5px;}
+    .ai-cards-more{margin-top:4px;}
   `;
   doc.head.appendChild(style);
 
@@ -184,8 +196,8 @@ function build(){
         const b = msgBubble('user'); renderer.renderUserBubble(b, text);
       },
       busy: function(on){
-        if(on){ const b = msgBubble('loading'); b.id = 'aiLoading'; b.textContent = '⏳ AI думає…'; }
-        else { const l = $('aiLoading'); if(l) l.remove(); }
+        if(on){ const b = msgBubble('loading'); b.id = 'aiLoading'; b.textContent = '⏳ AI думає…'; renderQuick(); }
+        else { const l = $('aiLoading'); if(l) l.remove(); renderQuick(); }
         $('aiSendBtn').disabled = on;
       },
       wait: function(sec){ $('aiVoiceStatus').textContent = '⏳ Ліміт Groq: чекаємо ~' + sec + ' с і повторюємо…'; },
@@ -197,7 +209,11 @@ function build(){
         if(out.tickets && out.tickets.length && MTAI.cards){
           MTAI.cards.render(b, out.tickets, function(id){ MTAI.actions.openTicket(id); });
         }
-        if(out.meta){ const m = doc.createElement('div'); m.className = 'ai-meta'; m.textContent = 'rounds: ' + (out.meta.rounds != null ? out.meta.rounds : '?') + ' · tool_calls: ' + (out.meta.tool_calls != null ? out.meta.tool_calls : 0); messages.appendChild(m); }
+        /* Техническая строка rounds/tool_calls — только в Debug-режиме AI
+           (обычному монтажнику она не нужна). */
+        if(out.meta && MTAI.storage.get().debug === true){
+          const m = doc.createElement('div'); m.className = 'ai-meta'; m.textContent = 'rounds: ' + (out.meta.rounds != null ? out.meta.rounds : '?') + ' · tool_calls: ' + (out.meta.tool_calls != null ? out.meta.tool_calls : 0); messages.appendChild(m);
+        }
       },
       error: function(err){
         const b = msgBubble('error');
@@ -213,15 +229,40 @@ function build(){
     }
   });
 
+  /* Быстрые подсказки: НЕ висят постоянно над composer. В новом/пустом
+     чате — 4 компактных chip; после первого сообщения панель скрывается;
+     кнопка «💡 Підказки» раскрывает/скрывает полный список; после выбора
+     chip панель снова сворачивается. */
   function renderQuick(){
     const q = $('aiQuick');
     while(q.firstChild) q.removeChild(q.firstChild);
-    MTAI.config.quickPrompts().forEach(function(prompt){
+    if(!chat) return;
+    const sessionActive = chat.history().some(function(m){ return m.role === 'user'; });
+    const all = MTAI.config.quickPrompts();
+    const chips = doc.createElement('div');
+    chips.className = 'ai-chips';
+    /* Пустой чат: 4 chips (или все 8 после тоггла). Активная сессия: скрыто
+       (или все 8 после тоггла). */
+    const visible = quickExpanded ? all : (sessionActive ? [] : all.slice(0, 4));
+    visible.forEach(function(prompt){
       const b = doc.createElement('button');
       b.type = 'button'; b.className = 'btn btn-sm'; b.textContent = prompt;
-      b.addEventListener('click', function(){ if(!chat.isBusy()){ q.textContent = ''; chat.send(prompt); } });
-      q.appendChild(b);
+      b.addEventListener('click', function(){
+        if(chat.isBusy()) return;
+        quickExpanded = false;
+        renderQuick();
+        chat.send(prompt);
+      });
+      chips.appendChild(b);
     });
+    const toggle = doc.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn btn-sm ai-quick-toggle';
+    toggle.setAttribute('aria-expanded', quickExpanded ? 'true' : 'false');
+    toggle.textContent = quickExpanded ? '💡 Сховати підказки' : '💡 Підказки';
+    toggle.addEventListener('click', function(){ quickExpanded = !quickExpanded; renderQuick(); });
+    q.appendChild(toggle);
+    if(visible.length) q.appendChild(chips);
   }
   function renderPreviews(items){
     const box = $('aiAttachPreviews');
@@ -246,15 +287,22 @@ function build(){
     $('aiStatusLine').textContent = 'Provider: ' + line.provider + ' · Model: ' + line.model + ' · Mode: ' + line.mode;
   }
 
-  $('aiForm').addEventListener('submit', function(e){
-    e.preventDefault();
+  function autosizeInput(){
+    const inp = $('aiInput');
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 96) + 'px';
+  }
+  function submitQuestion(){
     const inp = $('aiInput');
     const value = inp.value; inp.value = '';
+    inp.style.height = '';
     chat.send(value);
-  });
+  }
+  $('aiForm').addEventListener('submit', function(e){ e.preventDefault(); submitQuestion(); });
   $('aiInput').addEventListener('keydown', function(e){
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); const v = $('aiInput').value; $('aiInput').value = ''; chat.send(v); }
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); submitQuestion(); }
   });
+  $('aiInput').addEventListener('input', autosizeInput);
   $('aiAttachBtn').addEventListener('click', function(){
     if(!MTAI.provider.capabilities(MTAI.storage).vision){
       $('aiVoiceStatus').textContent = '📷 Поточна модель не приймає фото (контракт vision у розробці).';
@@ -272,6 +320,18 @@ function build(){
 
   renderQuick();
   updateStatusLine();
+
+  /* Android-клавиатура: держим панель в пределах visualViewport, чтобы
+     composer всегда был виден (браузеры без visualViewport — как есть). */
+  try{
+    if(window.visualViewport && typeof window.visualViewport.addEventListener === 'function'){
+      const vv = window.visualViewport;
+      const fit = function(){ panel.style.height = Math.round(vv.height) + 'px'; };
+      vv.addEventListener('resize', fit);
+      vv.addEventListener('scroll', fit);
+      fit();
+    }
+  }catch(_vvErr){}
 }
 
 function open(){

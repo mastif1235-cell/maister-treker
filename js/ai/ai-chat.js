@@ -27,14 +27,21 @@ MTAI.createChatController = function(deps){
     busy = true; lastFailed = null;
     emit('busy', true);
     emit('user', question);
+    /* Bounded контекст сессии: последние 8 user/assistant сообщений БЕЗ
+       текущего вопроса (он идёт отдельным полем) — follow-up «а за август?»,
+       «а какой там сигнал?» работают без повторов со стороны пользователя. */
+    const history = messages
+      .filter(function(m){ return (m.role === 'user' || m.role === 'assistant'); })
+      .slice(-8)
+      .map(function(m){ return { role: m.role, text: m.text }; });
     messages.push({ role:'user', text:question, ts:Date.now() });
-    let outcome = await client.ask(question);
+    let outcome = await client.ask(question, history);
     /* Один авто-ретрай для rate_limit з урахуванням retryAfterSec (макс 35 с). */
     if(!outcome.ok && outcome.error.kind === 'rate_limit'){
       const wait = Math.min(outcome.error.retryAfterSec ? outcome.error.retryAfterSec + 3 : 25, 35);
       emit('wait', wait);
       await sleep(wait * 1000);
-      outcome = await client.ask(question);
+      outcome = await client.ask(question, history);
     }
     busy = false;
     emit('busy', false);
