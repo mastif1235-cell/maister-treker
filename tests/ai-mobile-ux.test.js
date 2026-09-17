@@ -74,7 +74,14 @@ function boot(){
     document:doc, Event:function(t){ this.type=t; }, navigator:null,
     fetch:async function(url,init){
       sandbox.fetchCalls.push({url:String(url), body:JSON.parse((init||{}).body||'{}')});
-      if(sandbox.force429) return new Response(JSON.stringify({error:'rate_limited', retry_after_sec:25}),{status:429});
+      if(sandbox.force429){
+        /* Worker віддає нормалізовані секунди від Groq. null => upstream не
+           сказав точного часу (тоді UI не має вигадувати countdown). */
+        const wait = sandbox.retryAfterSeconds===undefined ? 25 : sandbox.retryAfterSeconds;
+        const body = {error:'rate_limited', code:'rate_limit'};
+        if(wait!=null) body.retryAfterSeconds = wait;
+        return new Response(JSON.stringify(body),{status:429});
+      }
       return new Response(JSON.stringify({ok:true,answer:'Знайдено 8 заявок у Таромському за серпень 2026.',meta:{rounds:2,tool_calls:1},tickets:EIGHT_TICKETS}),{status:200});
     } };
   sandbox.fetchCalls=[];
@@ -208,8 +215,8 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
     doc.getElementById('aiInput').value='вопрос с лимитом';
     doc.getElementById('aiForm').submit();
     await tick();
-    const cd=doc.getElementById('aiCooldownMsg');
-    assert.ok(cd,'cooldown bubble rendered');
+    const cd=doc.getElementById('aiRateLimitMsg');
+    assert.ok(cd,'rate-limit bubble rendered');
     assert.match(textTree(cd),/Ліміт Groq\. Повтор через \d+ с\./,'countdown text «Ліміт Groq. Повтор через N с.»');
     assert.equal(doc.getElementById('aiSendBtn').disabled,true,'Send disabled during cooldown');
     const callsNow=sandbox.fetchCalls.length;
@@ -257,7 +264,7 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
     // countdown завершився (в реальності 20-30 с; тут прискорюємо годинник)
     advance(60000);
     await tick(700); // даємо таймерам UI відпрацювати розблокування
-    const cdBubble=doc.getElementById('aiCooldownMsg');
+    const cdBubble=doc.getElementById('aiRateLimitMsg');
     assert.match(textTree(cdBubble),/Можна повторити запит/,'countdown finished -> «Можна повторити запит»');
     assert.equal(doc.getElementById('aiSendBtn').disabled,false,'Send unblocked after cooldown');
     assert.equal(retryBtn.disabled,false,'RETRY BUTTON RE-ENABLED after cooldown (was the bug: stayed disabled)');
@@ -277,7 +284,7 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
     assert.equal(lastBubble.className,'ai-msg ai-msg-assistant','successful retry renders an assistant reply as the newest bubble');
     assert.match(textTree(lastBubble),/Таромское/,'assistant reply carries the answer content (ticket cards)');
     assert.ok(!messages.children.some(c=>c.className==='ai-msg ai-msg-error'&&/Повторити запит/.test(textTree(c))),'stale error bubble with Retry removed after success');
-    assert.equal(doc.getElementById('aiCooldownMsg'),null,'cooldown bubble cleared after a successful retry');
+    assert.equal(doc.getElementById('aiRateLimitMsg'),null,'rate-limit bubble cleared after a successful retry');
     assert.equal(doc.getElementById('aiSendBtn').disabled,false,'Send usable after successful retry');
     console.log('PASS retry after cooldown: button re-enabled, /ask called once, original text, no duplicate user bubble, reply rendered');
   }
@@ -301,6 +308,101 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
     console.log('PASS repeated retry: single listener, one request per click');
   }
 
-  console.log('PASS ai-mobile-ux: 14/14 mobile acceptance checks');
+  /* 15) A: реальний Retry-After від upstream НЕ клемпиться у 20–30 с.
+     Groq сказав 73 -> у countdown має бути саме 73. */
+  {
+    doc.getElementById('aiClearBtn').click();
+    sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+120000;
+    sandbox.force429=true; sandbox.retryAfterSeconds=73;
+    doc.getElementById('aiInput').value='вопрос A';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const b=doc.getElementById('aiRateLimitMsg');
+    assert.ok(b,'rate-limit bubble rendered');
+    const m=/Повтор через (\d+) с\./.exec(textTree(b));
+    assert.ok(m,'countdown shown when upstream gave an exact wait');
+    assert.equal(Number(m[1]),73,'countdown == upstream 73s (NOT clamped to 20-30)');
+    console.log('PASS A: Retry-After=73 -> countdown 73s, no 20-30 clamp');
+  }
+
+  /* 15b) A2: 120 секунд теж проходить без clamp */
+  {
+    doc.getElementById('aiClearBtn').click();
+    sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+200000;
+    sandbox.retryAfterSeconds=120;
+    doc.getElementById('aiInput').value='вопрос A2';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const m=/Повтор через (\d+) с\./.exec(textTree(doc.getElementById('aiRateLimitMsg')));
+    assert.equal(Number(m[1]),120,'countdown == upstream 120s');
+    console.log('PASS A2: Retry-After=120 -> countdown 120s');
+  }
+
+  /* 16) B: 429 БЕЗ retryAfter -> жодного вигаданого countdown; чесний текст;
+     Send і Retry лишаються доступні для ручного повтору. */
+  {
+    doc.getElementById('aiClearBtn').click();
+    sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+300000;
+    sandbox.retryAfterSeconds=null;           // upstream не сказав часу
+    doc.getElementById('aiInput').value='вопрос B';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const b=doc.getElementById('aiRateLimitMsg');
+    assert.ok(b,'rate-limit bubble rendered without a wait time');
+    assert.ok(!/Повтор через \d+ с\./.test(textTree(b)),'NO invented countdown when upstream is silent');
+    assert.match(textTree(b),/ще не відновився|Спробуйте пізніше/,'honest «try later» message');
+    assert.equal(doc.getElementById('aiSendBtn').disabled,false,'Send stays enabled (manual retry allowed)');
+    assert.equal(doc.getElementById('aiRateLimitRetry').disabled,false,'Retry stays enabled');
+    console.log('PASS B: no retryAfter -> honest message, no fake countdown, manual retry allowed');
+  }
+
+  /* 17) C+D+E: Retry -> другий /ask; повторний 429 з новим часом оновлює ТУ Ж
+     плашку (без дублікатів); наступний Retry -> 200 і стан ліміту зникає. */
+  {
+    doc.getElementById('aiClearBtn').click();
+    sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+400000;
+    sandbox.force429=true; sandbox.retryAfterSeconds=5;
+    doc.getElementById('aiInput').value='вопрос CDE';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const countRateBubbles=()=>messages.children.filter(c=>c.id==='aiRateLimitMsg').length;
+    assert.equal(countRateBubbles(),1,'exactly one rate-limit bubble');
+    const usersAfterFirst=messages.children.filter(c=>c.className==='ai-msg ai-msg-user').length;
+    const callsAfterFirst=sandbox.fetchCalls.length;
+
+    // C: чекаємо реальний cooldown і тиснемо Retry -> другий /ask
+    sandbox.__now=sandbox.__now+6000;
+    await tick(700);
+    const rb=doc.getElementById('aiRateLimitRetry');
+    assert.equal(rb.disabled,false,'retry enabled once the real cooldown elapsed');
+    sandbox.retryAfterSeconds=41;            // D: другий 429 з НОВИМ часом
+    rb.click();
+    await tick(80);
+    assert.equal(sandbox.fetchCalls.length,callsAfterFirst+1,'C: retry performed exactly one /ask');
+    assert.equal(sandbox.fetchCalls[sandbox.fetchCalls.length-1].body.question,'вопрос CDE','retry reuses the original question');
+
+    // D: та сама плашка, оновлений час, БЕЗ дубліката
+    assert.equal(countRateBubbles(),1,'D: still exactly ONE rate-limit bubble (no duplicate red rows)');
+    const m2=/Повтор через (\d+) с\./.exec(textTree(doc.getElementById('aiRateLimitMsg')));
+    assert.ok(m2,'D: countdown restarted');
+    assert.equal(Number(m2[1]),41,'D: countdown uses the NEW upstream wait (41s)');
+    assert.equal(messages.children.filter(c=>c.className==='ai-msg ai-msg-user').length,usersAfterFirst,'no duplicate user message on retry');
+
+    // E: наступний Retry -> 200
+    sandbox.__now=sandbox.__now+42000;
+    await tick(700);
+    sandbox.force429=false;
+    doc.getElementById('aiRateLimitRetry').click();
+    await tick(80);
+    assert.equal(doc.getElementById('aiRateLimitMsg'),null,'E: rate-limit state disappears after a successful retry');
+    const last=messages.children[messages.children.length-1];
+    assert.equal(last.className,'ai-msg ai-msg-assistant','E: assistant reply rendered');
+    assert.equal(doc.getElementById('aiSendBtn').disabled,false,'E: Send usable again');
+    assert.equal(messages.children.filter(c=>c.className==='ai-msg ai-msg-user').length,usersAfterFirst,'E: still no duplicate user message');
+    sandbox.retryAfterSeconds=undefined;
+    console.log('PASS C/D/E: retry -> one /ask; repeated 429 updates the SAME bubble with the new wait; success clears the rate-limit state');
+  }
+
+  console.log('PASS ai-mobile-ux: 18/18 mobile acceptance checks');
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(1); });

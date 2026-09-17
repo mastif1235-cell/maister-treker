@@ -48,13 +48,41 @@ function load(files, fetchImpl, extra){
 
   /* 3) 429 -> понятное сообщение о лимите */
   {
-    const sb=load(CORE, async function(){ return new Response(JSON.stringify({error:'rate_limited'}),{status:429,headers:{'Retry-After':'20'}}); });
+    /* Worker нормалізує Groq retry-after у payload.retryAfterSeconds —
+       саме воно є джерелом істини для countdown (без clamp 20–30 с). */
+    const sb=load(CORE, async function(){ return new Response(JSON.stringify({error:'rate_limited', code:'rate_limit', retryAfterSeconds:20}),{status:429,headers:{'Retry-After':'20'}}); });
     sb.settings={ai:{enabled:true,backendUrl:'https://x.example',backendMode:'shared'},aiBearerToken:'n:tok1234567890abcdef:read'};
     const out=await sb.MTAI.client.ask('q');
     assert.equal(out.error.kind,'rate_limit');
     assert.match(out.error.message,/Ліміт/);
     assert.match(out.error.message,/20/,'retry seconds surfaced');
     console.log('PASS 429: понятное сообщение + retry seconds');
+  }
+
+  /* 3b) Сумісність зі СТАРИМ Worker'ом: upstream-429 приходив як 502
+     HTTP_429 і час був лише в тексті. Має розпізнаватись як rate_limit
+     із точними секундами (фікс працює ще до оновлення Worker'а). */
+  {
+    const sb=load(CORE, async function(){
+      return new Response(JSON.stringify({ok:false, error:'ask_failed', code:'HTTP_429',
+        detail:'Rate limit reached for model. Please try again in 73s.'}),{status:502});
+    });
+    sb.settings={ai:{enabled:true,backendUrl:'https://x.example',backendMode:'shared'},aiBearerToken:'n:tok1234567890abcdef:read'};
+    const out=await sb.MTAI.client.ask('q');
+    assert.equal(out.error.kind,'rate_limit','legacy 502 HTTP_429 is still a rate limit');
+    assert.equal(out.error.retryAfterSec,73,'exact wait parsed from the Groq message (no 20-30 guess)');
+    console.log('PASS legacy Worker 502 HTTP_429 -> rate_limit with the real 73s');
+  }
+
+  /* 3c) 429 БЕЗ будь-якого часу -> НЕ вигадуємо секунди */
+  {
+    const sb=load(CORE, async function(){ return new Response(JSON.stringify({error:'rate_limited', code:'rate_limit'}),{status:429}); });
+    sb.settings={ai:{enabled:true,backendUrl:'https://x.example',backendMode:'shared'},aiBearerToken:'n:tok1234567890abcdef:read'};
+    const out=await sb.MTAI.client.ask('q');
+    assert.equal(out.error.kind,'rate_limit');
+    assert.equal(out.error.retryAfterSec,null,'no invented seconds');
+    assert.match(out.error.message,/ще не відновився|пізніше/,'honest message instead of a fake countdown');
+    console.log('PASS 429 without timing -> honest message, retryAfterSec=null');
   }
 
   /* 4) 503 ask_not_configured -> провайдер не включён/ключ не добавлен */

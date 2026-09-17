@@ -185,6 +185,9 @@ function build(){
      очищається, тому старі кнопки стають мертвими — прибираємо їх, щоб
      тап по кнопці НІКОЛИ не був silent no-op. */
   let retryButtons = [];
+  /* Токен активного відліку: старий таймер не має права керувати Send
+     після того, як прийшов новий 429 з іншим часом. */
+  let cooldownRun = 0;
 
   const msgBubble = function(kind){
     const el = doc.createElement('div');
@@ -298,6 +301,8 @@ function build(){
         /* Успішна відповідь (у т.ч. після ручного retry) закриває тему
            ліміту: cooldown-bubble і кнопки Retry старих помилок прибираємо,
            щоб не лишалося «мертвих» елементів. */
+        cooldownRun++;                       // зупиняємо будь-який живий відлік
+        const rl = $('aiRateLimitMsg'); if(rl) rl.remove();
         const cd = $('aiCooldownMsg'); if(cd) cd.remove();
         const sb = $('aiSendBtn'); if(sb) sb.disabled = false;
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
@@ -352,25 +357,71 @@ function build(){
           b.appendChild(doc.createElement('br')); b.appendChild(rb);
         }
       },
+      /* ОДИН rate-limit стан на pending-запит. Повторний 429 не створює нову
+         червону плашку — оновлює наявну (і перезапускає відлік, якщо upstream
+         дав новий час). Кнопка Retry живе в цій же плашці. */
+      rate_limit: function(info){
+        const sec = info && Number(info.sec) > 0 ? Math.ceil(Number(info.sec)) : 0;
+        let b = $('aiRateLimitMsg');
+        if(!b){
+          b = msgBubble('error');
+          b.id = 'aiRateLimitMsg';
+        }
+        while(b.firstChild) b.removeChild(b.firstChild);
+        b.textContent = '';
+        const line = doc.createElement('div');
+        line.id = 'aiRateLimitText';
+        /* Немає точного часу -> НІЯКОГО вигаданого countdown. */
+        line.textContent = sec > 0
+          ? '⏳ Ліміт Groq. Повтор через ' + sec + ' с.'
+          : '⏳ ' + ((info && info.message) || 'Ліміт Groq ще не відновився. Спробуйте пізніше.');
+        b.appendChild(line);
+        if(chat.canRetry()){
+          const rb = doc.createElement('button');
+          rb.type = 'button'; rb.className = 'btn btn-sm'; rb.textContent = '↻ Повторити запит';
+          rb.id = 'aiRateLimitRetry';
+          rb.disabled = chat.cooldownRemainingSec() > 0;
+          rb.addEventListener('click', function(){
+            if(chat.cooldownRemainingSec() > 0) return;
+            rb.disabled = true;
+            Promise.resolve(chat.retry())['catch'](function(){ return null; })
+              .then(function(res){
+                /* Успіх -> плашку прибирає hook assistant. Новий 429 ->
+                   ця ж плашка перемальовується (rate_limit hook). */
+                if(!res || !res.ok){
+                  if(chat.canRetry() && chat.cooldownRemainingSec() <= 0) rb.disabled = false;
+                }
+              });
+          });
+          b.appendChild(doc.createElement('br'));
+          b.appendChild(rb);
+        }
+        messages.scrollTop = messages.scrollHeight;
+      },
       /* 429/TPM cooldown: відлік у окремому bubble, Send заблокований;
          жодних автоматичних відправок — після кінця користувач тисне сам. */
       cooldown: function(){
-        /* Один bubble на весь cooldown: повторний 429 переиспользує його,
-           інакше в чаті накопичуються паралельні лічильники. */
-        const b = $('aiCooldownMsg') || (function(){ const el = msgBubble('error'); el.id = 'aiCooldownMsg'; return el; })();
+        /* Відлік іде в ТІЙ САМІЙ плашці ліміту (aiRateLimitMsg) — жодних
+           паралельних лічильників і дублікатів червоних бульбашок. */
+        const b = $('aiRateLimitMsg');
+        if(!b) return;
         const sendBtn = $('aiSendBtn');
+        const cooldownToken = ++cooldownRun;
         const update = function(){
-          /* Bubble міг бути прибраний (успішний retry / clear) — зупиняємо
-             таймер, щоб він не блокував Send заднім числом. */
-          if($('aiCooldownMsg') !== b) return;
+          /* Плашку прибрали (успіх/clear) або стартував новіший відлік —
+             цей таймер мовчки помирає, не чіпаючи Send. */
+          if(cooldownToken !== cooldownRun || $('aiRateLimitMsg') !== b) return;
+          const line = $('aiRateLimitText');
           const r = chat.cooldownRemainingSec();
           if(r > 0){
-            b.textContent = '⏳ Ліміт Groq. Повтор через ' + r + ' с.';
+            if(line) line.textContent = '⏳ Ліміт Groq. Повтор через ' + r + ' с.';
             if(sendBtn) sendBtn.disabled = true;
             setTimeout(update, 500);
           }else{
-            b.textContent = '↻ Можна повторити запит';
+            if(line) line.textContent = '↻ Можна повторити запит';
             if(sendBtn) sendBtn.disabled = false;
+            const rb = $('aiRateLimitRetry');
+            if(rb) rb.disabled = false;
           }
         };
         update();
@@ -379,7 +430,7 @@ function build(){
         const el = $('aiVoiceStatus');
         if(el) el.textContent = '⏳ Ліміт Groq: зачекайте ' + (info && info.sec ? info.sec : 1) + ' с.';
       },
-      cleared: function(){ retryButtons = []; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
+      cleared: function(){ retryButtons = []; cooldownRun++; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
     }
   });
 

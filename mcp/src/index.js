@@ -181,6 +181,21 @@ export function createApp(env, deps){
          leaking credentials. */
       const payload = {ok:false, error:'ask_failed', code};
       if(typeof outcome.detail === 'string' && outcome.detail) payload.detail = outcome.detail;
+      /* Upstream rate limit is a RATE LIMIT for the client too: surface it as
+         a real 429 with the normalized wait, instead of an opaque 502 that
+         forced the PWA to guess «20-30 s». retryAfterSeconds is absent when
+         Groq did not say — the UI must then NOT invent a countdown. */
+      if(code === 'HTTP_429'){
+        payload.error = 'rate_limited';
+        payload.code = 'rate_limit';
+        const headers = {};
+        if(typeof outcome.retryAfterSeconds === 'number' && isFinite(outcome.retryAfterSeconds) && outcome.retryAfterSeconds > 0){
+          payload.retryAfterSeconds = outcome.retryAfterSeconds;
+          payload.retry_after_sec = outcome.retryAfterSeconds; // back-compat
+          headers['Retry-After'] = String(outcome.retryAfterSeconds);
+        }
+        return jsonResponse(429, payload, headers);
+      }
       return jsonResponse(upstream ? 502 : 500, payload);
     }
     const okPayload = {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}};

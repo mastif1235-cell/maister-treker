@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createGroqClient} from '../../src/ask/groq.js';
+import {createGroqClient, parseDurationSeconds, retryAfterFromHeaders, retryAfterFromMessage} from '../../src/ask/groq.js';
 
 const KEY = 'gsk_test_key_0123456789abcdef0123456789';
 const TOOLS = [{type:'function', function:{name:'list_tickets', parameters:{type:'object'}}}];
@@ -129,4 +129,83 @@ test('network failure and timeout map to NETWORK', async () => {
   const result = await client.chat([], TOOLS);
   assert.equal(result.ok, false);
   assert.equal(result.code, 'NETWORK');
+});
+
+
+/* ── Groq rate-limit contract (console.groq.com/docs/rate-limits) ───────────
+   retry-after: seconds, only on 429; x-ratelimit-reset-tokens (TPM) and
+   x-ratelimit-reset-requests (RPD) are Go-style durations ("7.66s",
+   "2m59.56s"). The real wait must survive to the client so the UI can show a
+   truthful countdown instead of a made-up 20-30 s. */
+
+test('parseDurationSeconds understands Groq duration strings', () => {
+  assert.equal(parseDurationSeconds('2'), 2);
+  assert.equal(parseDurationSeconds('7.66s'), 8);        // ceil
+  assert.equal(parseDurationSeconds('2m59.56s'), 180);
+  assert.equal(parseDurationSeconds('1m30s'), 90);
+  assert.equal(parseDurationSeconds('500ms'), 1);        // never below 1s
+  assert.equal(parseDurationSeconds('1h'), 3600);
+  assert.equal(parseDurationSeconds(''), null);
+  assert.equal(parseDurationSeconds(null), null);
+  assert.equal(parseDurationSeconds('soon'), null);
+  assert.equal(parseDurationSeconds('0'), null);
+});
+
+test('retryAfterFromHeaders prefers retry-after, falls back to reset hints', () => {
+  const h = (obj) => new Headers(obj);
+  assert.equal(retryAfterFromHeaders(h({'retry-after':'73'})), 73);
+  // retry-after wins over the reset hints
+  assert.equal(retryAfterFromHeaders(h({'retry-after':'41', 'x-ratelimit-reset-tokens':'7.66s'})), 41);
+  // no retry-after -> use the reset hints (worst case of the two)
+  assert.equal(retryAfterFromHeaders(h({'x-ratelimit-reset-tokens':'7.66s'})), 8);
+  assert.equal(retryAfterFromHeaders(h({'x-ratelimit-reset-tokens':'7.66s', 'x-ratelimit-reset-requests':'2m59.56s'})), 180);
+  // nothing usable -> null (the UI must NOT invent a countdown)
+  assert.equal(retryAfterFromHeaders(h({})), null);
+  assert.equal(retryAfterFromHeaders(null), null);
+});
+
+test('retryAfterFromMessage reads the wait out of Groq error prose', () => {
+  assert.equal(retryAfterFromMessage('Rate limit reached. Please try again in 7.66s.'), 8);
+  assert.equal(retryAfterFromMessage('please try again in 1m30s'), 90);
+  assert.equal(retryAfterFromMessage('rate limited'), null);
+});
+
+test('429 keeps the REAL wait from the retry-after header (no clamping)', async () => {
+  const fetchImpl = async function(){
+    return new Response(JSON.stringify({error:{message:'Rate limit reached for tokens'}}), {
+      status:429, headers:{'retry-after':'73', 'x-ratelimit-reset-tokens':'7.66s'}
+    });
+  };
+  const result = await createGroqClient({fetchImpl, apiKey:KEY}).chat([], TOOLS);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'HTTP_429');
+  assert.equal(result.retryAfterSeconds, 73);
+});
+
+test('429 without retry-after falls back to reset-tokens, then to the message', async () => {
+  const viaReset = async function(){
+    return new Response(JSON.stringify({error:{message:'Rate limit reached'}}), {
+      status:429, headers:{'x-ratelimit-reset-tokens':'41s'}
+    });
+  };
+  assert.equal((await createGroqClient({fetchImpl:viaReset, apiKey:KEY}).chat([], TOOLS)).retryAfterSeconds, 41);
+
+  const viaMessage = async function(){
+    return new Response(JSON.stringify({error:{message:'Rate limit reached for model. Please try again in 12.5s.'}}), {status:429});
+  };
+  assert.equal((await createGroqClient({fetchImpl:viaMessage, apiKey:KEY}).chat([], TOOLS)).retryAfterSeconds, 13);
+});
+
+test('429 with no timing information at all reports null (never a guess)', async () => {
+  const fetchImpl = async function(){ return new Response('Too Many Requests', {status:429}); };
+  const result = await createGroqClient({fetchImpl, apiKey:KEY}).chat([], TOOLS);
+  assert.equal(result.code, 'HTTP_429');
+  assert.equal(result.retryAfterSeconds, null);
+});
+
+test('non-429 errors carry no retryAfterSeconds', async () => {
+  const fetchImpl = async function(){ return new Response('Unauthorized', {status:401}); };
+  const result = await createGroqClient({fetchImpl, apiKey:KEY}).chat([], TOOLS);
+  assert.equal(result.code, 'HTTP_401');
+  assert.equal(result.retryAfterSeconds, undefined);
 });

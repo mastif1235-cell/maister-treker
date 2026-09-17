@@ -141,13 +141,16 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   const chat=M.createChatController({ client, sleep:function(){ return Promise.resolve(); },
     cooldownSec:function(){ return 0.2; },   // тестовий cooldown 200мс
     hooks:{ error:function(e){ errors.push(e); },
+            /* rate_limit має власний хук: ОДНА плашка ліміту замість нової
+               червоної бульбашки на кожен 429. */
+            rate_limit:function(e){ errors.push(e); },
             cooldown:function(c){ cooldowns.push(c); },
             user:function(u){ userEmits.push(u); },
             assistant:function(a){ events.push(a); } } });
   (async function(){
     await chat.send('питання 1');            // 429 → cooldown, БЕЗ авто-ретраю
     assert.equal(calls,1,'429: exactly ONE backend call (no automatic resend)');
-    assert.equal(errors.length,1,'rate_limit surfaced as error');
+    assert.equal(errors.length,1,'rate_limit surfaced via the single rate-limit state');
     assert.equal(cooldowns.length,1,'cooldown emitted');
     assert.ok(chat.cooldownRemainingSec()>0,'cooldown active');
     assert.equal(chat.canRetry(),true,'can retry after failure');

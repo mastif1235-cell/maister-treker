@@ -133,6 +133,52 @@ test('Groq 401 -> controlled 502 ask_failed HTTP_401', async () => {
   assert.equal(body.code, 'HTTP_401');
 });
 
+/* Upstream rate limit must reach the PWA as a REAL 429 carrying the wait
+   Groq asked for — not an opaque 502 that forces the UI to guess. Raw
+   upstream headers are never forwarded, only the normalized number. */
+test('Groq 429 -> client 429 rate_limit with the real retryAfterSeconds', async () => {
+  const {app} = await makeAskApp(askEnv(), function(){
+    return new Response(JSON.stringify({error:{message:'Rate limit reached for tokens'}}), {
+      status:429,
+      headers:{'retry-after':'73', 'x-ratelimit-reset-tokens':'7.66s', 'x-ratelimit-limit-tokens':'18000'}
+    });
+  });
+  const response = await postAsk(app, ASK_BODY);
+  assert.equal(response.status, 429, 'surfaced as a rate limit, not 502');
+  assert.equal(response.headers.get('Retry-After'), '73');
+  const body = await response.json();
+  assert.equal(body.error, 'rate_limited');
+  assert.equal(body.code, 'rate_limit');
+  assert.equal(body.retryAfterSeconds, 73, 'real upstream wait, not clamped');
+  assert.equal(body.retry_after_sec, 73, 'back-compat field');
+  // no upstream header dump / secrets
+  const text = JSON.stringify(body);
+  assert.ok(!text.includes('x-ratelimit-limit-tokens'), 'raw upstream headers are not forwarded');
+  assert.ok(!text.includes('gsk_'), 'no key material');
+});
+
+test('Groq 429 without timing -> 429 with NO invented retryAfterSeconds', async () => {
+  const {app} = await makeAskApp(askEnv(), function(){
+    return new Response('Too Many Requests', {status:429});
+  });
+  const response = await postAsk(app, ASK_BODY);
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), null, 'no fabricated Retry-After');
+  const body = await response.json();
+  assert.equal(body.code, 'rate_limit');
+  assert.equal(body.retryAfterSeconds, undefined, 'absent when upstream did not say');
+});
+
+test('Groq 429 with only x-ratelimit-reset-tokens -> that wait is used', async () => {
+  const {app} = await makeAskApp(askEnv(), function(){
+    return new Response(JSON.stringify({error:{message:'Rate limit reached'}}), {
+      status:429, headers:{'x-ratelimit-reset-tokens':'2m59.56s'}
+    });
+  });
+  const body = await (await postAsk(app, ASK_BODY)).json();
+  assert.equal(body.retryAfterSeconds, 180);
+});
+
 test('runaway tool-loop terminates with TOO_MANY_TOOL_CALLS', async () => {
   const infinite = function(){
     return new Response(JSON.stringify({choices:[{message:{role:'assistant', content:'', tool_calls:[

@@ -9,10 +9,38 @@ MTAI.createClient = function(options){
   const getConfig = options.getConfig; // () => ({backendUrl, bearer, model, provider})
   const timeoutMs = (options.timeoutMs || MTAI.config.LIMITS.timeoutMs);
 
+  /* Запасний парсер часу з ТЕКСТУ помилки (основне джерело — число від
+     Worker'а). Розуміє і словесні форми, і Groq-формат тривалості
+     («try again in 7.66s», «1m30s»), тому точний час показується навіть до
+     оновлення Worker'а. Повертає цілі секунди або null. */
+  function parseDurationSec(raw){
+    const t = String(raw || '').trim().toLowerCase();
+    if(!t) return null;
+    if(/^\d+(?:\.\d+)?$/.test(t)){
+      const plain = Number(t);
+      return isFinite(plain) && plain > 0 ? Math.ceil(plain) : null;
+    }
+    const units = { ms:0.001, s:1, m:60, h:3600 };
+    let total = 0, matched = false;
+    const re = /(\d+(?:\.\d+)?)\s*(ms|h|m|s)/g;
+    let part;
+    while((part = re.exec(t)) !== null){
+      const amount = Number(part[1]);
+      if(!isFinite(amount)) continue;
+      total += amount * units[part[2]];
+      matched = true;
+    }
+    if(!matched || total <= 0) return null;
+    return Math.max(1, Math.ceil(total));
+  }
+
   function parseRetryAfter(text){
     const t = String(text || '');
-    let m = /(\d{1,3})\s*(?:секунд|секунди|сек|seconds?|sec)/i.exec(t);
-    if(!m) m = /retry[-\s]?after\D{0,12}(\d{1,3})/i.exec(t);
+    let m = /(\d{1,4})\s*(?:секунд|секунди|сек|seconds?|sec\b)/i.exec(t);
+    if(m) return Number(m[1]);
+    m = /try again in\s+((?:\d+(?:\.\d+)?\s*(?:ms|h|m|s))+)/i.exec(t);
+    if(m) return parseDurationSec(m[1]);
+    m = /retry[-\s]?after\D{0,12}(\d{1,4})/i.exec(t);
     return m ? Number(m[1]) : null;
   }
 
@@ -26,10 +54,26 @@ MTAI.createClient = function(options){
     const code = payload && payload.code ? String(payload.code) : '';
     const detail = payload && typeof payload.detail === 'string' ? payload.detail : '';
     if(status === 401) return { kind:'auth', message:'Невірний токен AI-бекенда. Перевірте його в Налаштуваннях → 🤖 AI.', detail:'' };
-    if(status === 429 || /rate limit/i.test(detail)){
+    /* Поточний production-Worker віддає upstream-429 як 502 HTTP_429 (нова
+       версія віддає чесний 429). Розпізнаємо обидва формати, щоб фікс працював
+       і до оновлення Worker'а. */
+    const upstreamRateLimit = code === 'HTTP_429' || code === 'rate_limit'
+      || (payload && payload.error === 'rate_limited');
+    if(status === 429 || upstreamRateLimit || /rate limit/i.test(detail)){
+      /* Джерело істини — нормалізоване число від Worker'а (він бере його з
+         Groq retry-after / x-ratelimit-reset-*). Текст розбираємо лише як
+         запасний варіант. Якщо точного часу НЕМАЄ — не вигадуємо countdown:
+         краще чесне «спробуйте пізніше», ніж хибне «через 20–30 с». */
+      const fromPayload = payload && (payload.retryAfterSeconds != null ? payload.retryAfterSeconds : payload.retry_after_sec);
+      const numeric = Number(fromPayload);
+      const retryAfterSec = (isFinite(numeric) && numeric > 0)
+        ? Math.ceil(numeric)
+        : (parseRetryAfter(detail) || null);
       return { kind:'rate_limit',
-        message:'Ліміт Groq (TPM, безкоштовний тариф).' + (parseRetryAfter(detail) ? ' Просить зачекати ~' + parseRetryAfter(detail) + ' с.' : ' Спробуйте за 20–30 секунд.'),
-        detail: detail, retryAfterSec: parseRetryAfter(detail) };
+        message: retryAfterSec
+          ? 'Ліміт Groq (TPM, безкоштовний тариф). Просить зачекати ~' + retryAfterSec + ' с.'
+          : 'Ліміт Groq ще не відновився. Спробуйте пізніше.',
+        detail: detail, retryAfterSec: retryAfterSec };
     }
     if(status === 503) return { kind:'not_configured',
       message:'AI на цьому backend не налаштований або провайдера вимкнено (' + ((payload && (payload.error || code)) || 'ask_not_configured') + '). Перевірте, що провайдер увімкнено на Worker і ключ додано як Secret (див. «Як підключити AI» у налаштуваннях).',

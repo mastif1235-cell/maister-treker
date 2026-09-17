@@ -13,11 +13,17 @@ MTAI.createChatController = function(deps){
   let busy = false;
   let lastFailed = null;   // останнє питання, яке впало (для «Повторити»)
   let cooldownUntil = 0;   // 429/TPM: until-таймстемп, доки Send/Retry заблоковані
-  /* Тривалість cooldown (сек): з Retry-After (якщо бекенд дав), інакше
-     дефолт; тримається у вікні 20–30 с. У тестах можна перевизначити. */
+  /* Тривалість cooldown (сек) = РЕАЛЬНИЙ час від upstream (Worker нормалізує
+     Groq retry-after / x-ratelimit-reset-*). Жодного clamp у 20–30 с: якщо
+     Groq каже 73 с — відлік 73 с, якщо 120 — 120. Якщо точного часу немає,
+     повертаємо 0: countdown не показуємо взагалі (краще чесно «спробуйте
+     пізніше», ніж хибна обіцянка). У тестах можна перевизначити. */
   const cooldownSec = typeof deps.cooldownSec === 'function'
     ? deps.cooldownSec
-    : function(err){ return Math.min(Math.max(err && err.retryAfterSec ? err.retryAfterSec + 2 : 25, 20), 30); };
+    : function(err){
+        const sec = Number(err && err.retryAfterSec);
+        return (isFinite(sec) && sec > 0) ? Math.ceil(sec) : 0;
+      };
   function cooldownRemainingSec(){
     const r = Math.ceil((cooldownUntil - Date.now()) / 1000);
     return r > 0 ? r : 0;
@@ -67,10 +73,20 @@ MTAI.createChatController = function(deps){
        заблокував Send/Retry. Ніяких автоматичних повторних відправок;
        історія не ламається (error-рядки в контекст не потрапляють). */
     const isRateLimit = outcome.error && outcome.error.kind === 'rate_limit';
-    if(isRateLimit) cooldownUntil = Date.now() + cooldownSec(outcome.error) * 1000;
+    /* Точний час є -> ставимо cooldown; немає -> cooldown НЕ виставляємо,
+       Send/Retry лишаються доступні (ручний повтор без брехливого відліку). */
+    const waitSec = isRateLimit ? cooldownSec(outcome.error) : 0;
+    if(isRateLimit) cooldownUntil = waitSec > 0 ? Date.now() + waitSec * 1000 : 0;
     messages.push({ role:'error', text:outcome.error.message, ts:Date.now() });
-    emit('error', outcome.error);
-    if(isRateLimit) emit('cooldown', { sec: cooldownRemainingSec() });
+    /* Один rate-limit стан на один pending-запит: UI оновлює ОДНУ плашку
+       ліміту замість нової червоної бульбашки на кожен 429. */
+    if(isRateLimit && typeof hooks.rate_limit === 'function'){
+      emit('rate_limit', { sec: waitSec, message: outcome.error.message, retryAfterSec: outcome.error.retryAfterSec || null });
+    }else{
+      /* Немає спеціального хука (старіші споживачі) — помилка НЕ губиться. */
+      emit('error', outcome.error);
+    }
+    if(isRateLimit && waitSec > 0) emit('cooldown', { sec: cooldownRemainingSec() });
     return { ok:false, error:outcome.error };
   }
   async function retry(){ return lastFailed ? send(lastFailed, { isRetry:true }) : { ok:false, skipped:true }; }

@@ -212,7 +212,14 @@ export function createAskOrchestrator(options){
       if(rounds >= limits.maxRounds) return {ok:false, code:'TOO_MANY_ROUNDS', meta:{rounds, toolCallsMade}};
       rounds++;
       const response = await groq.chat(messages, groqTools);
-      if(!response.ok) return {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
+      if(!response.ok){
+        const failure = {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
+        /* Upstream 429: carry the real wait (seconds) up to the HTTP layer. */
+        if(typeof response.retryAfterSeconds === 'number' && isFinite(response.retryAfterSeconds)){
+          failure.retryAfterSeconds = response.retryAfterSeconds;
+        }
+        return failure;
+      }
       if(response.toolCalls.length){
         // Echo the assistant message back exactly as the API returned it
         // (standard continuation for tool results).
