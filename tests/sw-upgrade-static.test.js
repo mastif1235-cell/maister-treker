@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,fetchCalls=0,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v67-runtime-78'/,'installed-PWA cache revision is unique for the v91.34 full-snapshot restore release');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v67-runtime-79'/,'installed-PWA cache revision is unique for the v91.34 full-snapshot restore release');
 assert.match(appSource,/APP_VERSION\s*=\s*'v91\.34 · 2026-09-16'/,'canonical release identity is v91.34');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/function serviceWorkerUpdateIsSafe\(\)[\s\S]*hasUnsavedChanges\(\)[\s\S]*modalRoot[\s\S]*toolsSpeedController[\s\S]*isPointPlacementActive/,'update is deferred while a form, modal, speed test or map placement is active');

@@ -296,6 +296,11 @@ if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocomplete
     const kind=option.dataset.addressSuggestion,input=document.getElementById(`f_${kind}`),value=option.dataset.value;
     if(kind==='city'){
       const street=document.getElementById('f_street');input.value=value;street.value=MTAddressSuggestions.streetAfterCitySelection(settings,tickets,value,street.value);closeAddressSuggestionMenus();
+      // NEW (💰 Ціни): значення присвоєно програмно, тому браузер не надішле
+      // ні 'input', ні 'change' — застосовуємо ціни міста явно. Виклик
+      // захищений: підстановка адреси не має ламатись, навіть якщо модуль
+      // цін з якоїсь причини не завантажився.
+      if(typeof applyCityPricing==='function') applyCityPricing();
     }else{input.value=value;closeAddressSuggestionMenus();const house=document.getElementById('f_house');if(house&&!house.disabled)house.focus();}
   });
   document.addEventListener('pointerdown',event=>{if(!event.target.closest('.address-suggest-field')&&!event.target.closest('.address-suggestions'))closeAddressSuggestionMenus();});
@@ -312,8 +317,15 @@ if(addressAutocompleteForm&&!addressAutocompleteForm.dataset.addressAutocomplete
   /* NEW (💰 Ціни): зміна населеного пункту переобчислює автопідставлену суму —
      місто з індивідуальною ціною одразу дає свою. Вручну введену суму це не
      чіпає: applyDefaultCallFee/applyDefaultTariff мовчки виходять, щойно
-     feeIsAutoDefault/tariffIsAutoDefault стали false. */
-  document.getElementById('f_city').addEventListener('change', ()=>{ applyDefaultCallFee(); applyDefaultTariff(); });
+     feeIsAutoDefault/tariffIsAutoDefault стали false.
+
+     Слухаємо саме 'input', а не лише 'change': місто зазвичай не вводять
+     руками до кінця, а обирають зі списку підказок — тоді значення полю
+     присвоюється програмно, і 'change' браузер НЕ надсилає взагалі. Через це
+     індивідуальна ціна міста не потрапляла у форму (баг з телефона). */
+  ['input','change'].forEach(type=>{
+    document.getElementById('f_city').addEventListener(type, applyCityPricing);
+  });
   /* Сканер MAC через штрих-код на наліпці пристрою (Code128 і т.п.).
    Використовує нативний BarcodeDetector — без зовнішніх бібліотек, тому
    працює і офлайн. Якщо браузер API не підтримує — просто ховаємо кнопку

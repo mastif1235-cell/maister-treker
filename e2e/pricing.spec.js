@@ -67,6 +67,76 @@ test('💰 Ціни: міста з довідника видно без заяв
   expect(errors).toEqual([]);
 });
 
+/* Регресія з телефона: індивідуальна ціна міста зберігалась і показувалась у
+   налаштуваннях, але у форму заявки не потрапляла. Тут відтворено рівно той
+   шлях користувача: Налаштування → Ціни → місто → Виклик 400 → зберегти →
+   нова заявка → обрати місто зі списку підказок → поле «Виклик» = 400. */
+test('💰 Ціни: індивідуальна ціна міста застосовується у формі заявки', async ({ page, appEnv }) => {
+  const errors = await gotoApp(page, appEnv.url);
+  await waitAppReady(page);
+
+  await page.evaluate(()=>{
+    settings.defaultRepairCallFee = 300;
+    settings.defaultTariff = 250;
+    settings.defaultConnectFee = 500;
+    saveSettings();
+    switchTab('settings');
+    document.getElementById('newCityInput').value = 'Краснополье';
+    document.getElementById('addCityBtn').click();
+    document.getElementById('newCityInput').value = 'Дніпро';
+    document.getElementById('addCityBtn').click();
+    openSettingsHubSection('calculator');
+  });
+
+  // Ціни → Краснополье → Виклик 400 → зберегти
+  await page.evaluate(()=>document.querySelector('[data-pricing-open="краснополье"]').click());
+  await page.evaluate(()=>{
+    document.querySelector('input[data-pricing-input="override"][data-kind="callout"]').value = '400';
+    document.querySelector('[data-pricing-action="set-override"][data-kind="callout"]').click();
+  });
+  await expect(page.locator('#pricingBody')).toContainText('Індивідуальна');
+  expect(await page.evaluate(()=>settings.pricing.cities['краснополье'].overrides.callout)).toBe(400);
+
+  // Нова заявка: тип «Ремонт», місто обираємо саме тапом по підказці.
+  await page.evaluate(()=>{ switchTab('calculator'); resetCalcForm(); });
+  await page.evaluate(()=>{
+    const type = document.getElementById('f_type');
+    type.value = 'Ремонт';
+    type.dispatchEvent(new Event('change', {bubbles:true}));
+  });
+  expect(await page.evaluate(()=>Number(document.getElementById('f_callFee').value))).toBe(300);
+
+  await page.evaluate(()=>{
+    const city = document.getElementById('f_city');
+    city.value = 'Краснопол';
+    city.dispatchEvent(new Event('input', {bubbles:true}));
+  });
+  await page.locator('[data-address-suggestion="city"]').first().click();
+  expect(await page.evaluate(()=>document.getElementById('f_city').value)).toBe('Краснополье');
+  expect(await page.evaluate(()=>Number(document.getElementById('f_callFee').value))).toBe(400);
+
+  // Перехід на місто без override повертає загальну ціну.
+  await page.evaluate(()=>{
+    const city = document.getElementById('f_city');
+    city.value = 'Дніпро';
+    city.dispatchEvent(new Event('input', {bubbles:true}));
+  });
+  expect(await page.evaluate(()=>Number(document.getElementById('f_callFee').value))).toBe(300);
+
+  // Ручну ціну зміна міста не затирає.
+  await page.evaluate(()=>{
+    const fee = document.getElementById('f_callFee');
+    fee.value = '1234';
+    fee.dispatchEvent(new Event('input', {bubbles:true}));
+    const city = document.getElementById('f_city');
+    city.value = 'Краснополье';
+    city.dispatchEvent(new Event('input', {bubbles:true}));
+  });
+  expect(await page.evaluate(()=>Number(document.getElementById('f_callFee').value))).toBe(1234);
+
+  expect(errors).toEqual([]);
+});
+
 test('💰 Ціни: загальні, індивідуальні, наслідування і автопідстановка', async ({ page, appEnv }) => {
   const errors = await gotoApp(page, appEnv.url);
   await waitAppReady(page);

@@ -218,6 +218,150 @@ const baseSettings = () => ({defaultRepairCallFee:300, defaultTariff:400, defaul
   assert.match(openFn, /MTPricingUI\.render\(\)/, 'відкриття розділу перемальовує «Ціни» свіжими даними');
 }
 
+/* --- Регресія: індивідуальна ціна міста мусить доїжджати до форми заявки ---
+   Баг з телефона: override для «Краснополье» зберігався й показувався в
+   налаштуваннях, але поле «Виклик» у заявці лишалось на загальній ціні.
+   Перевіряємо на справжньому коді applyDefaultCallFee/applyDefaultTariff. */
+{
+  const source = fs.readFileSync(path.join(root, 'js', 'ticket-editor-domain.js'), 'utf8');
+  const start = source.indexOf('function applyDefaultCallFee()');
+  const end = source.indexOf('function syncFormToState()');
+  const block = source.slice(start, end);
+  assert.match(block, /function applyCityPricing\(\)/, 'є єдина точка застосування цін міста');
+
+  function makeForm(settings, type, city){
+    const fields = {f_callFee:{value:'0'}, f_tariff:{value:'0'}, f_city:{value:city}, f_type:{value:type}};
+    const sandbox = {
+      settings, calcState:{}, feeIsAutoDefault:true, tariffIsAutoDefault:true,
+      MTPricingService:service,
+      document:{getElementById:id=>fields[id] || null},
+      getEffectiveType:()=>fields.f_type.value,
+      safeNonNegativeNumber:(value, fallback=0)=>{const n=Number(value);return Number.isFinite(n)&&n>=0?n:fallback;},
+      ticketBaseCallFee:state=>Number(state.baseCallFee)||0,
+      effectiveTicketCallFee:state=>Number(state.baseCallFee)||0,
+      computeTotal:()=>{}
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(block, sandbox);
+    return {fields, sandbox, apply:()=>vm.runInContext('applyCityPricing();', sandbox)};
+  }
+
+  const priced = ()=>{
+    const s = baseSettings();
+    s.defaultRepairCallFee = 300; s.defaultTariff = 250; s.defaultConnectFee = 500;
+    return s;
+  };
+
+  /* 1) global Виклик 300, Краснополье override 400 → форма отримує 400. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    const form = makeForm(settings, 'Ремонт', 'Краснополье');
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 400);
+  }
+
+  /* 2) Місто без override → загальні 300. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    const form = makeForm(settings, 'Ремонт', 'Дніпро');
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 300);
+  }
+
+  /* 3) Override тарифу 350 доїжджає в поле тарифу. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'tariff', 350);
+    const form = makeForm(settings, 'Підключення', 'Краснополье');
+    form.apply();
+    assert.equal(Number(form.fields.f_tariff.value), 350);
+  }
+
+  /* 4) Override підключення 600 використовується там, де була загальна
+        defaultConnectFee — бізнес-логіка типів збережена. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'connection', 600);
+    const connect = makeForm(settings, 'Підключення', 'Краснополье');
+    connect.apply();
+    assert.equal(Number(connect.fields.f_callFee.value), 600);
+    // «Ремонт» бере callout, а не connection — тип заявки й далі вирішує.
+    const repair = makeForm(settings, 'Ремонт', 'Краснополье');
+    repair.apply();
+    assert.equal(Number(repair.fields.f_callFee.value), 300);
+    // «Інше» лишається без виклику й тарифу.
+    const other = makeForm(settings, 'Інше', 'Краснополье');
+    other.apply();
+    assert.equal(Number(other.fields.f_callFee.value), 0);
+    assert.equal(Number(other.fields.f_tariff.value), 0);
+  }
+
+  /* 5) Перехід із міста без override на місто з override оновлює авто-поля. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    const form = makeForm(settings, 'Ремонт', 'Дніпро');
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 300);
+    form.fields.f_city.value = 'Краснополье';
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 400);
+  }
+
+  /* 6) Вручну введена ціна не перезаписується при зміні міста. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    store.setOverride(settings, 'Краснополье', 'tariff', 350);
+    const form = makeForm(settings, 'Підключення', 'Дніпро');
+    form.apply();
+    form.fields.f_callFee.value = '1234';
+    form.fields.f_tariff.value = '999';
+    form.sandbox.feeIsAutoDefault = false;      // саме так це роблять слухачі полів
+    form.sandbox.tariffIsAutoDefault = false;
+    form.sandbox.calcState.baseCallFee = 1234;
+    form.fields.f_city.value = 'Краснополье';
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 1234, 'ручний виклик збережено');
+    assert.equal(Number(form.fields.f_tariff.value), 999, 'ручний тариф збережено');
+  }
+
+  /* 7) Стара збережена заявка не змінює історичних сум. */
+  {
+    const settings = priced();
+    const saved = {id:'old', city:'Краснополье', type:'Ремонт', callFee:300, tariff:0, sum:300};
+    const before = JSON.stringify(saved);
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    const form = makeForm(settings, 'Ремонт', 'Краснополье');
+    form.apply();
+    assert.equal(Number(form.fields.f_callFee.value), 400, 'нова заявка бере нову ціну');
+    assert.equal(JSON.stringify(saved), before, 'стара заявка недоторкана');
+  }
+
+  /* 8) Нормалізація регістру й пробілів: форма знаходить той самий override. */
+  {
+    const settings = priced();
+    store.setOverride(settings, 'Краснополье', 'callout', 400);
+    for(const written of ['краснополье', 'КРАСНОПОЛЬЕ', '  Краснополье  ']){
+      const form = makeForm(settings, 'Ремонт', written);
+      form.apply();
+      assert.equal(Number(form.fields.f_callFee.value), 400, `ключ міста нормалізується: ${written}`);
+    }
+  }
+}
+
+/* Місто обирають зі списку підказок — значення присвоюється програмно, і
+   браузер не надсилає 'change'. Саме через це override не доїжджав у форму. */
+{
+  const bindings = fs.readFileSync(path.join(root, 'js', 'tickets-bindings.js'), 'utf8');
+  assert.match(bindings, /\['input','change'\]\.forEach\(type=>\{\s*document\.getElementById\('f_city'\)\.addEventListener\(type, applyCityPricing\);/,
+    'поле міста слухає і input, і change');
+  const suggestionBranch = bindings.slice(bindings.indexOf("if(kind==='city')"), bindings.indexOf("}else{", bindings.indexOf("if(kind==='city')")));
+  assert.match(suggestionBranch, /applyCityPricing\(\)/, 'вибір підказки міста явно застосовує ціни');
+}
+
 /* H) Ручну суму автопідстановка не затирає; зміна міста/типу — оновлює.
    Перевіряється на справжньому коді applyDefaultCallFee/applyDefaultTariff. */
 {
