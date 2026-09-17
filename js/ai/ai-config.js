@@ -21,12 +21,21 @@ MTAI.config = {
   /* Dev-воркер для локального preview: хост обирає sharedBackend() за
      origin сторінки — користувач URL спільного бекенда не редагує. */
   DEV_SHARED_BACKEND: 'https://maister-tracker-mcp-dev.mastif1235.workers.dev',
-  /* Локальний preview (localhost/127.0.0.1/::1) = dev-оточення -> dev Worker;
-     усе інше (продакшен-PWA, node-тести без location) -> спільний prod. */
+  /* Dev-оточення = все, що НЕ є продакшен-PWA: localhost/127.0.0.1/::1,
+     Cloudflare Pages preview (*.pages.dev), приватні LAN-адреси (прев'ю з
+     телефона по Wi-Fi). Усі вони -> dev Worker; продакшен-PWA та
+     node-тести без location -> спільний prod. */
+  isPreviewHost: function(host){
+    host = String(host || '');
+    if(/^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(host)) return true;
+    if(/\.pages\.dev$/i.test(host)) return true;
+    if(/^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+    return false;
+  },
   sharedBackend: function(){
     try{
       const host = String((globalRef.location && globalRef.location.hostname) || '');
-      return /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(host) ? MTAI.config.DEV_SHARED_BACKEND : MTAI.config.SHARED_BACKEND;
+      return MTAI.config.isPreviewHost(host) ? MTAI.config.DEV_SHARED_BACKEND : MTAI.config.SHARED_BACKEND;
     }catch(_err){
       return MTAI.config.SHARED_BACKEND;
     }

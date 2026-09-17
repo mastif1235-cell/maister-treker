@@ -139,6 +139,11 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
     assert.equal(makeSandbox({hostname:'::1'}).MTAI.config.sharedBackend(),DEV_HOST,'::1 -> dev');
     assert.equal(makeSandbox({hostname:'pwa.example.com'}).MTAI.config.sharedBackend(),PROD_HOST,'other host -> prod');
     assert.equal(makeSandbox(null).MTAI.config.sharedBackend(),PROD_HOST,'no location (node) -> prod (deterministic)');
+    assert.equal(makeSandbox({hostname:'abc123.maister-tracker-preview.pages.dev'}).MTAI.config.sharedBackend(),DEV_HOST,'pages.dev preview -> dev (phone check)');
+    assert.equal(makeSandbox({hostname:'192.168.1.50'}).MTAI.config.sharedBackend(),DEV_HOST,'LAN IP preview -> dev (phone over Wi-Fi)');
+    assert.equal(makeSandbox({hostname:'172.16.5.5'}).MTAI.config.sharedBackend(),DEV_HOST,'172.16-31 -> dev');
+    assert.equal(makeSandbox({hostname:'172.33.1.1'}).MTAI.config.sharedBackend(),PROD_HOST,'172.33 is public -> prod');
+    assert.equal(makeSandbox({hostname:'11.0.0.1'}).MTAI.config.sharedBackend(),PROD_HOST,'11.x is public -> prod');
     console.log('PASS sharedBackend(): env detection 5/5');
   }
 
