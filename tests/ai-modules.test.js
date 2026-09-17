@@ -1,0 +1,148 @@
+'use strict';
+// Unit-тести чистих AI-модулів (vm, без браузера): реєстр провайдерів,
+// сховище, клієнт (mock fetch: 200/400/401/429/500/network/timeout),
+// рендерер (fake DOM, XSS-safe), контролер чату (retry/rate-limit).
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const root=path.join(__dirname,'..');
+
+function load(...files){
+  const sandbox={ console, setTimeout, clearTimeout, Promise, Date, Math, JSON, Array, Object, String, Number, RegExp, Error, AbortController, Response, Headers, fetch };
+  sandbox.globalThis=sandbox; sandbox.window=undefined;
+  for(const f of files) vm.runInContext(fs.readFileSync(path.join(root,f),'utf8'),vm.createContext(sandbox),{filename:f});
+  return sandbox;
+}
+const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/providers/groq.js','js/ai/providers/deepseek.js','js/ai/ai-provider.js','js/ai/ai-storage.js','js/ai/ai-client.js'];
+
+// ── реєстр провайдерів +capabilities ──
+{
+  const sb=load(...CORE);
+  const M=sb.MTAI;
+  const list=M.providers.enabledList();
+  assert.equal(list.length,1,'only groq enabled now');
+  assert.equal(list[0].id,'groq');
+  assert.equal(M.providers.get('deepseek').enabled,false,'deepseek is a disabled placeholder');
+  assert.equal(M.providers.get('deepseek').models.length,2,'deepseek models pre-declared');
+  assert.equal(M.providers.get('groq').models[0].id,'openai/gpt-oss-120b');
+  assert.equal(M.providers.get('groq').models[0].capabilities.tools,true);
+  assert.equal(M.provider.capsLabel({text:true,vision:true,tools:true}),'Текст · Фото · Tools');
+  console.log('PASS provider registry: groq active, deepseek placeholder, capabilities');
+}
+
+// ── storage: allowlist, bearer mid-part, readiness ──
+{
+  const sb=load(...CORE);
+  const M=sb.MTAI;
+  sb.settings={}; sb.saveSettings=function(){ sb.saved=true; };
+  M.storage.ensure();
+  assert.equal(M.storage.get().backendUrl,M.config.DEFAULT_BACKEND,'defaults applied');
+  assert.equal(M.storage.isReady(),false,'not ready by default (disabled, no token)');
+  M.storage.update({ enabled:true, backendUrl:'https://evil.example.com' });
+  assert.equal(M.storage.isAllowedBackend('https://evil.example.com'),false,'arbitrary host rejected');
+  M.storage.update({ backendUrl:M.config.ALLOWED_BACKENDS[1] });
+  M.storage.setToken('dev-name:devtoken1234567890abcdef:read');
+  assert.equal(M.storage.bearer(),'devtoken1234567890abcdef','bearer = middle part only');
+  assert.equal(M.storage.isReady(),true,'ready with enabled+allowed backend+token');
+  console.log('PASS ai-storage: allowlist enforced, bearer mid-part, readiness');
+}
+
+// ── клієнт: формат /ask + помилки ──
+{
+  const sb=load(...CORE); const M=sb.MTAI;
+  sb.settings={ai:{enabled:true,provider:'groq',model:'openai/gpt-oss-120b',backendUrl:'https://w.example.dev'},aiBearerToken:'n:tok1234567890abcdef:read'};
+  const seen=[];
+  const client=M.createClient({ fetchImpl: async function(url,init){ seen.push({url,init});
+      if(seen.length===1) return new Response(JSON.stringify({ok:true,answer:'389',meta:{rounds:2,tool_calls:1}}),{status:200});
+      if(seen.length===2) return new Response(JSON.stringify({error:'unauthorized'}),{status:401});
+      if(seen.length===3) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_429',detail:'Rate limit reached. Retry за 20 сек.'}),{status:429});
+      if(seen.length===4) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_500'}),{status:500});
+      if(seen.length===5) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_400',detail:"property 'x' is missing"}),{status:400});
+      if(seen.length===6) return new Response(JSON.stringify({error:'ask_not_configured'}),{status:503});
+      throw new TypeError('fetch failed');
+    }, getConfig: function(){ return { backendUrl:sb.settings.ai.backendUrl, bearer:M.storage.bearer() }; }, timeoutMs:80 });
+  (async function(){
+    const ok=await client.ask('Скільки заявок?');
+    assert.equal(ok.ok,true); assert.equal(ok.answer,'389');
+    assert.equal(seen[0].url,'https://w.example.dev/ask','exact /ask url');
+    assert.equal(seen[0].init.method,'POST');
+    assert.equal(seen[0].init.headers.Authorization,'Bearer tok1234567890abcdef','mid-token in header');
+    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?'},'/ask body: question only');
+    const e401=await client.ask('x'); assert.equal(e401.error.kind,'auth');
+    const e429=await client.ask('x'); assert.equal(e429.error.kind,'rate_limit'); assert.equal(e429.error.retryAfterSec,20,'retry-after parsed from Ukrainian detail');
+    const e500=await client.ask('x'); assert.equal(e500.error.kind,'server');
+    const e400=await client.ask('x'); assert.equal(e400.error.kind,'bad_request');
+    const e503=await client.ask('x'); assert.equal(e503.error.kind,'not_configured');
+    const enet=await client.ask('x'); assert.equal(enet.error.kind,'network');
+    // timeout → kind timeout
+    const slow=M.createClient({ fetchImpl:function(url,init){ return new Promise(function(resolve,reject){ init.signal.addEventListener('abort',function(){ const e=new Error('aborted'); e.name='AbortError'; reject(e); }); setTimeout(function(){ resolve(new Response('{}',{status:200})); },1000); }); }, getConfig:function(){ return { backendUrl:sb.settings.ai.backendUrl, bearer:'t' }; }, timeoutMs:30 });
+    const et=await slow.ask('x'); assert.equal(et.error.kind,'timeout');
+    console.log('PASS ai-client: /ask format, 401/429(+Retry-After)/400/500/503/network/timeout');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}
+
+// ── рендерер: безпечний DOM, списки, кнопки заявок ──
+{
+  const sb=load('js/ai/ai-config.js','js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js','js/ai/ai-render.js'); const M=sb.MTAI;
+  function fakeDoc(){
+    function El(tag){ this.tagName=tag; this.children=[]; this.dataset={}; this._text=''; this.className='';
+      this.appendChild=function(c){ this.children.push(c); return c; };
+      this.removeChild=function(c){ this.children=this.children.filter(function(x){return x!==c;}); };
+      this.addEventListener=function(t,fn){ (this._handlers=this._handlers||{})[t]=fn; }; }
+    Object.defineProperty(El.prototype,'textContent',{ set:function(v){ this._text=String(v); this.children=[]; }, get:function(){ return this._text; } });
+    return { createElement:function(tag){ return new El(tag); }, createTextNode:function(t){ const e=new El('#text'); e.textContent=t; return e; } };
+  }
+  function textOf(el){ return (el._text||'')+(el.children||[]).map(textOf).join(''); }
+  const doc=fakeDoc(); const renderer=M.createRenderer(doc);
+  const box=doc.createElement('div');
+  const malicious='Сьогодні 7 ремонтів:\n- вул. Шевченка №<script>alert(1)</script>\n- Заявка #42 готова\n1. пункт';
+  renderer.renderAnswer(box,malicious);
+  const tags=(function collect(el,acc){ acc.push(el.tagName); (el.children||[]).forEach(function(c){ collect(c,acc); }); return acc; })(box,[]);
+  assert.ok(!tags.includes('script'),'script never becomes an element');
+  assert.ok(textOf(box).includes('<script>alert(1)</script>'),'script text preserved as plain text');
+  const btns=(function collect(el,acc){ (el.children||[]).forEach(function(c){ if(c.tagName==='button')acc.push(c); collect(c,acc); }); return acc; })(box,[]);
+  assert.ok(btns.some(function(b){ return b.dataset.ticketId==='42'; }),'#42 → открыть-заявку button');
+  const lists=(function collect(el,acc){ (el.children||[]).forEach(function(c){ if(/^[uo]l$/.test(c.tagName))acc.push(c); collect(c,acc); }); return acc; })(box,[]);
+  assert.equal(lists.length,2,'bullet + ordered lists built via DOM');
+  console.log('PASS ai-render: XSS-safe, lists, ticket-ref buttons');
+}
+
+// ── actions: усі WRITE вимкнені, execute відмовляє, openTicket існує ──
+{
+  const sb=load('js/ai/ai-config.js','js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js','js/ai/actions/photo-actions.js'); const M=sb.MTAI;
+  const writes=M.actions.list().filter(function(a){ return a.kind==='write'; });
+  assert.ok(writes.length>=5,'write intents are registered as scaffolds');
+  assert.ok(writes.every(function(a){ return a.enabled===false; }),'every write action is disabled');
+  (async function(){
+    const r1=await M.actions.execute('ticket.create',{},{});
+    assert.equal(r1.reason,'write_disabled','execute refuses write even with confirm UI');
+    const r2=await M.actions.execute('unknown',{},{});
+    assert.equal(r2.reason,'unknown_action');
+    assert.equal(typeof M.actions.openTicket,'function');
+    console.log('PASS ai-actions: all WRITE disabled, execute() refuses, read-only openTicket present');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}
+
+// ── чат-контролер: rate-limit авто-ретрай, retry після помилки, вкладення ──
+{
+  const sb=load(...CORE.slice(0,6),'js/ai/ai-client.js','js/ai/ai-chat.js'); const M=sb.MTAI;
+  let calls=0; const errors=[];
+  const client={ ask: async function(q){
+    calls++;
+    if(calls===1) return { ok:false, error:{ kind:'rate_limit', message:'ліміт', retryAfterSec:1 } };
+    if(calls===2) return { ok:false, error:{ kind:'server', message:'500' } };
+    return { ok:true, answer:'відповідь', meta:{rounds:1,tool_calls:0} };
+  } };
+  const events=[];
+  const chat=M.createChatController({ client, sleep:function(){ return Promise.resolve(); },
+    hooks:{ error:function(e){ errors.push(e); }, assistant:function(a){ events.push(a); }, user:function(u){ events.push({user:u}); } } });
+  (async function(){
+    await chat.send('питання 1');           // 429 → авто-ретрай → 500 → error+retry-кнопка
+    assert.equal(errors.length,1,'rate_limit auto-retried once, then surfaced');
+    assert.equal(chat.canRetry(),true,'can retry after failure');
+    await chat.retry();                      // той самий текст → успіх
+    assert.equal(events.filter(function(e){ return e.user; })[1].user,'питання 1','retry resends the same question');
+    assert.equal(events.filter(function(e){ return e.text; }).length,1,'assistant answer delivered');
+    await chat.send('   ');                  // порожнє ігнорується
+    assert.equal(calls,3,'empty question not sent');
+    console.log('PASS ai-chat: 429 auto-retry, manual retry, empty-question guard');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}

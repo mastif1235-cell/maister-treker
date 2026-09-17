@@ -49,7 +49,7 @@
     "toolsExportData": "c1499d2d4193e6a29a93aa81afcbf776039c79c56a78117e4387ff753283842e",
     "toolsRestoreData": "8ee8a6f54a16c579490b3c7f67bdc76388ade9345a9643ece05089a271053b87",
     "toolsPhotoOwnerRecords": "e6260eb30fdd70b7f49203b63a3636bf11b976afbaaa8defe8a22bd23c9756a1",
-    "toolsHomeHtml": "ec0f28ff54c54c1ccd7849657955372fcf0c6b829c3bae14489176d8fb4b7766",
+    "toolsHomeHtml": "b98c357d9543a83405dfbf90f456f2e8a1cd4cdeb9fc7c9ab501934146c8fd83",
     "toolsBackButton": "0354be3bf10dce49c5797e1fe29845ee660442ddf03069692719698ac46b575f",
     "toolsNavigate": "e8ab5384b3fbde2f212314bda3f37feca4a141fbca7a351cd4db7e5a850c7d09",
     "toolsOpenRootFromTab": "668ac03d84ed5423bda491d044d1d767f5c6fbc119ec62492711d5129f8074e1",
@@ -131,6 +131,6 @@
     "toolsHighlightNetworkPointInList": "5d3c2031695a0ca1c9574f4f0562b39a51cca184b2277558d8be59a86c64e616",
     "toolsFocusNetworkPoint": "744b75a10c19a20ca7b2e6c4e9c63f2322a3594ffce917520193f730fd0a2a36",
     "renderToolsScreen": "2ba2bba37aa0142f835f86d86a3e3ded9c56bf2c0fa45702c431977e62c07724",
-    "bindToolsScreen": "7ded166f32d3ac48a28063cc1a8e75eb05cdd4faa8f2477c4375692b33cdb15a"
+    "bindToolsScreen": "8c6a9d753556b3eccc081bd783b51fa571b1ce87b242f40f417a7246782c219d"
   }
 }

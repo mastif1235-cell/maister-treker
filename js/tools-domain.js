@@ -59,6 +59,7 @@ function toolsHomeHtml(){
   return `<div class="tools-grid">
     <button type="button" class="btn" data-tools-view="map"><span class="tools-icon">🗺️</span>Карта</button>
     <button type="button" class="btn" data-tools-action="quick-diagnostics"><span class="tools-icon">🛠</span>Діагностика</button>
+    <button type="button" class="btn" data-tools-action="ai-assistant"><span class="tools-icon">🤖</span>AI Асистент</button>
   </div>
   <div class="card" style="margin-top:12px;font-size:12px;color:var(--text-dim);">Інструменти зберігають дані лише на цьому пристрої. Діагностика не створює записів без явного натискання «Зберегти».</div>`;
 }
@@ -341,6 +342,7 @@ function bindToolsScreen(){
     const groupedPoint=event.target.closest('.tools-network-object');if(groupedPoint){toolsFocusNetworkPoint(groupedPoint.dataset.pointId);return;}
     const action=event.target.closest('[data-tools-action]')?.dataset.toolsAction;
     if(action==='quick-diagnostics')toolsOpenDiagnostics(null,'tools');
+    else if(action==='ai-assistant'){ if(window.MTAI&&MTAI.ui)MTAI.ui.open(); }
     else if(action==='run-diagnostics')runToolsDiagnostics();
     else if(action==='copy-diagnostics')toolsCopyDiagnostic();
     else if(action==='attach-diagnostics')toolsAttachDiagnostics();
