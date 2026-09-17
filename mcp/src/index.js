@@ -40,6 +40,42 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff'
 };
 
+/* Browser clients (the PWA) call /healthz, /ai/config and /ask from a
+   different origin, so these public/ask routes need CORS — including an
+   OPTIONS preflight (the /ask request carries Content-Type + Authorization).
+   Scoped to these routes only; /mcp (native MCP clients) stays CORS-free.
+   No secrets are involved: ACAO * is safe because auth is via a manual
+   Authorization header, never cookies. */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400'
+};
+function withCors(response){
+  for(const [name, value] of Object.entries(CORS_HEADERS)) response.headers.set(name, value);
+  return response;
+}
+
+/* Public, secret-free capability descriptor for onboarding in the PWA:
+   mode, auth flag, providers/models with capabilities. NEVER includes keys,
+   tokens, URLs of upstream providers or anything secret — safe to expose. */
+function publicAiConfig(app){
+  const configured = !!(app && app.ok && app.ask);
+  const model = app && app.ok ? app.config.askModel : 'openai/gpt-oss-120b';
+  return {
+    ok: true,
+    mode: 'read-only',
+    auth_required: true,
+    ask_configured: configured,
+    version: 1,
+    providers: [
+      { id:'groq', name:'Groq', enabled:configured,
+        models:[{ id:model, capabilities:['text','tools','reasoning'] }] }
+    ]
+  };
+}
+
 function jsonResponse(status, body, extraHeaders){
   return new Response(JSON.stringify(body), {status, headers: Object.assign({}, SECURITY_HEADERS, extraHeaders || {})});
 }
@@ -151,11 +187,23 @@ export function createApp(env, deps){
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    if(path === '/healthz'){
-      return jsonResponse(200, {ok:true, service:'maister-tracker-mcp', read_only:true});
+    if(request.method === 'OPTIONS' && (path === '/ask' || path === '/ai/config' || path === '/healthz')){
+      return new Response(null, {status:204, headers:Object.assign({}, CORS_HEADERS)});
     }
 
-    if(path === '/ask') return askHandler(request);
+    if(path === '/healthz'){
+      return withCors(jsonResponse(200, {ok:true, service:'maister-tracker-mcp', read_only:true}));
+    }
+
+    if(path === '/ai/config'){
+      if(request.method !== 'GET'){
+        return withCors(jsonResponse(405, {error:'method_not_allowed', hint:'GET /ai/config'}, {Allow:'GET'}));
+      }
+      const app = await appPromise;
+      return withCors(jsonResponse(200, publicAiConfig(app)));
+    }
+
+    if(path === '/ask') return withCors(await askHandler(request));
 
     if(path !== '/mcp') return jsonResponse(404, {error:'not_found'});
 
