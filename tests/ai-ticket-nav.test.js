@@ -101,22 +101,61 @@ function bootActions(tickets){
     console.log('PASS cards render: 1->1, 3->3 separate buttons, zero href/anchors');
   }
 
-  /* 3) openTicket: валидный id -> existing nav + сворачивает AI overlay; невалидный -> не открывается */
+  /* 3) openTicket (async): валидный id -> existing nav + сворачивает overlay;
+     неизвестный -> честное сообщение, overlay ОСТАЁТСЯ, без «возврата в Tools»;
+     числовая нормализация '0871'==871; IDB fallback */
   {
     const {sandbox,doc}=bootActions([{id:'123'},{id:'124'}]);
     const M=sandbox.MTAI;
-    assert.equal(M.actions.openTicket('123'),true,'valid id opens');
+    assert.equal(await M.actions.openTicket('123'),true,'valid id opens');
     assert.deepEqual(sandbox.navCalls,['123'],'uses openTicketEditorFromList (existing router)');
-    assert.equal(doc.getElementById('aiChatPanel').style.display,'none','AI overlay collapsed before nav');
-    assert.equal(doc.getElementById('aiBlockedPanel'),null,'no blocked panel to hide');
-    assert.equal(M.actions.openTicket('999'),false,'unknown id does not navigate');
+    assert.equal(doc.getElementById('aiChatPanel').style.display,'none','AI overlay collapsed AFTER successful lookup');
+    doc.getElementById('aiChatPanel').style.display='flex'; // знову відкриємо чат для перевірки failure-шляху
+    assert.equal(await M.actions.openTicket('999'),false,'unknown id does not navigate');
     assert.deepEqual(sandbox.navCalls,['123'],'no nav for missing ticket');
     assert.ok(sandbox.toasts.some(t=>t.includes('999')),'toast explains not found');
-    assert.equal(M.actions.openTicket('javascript:alert(1)'),false,'script-ish id rejected');
+    assert.equal(doc.getElementById('aiChatPanel').style.display,'flex','overlay STAYS OPEN on failure (user sees the message)');
+    assert.equal(await M.actions.openTicket('javascript:alert(1)'),false,'script-ish id rejected');
     assert.deepEqual(sandbox.navCalls,['123'],'no nav for script id');
-    assert.equal(M.actions.openTicket(''),false,'empty id rejected');
-    assert.equal(M.actions.openTicket(null),false,'null id rejected');
-    console.log('PASS openTicket: existing nav, overlay collapsed, invalid/unknown rejected');
+    assert.equal(await M.actions.openTicket(''),false,'empty id rejected');
+    assert.equal(await M.actions.openTicket(null),false,'null id rejected');
+    console.log('PASS openTicket: existing nav, overlay hidden only on success, failure stays in chat with visible message');
+  }
+
+  /* 3b) числовая нормализация id (MCP '0871' vs локальный 871) */
+  {
+    const {sandbox,doc}=bootActions([{id:871}]);
+    const M=sandbox.MTAI;
+    assert.equal(await M.actions.openTicket('0871'),true,'string-with-zero matches numeric local id');
+    assert.deepEqual(sandbox.navCalls,['871'],'editor receives the REAL local id (not the zero-padded one)');
+    console.log('PASS openTicket id normalization: 0871 -> 871, editor gets local id');
+  }
+
+  /* 3c) IDB fallback: пустой массив в памяти, но заявка в IndexedDB */
+  {
+    const doc=makeDoc();
+    const panel=doc.createElement('div'); panel.id='aiChatPanel'; panel.style.display='flex'; doc.body.appendChild(panel);
+    const sandbox={ console, document:doc, tickets:[],
+      openTicketEditorFromList(id){ sandbox.navCalls.push(String(id)); },
+      showToast(m){ sandbox.toasts.push(String(m)); },
+      ticketsDbRead(){ return Promise.resolve({status:'ok', value:[{id:'871', content:'Таромское'}]}); } };
+    sandbox.navCalls=[]; sandbox.toasts=[];
+    sandbox.globalThis=sandbox; sandbox.window=sandbox;
+    for(const f of ['js/ai/ai-config.js','js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js'])
+      vm.runInContext(read(f),vm.createContext(sandbox),{filename:f});
+    assert.equal(await sandbox.MTAI.actions.openTicket('871'),true,'ticket found via IndexedDB fallback');
+    assert.deepEqual(sandbox.navCalls,['871'],'nav called with the IDB ticket');
+    assert.equal(sandbox.tickets.length,1,'self-healed into in-memory tickets');
+    console.log('PASS openTicket IDB fallback: fresh-origin empty list -> ticket found in IndexedDB, self-healed');
+  }
+
+  /* 3d) integration: ID в формате MCP/GAS (строка из redactTicket) */
+  {
+    const {sandbox}=bootActions([{id:'871'},{id:'872'},{id:'903'}]);
+    const M=sandbox.MTAI;
+    await M.actions.openTicket('872');
+    assert.deepEqual(sandbox.navCalls,['872'],'MCP-format string id opens the exact ticket');
+    console.log('PASS openTicket integration: MCP/GAS id format (string) -> exact ticket');
   }
 
   /* 4) READ-ONLY сохраняется: write-действия по-прежнему выключены */

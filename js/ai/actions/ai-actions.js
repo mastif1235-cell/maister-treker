@@ -36,14 +36,55 @@ MTAI.actions = (function(){
     try{ return await action.run(args); }
     catch(_err){ return { ok:false, reason:'failed' }; }
   }
-  /* READ-ONLY навігація: відкрити наявну заявку у звичайному редакторі
-     застосунку (без створення/змін). Feature-detect глобальних функцій. */
-  function openTicket(id){
+  /* Порівняння id: точне або числово-нормалізоване ('0871' === '871',
+     871 === '871') — MCP/GAS і локальна база можуть відрізнятися нулями. */
+  function sameId(a, b){
+    const A = String(a == null ? '' : a).trim();
+    const B = String(b == null ? '' : b).trim();
+    if(A === B) return true;
+    const na = A.replace(/^0+(?=[0-9])/, '');
+    const nb = B.replace(/^0+(?=[0-9])/, '');
+    return /^[0-9]+$/.test(na) && /^[0-9]+$/.test(nb) && na === nb;
+  }
+  function findTicketIn(list, id){
+    if(!Array.isArray(list)) return null;
+    for(const t of list){
+      if(t && sameId(t.id, id)) return t;
+    }
+    return null;
+  }
+
+  /* READ-ONLY навігація: відкрити заявку у ЗВИЧАЙНОМУ редакторі застосунку
+     (без створення/змін). Пошук: 1) масив tickets у пам'яті, 2) fallback —
+     локальна IndexedDB (ticketsDbRead): на свіжому домені preview масив
+     може бути порожній, хоча заявка є в локальній базі. Якщо заявки НЕМАЄ
+     локально — ЧЕСНЕ видиме повідомлення, overlay лишається відкритим
+     (жодних тихих «повернень в Інструменти»). Overlay згортається ЛИШЕ
+     після успішного знаходження заявки. */
+  async function openTicket(id){
     const clean = String(id || '').replace(/[^0-9a-zа-яіїєг_-]/gi, '');
     if(!clean) return false;
-    /* READ-ONLY навігація: спочатку згорнути власний AI overlay, щоб панель
-       чата не перекривала екран заявки (панель лише ховається — чат і
-       налаштування зберігаються). */
+    let ticket = findTicketIn(typeof tickets !== 'undefined' ? tickets : null, clean);
+    if(!ticket && typeof ticketsDbRead === 'function'){
+      try{
+        const read = await ticketsDbRead();
+        const stored = read && read.status === 'ok' ? read.value : null;
+        ticket = findTicketIn(stored, clean);
+        if(ticket && typeof tickets !== 'undefined' && Array.isArray(tickets) && !findTicketIn(tickets, clean)){
+          tickets.push(ticket); // self-heal: гідратуємо заявку в пам'ять для editor
+        }
+      }catch(_idbErr){}
+    }
+    if(!ticket){
+      if(typeof showToast === 'function') showToast('Заявку ' + clean + ' не знайдено на пристрої — синхронізуйте заявки і спробуйте ще раз');
+      try{
+        const st = typeof document !== 'undefined' && document.getElementById('aiVoiceStatus');
+        if(st) st.textContent = '⚠️ Заявку №' + clean + ' не знайдено на цьому пристрої. AI знайшов її на backend — виконайте синхронізацію заявок у застосунку, щоб відкривати знайдене.';
+      }catch(_stErr){}
+      return false;
+    }
+    /* Успіх: згорнути власний AI overlay, щоб панель не перекривала
+       екран заявки (чат лише ховається — історія зберігається). */
     try{
       const doc = typeof document !== 'undefined' ? document : null;
       const panel = doc && doc.getElementById('aiChatPanel');
@@ -52,12 +93,7 @@ MTAI.actions = (function(){
       if(blocked) blocked.style.display = 'none';
     }catch(_overlayErr){}
     try{
-      if(typeof tickets !== 'undefined' && Array.isArray(tickets) && tickets.length &&
-         !tickets.some(function(t){ return String(t.id) === clean; })){
-        if(typeof showToast === 'function') showToast('Заявку ' + clean + ' не знайдено на пристрої');
-        return false;
-      }
-      if(typeof openTicketEditorFromList === 'function'){ openTicketEditorFromList(clean); return true; }
+      if(typeof openTicketEditorFromList === 'function'){ openTicketEditorFromList(String(ticket.id)); return true; }
     }catch(_e){}
     if(typeof showToast === 'function') showToast('Відкриття заявки недоступне з цього екрана');
     return false;

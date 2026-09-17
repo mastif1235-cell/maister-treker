@@ -63,6 +63,7 @@ function boot(){
     document:doc, Event:function(t){ this.type=t; }, navigator:null,
     fetch:async function(url,init){
       sandbox.fetchCalls.push({url:String(url), body:JSON.parse((init||{}).body||'{}')});
+      if(sandbox.force429) return new Response(JSON.stringify({error:'rate_limited', retry_after_sec:25}),{status:429});
       return new Response(JSON.stringify({ok:true,answer:'Знайдено 8 заявок у Таромському за серпень 2026.',meta:{rounds:2,tool_calls:1},tickets:EIGHT_TICKETS}),{status:200});
     } };
   sandbox.fetchCalls=[];
@@ -190,6 +191,29 @@ const tick=()=>new Promise(r=>setTimeout(r,15));
   assert.ok(expanded.some(t=>/сигнал/.test(t)),'weak-signal prompt present');
   console.log('PASS expanded prompts: 8 field-technician prompts incl. weak signal');
 
-  console.log('PASS ai-mobile-ux: 11/11 mobile acceptance checks');
+  /* 12) 429/TPM cooldown в UI: bubble-відлік, Send заблокований, без дублікатів */
+  {
+    sandbox.force429=true; // прапор читає оригінальний fetch-мок (клієнтCaptured reference)
+    doc.getElementById('aiInput').value='вопрос с лимитом';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const cd=doc.getElementById('aiCooldownMsg');
+    assert.ok(cd,'cooldown bubble rendered');
+    assert.match(textTree(cd),/Ліміт Groq\. Повтор через \d+ с\./,'countdown text «Ліміт Groq. Повтор через N с.»');
+    assert.equal(doc.getElementById('aiSendBtn').disabled,true,'Send disabled during cooldown');
+    const callsNow=sandbox.fetchCalls.length;
+    doc.getElementById('aiInput').value='ещё вопрос во время лимита';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    assert.equal(sandbox.fetchCalls.length,callsNow,'send during cooldown is BLOCKED (no request)');
+    // retry-кнопка в error-bubble заблокована під час cooldown
+    let retryBtn=null; walk(messages,function(el){ if(el.tagName==='BUTTON'&&/Повторити запит/.test(textTree(el))) retryBtn=retryBtn||el; });
+    assert.ok(retryBtn,'retry button exists');
+    assert.equal(retryBtn.disabled,true,'Retry disabled during cooldown');
+    sandbox.force429=false;
+    console.log('PASS 429 cooldown UI: countdown «Ліміт Groq. Повтор через N с.», Send+Retry blocked, no auto resend');
+  }
+
+  console.log('PASS ai-mobile-ux: 12/12 mobile acceptance checks');
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(1); });

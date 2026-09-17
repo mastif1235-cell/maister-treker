@@ -24,6 +24,11 @@ function makeDoc(){
     get textContent(){ return this._text; } set textContent(v){ this._text=String(v); this.children=[]; }
     get scrollHeight(){ return 40; }
     focus(){}
+    get classList(){ const self=this; const arr=function(){ return (self.className||'').split(' ').filter(Boolean); };
+      return { add:function(c){ const a=arr(); if(!a.includes(c)) a.push(c); self.className=a.join(' '); },
+               remove:function(c){ self.className=arr().filter(function(x){ return x!==c; }).join(' '); },
+               contains:function(c){ return arr().includes(c); },
+               toggle:function(c){ const a=arr(); if(a.includes(c)){ self.className=a.filter(function(x){return x!==c;}).join(' '); return false; } a.push(c); self.className=a.join(' '); return true; } }; }
     get ownerDocument(){ return currentDoc; }
     set innerHTML(html){
       this._innerHTML=String(html); this.children=[];
@@ -72,12 +77,15 @@ function makeSandbox(doc, opts){
   }
   const sandbox={ console, setTimeout, clearTimeout, Promise, Date, Math, JSON,
     document:doc, AbortController, Response, Headers,
+    navigator:{ userAgent: opts.userAgent||'Mozilla/5.0 (Linux; Android 13) Chrome/120 Mobile Safari/537.36' },
     fetch:async function(){ return new Response(JSON.stringify({ok:true}),{status:200}); } };
+  if(opts.navigator) Object.assign(sandbox.navigator, opts.navigator);
+  if(opts.noNavigator) delete sandbox.navigator;
   sandbox.recognitionInstances=recognitionInstances;
   sandbox.FakeRecognition=FakeRecognition;
   sandbox.globalThis=sandbox; sandbox.window=sandbox;
   if(!opts.noRecognition) sandbox.window.webkitSpeechRecognition=FakeRecognition;
-  if(opts.navigator) sandbox.navigator=opts.navigator;
+  sandbox.userAgentValue=opts.userAgent||'Mozilla/5.0 (Linux; Android 13) Chrome/120 Mobile Safari/537.36';
   sandbox.settings={ai:{enabled:true,showInTools:true,backendUrl:'https://x.example',backendMode:'shared'},aiBearerToken:'n:tok1234567890abcdef:read'};
   sandbox.saveSettings=function(){};
   sandbox.showToast=function(m){ sandbox.toast=m; };
@@ -161,7 +169,7 @@ const tick=ms=>new Promise(r=>setTimeout(r,ms||15));
     await tick();
     const rec=sb.recognitionInstances[sb.recognitionInstances.length-1];
     rec.onerror({error:'not-allowed'});
-    assert.match(status.textContent,/Дозвольте доступ до мікрофона/,'permission error visible');
+    assert.match(status.textContent,/Мікрофон заборонено браузером/,'permission error visible');
     assert.equal(btn.textContent,'🎤','state reset after error');
     console.log('PASS onerror not-allowed: visible permission message + state reset');
   }
@@ -208,7 +216,7 @@ const tick=ms=>new Promise(r=>setTimeout(r,ms||15));
     voice.start();
     await tick(90);
     assert.ok(err,'watchdog fired');
-    assert.match(err.message,/не відповів на запит мікрофона/,'dead-API visible error');
+    assert.match(err.message,/SpeechRecognition не стартував/,'dead-API visible error (ТЗ: «SpeechRecognition не стартував»)');
     assert.equal(voice.isActive(),false,'no stuck listening state');
     console.log('PASS watchdog: silent API death -> visible error, state reset');
   }
@@ -246,8 +254,83 @@ const tick=ms=>new Promise(r=>setTimeout(r,ms||15));
     });
     voice.start();
     await tick(20);
-    assert.ok(err&&/Дозвольте доступ/.test(err.message),'gUM denial -> permission message');
+    assert.ok(err&&/Мікрофон заборонено браузером/.test(err.message),'gUM denial -> permission message');
     console.log('PASS getUserMedia denial: visible permission message, no start');
+  }
+
+  /* 9b) permissions.query denied -> сообщение БЕЗ вызова gUM и start */
+  {
+    const doc=makeDoc();
+    let gumCalled=0, startCalled=0;
+    const sb=makeSandbox(doc,{ navigator:{
+      mediaDevices:{ getUserMedia:function(){ gumCalled++; return Promise.resolve({getTracks:()=>[]}); } },
+      permissions:{ query:function(){ return Promise.resolve({state:'denied'}); } }
+    }});
+    let err=null;
+    const voice=sb.MTAI.createVoiceInput({
+      recognitionCtor:sb.window.webkitSpeechRecognition,
+      getUserMedia:sb.navigator.mediaDevices.getUserMedia,
+      permissions:sb.navigator.permissions,
+      onStatus(){}, onResult(){}, onStateChange(){},
+      onError:function(e){ err=e; }
+    });
+    voice.start();
+    await tick(20);
+    assert.ok(err&&/Мікрофон заборонено браузером/.test(err.message),'denied state -> explicit message');
+    assert.equal(gumCalled,0,'no getUserMedia when already denied');
+    console.log('PASS permissions.query denied: explicit message, no API calls');
+  }
+
+  /* 9c) permissions.query granted -> статус «Мікрофон дозволено, запускаю…» */
+  {
+    const doc=makeDoc();
+    const statuses=[];
+    const sb=makeSandbox(doc,{ navigator:{
+      mediaDevices:{ getUserMedia:function(){ return Promise.resolve({getTracks:()=>[]}); } },
+      permissions:{ query:function(){ return Promise.resolve({state:'granted'}); } }
+    }});
+    const voice=sb.MTAI.createVoiceInput({
+      recognitionCtor:sb.window.webkitSpeechRecognition,
+      getUserMedia:sb.navigator.mediaDevices.getUserMedia,
+      permissions:sb.navigator.permissions,
+      onStatus:function(st, txt){ statuses.push(st + ' ' + (txt || '')); }, onResult(){}, onStateChange(){}, onError(){}
+    });
+    voice.start();
+    await tick(20);
+    assert.ok(statuses.some(function(t){ return /Мікрофон дозволено, запускаю розпізнавання/.test(t); }),'granted status shown');
+    console.log('PASS permissions granted: «Мікрофон дозволено, запускаю розпізнавання…»');
+  }
+
+  /* 9d) Android webview (in-app браузер) -> «Відкрийте сторінку у Chrome…», без старту */
+  {
+    const doc=makeDoc();
+    const WV_UA='Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko; wv) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36';
+    const sb=makeSandbox(doc,{ userAgent:WV_UA });
+    let err=null; const statuses=[];
+    const voice=sb.MTAI.createVoiceInput({
+      recognitionCtor:sb.window.webkitSpeechRecognition,
+      onStatus:function(st){ statuses.push(st); }, onResult(){}, onStateChange(){},
+      onError:function(e){ err=e; }
+    });
+    const res=voice.start();
+    assert.equal(res,false,'webview: start refused');
+    assert.ok(err&&err.kind==='webview','kind=webview');
+    assert.match(err.message,/Відкрийте сторінку у Chrome/,'webview message');
+    assert.equal(sb.recognitionInstances.length,0,'no recognition started in webview');
+    console.log('PASS Android webview detected: «Відкрийте сторінку у Chrome для голосового вводу.»');
+  }
+
+  /* 9e) SR отсутствует -> кнопка выглядит отключённой + видимое сообщение */
+  {
+    const doc=makeDoc();
+    const sb=makeSandbox(doc,{noRecognition:true});
+    sb.MTAI.ui.build();
+    const btn=doc.getElementById('aiVoiceBtn');
+    btn.click();
+    assert.equal(btn.getAttribute('aria-disabled'),'true','button marked disabled');
+    assert.equal(btn.className.includes('ai-voice-off'),true,'dimmed style');
+    assert.match(doc.getElementById('aiVoiceStatus').textContent,/SpeechRecognition не підтримується/,'visible unsupported');
+    console.log('PASS SR unavailable: button disabled-look + explicit message (not shown as working)');
   }
 
   /* 10) язык: RU-маркеры -> ru-RU; UA -> uk-UA; нейтральный -> язык браузера */

@@ -32,6 +32,14 @@ MTAI.createVoiceInput = function(deps){
     || (typeof navigator !== 'undefined' && navigator && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function'
         ? function(constraints){ return navigator.mediaDevices.getUserMedia(constraints); }
         : null);
+  const permissions = deps.permissions
+    || (typeof navigator !== 'undefined' && navigator && navigator.permissions && typeof navigator.permissions.query === 'function'
+        ? navigator.permissions : null);
+  const userAgent = String(deps.userAgent
+    || (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || '');
+  /* Android in-app/webview браузери (Telegram/WhatsApp/Gmail preview тощо):
+     там SpeechRecognition і мікрофон часто заблоковані повністю. */
+  const isAndroidWebview = /;\s*wv\)/i.test(userAgent);
   const getLang = deps.getLang || function(){ return 'uk-UA'; };
   const onStatus = deps.onStatus || function(){};
   const onResult = deps.onResult || function(){};
@@ -40,12 +48,14 @@ MTAI.createVoiceInput = function(deps){
   const watchdogMs = typeof deps.watchdogMs === 'number' ? deps.watchdogMs : 4000;
 
   const MESSAGES = {
-    unsupported: 'Голосовий ввід не підтримується цим браузером.',
-    permission: 'Дозвольте доступ до мікрофона в налаштуваннях браузера.',
+    webview: 'Відкрийте сторінку у Chrome для голосового вводу.',
+    unsupported: 'SpeechRecognition не підтримується цим браузером.',
+    denied: 'Мікрофон заборонено браузером. Дозвольте доступ у налаштуваннях сайту (значок 🔒 біля адреси) і спробуйте ще раз.',
+    permission: 'Мікрофон заборонено браузером. Дозвольте доступ у налаштуваннях сайту (значок 🔒 біля адреси) і спробуйте ще раз.',
     no_speech: 'Мову не розпізнано. Спробуйте ще раз.',
     network: 'Помилка голосового сервісу. Перевірте інтернет.',
     no_mic: 'Мікрофон не знайдено на цьому пристрої.',
-    dead_api: 'Браузер не відповів на запит мікрофона. Спробуйте ще раз або введіть текст.',
+    dead_api: 'SpeechRecognition не стартував. Спробуйте ще раз або введіть текст.',
     start_failed: 'Не вдалося стартувати мікрофон.'
   };
 
@@ -130,9 +140,23 @@ MTAI.createVoiceInput = function(deps){
     });
   }
 
+  /* Диагностика разрешения до старта: показываем конкретный статус
+     (granted/prompt/denied), а не молчаливый вызов API. */
+  function preflightPermission(){
+    if(!permissions || !permissions.query) return Promise.resolve(null);
+    return permissions.query({ name: 'microphone' })['catch'](function(){ return null; });
+  }
+
   function start(){
+    if(isAndroidWebview){
+      resetState();
+      onStatus('blocked', MESSAGES.webview);
+      onError({ kind:'webview', message: MESSAGES.webview });
+      return false;
+    }
     if(!supported()){
       resetState();
+      onStatus('unsupported', MESSAGES.unsupported);
       onError({ kind:'unsupported', message: MESSAGES.unsupported });
       return false;
     }
@@ -142,30 +166,41 @@ MTAI.createVoiceInput = function(deps){
     stopping = false;
     onStatus('starting', '🎤 Слухаю…');
     onStateChange(true);
-    const begin = warmupPermission().then(function(){
-      if(stopping) return; // успели нажать stop во время warm-up
-      try{
-        if(!recognition) recognition = buildRecognition();
-        recognition.lang = getLang() === 'ru-RU' ? 'ru-RU' : 'uk-UA';
-        recognition.start();
-        if(doc && typeof doc.getElementById === 'function'){
-          void doc; // doc зарезервирован для будущих нужд UI-статусов
-        }
-        watchdog = setTimeout(function(){
-          if(!gotStart){ destroy(); fail('dead_api'); }
-        }, watchdogMs);
-        return true;
-      }catch(err){
-        destroy();
-        fail('start_failed');
-        return false;
+    preflightPermission().then(function(state){
+      if(stopping) return;
+      if(state && state.state === 'denied'){
+        resetState();
+        onStatus('denied', MESSAGES.denied);
+        onError({ kind:'permission', message: MESSAGES.denied });
+        return;
       }
-    })['catch'](function(err){
-      const name = err && err.name || '';
-      if(name === 'NotAllowedError' || name === 'SecurityError') fail('permission');
-      else if(name === 'NotFoundError' || name === 'DevicesNotFoundError') fail('no_mic');
-      else fail('start_failed');
-      return false;
+      if(state && state.state === 'granted'){
+        onStatus('granted', 'Мікрофон дозволено, запускаю розпізнавання…');
+      }else{
+        onStatus('prompt', '🎤 Дозвольте доступ до мікрофона у запиті браузера…');
+      }
+      return warmupPermission().then(function(){
+        if(stopping) return; // успели нажать stop во время warm-up
+        try{
+          if(!recognition) recognition = buildRecognition();
+          recognition.lang = getLang() === 'ru-RU' ? 'ru-RU' : 'uk-UA';
+          recognition.start();
+          watchdog = setTimeout(function(){
+            if(!gotStart){ destroy(); fail('dead_api'); }
+          }, watchdogMs);
+          return true;
+        }catch(err){
+          destroy();
+          fail('start_failed');
+          return false;
+        }
+      })['catch'](function(err){
+        const name = err && err.name || '';
+        if(name === 'NotAllowedError' || name === 'SecurityError') fail('permission');
+        else if(name === 'NotFoundError' || name === 'DevicesNotFoundError') fail('no_mic');
+        else fail('start_failed');
+        return false;
+      });
     });
     return true;
   }

@@ -159,6 +159,7 @@ function build(){
     .ai-foot{font-size:10.5px;color:var(--text-faint);margin-top:4px;min-height:13px;flex:0 0 auto;}
     .ai-voice-active{background:rgba(220,38,38,.85) !important;color:#fff !important;animation:aiVoicePulse 1.2s ease-in-out infinite;}
     @keyframes aiVoicePulse{0%,100%{opacity:1;}50%{opacity:.65;}}
+    .ai-voice-off{opacity:.45;}
     .ai-cards{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
     .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
     .ai-card-title{font-size:13px;font-weight:700;}
@@ -252,9 +253,36 @@ function build(){
         if(chat.canRetry()){
           const rb = doc.createElement('button');
           rb.type = 'button'; rb.className = 'btn btn-sm'; rb.textContent = '↻ Повторити запит';
-          rb.addEventListener('click', function(){ rb.disabled = true; chat.retry(); });
+          /* Під час 429-cooldown кнопка Retry заблокована разом із Send. */
+          if(chat.cooldownRemainingSec() > 0) rb.disabled = true;
+          rb.addEventListener('click', function(){
+            if(chat.cooldownRemainingSec() > 0) return; // подвійний guard
+            rb.disabled = true; chat.retry();
+          });
           b.appendChild(doc.createElement('br')); b.appendChild(rb);
         }
+      },
+      /* 429/TPM cooldown: відлік у окремому bubble, Send заблокований;
+         жодних автоматичних відправок — після кінця користувач тисне сам. */
+      cooldown: function(){
+        const b = msgBubble('error'); b.id = 'aiCooldownMsg';
+        const sendBtn = $('aiSendBtn');
+        const update = function(){
+          const r = chat.cooldownRemainingSec();
+          if(r > 0){
+            b.textContent = '⏳ Ліміт Groq. Повтор через ' + r + ' с.';
+            if(sendBtn) sendBtn.disabled = true;
+            setTimeout(update, 500);
+          }else{
+            b.textContent = '↻ Можна повторити запит';
+            if(sendBtn) sendBtn.disabled = false;
+          }
+        };
+        update();
+      },
+      cooldown_block: function(info){
+        const el = $('aiVoiceStatus');
+        if(el) el.textContent = '⏳ Ліміт Groq: зачекайте ' + (info && info.sec ? info.sec : 1) + ' с.';
       },
       cleared: function(){ while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
     }
@@ -341,8 +369,14 @@ function build(){
     $('aiFileInput').click();
   });
   $('aiFileInput').addEventListener('change', function(e){ attachments.addFiles(e.target.files); e.target.value = ''; });
-  $('aiVoiceBtn').addEventListener('click', function(){
-    if(!voice.supported()){ $('aiVoiceStatus').textContent = '⚠️ Голосовий ввід не підтримується цим браузером — працює текст.'; return; }
+  const micBtn = $('aiVoiceBtn');
+  micBtn.addEventListener('click', function(){
+    if(!voice.supported()){
+      micBtn.setAttribute('aria-disabled', 'true');
+      micBtn.classList.add('ai-voice-off');
+      $('aiVoiceStatus').textContent = '⚠️ SpeechRecognition не підтримується цим браузером. Відкрийте сторінку у Chrome — текстовий чат працює й так.';
+      return;
+    }
     if(voice.isActive()){ voice.stop(); } else { voice.start(); }
   });
   $('aiClearBtn').addEventListener('click', function(){ chat.clear(); });

@@ -128,28 +128,43 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   })().catch(function(e){ console.error(e); process.exit(1); });
 }
 
-// ── чат-контролер: rate-limit авто-ретрай, retry після помилки, вкладення ──
+// ── чат-контролер: 429 cooldown (без авто-ретраїв), retry без дублікатів ──
 {
   const sb=load(...CORE.slice(0,6),'js/ai/ai-client.js','js/ai/ai-chat.js'); const M=sb.MTAI;
-  let calls=0; const errors=[];
-  const client={ ask: async function(q){
+  let calls=0; const errors=[]; const cooldowns=[]; const userEmits=[];
+  const client={ ask: async function(q,h){
     calls++;
     if(calls===1) return { ok:false, error:{ kind:'rate_limit', message:'ліміт', retryAfterSec:1 } };
-    if(calls===2) return { ok:false, error:{ kind:'server', message:'500' } };
-    return { ok:true, answer:'відповідь', meta:{rounds:1,tool_calls:0} };
+    return { ok:true, answer:'відповідь після ліміту', meta:{rounds:1,tool_calls:0} };
   } };
   const events=[];
   const chat=M.createChatController({ client, sleep:function(){ return Promise.resolve(); },
-    hooks:{ error:function(e){ errors.push(e); }, assistant:function(a){ events.push(a); }, user:function(u){ events.push({user:u}); } } });
+    cooldownSec:function(){ return 0.2; },   // тестовий cooldown 200мс
+    hooks:{ error:function(e){ errors.push(e); },
+            cooldown:function(c){ cooldowns.push(c); },
+            user:function(u){ userEmits.push(u); },
+            assistant:function(a){ events.push(a); } } });
   (async function(){
-    await chat.send('питання 1');           // 429 → авто-ретрай → 500 → error+retry-кнопка
-    assert.equal(errors.length,1,'rate_limit auto-retried once, then surfaced');
+    await chat.send('питання 1');            // 429 → cooldown, БЕЗ авто-ретраю
+    assert.equal(calls,1,'429: exactly ONE backend call (no automatic resend)');
+    assert.equal(errors.length,1,'rate_limit surfaced as error');
+    assert.equal(cooldowns.length,1,'cooldown emitted');
+    assert.ok(chat.cooldownRemainingSec()>0,'cooldown active');
     assert.equal(chat.canRetry(),true,'can retry after failure');
-    await chat.retry();                      // той самий текст → успіх
-    assert.equal(events.filter(function(e){ return e.user; })[1].user,'питання 1','retry resends the same question');
+    const blocked=await chat.send('нове питання під час ліміту');
+    assert.equal(blocked.skipped,'cooldown','send during cooldown is blocked');
+    await new Promise(function(res){ setTimeout(res, 260); }); // чекаємо тестовий cooldown (200мс)
+    const r=await chat.retry();              // той самий текст, БЕЗ нового user-emit
+    assert.equal(r.ok,true,'retry succeeds after cooldown');
+    assert.equal(calls,2,'retry hit the backend');
+    assert.equal(userEmits.filter(function(u){ return u==='питання 1'; }).length,1,'NO duplicate user bubble on retry');
     assert.equal(events.filter(function(e){ return e.text; }).length,1,'assistant answer delivered');
+    // історія: рівно одне user-повідомлення 'питання 1'
+    const hist=chat.history().filter(function(m){ return m.role==='user' && m.text==='питання 1'; });
+    assert.equal(hist.length,1,'history intact (no 429 duplicates)');
+    assert.ok(chat.cooldownRemainingSec()===0,'cooldown cleared after success-path time');
     await chat.send('   ');                  // порожнє ігнорується
-    assert.equal(calls,3,'empty question not sent');
-    console.log('PASS ai-chat: 429 auto-retry, manual retry, empty-question guard');
+    assert.equal(calls,2,'empty question not sent');
+    console.log('PASS ai-chat: 429 cooldown (no auto-retry), blocked send, retry w/o duplicates, history intact');
   })().catch(function(e){ console.error(e); process.exit(1); });
 }
