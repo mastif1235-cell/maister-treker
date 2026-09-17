@@ -54,7 +54,10 @@ MTAI.createChatController = function(deps){
     busy = false;
     emit('busy', false);
     if(outcome.ok){
-      lastFailed = null;
+      /* Успіх (у т.ч. успішний ручний retry): і lastFailed, і cooldown
+         скидаються — інакше прострочений cooldownUntil міг би блокувати
+         наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
+      lastFailed = null; cooldownUntil = 0;
       messages.push({ role:'assistant', text:outcome.answer, ts:Date.now(), meta:outcome.meta, tickets:outcome.tickets || [] });
       emit('assistant', { text:outcome.answer, meta:outcome.meta, tickets:outcome.tickets || [] });
       return { ok:true };
@@ -78,10 +81,6 @@ MTAI.createChatController = function(deps){
   function history(){ return messages.slice(); }
   function isBusy(){ return busy; }
   function canRetry(){ return !!lastFailed; }
-  function clear(){
-    messages = []; lastFailed = null; cooldownUntil = 0;
-    emit('cleared');
-  }
   return { send: send, retry: retry, clear: clear, history: history, isBusy: isBusy, canRetry: canRetry, cooldownRemainingSec: cooldownRemainingSec };
 };
 })();

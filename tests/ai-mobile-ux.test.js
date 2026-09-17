@@ -17,8 +17,8 @@ function makeDoc(){
     get firstChild(){ return this.children[0]||null; }
     appendChild(c){ c.parentNode=this; this.children.push(c); register(c); return c; }
     insertBefore(c,ref){ const i=this.children.indexOf(ref); if(i<0||!ref) return this.appendChild(c); c.parentNode=this; this.children.splice(i,0,c); register(c); return c; }
-    removeChild(c){ this.children=this.children.filter(x=>x!==c); }
-    remove(){ if(this.parentNode) this.parentNode.removeChild(this); }
+    removeChild(c){ this.children=this.children.filter(x=>x!==c); unregister(c); }
+    remove(){ if(this.parentNode) this.parentNode.removeChild(this); else unregister(this); }
     addEventListener(t,fn){ (this._handlers[t]=this._handlers[t]||[]).push(fn); }
     click(){ (this._handlers['click']||[]).slice().forEach(fn=>fn({target:this})); }
     submit(){ (this._handlers['submit']||[]).slice().forEach(fn=>fn({target:this,preventDefault(){}})); }
@@ -26,6 +26,7 @@ function makeDoc(){
     getAttribute(k){ return this.attrs[k]!=null?this.attrs[k]:null; }
     get textContent(){ return this._text; } set textContent(v){ this._text=String(v); this.children=[]; }
     get scrollHeight(){ return 40; }
+    focus(){}
     get ownerDocument(){ return currentDoc; }
     set innerHTML(html){
       this._innerHTML=String(html); this.children=[];
@@ -51,6 +52,8 @@ function makeDoc(){
     getElementById(id){ return doc._byId[id]||null; },
     addEventListener(){}, readyState:'complete' };
   function register(el){ if(el._id) doc._byId[el._id]=el; (el.children||[]).forEach(register); }
+  /* Реальний DOM: видалений вузол більше не знаходиться getElementById. */
+  function unregister(el){ if(!el) return; if(el._id && doc._byId[el._id]===el) delete doc._byId[el._id]; (el.children||[]).forEach(unregister); }
   currentDoc=doc;
   return doc;
 }
@@ -59,7 +62,15 @@ function walk(el,fn){ fn(el); (el.children||[]).forEach(c=>walk(c,fn)); }
 
 function boot(){
   const doc=makeDoc();
-  const sandbox={ console, setTimeout, clearTimeout, Promise, Date, Math, JSON, AbortController, Response, Headers,
+  /* Керований годинник: cooldown у проді 20-30 с, у тесті його треба
+     "перемотати" (sandbox.__now), не чекаючи реального часу. Date.now()
+     всередині модулів іде через цей клас. */
+  const RealDate=Date;
+  class TestDate extends RealDate{
+    constructor(...a){ if(a.length) super(...a); else super(TestDate.now()); }
+    static now(){ return sandbox.__now!=null ? sandbox.__now : RealDate.now(); }
+  }
+  const sandbox={ console, setTimeout, clearTimeout, Promise, Date:TestDate, Math, JSON, AbortController, Response, Headers,
     document:doc, Event:function(t){ this.type=t; }, navigator:null,
     fetch:async function(url,init){
       sandbox.fetchCalls.push({url:String(url), body:JSON.parse((init||{}).body||'{}')});
@@ -75,7 +86,7 @@ function boot(){
   for(const f of AI_MODULES) vm.runInContext(read(f),vm.createContext(sandbox),{filename:f});
   return {sandbox,doc};
 }
-const tick=()=>new Promise(r=>setTimeout(r,15));
+const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
 
 (async function run(){
   const {sandbox,doc}=boot();
@@ -214,6 +225,82 @@ const tick=()=>new Promise(r=>setTimeout(r,15));
     console.log('PASS 429 cooldown UI: countdown «Ліміт Groq. Повтор через N с.», Send+Retry blocked, no auto resend');
   }
 
-  console.log('PASS ai-mobile-ux: 12/12 mobile acceptance checks');
+  /* 13) RETRY ПІСЛЯ COOLDOWN (реальний баг на Android: тап по «Повторити
+     запит» після завершення відліку не робив нічого). Acceptance:
+     429 -> countdown -> кінець -> клік Retry -> другий /ask РЕАЛЬНО
+     відправлено з тим самим текстом, user-бульбашка НЕ продубльована,
+     при 200 зʼявляється нормальна відповідь асистента. */
+  {
+    const question='вопрос который упал по лимиту';
+    /* Знімаємо cooldown, що лишився від блоку 12 (перемотуємо годинник). */
+    const advance=ms=>{ sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+ms; };
+    advance(60000);
+    await tick(600);
+    const usersBefore=(function(){ let n=0; walk(messages,el=>{ if(el.className==='ai-msg ai-msg-user') n++; }); return n; })();
+    sandbox.force429=true;
+    doc.getElementById('aiInput').value=question;
+    doc.getElementById('aiForm').submit();
+    await tick();
+    const askCallsAfter429=sandbox.fetchCalls.length;
+    const usersAfter429=(function(){ let n=0; walk(messages,el=>{ if(el.className==='ai-msg ai-msg-user') n++; }); return n; })();
+    assert.equal(usersAfter429,usersBefore+1,'user bubble added once on the failed attempt');
+
+    let retryBtn=null; walk(messages,function(el){ if(el.tagName==='BUTTON'&&/Повторити запит/.test(textTree(el))) retryBtn=el; });
+    assert.ok(retryBtn,'retry button rendered on the error bubble');
+    assert.equal(retryBtn.disabled,true,'Retry blocked while the countdown runs');
+
+    // клік під час cooldown НЕ відправляє запит (контракт лишається)
+    retryBtn.click();
+    await tick();
+    assert.equal(sandbox.fetchCalls.length,askCallsAfter429,'click during cooldown sends nothing');
+
+    // countdown завершився (в реальності 20-30 с; тут прискорюємо годинник)
+    advance(60000);
+    await tick(700); // даємо таймерам UI відпрацювати розблокування
+    const cdBubble=doc.getElementById('aiCooldownMsg');
+    assert.match(textTree(cdBubble),/Можна повторити запит/,'countdown finished -> «Можна повторити запит»');
+    assert.equal(doc.getElementById('aiSendBtn').disabled,false,'Send unblocked after cooldown');
+    assert.equal(retryBtn.disabled,false,'RETRY BUTTON RE-ENABLED after cooldown (was the bug: stayed disabled)');
+
+    // головне: тап по Retry ПІСЛЯ cooldown реально викликає /ask
+    sandbox.force429=false;
+    retryBtn.click();
+    await tick(60);
+    assert.equal(sandbox.fetchCalls.length,askCallsAfter429+1,'RETRY AFTER COOLDOWN really calls /ask exactly once');
+    assert.equal(sandbox.fetchCalls[sandbox.fetchCalls.length-1].body.question,question,'retry reuses the ORIGINAL question text');
+
+    const usersAfterRetry=(function(){ let n=0; walk(messages,el=>{ if(el.className==='ai-msg ai-msg-user') n++; }); return n; })();
+    assert.equal(usersAfterRetry,usersAfter429,'retry does NOT duplicate the user message');
+
+    const assistantTexts=[]; walk(messages,el=>{ if(el.className==='ai-msg ai-msg-assistant') assistantTexts.push(textTree(el)); });
+    const lastBubble=messages.children[messages.children.length-1];
+    assert.equal(lastBubble.className,'ai-msg ai-msg-assistant','successful retry renders an assistant reply as the newest bubble');
+    assert.match(textTree(lastBubble),/Таромское/,'assistant reply carries the answer content (ticket cards)');
+    assert.ok(!messages.children.some(c=>c.className==='ai-msg ai-msg-error'&&/Повторити запит/.test(textTree(c))),'stale error bubble with Retry removed after success');
+    assert.equal(doc.getElementById('aiCooldownMsg'),null,'cooldown bubble cleared after a successful retry');
+    assert.equal(doc.getElementById('aiSendBtn').disabled,false,'Send usable after successful retry');
+    console.log('PASS retry after cooldown: button re-enabled, /ask called once, original text, no duplicate user bubble, reply rendered');
+  }
+
+  /* 14) Повторний retry не плодить listeners/дублікати запитів */
+  {
+    sandbox.force429=true;
+    doc.getElementById('aiInput').value='второй лимитный вопрос';
+    doc.getElementById('aiForm').submit();
+    await tick();
+    let rb=null; walk(messages,function(el){ if(el.tagName==='BUTTON'&&/Повторити запит/.test(textTree(el))) rb=el; });
+    assert.ok(rb,'second error bubble has its own retry button');
+    assert.equal((rb._handlers['click']||[]).length,1,'exactly ONE click listener (no duplicates after re-render)');
+    sandbox.__now=(sandbox.__now!=null?sandbox.__now:Date.now())+60000;
+    await tick(700);
+    sandbox.force429=false;
+    const before=sandbox.fetchCalls.length;
+    rb.click();
+    await tick(60);
+    assert.equal(sandbox.fetchCalls.length,before+1,'one click == exactly one /ask (no double fire)');
+    console.log('PASS repeated retry: single listener, one request per click');
+  }
+
+  console.log('PASS ai-mobile-ux: 14/14 mobile acceptance checks');
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(1); });

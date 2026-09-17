@@ -95,6 +95,9 @@ function makeSandbox(doc, opts){
   return sandbox;
 }
 const tick=ms=>new Promise(r=>setTimeout(r,ms||15));
+function walk(el,fn){ fn(el); (el.children||[]).forEach(c=>walk(c,fn)); }
+function textTree(el){ return (el._text||'')+(el.children||[]).map(textTree).join(' '); }
+function findByClass(root,cls){ let f=null; walk(root,el=>{ if((el.className||'').split(' ').includes(cls)) f=f||el; }); return f; }
 
 (async function run(){
   /* 1) click -> getUserMedia warm-up (если есть) -> recognition.start(); sync-фидбек */
@@ -356,6 +359,104 @@ const tick=ms=>new Promise(r=>setTimeout(r,ms||15));
     console.log('PASS language: RU/UA detection + recognition.lang wired');
   }
 
-  console.log('PASS ai-voice-dom: 10/10 voice acceptance checks');
+  /* 11) MIC DENIED UX: користувач не знає, ДЕ вмикати мікрофон -> поруч зі
+     статусом зʼявляється «Відкрити інструкцію» з покроковими кроками для
+     Android Chrome. Нічого не обходимо програмно. */
+  {
+    const doc=makeDoc();
+    const sb=makeSandbox(doc,{ navigator:{
+      mediaDevices:{ getUserMedia:function(){ return Promise.resolve({getTracks:()=>[]}); } },
+      permissions:{ query:function(){ return Promise.resolve({state:'denied'}); } }
+    }});
+    sb.MTAI.ui.build();
+    const btn=doc.getElementById('aiVoiceBtn');
+    const status=doc.getElementById('aiVoiceStatus');
+    const helpBox=doc.getElementById('aiVoiceHelp');
+    assert.ok(helpBox,'voice help container exists near the status line');
+    assert.equal(helpBox.children.length,0,'no help shown before any error');
+
+    btn.click();
+    await tick(30);
+    assert.match(status.textContent,/Мікрофон заборонено браузером/,'explicit denied status stays');
+
+    const helpBtn=findByClass(helpBox,'ai-voice-help-btn');
+    assert.ok(helpBtn,'«Відкрити інструкцію» button rendered on denied');
+    assert.match(textTree(helpBtn),/інструкцію/,'button labelled as instruction opener');
+
+    // згорнуто за замовчуванням -> expandable
+    const body=findByClass(helpBox,'ai-voice-help-body');
+    assert.ok(body,'help body exists');
+    assert.equal(body.style.display,'none','help collapsed by default (compact UI)');
+    assert.equal(helpBtn.getAttribute('aria-expanded'),'false','aria-expanded=false when collapsed');
+
+    helpBtn.click();
+    assert.equal(body.style.display,'block','tap expands the step-by-step help');
+    assert.equal(helpBtn.getAttribute('aria-expanded'),'true','aria-expanded=true when open');
+
+    const steps=[]; walk(body,el=>{ if(el.tagName==='LI') steps.push(textTree(el)); });
+    assert.equal(steps.length,6,'6 concrete steps for Android Chrome');
+    assert.match(steps[0],/значок ліворуч від адреси/,'step 1: site icon left of the address');
+    assert.match(steps[1],/Дозволи|Налаштування сайту/,'step 2: permissions / site settings');
+    assert.match(steps[2],/Мікрофон/,'step 3: find Microphone');
+    assert.match(steps[3],/Дозволити/,'step 4: choose Allow');
+    assert.match(steps[4],/Master-Tracker/,'step 5: return to the app');
+    assert.match(steps[5],/🎤/,'step 6: tap the mic again');
+
+    helpBtn.click();
+    assert.equal(body.style.display,'none','tap again collapses the help');
+    console.log('PASS mic denied UX: expandable «Відкрити інструкцію» with 6 Android-Chrome steps');
+  }
+
+  /* 12) WEBVIEW: підказка відкрити у Chrome (окремий текст, не кроки дозволів) */
+  {
+    const doc=makeDoc();
+    const WV_UA='Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko; wv) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36';
+    const sb=makeSandbox(doc,{ userAgent:WV_UA });
+    sb.MTAI.ui.build();
+    doc.getElementById('aiVoiceBtn').click();
+    await tick(30);
+    const helpBox=doc.getElementById('aiVoiceHelp');
+    const helpBtn=findByClass(helpBox,'ai-voice-help-btn');
+    assert.ok(helpBtn,'webview also gets an instruction opener');
+    helpBtn.click();
+    const body=findByClass(helpBox,'ai-voice-help-body');
+    assert.match(textTree(body),/Відкрийте сторінку у Chrome/,'webview help: open in Chrome');
+    assert.match(textTree(body),/вбудован|Telegram/i,'explains that an in-app browser blocks the mic');
+    const steps=[]; walk(body,el=>{ if(el.tagName==='LI') steps.push(textTree(el)); });
+    assert.equal(steps.length,3,'3 short steps for webview');
+    console.log('PASS webview UX: «Відкрийте сторінку у Chrome» help with 3 steps');
+  }
+
+  /* 13) Повторний тап після повернення з налаштувань: permission
+     перевіряється ЗАНОВО; якщо вже granted -> voice стартує, інструкція
+     зникає. Жодного залипання попереднього denied. */
+  {
+    const doc=makeDoc();
+    let state='denied', gumCalls=0;
+    const sb=makeSandbox(doc,{ navigator:{
+      mediaDevices:{ getUserMedia:function(){ gumCalls++; return Promise.resolve({getTracks:()=>[]}); } },
+      permissions:{ query:function(){ return Promise.resolve({state:state}); } }
+    }});
+    sb.MTAI.ui.build();
+    const btn=doc.getElementById('aiVoiceBtn');
+    const helpBox=doc.getElementById('aiVoiceHelp');
+
+    btn.click();
+    await tick(30);
+    assert.ok(findByClass(helpBox,'ai-voice-help-btn'),'denied -> help shown');
+    assert.equal(gumCalls,0,'no getUserMedia while denied');
+
+    // користувач дозволив мікрофон у налаштуваннях і повернувся
+    state='granted';
+    btn.click();
+    await tick(40);
+    assert.equal(gumCalls,1,'second tap RE-CHECKS permission and proceeds (no sticky denied)');
+    assert.match(doc.getElementById('aiVoiceStatus').textContent,/Мікрофон дозволено|Слухаю/,'granted status after returning');
+    assert.equal(helpBox.children.length,0,'instruction disappears once the mic is allowed');
+    assert.ok(sb.recognitionInstances.length>=1,'recognition actually started after permission granted');
+    console.log('PASS re-tap after granting: permission re-checked, voice starts, help cleared');
+  }
+
+  console.log('PASS ai-voice-dom: 13/13 voice acceptance checks');
   process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(1); });

@@ -118,6 +118,7 @@ function build(){
         <button type="submit" class="btn btn-accent btn-sm" id="aiSendBtn" aria-label="Надіслати">➤</button>
       </form>
       <div class="ai-foot" id="aiVoiceStatus"></div>
+      <div class="ai-voice-help" id="aiVoiceHelp"></div>
     </div>`;
   doc.body.appendChild(panel);
 
@@ -160,6 +161,13 @@ function build(){
     .ai-voice-active{background:rgba(220,38,38,.85) !important;color:#fff !important;animation:aiVoicePulse 1.2s ease-in-out infinite;}
     @keyframes aiVoicePulse{0%,100%{opacity:1;}50%{opacity:.65;}}
     .ai-voice-off{opacity:.45;}
+    .ai-voice-help{flex:0 0 auto;}
+    .ai-voice-help:empty{display:none;}
+    .ai-voice-help-btn{font-size:11.5px;padding:4px 9px;margin-top:2px;}
+    .ai-voice-help-body{margin-top:5px;padding:7px 9px;border:1px solid rgba(127,127,127,.3);border-radius:9px;background:rgba(127,127,127,.07);}
+    .ai-voice-help-title{font-size:12px;font-weight:700;margin-bottom:3px;}
+    .ai-voice-help-steps{margin:0;padding-left:18px;font-size:12px;line-height:1.5;}
+    .ai-voice-help-foot{font-size:11px;color:var(--text-dim,#555);margin-top:4px;}
     .ai-cards{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
     .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
     .ai-card-title{font-size:13px;font-weight:700;}
@@ -173,6 +181,10 @@ function build(){
 
   const renderer = MTAI.createRenderer(doc);
   const messages = $('aiMessages');
+  /* Живі кнопки «Повторити запит». Після успішної відповіді lastFailed
+     очищається, тому старі кнопки стають мертвими — прибираємо їх, щоб
+     тап по кнопці НІКОЛИ не був silent no-op. */
+  let retryButtons = [];
 
   const msgBubble = function(kind){
     const el = doc.createElement('div');
@@ -196,9 +208,54 @@ function build(){
     }catch(_e){}
     return MTAI.detectVoiceLang('');
   }
+  /* Expandable help під статусом мікрофона: кнопка «Відкрити інструкцію»
+     розгортає покрокові кроки (MTAI.voiceHelp). Ререндер ідемпотентний —
+     повторні помилки НЕ плодять дублікатів кнопок/списків. */
+  function renderVoiceHelp(kind){
+    const box = $('aiVoiceHelp');
+    if(!box) return;
+    while(box.firstChild) box.removeChild(box.firstChild);
+    const help = kind && MTAI.voiceHelp ? MTAI.voiceHelp[kind] : null;
+    if(!help) return;
+    const btn = doc.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-sm ai-voice-help-btn';
+    btn.textContent = '❔ Відкрити інструкцію';
+    btn.setAttribute('aria-expanded', 'false');
+    const body = doc.createElement('div');
+    body.className = 'ai-voice-help-body';
+    body.style.display = 'none';
+    const h = doc.createElement('div');
+    h.className = 'ai-voice-help-title'; h.textContent = help.title;
+    body.appendChild(h);
+    const ol = doc.createElement('ol');
+    ol.className = 'ai-voice-help-steps';
+    help.steps.forEach(function(s){
+      const li = doc.createElement('li'); li.textContent = s; ol.appendChild(li);
+    });
+    body.appendChild(ol);
+    if(help.footer){
+      const f = doc.createElement('div');
+      f.className = 'ai-voice-help-foot'; f.textContent = help.footer;
+      body.appendChild(f);
+    }
+    btn.addEventListener('click', function(){
+      const open = body.style.display === 'none';
+      body.style.display = open ? 'block' : 'none';
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.textContent = open ? '✕ Сховати інструкцію' : '❔ Відкрити інструкцію';
+    });
+    box.appendChild(btn); box.appendChild(body);
+  }
+
   voice = MTAI.createVoiceInput({
     getLang: lastUserLang,
-    onStatus: function(state, text){ const el = $('aiVoiceStatus'); if(el) el.textContent = text || ''; },
+    onStatus: function(state, text){
+      const el = $('aiVoiceStatus'); if(el) el.textContent = text || '';
+      /* Повторний тап після повернення з налаштувань: permission
+         перевіряється заново, і щойно мікрофон дозволено/слухає —
+         інструкція прибирається. */
+      if(state === 'granted' || state === 'listening' || state === 'starting') renderVoiceHelp(null);
+    },
     onStateChange: function(listening){
       const btn = $('aiVoiceBtn');
       if(!btn) return;
@@ -216,6 +273,10 @@ function build(){
     onError: function(err){
       const el = $('aiVoiceStatus');
       if(el) el.textContent = '⚠️ ' + err.message;
+      /* denied/webview: користувач не знає, ДЕ вмикати мікрофон -> компактний
+         expandable help із покроковою інструкцією поруч зі статусом.
+         Нічого не обходимо програмно — лише пояснюємо. */
+      renderVoiceHelp(err.kind === 'webview' ? 'webview' : (err.kind === 'permission' ? 'denied' : null));
       if(typeof showToast === 'function') showToast(err.message);
     }
   });
@@ -234,6 +295,13 @@ function build(){
       },
       wait: function(sec){ $('aiVoiceStatus').textContent = '⏳ Ліміт Groq: чекаємо ~' + sec + ' с і повторюємо…'; },
       assistant: function(out){
+        /* Успішна відповідь (у т.ч. після ручного retry) закриває тему
+           ліміту: cooldown-bubble і кнопки Retry старих помилок прибираємо,
+           щоб не лишалося «мертвих» елементів. */
+        const cd = $('aiCooldownMsg'); if(cd) cd.remove();
+        const sb = $('aiSendBtn'); if(sb) sb.disabled = false;
+        retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
+        retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
         /* Структуровані заявки з /ask -> картки з кнопками «Відкрити заявку»
            (READ-ONLY навігація через MTAI.actions.openTicket). Якщо бекенд
@@ -253,21 +321,48 @@ function build(){
         if(chat.canRetry()){
           const rb = doc.createElement('button');
           rb.type = 'button'; rb.className = 'btn btn-sm'; rb.textContent = '↻ Повторити запит';
-          /* Під час 429-cooldown кнопка Retry заблокована разом із Send. */
-          if(chat.cooldownRemainingSec() > 0) rb.disabled = true;
+          /* Під час 429-cooldown кнопка Retry заблокована разом із Send.
+             ВАЖЛИВО: кнопку треба РОЗБЛОКУВАТИ, коли cooldown минув —
+             інакше після відліку вона лишається disabled назавжди і тап
+             по ній нічого не робить (реальний баг на Android). */
+          if(chat.cooldownRemainingSec() > 0){
+            rb.disabled = true;
+            const unlock = function(){
+              if(chat.cooldownRemainingSec() > 0){ setTimeout(unlock, 500); return; }
+              rb.disabled = false;
+            };
+            setTimeout(unlock, 500);
+          }
           rb.addEventListener('click', function(){
             if(chat.cooldownRemainingSec() > 0) return; // подвійний guard
-            rb.disabled = true; chat.retry();
+            /* Кнопку НЕ можна глушити назавжди: якщо повтор знову впаде,
+               користувач має змогу спробувати ще раз (новий error-bubble
+               має власну кнопку, а ця зникає разом зі старим bubble). */
+            rb.disabled = true;
+            Promise.resolve(chat.retry())['catch'](function(){ return null; })
+              .then(function(res){
+                /* Успіх: цей error-bubble замінюється відповіддю асистента.
+                   Невдача: нова помилка отримає власну кнопку, а цю
+                   розблоковуємо, щоб користувач не лишився без дії. */
+                if(res && res.ok){ b.remove(); return; }
+                if(chat.canRetry() && chat.cooldownRemainingSec() <= 0) rb.disabled = false;
+              });
           });
+          retryButtons.push(rb);
           b.appendChild(doc.createElement('br')); b.appendChild(rb);
         }
       },
       /* 429/TPM cooldown: відлік у окремому bubble, Send заблокований;
          жодних автоматичних відправок — після кінця користувач тисне сам. */
       cooldown: function(){
-        const b = msgBubble('error'); b.id = 'aiCooldownMsg';
+        /* Один bubble на весь cooldown: повторний 429 переиспользує його,
+           інакше в чаті накопичуються паралельні лічильники. */
+        const b = $('aiCooldownMsg') || (function(){ const el = msgBubble('error'); el.id = 'aiCooldownMsg'; return el; })();
         const sendBtn = $('aiSendBtn');
         const update = function(){
+          /* Bubble міг бути прибраний (успішний retry / clear) — зупиняємо
+             таймер, щоб він не блокував Send заднім числом. */
+          if($('aiCooldownMsg') !== b) return;
           const r = chat.cooldownRemainingSec();
           if(r > 0){
             b.textContent = '⏳ Ліміт Groq. Повтор через ' + r + ' с.';
@@ -284,7 +379,7 @@ function build(){
         const el = $('aiVoiceStatus');
         if(el) el.textContent = '⏳ Ліміт Groq: зачекайте ' + (info && info.sec ? info.sec : 1) + ' с.';
       },
-      cleared: function(){ while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
+      cleared: function(){ retryButtons = []; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
     }
   });
 
