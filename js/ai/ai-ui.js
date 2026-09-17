@@ -157,6 +157,8 @@ function build(){
     .ai-inputrow{display:flex;gap:6px;margin-top:8px;align-items:flex-end;flex:0 0 auto;}
     .ai-inputrow textarea{flex:1;min-width:0;font-size:16px;resize:none;min-height:38px;max-height:96px;line-height:1.35;border-radius:10px;padding:8px 10px;font-family:inherit;box-sizing:border-box;}
     .ai-foot{font-size:10.5px;color:var(--text-faint);margin-top:4px;min-height:13px;flex:0 0 auto;}
+    .ai-voice-active{background:rgba(220,38,38,.85) !important;color:#fff !important;animation:aiVoicePulse 1.2s ease-in-out infinite;}
+    @keyframes aiVoicePulse{0%,100%{opacity:1;}50%{opacity:.65;}}
     .ai-cards{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
     .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
     .ai-card-title{font-size:13px;font-weight:700;}
@@ -182,10 +184,39 @@ function build(){
     document: doc,
     onChange: renderPreviews
   });
+  /* Голос: язык распознавания — по последнему сообщению пользователя
+     (RU/UA), дефолт — язык браузера. Результат — в textarea БЕЗ авт-отправки. */
+  function lastUserLang(){
+    try{
+      const hist = chat && chat.history ? chat.history() : [];
+      for(let i = hist.length - 1; i >= 0; i--){
+        if(hist[i].role === 'user') return MTAI.detectVoiceLang(hist[i].text);
+      }
+    }catch(_e){}
+    return MTAI.detectVoiceLang('');
+  }
   voice = MTAI.createVoiceInput({
-    onStatus: function(state, text){ $('aiVoiceStatus').textContent = text || ''; },
-    onResult: function(text){ const inp = $('aiInput'); inp.value = (inp.value ? inp.value + ' ' : '') + text; inp.focus(); },
-    onError: function(err){ $('aiVoiceStatus').textContent = err.message; if(typeof showToast === 'function') showToast(err.message); }
+    getLang: lastUserLang,
+    onStatus: function(state, text){ const el = $('aiVoiceStatus'); if(el) el.textContent = text || ''; },
+    onStateChange: function(listening){
+      const btn = $('aiVoiceBtn');
+      if(!btn) return;
+      btn.className = listening ? 'btn btn-icon btn-sm ai-voice-active' : 'btn btn-icon btn-sm';
+      btn.setAttribute('aria-pressed', listening ? 'true' : 'false');
+      btn.textContent = listening ? '⏹' : '🎤';
+      btn.setAttribute('aria-label', listening ? 'Зупинити диктування' : 'Надиктувати питання');
+    },
+    onResult: function(text){
+      const inp = $('aiInput');
+      inp.value = (inp.value ? inp.value + ' ' : '') + text;
+      inp.focus();
+      inp.dispatchEvent && typeof Event === 'function' && inp.dispatchEvent(new Event('input'));
+    },
+    onError: function(err){
+      const el = $('aiVoiceStatus');
+      if(el) el.textContent = '⚠️ ' + err.message;
+      if(typeof showToast === 'function') showToast(err.message);
+    }
   });
   chat = MTAI.createChatController({
     client: MTAI.client,
@@ -311,7 +342,7 @@ function build(){
   });
   $('aiFileInput').addEventListener('change', function(e){ attachments.addFiles(e.target.files); e.target.value = ''; });
   $('aiVoiceBtn').addEventListener('click', function(){
-    if(!voice.supported()){ $('aiVoiceStatus').textContent = '🎤 Голос не підтримується цим браузером — працює текст.'; return; }
+    if(!voice.supported()){ $('aiVoiceStatus').textContent = '⚠️ Голосовий ввід не підтримується цим браузером — працює текст.'; return; }
     if(voice.isActive()){ voice.stop(); } else { voice.start(); }
   });
   $('aiClearBtn').addEventListener('click', function(){ chat.clear(); });
