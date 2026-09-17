@@ -7,11 +7,7 @@ function renderSettingsScreen(){
   ensureSettingsHub();
   document.getElementById('appVersionLabel').textContent = `Версія застосунку: ${APP_VERSION}`;
   document.getElementById('hourlyRateInput').value = settings.hourlyRate;
-  document.getElementById('defaultConnectFeeInput').value = settings.defaultConnectFee;
-  document.getElementById('defaultTariffInput').value = settings.defaultTariff;
   renderDeletedTicketsList();
-  document.getElementById('defaultRepairCallFeeInput').value = settings.defaultRepairCallFee;
-  document.getElementById('freeRepairCallThresholdInput').value = settings.freeRepairCallThreshold;
   document.getElementById('themeSwitch').checked = settings.theme==='dark';
   // NEW: стан захисту входу
   document.getElementById('appLockToggle').checked = !!settings.appLockEnabled;
@@ -370,6 +366,11 @@ function openSettingsHubSection(key){
 
   document.getElementById('settingsHubPageTitle').textContent = section ? `${section.icon} ${section.title}` : '🧩 Інше';
   document.getElementById('settingsHubPageSub').textContent = section ? section.sub : 'Інші параметри застосунку';
+  // NEW (💰 Ціни): список населених пунктів будується з довідника міст і заявок,
+  // а вони змінюються протягом сесії (місто щойно додали в «Адреси», з'явилась
+  // нова заявка). Тому розділ перемальовується щоразу при відкритті, інакше
+  // показувався б застарілий знімок з моменту старту застосунку.
+  if(typeof MTPricingUI !== 'undefined' && MTPricingUI) MTPricingUI.render();
   home.classList.add('hidden');
   document.getElementById('appVersionLabel').classList.add('hidden');
   page.classList.remove('hidden');

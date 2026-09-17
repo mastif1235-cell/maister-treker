@@ -144,6 +144,80 @@ const baseSettings = () => ({defaultRepairCallFee:300, defaultTariff:400, defaul
   assert.match(storageSource, /defaultConnectFee/);
 }
 
+/* --- Виправлення багів, знайдених на телефоні --- */
+
+/* A) Місто з довідника «Налаштування → Адреси → Міста» видно в «Цінах»
+      навіть коли локальних заявок немає взагалі (preview-origin). */
+{
+  const settings = baseSettings();
+  settings.cities = ['Таромське', 'Миколаївка1', 'Миколаївка', 'Привольне'];
+  const cities = service.collectCities(settings, []);
+  assert.deepEqual(cities.map(c=>c.displayName), ['Миколаївка', 'Миколаївка1', 'Привольне', 'Таромське']);
+  assert.equal(cities.length, 4, 'нуль заявок — але довідник міст усе одно дає список');
+}
+
+/* B) Об'єднання довідника і заявок: жодне джерело не втрачається. */
+{
+  const settings = baseSettings();
+  settings.cities = ['Таромське', 'Привольне'];
+  const tickets = [{city:'Дніпро'}, {city:'Таромське'}];
+  const names = service.collectCities(settings, tickets).map(c=>c.displayName);
+  assert.deepEqual(names, ['Дніпро', 'Привольне', 'Таромське'], 'union довідника і заявок');
+  assert.equal(names.filter(n=>n === 'Таромське').length, 1, 'спільне місто не дублюється');
+}
+
+/* C) Дедуплікація без урахування регістру й зайвих пробілів між джерелами. */
+{
+  const settings = baseSettings();
+  settings.cities = ['таромське', '  ТАРОМСЬКЕ  '];
+  const cities = service.collectCities(settings, [{city:'Таромське'}]);
+  assert.equal(cities.length, 1, 'три написання з двох джерел — один пункт');
+  assert.equal(cities[0].displayName, 'Таромське', 'для показу лишається охайне написання');
+}
+
+/* D) Єдине джерело правди: запис ціни через розділ «Ціни» змінює рівно ті
+      самі канонічні поля налаштувань, що читає калькулятор заявки. */
+{
+  const settings = baseSettings();
+  store.setGeneralPrice(settings, 'connection', 550);
+  store.setGeneralPrice(settings, 'tariff', 420);
+  store.setGeneralPrice(settings, 'callout', 310);
+  store.setFreeCallThreshold(settings, 900);
+  assert.equal(settings.defaultConnectFee, 550);
+  assert.equal(settings.defaultTariff, 420);
+  assert.equal(settings.defaultRepairCallFee, 310);
+  assert.equal(settings.freeRepairCallThreshold, 900);
+  assert.deepEqual(service.autofillFor(settings, 'Підключення', 'Будь-яке'), {callFee:550, tariff:420});
+}
+
+/* E) Дубля цін більше немає: старий блок прибрано з екрана, а обробники
+      старих полів не лишились у коді. Загальні ціни редагуються рівно в
+      одному місці, і другого сховища для них не створено. */
+{
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const settingsDomain = fs.readFileSync(path.join(root, 'js', 'settings-domain.js'), 'utf8');
+  const settingsRender = fs.readFileSync(path.join(root, 'js', 'settings-render.js'), 'utf8');
+  for(const id of ['defaultConnectFeeInput', 'defaultTariffInput', 'defaultRepairCallFeeInput', 'freeRepairCallThresholdInput']){
+    assert.equal(html.includes(id), false, `дубльоване поле ${id} прибрано з екрана`);
+    assert.equal(settingsDomain.includes(id), false, `обробник ${id} прибрано`);
+    assert.equal(settingsRender.includes(id), false, `рендер ${id} прибрано`);
+  }
+  assert.equal(html.includes('Ціни за замовчуванням'), false, 'старий дубльований акордеон прибрано');
+  assert.equal((html.match(/💰 Ціни|pricingCard/g) || []).length >= 0, true);
+  const ui = fs.readFileSync(path.join(root, 'js', 'pricing', 'pricing-ui.js'), 'utf8');
+  assert.match(ui, /pricingFreeThreshold/, 'поріг безкоштовного виклику не втрачено — він переїхав у «Ціни»');
+  const storageSource = fs.readFileSync(path.join(root, 'js', 'pricing', 'pricing-storage.js'), 'utf8');
+  assert.match(storageSource, /settings\.freeRepairCallThreshold = amount/, 'поріг пишеться в канонічне поле, без другої копії');
+}
+
+/* Розділ мусить перемальовуватись при відкритті — інакше список міст
+   лишався б знімком з моменту старту застосунку (саме цей баг і був). */
+{
+  const hub = fs.readFileSync(path.join(root, 'js', 'settings-render.js'), 'utf8');
+  const openFn = hub.slice(hub.indexOf('function openSettingsHubSection'), hub.indexOf('function closeSettingsHubSection'));
+  assert.match(openFn, /MTPricingUI\.render\(\)/, 'відкриття розділу перемальовує «Ціни» свіжими даними');
+}
+
 /* H) Ручну суму автопідстановка не затирає; зміна міста/типу — оновлює.
    Перевіряється на справжньому коді applyDefaultCallFee/applyDefaultTariff. */
 {

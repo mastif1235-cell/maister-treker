@@ -98,6 +98,7 @@ function render(){
 function listView(){
   const settingsRef = currentSettings();
   const general = store.generalPrices(settingsRef);
+  const freeThreshold = store.freeCallThreshold(settingsRef);
   const cities = service.collectCities(settingsRef, currentTickets());
 
   const rows = cities.length
@@ -124,6 +125,11 @@ function listView(){
     <div class="pricing-field">
       <label for="pricingGeneralConnection">Підключення, грн</label>
       <input type="number" inputmode="numeric" min="0" id="pricingGeneralConnection" data-pricing-input="general" value="${general.connection}">
+    </div>
+    <div class="pricing-field">
+      <label for="pricingFreeThreshold">Поріг безкоштовного виклику, грн</label>
+      <input type="number" inputmode="numeric" min="0" id="pricingFreeThreshold" data-pricing-input="general" value="${freeThreshold}">
+      <div class="pricing-hint" style="margin:5px 0 0;">Для ремонту: якщо сума вибраного обладнання дорівнює або перевищує цей поріг, вартість виклику не додається.</div>
     </div>
     <button type="button" class="btn btn-accent btn-block" data-pricing-action="save-general" style="min-height:46px;">Зберегти загальні ціни</button>
     <div style="margin-top:18px; font-size:15px; font-weight:700;">Населені пункти</div>
@@ -173,11 +179,12 @@ function cityView(cityKey){
 function saveGeneral(){
   const settingsRef = currentSettings();
   const pairs = [['callout', 'pricingGeneralCallout'], ['tariff', 'pricingGeneralTariff'], ['connection', 'pricingGeneralConnection']];
-  const invalid = pairs.some(([, id])=>store.normalizeAmount($(id)?.value) === null);
+  const invalid = pairs.some(([, id])=>store.normalizeAmount($(id)?.value) === null)
+    || store.normalizeAmount($('pricingFreeThreshold')?.value) === null;
   if(invalid){ toast('Вкажіть суму числом (0 або більше)'); return; }
   pairs.forEach(([kind, id])=>store.setGeneralPrice(settingsRef, kind, $(id).value));
+  store.setFreeCallThreshold(settingsRef, $('pricingFreeThreshold').value);
   persist();
-  refreshLegacyInputs();
   render();
   toast('Загальні ціни збережено');
 }
@@ -218,14 +225,6 @@ function cssEscape(value){
   const text = String(value);
   if(typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(text);
   return text.replace(/["\\]/g, '\\$&');
-}
-
-/* Старі поля «Ціни за замовчуванням» і новий розділ — це одні й ті самі
-   значення, тому після збереження оновлюємо і їх. */
-function refreshLegacyInputs(){
-  const settingsRef = currentSettings();
-  const map = [['defaultRepairCallFeeInput', 'callout'], ['defaultTariffInput', 'tariff'], ['defaultConnectFeeInput', 'connection']];
-  map.forEach(([id, kind])=>{ const el = $(id); if(el) el.value = store.generalPrice(settingsRef, kind); });
 }
 
 function onClick(event){

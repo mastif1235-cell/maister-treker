@@ -97,6 +97,21 @@
     return true;
   }
 
+  /* Поріг безкоштовного виклику для ремонту — теж належить цінам, тому
+     редагується тут. Джерело правди незмінне: settings.freeRepairCallThreshold. */
+  function freeCallThreshold(settings){
+    const value = normalizeAmount(settings ? settings.freeRepairCallThreshold : undefined);
+    return value === null ? 800 : value;
+  }
+
+  function setFreeCallThreshold(settings, value){
+    if(!settings) return false;
+    const amount = normalizeAmount(value);
+    if(amount === null) return false;
+    settings.freeRepairCallThreshold = amount;
+    return true;
+  }
+
   /* ---- Індивідуальні ціни населеного пункту ---- */
   function cityEntry(settings, cityName){
     const key = normalizeKey(cityName);
@@ -182,6 +197,7 @@
     KINDS, LABELS, GENERAL_FIELD, GENERAL_FALLBACK,
     isKind, normalizeKey, displayNameOf, normalizeAmount, ensure,
     generalPrice, generalPrices, setGeneralPrice,
+    freeCallThreshold, setFreeCallThreshold,
     cityEntry, overrides, overrideFor, hasOverride,
     setOverride, clearOverride, removeCity, rememberDisplayName
   });

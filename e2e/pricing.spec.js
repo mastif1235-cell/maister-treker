@@ -21,6 +21,52 @@ async function setGeneral(page, callout, tariff, connection){
   }, [callout, tariff, connection]);
 }
 
+/* Регресія з реального телефона: місто, додане в «Адреси → Міста» вже під час
+   сесії, мусить одразу бути видимим у «Цінах» навіть без жодної заявки; і на
+   екрані не повинно лишитись другого блока з тими самими цінами. */
+test('💰 Ціни: міста з довідника видно без заявок, дубля загальних цін немає', async ({ page, appEnv }) => {
+  const errors = await gotoApp(page, appEnv.url);
+  await waitAppReady(page);
+  expect(await page.evaluate(()=>tickets.length)).toBe(0);
+
+  await page.evaluate(()=>switchTab('settings'));
+  await page.evaluate(()=>{
+    ['Таромське', 'Миколаївка1', 'Миколаївка', 'Привольне'].forEach(name=>{
+      document.getElementById('newCityInput').value = name;
+      document.getElementById('addCityBtn').click();
+    });
+  });
+  await page.evaluate(()=>openSettingsHubSection('calculator'));
+
+  const keys = await page.evaluate(()=>Array.from(document.querySelectorAll('[data-pricing-open]')).map(b=>b.dataset.pricingOpen));
+  expect(keys).toEqual(['миколаївка', 'миколаївка1', 'привольне', 'таромське']);
+  await expect(page.locator('#pricingBody')).not.toContainText('Населених пунктів ще немає');
+
+  // Єдиний блок загальних цін на екрані: старий дубль прибрано.
+  expect(await page.evaluate(()=>!!document.getElementById('defaultConnectFeeInput'))).toBe(false);
+  expect(await page.evaluate(()=>document.body.textContent.includes('Ціни за замовчуванням'))).toBe(false);
+  expect(await page.evaluate(()=>document.querySelectorAll('#pricingGeneralConnection').length)).toBe(1);
+
+  // Поріг безкоштовного виклику не загубився і пише в канонічне поле.
+  await page.evaluate(()=>{
+    document.getElementById('pricingFreeThreshold').value = '900';
+    document.querySelector('[data-pricing-action="save-general"]').click();
+  });
+  expect(await page.evaluate(()=>settings.freeRepairCallThreshold)).toBe(900);
+
+  // Індивідуальна ціна для міста з довідника (без жодної заявки) працює.
+  await page.evaluate(()=>document.querySelector('[data-pricing-open="привольне"]').click());
+  await page.evaluate(()=>{
+    document.querySelector('input[data-pricing-input="override"][data-kind="tariff"]').value = '777';
+    document.querySelector('[data-pricing-action="set-override"][data-kind="tariff"]').click();
+  });
+  const generalTariff = await page.evaluate(()=>settings.defaultTariff);
+  expect(await page.evaluate(()=>MTPricingService.effectivePrice(settings, 'tariff', 'Привольне'))).toBe(777);
+  expect(await page.evaluate(gt=>MTPricingService.effectivePrice(settings, "tariff", "Таромське"), generalTariff)).toBe(generalTariff);
+
+  expect(errors).toEqual([]);
+});
+
 test('💰 Ціни: загальні, індивідуальні, наслідування і автопідстановка', async ({ page, appEnv }) => {
   const errors = await gotoApp(page, appEnv.url);
   await waitAppReady(page);

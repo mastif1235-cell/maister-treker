@@ -41,18 +41,11 @@ function bindSettingsScreen(){
   document.getElementById('hourlyRateInput').addEventListener('input', e=>{
     settings.hourlyRate = Number(e.target.value)||0; saveSettings(); renderShiftStats();
   });
-  document.getElementById('defaultConnectFeeInput').addEventListener('input', e=>{
-    settings.defaultConnectFee = Number(e.target.value)||0; saveSettings();
-  });
-  document.getElementById('defaultTariffInput').addEventListener('input', e=>{
-    settings.defaultTariff = Number(e.target.value)||0; saveSettings();
-  });
-  document.getElementById('defaultRepairCallFeeInput').addEventListener('input', e=>{
-    settings.defaultRepairCallFee = Number(e.target.value)||0; saveSettings();
-  });
-  document.getElementById('freeRepairCallThresholdInput').addEventListener('input', e=>{
-    settings.freeRepairCallThreshold = Number(e.target.value)||0; saveSettings();
-  });
+  /* NEW (💰 Ціни): старий блок «Ціни за замовчуванням» прибрано з екрана —
+     він дублював ті самі три ціни, що й розділ «💰 Ціни», і було незрозуміло,
+     де саме їх міняти. Єдине джерело правди не змінилось: це ті самі поля
+     settings.defaultRepairCallFee / defaultTariff / defaultConnectFee, які
+     тепер редагуються рівно в одному місці — у розділі «💰 Ціни». */
   document.getElementById('themeSwitch').addEventListener('change', e=>{
     settings.theme = e.target.checked ? 'dark' : 'light';
     saveSettings(); applyTheme();
