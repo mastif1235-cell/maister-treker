@@ -41,6 +41,16 @@ MTAI.actions = (function(){
   function openTicket(id){
     const clean = String(id || '').replace(/[^0-9a-zа-яіїєг_-]/gi, '');
     if(!clean) return false;
+    /* READ-ONLY навігація: спочатку згорнути власний AI overlay, щоб панель
+       чата не перекривала екран заявки (панель лише ховається — чат і
+       налаштування зберігаються). */
+    try{
+      const doc = typeof document !== 'undefined' ? document : null;
+      const panel = doc && doc.getElementById('aiChatPanel');
+      if(panel) panel.style.display = 'none';
+      const blocked = doc && doc.getElementById('aiBlockedPanel');
+      if(blocked) blocked.style.display = 'none';
+    }catch(_overlayErr){}
     try{
       if(typeof tickets !== 'undefined' && Array.isArray(tickets) && tickets.length &&
          !tickets.some(function(t){ return String(t.id) === clean; })){

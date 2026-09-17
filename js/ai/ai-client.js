@@ -31,10 +31,33 @@ MTAI.createClient = function(options){
         message:'Ліміт Groq (TPM, безкоштовний тариф).' + (parseRetryAfter(detail) ? ' Просить зачекати ~' + parseRetryAfter(detail) + ' с.' : ' Спробуйте за 20–30 секунд.'),
         detail: detail, retryAfterSec: parseRetryAfter(detail) };
     }
-    if(status === 503) return { kind:'not_configured', message:'Сервер повідомив: ' + ((payload && (payload.error || code)) || 'ask_not_configured') + '.', detail: detail };
+    if(status === 503) return { kind:'not_configured',
+      message:'AI на цьому backend не налаштований або провайдера вимкнено (' + ((payload && (payload.error || code)) || 'ask_not_configured') + '). Перевірте, що провайдер увімкнено на Worker і ключ додано як Secret (див. «Як підключити AI» у налаштуваннях).',
+      detail: detail };
     if(status === 400) return { kind:'bad_request', message:'Некоректний запит (' + code + ').', detail: detail };
     if(status >= 500) return { kind:'server', message:'Помилка сервера (' + status + (code ? ' ' + code : '') + ').', detail: detail };
     return { kind:'http', message:'Помилка ' + status + (code ? ' ' + code : '') + '.', detail: detail };
+  }
+
+  /* Структуровані заявки від /ask (кнопки «Відкрити заявку»). Лише сувора
+     проєкція: рядкові поля, обрізані за довжиною; id — безпечний формат.
+     Клієнт НІКОГДА не приймає від моделі URL — навігація тільки за id. */
+  function normalizeTickets(raw){
+    if(!Array.isArray(raw)) return [];
+    const out = [];
+    for(const item of raw){
+      if(!item || typeof item !== 'object') continue;
+      const id = String(item.id == null ? '' : item.id).trim().slice(0, 64);
+      if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id)) continue;
+      out.push({
+        id: id,
+        date: String(item.date == null ? '' : item.date).trim().slice(0, 32),
+        address: String(item.address == null ? '' : item.address).trim().slice(0, 200),
+        type: String(item.type == null ? '' : item.type).trim().slice(0, 100)
+      });
+      if(out.length >= 8) break;
+    }
+    return out;
   }
 
   async function ask(question){
@@ -50,7 +73,7 @@ MTAI.createClient = function(options){
       });
       const payload = await res.json().catch(function(){ return null; });
       if(res.ok && payload && payload.ok){
-        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {} };
+        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, tickets: normalizeTickets(payload.tickets) };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };
     }catch(err){
@@ -88,7 +111,7 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health, config: config };
+  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут

@@ -117,6 +117,22 @@ function build(){
     }
   }
   applyModeUi();
+  /* Кнопка вбудованої інструкції (js/ai/ai-help.js) — feature-detect,
+     щоб тестові середовища без ai-help.js не падали. */
+  const onboardEl = $('aiOnboardBtn');
+  if(onboardEl && onboardEl.parentNode && !doc.getElementById('aiHelpBtn')){
+    const helpBtn = doc.createElement('button');
+    helpBtn.type = 'button';
+    helpBtn.id = 'aiHelpBtn';
+    helpBtn.className = 'btn';
+    helpBtn.style.width = '100%';
+    helpBtn.style.marginTop = '8px';
+    helpBtn.textContent = '📘 Як підключити AI';
+    helpBtn.addEventListener('click', function(){
+      if(MTAI.help && typeof MTAI.help.open === 'function') MTAI.help.open();
+    });
+    onboardEl.parentNode.insertBefore(helpBtn, onboardEl);
+  }
   const dl = $('aiBackendList');
   MTAI.config.ALLOWED_BACKENDS.forEach(function(url){
     const o = doc.createElement('option'); o.value = url; dl.appendChild(o);

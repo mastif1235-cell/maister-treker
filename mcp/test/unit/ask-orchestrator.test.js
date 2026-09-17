@@ -177,3 +177,70 @@ test('question is trimmed and capped; tools receive the trimmed question only vi
   await orch.handle('  ' + 'п'.repeat(5000) + '  ');
   assert.equal(seenMessages[1].content.length, ASK_LIMITS.maxQuestionChars);
 });
+
+/* ── Chat UX + структурований контракт tickets (etappe: AI HELP + CHAT UX) ── */
+
+test('system prompt: date context line present, honest empty-data/ambiguity/no-hallucination rules', async () => {
+  const {ASK_SYSTEM_PROMPT, askDateContextLine} = await import('../../src/ask/orchestrator.js');
+  assert.match(ASK_SYSTEM_PROMPT, /Нічого не вигадуй/, 'no hallucination rule');
+  assert.match(ASK_SYSTEM_PROMPT, /заявок не знайдено/, 'concrete empty-data wording');
+  assert.match(ASK_SYSTEM_PROMPT, /У базі немає даних/, 'no-data wording');
+  assert.match(ASK_SYSTEM_PROMPT, /Ви маєте на увазі/, 'ambiguity -> clarifying question');
+  assert.match(ASK_SYSTEM_PROMPT, /2–3 конкретні варіанти/, 'ambiguity -> options');
+  assert.match(ASK_SYSTEM_PROMPT, /№<id>/, 'found tickets listed as №id');
+  assert.match(ASK_SYSTEM_PROMPT, /Сьогоднішня дата додана в кінці цього промпта/, 'date context referenced');
+  const line = askDateContextLine(new Date(2026, 7, 31, 12, 0, 0));
+  assert.match(line, /Сьогодні: 31\.08\.2026/, 'date line format DD.MM.YYYY');
+  assert.match(line, /серпня/, 'month name in date line');
+});
+
+test('handle() prepends current date to the system message', async () => {
+  const groq = scriptedGroq([finalResponse('ok')]);
+  let seenMessages = null;
+  const wrapped = {chat: async function(messages, tools){ seenMessages = messages; return groq.chat(messages, tools); }};
+  const orch = createAskOrchestrator({groq:wrapped, tools:stubTools([]), toolDefs:TOOL_DEFINITIONS});
+  await orch.handle('q', {now:new Date(2026, 8, 17)});
+  assert.match(seenMessages[0].content, /Сьогодні: 17\.09\.2026/, 'date injected into system message');
+});
+
+test('tool results with tickets -> outcome.tickets sanitized projection', async () => {
+  const groq = scriptedGroq([
+    toolResponse('list_tickets', '{"limit":5}'),
+    finalResponse('Знайдено №123 та №124.')
+  ]);
+  const tools = stubTools([]);
+  tools.list_tickets = async function(){ return {ok:true, data:{tickets:[
+    {id:'123', date:'01.08.2026', content:'вул. Шевченка, 1', tags:['ремонт']},
+    {id:'124', date:'02.08.2026', address:'вул. Франка, 2', type:'підключення'},
+    {id:'../evil', address:'x'},
+    {id:''},
+    'not-an-object',
+    null
+  ], total_matched:2}};
+  };
+  const orch = createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS});
+  const outcome = await orch.handle('покажи заявки');
+  assert.equal(outcome.ok, true);
+  assert.ok(Array.isArray(outcome.tickets), 'tickets projection returned');
+  assert.equal(outcome.tickets.length, 2, 'only valid ids projected');
+  assert.deepEqual(outcome.tickets[0], {id:'123', date:'01.08.2026', address:'вул. Шевченка, 1', type:'ремонт'}, 'content->address, tags->type');
+  assert.equal(outcome.tickets[1].address, 'вул. Франка, 2', 'explicit address wins');
+});
+
+test('tickets projection: cap 8, dedupe, clipping', async () => {
+  const {projectTicketsForClient} = await import('../../src/ask/orchestrator.js');
+  const many = Array.from({length: 12}, (_, i) => ({id:String(i + 1), date:'01.08.2026', address:'A'.repeat(500), type:'T'.repeat(300)}));
+  const out = projectTicketsForClient(many);
+  assert.equal(out.length, 8, 'capped at 8');
+  assert.ok(out.every(t => t.address.length <= 200 && t.type.length <= 100), 'fields clipped');
+  const duped = projectTicketsForClient([{id:'5', address:'a'}, {id:'5', address:'b'}, {id:'6'}]);
+  assert.equal(duped.length, 2, 'dedupe by id');
+  assert.equal(projectTicketsForClient('nope').length, 0, 'non-array -> empty');
+  assert.equal(projectTicketsForClient([{id:'has space'}, {id:'a/b'}]).length, 0, 'unsafe ids rejected');
+});
+
+test('ask response includes tickets only when found (index.js contract)', async () => {
+  const mod = await import('../../src/ask/orchestrator.js');
+  const noTickets = mod.projectTicketsForClient([{id:'bad id!'}]);
+  assert.equal(noTickets.length, 0, 'no tickets -> index.js omits the field');
+});

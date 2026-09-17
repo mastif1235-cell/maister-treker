@@ -60,9 +60,12 @@ MTAI.config = {
     const month = months[now.getMonth()] + ' ' + now.getFullYear();
     return [
       'Покажи останні 5 заявок',
-      'Скільки зароблено за ' + month + '?',
-      'Скільки заявок за сьогодні та какая сума?',
-      'Скільки годин відпрацьовано за ' + month + '?'
+      'Заявки за сьогодні',
+      'Скільки зароблено за ' + months[now.getMonth()] + ' ' + now.getFullYear() + '?',
+      'Скільки ремонтів за ' + months[now.getMonth()] + ' ' + now.getFullYear() + '?',
+      'Скільки підключень за ' + months[now.getMonth()] + ' ' + now.getFullYear() + '?',
+      'Скільки годин відпрацьовано за ' + months[now.getMonth()] + ' ' + now.getFullYear() + '?',
+      'Знайди заявку за адресою'
     ];
   }
 };

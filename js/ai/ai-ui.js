@@ -139,6 +139,10 @@ function build(){
     .ai-msg-error{align-self:stretch;background:rgba(220,38,38,.12);font-size:13px;}
     .ai-msg-loading{align-self:flex-start;color:var(--text-dim);font-size:13px;}
     .ai-meta{font-size:11px;color:var(--text-faint);align-self:flex-start;margin-top:-4px;}
+    .ai-cards{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+    .ai-card{border:1px solid rgba(127,127,127,.3);border-radius:10px;padding:7px 9px;background:rgba(127,127,127,.06);}
+    .ai-card-title{font-size:13px;font-weight:700;}
+    .ai-card-desc{font-size:12px;color:var(--text-dim,#555);margin:2px 0 5px;word-break:break-word;}
     .ai-quick{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0;}
     .ai-quick button{font-size:12px;}
     .ai-attach-previews{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
@@ -187,6 +191,12 @@ function build(){
       wait: function(sec){ $('aiVoiceStatus').textContent = '⏳ Ліміт Groq: чекаємо ~' + sec + ' с і повторюємо…'; },
       assistant: function(out){
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
+        /* Структуровані заявки з /ask -> картки з кнопками «Відкрити заявку»
+           (READ-ONLY навігація через MTAI.actions.openTicket). Якщо бекенд
+           ще без контракту — inline-кнопки з тексту додає renderAnswer. */
+        if(out.tickets && out.tickets.length && MTAI.cards){
+          MTAI.cards.render(b, out.tickets, function(id){ MTAI.actions.openTicket(id); });
+        }
         if(out.meta){ const m = doc.createElement('div'); m.className = 'ai-meta'; m.textContent = 'rounds: ' + (out.meta.rounds != null ? out.meta.rounds : '?') + ' · tool_calls: ' + (out.meta.tool_calls != null ? out.meta.tool_calls : 0); messages.appendChild(m); }
       },
       error: function(err){

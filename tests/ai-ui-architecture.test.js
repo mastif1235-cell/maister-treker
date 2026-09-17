@@ -10,7 +10,7 @@ const html=read('index.html'),sw=read('sw.js'),tools=read('js/tools-domain.js');
 // 1) Модульна структура: жодного моноліту, старий single-file чернетку видалено
 const AI_FILES=[
   'js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-provider.js','js/ai/ai-client.js',
-  'js/ai/ai-render.js','js/ai/ai-chat.js','js/ai/ai-ui.js','js/ai/ai-settings.js',
+  'js/ai/ai-render.js','js/ai/ai-result-cards.js','js/ai/ai-chat.js','js/ai/ai-ui.js','js/ai/ai-help.js','js/ai/ai-settings.js',
   'js/ai/ai-attachments.js','js/ai/ai-voice.js',
   'js/ai/providers/provider-registry.js','js/ai/providers/groq.js','js/ai/providers/deepseek.js',
   'js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js','js/ai/actions/photo-actions.js'

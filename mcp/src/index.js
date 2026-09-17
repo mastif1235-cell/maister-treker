@@ -180,7 +180,12 @@ export function createApp(env, deps){
       if(typeof outcome.detail === 'string' && outcome.detail) payload.detail = outcome.detail;
       return jsonResponse(upstream ? 502 : 500, payload);
     }
-    return jsonResponse(200, {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}});
+    const okPayload = {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}};
+    /* Структурований контракт: знайдені заявки для кнопок «Відкрити заявку»
+       (безпечна проєкція без URL; фронтенд відкриває лише свій локальний
+       список через власну навігацію). Відсутні, якщо заявок не знайдено. */
+    if(Array.isArray(outcome.tickets) && outcome.tickets.length) okPayload.tickets = outcome.tickets;
+    return jsonResponse(200, okPayload);
   }
 
   async function handler(request){

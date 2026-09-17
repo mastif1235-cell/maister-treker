@@ -19,6 +19,7 @@ function makeDoc(){
     get id(){ return this._id||''; } set id(v){ this._id=v; register(this); }
     get firstChild(){ return this.children[0]||null; }
     appendChild(c){ c.parentNode=this; this.children.push(c); register(c); return c; }
+    insertBefore(c,ref){ const i=this.children.indexOf(ref); if(i<0||!ref) return this.appendChild(c); c.parentNode=this; this.children.splice(i,0,c); register(c); return c; }
     removeChild(c){ this.children=this.children.filter(x=>x!==c); }
     remove(){ if(this.parentNode) this.parentNode.removeChild(this); }
     addEventListener(t,fn){ (this._handlers[t]=this._handlers[t]||[]).push(fn); }

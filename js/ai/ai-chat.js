@@ -40,8 +40,8 @@ MTAI.createChatController = function(deps){
     emit('busy', false);
     if(outcome.ok){
       lastFailed = null;
-      messages.push({ role:'assistant', text:outcome.answer, ts:Date.now(), meta:outcome.meta });
-      emit('assistant', { text:outcome.answer, meta:outcome.meta });
+      messages.push({ role:'assistant', text:outcome.answer, ts:Date.now(), meta:outcome.meta, tickets:outcome.tickets || [] });
+      emit('assistant', { text:outcome.answer, meta:outcome.meta, tickets:outcome.tickets || [] });
       return { ok:true };
     }
     lastFailed = question;
