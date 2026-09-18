@@ -7,7 +7,7 @@ import {
   ticketMatchesQuery, parseDateKey
 } from '../gas/mappers.js';
 import {
-  extractPlaces, resolveAddress, normalizeHouse, cleanStr
+  extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore
 } from '../ask/address.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
@@ -163,10 +163,14 @@ export function createReadTools(options){
     }
 
     const r = resolution.resolved;
+    const rStreetStem = normalizeStem(r.street);
+    const rCityStem = r.city ? normalizeStem(r.city) : '';
+
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
-      if(r.city && t.city && cleanStr(t.city) !== cleanStr(r.city)) return false;
-      if(cleanStr(t.street) !== cleanStr(r.street)) return false;
+      if(rCityStem && t.city && normalizeStem(t.city) !== rCityStem && matchScore(t.city, r.city) < 0.75) return false;
+      const tStreetStem = normalizeStem(t.street);
+      if(tStreetStem !== rStreetStem && matchScore(t.street, r.street) < 0.75) return false;
       if(r.house && normalizeHouse(t.house) !== normalizeHouse(r.house)) return false;
       return true;
     });

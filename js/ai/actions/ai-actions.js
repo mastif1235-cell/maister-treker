@@ -102,6 +102,7 @@ MTAI.actions = (function(){
     /* Успіх: пушимо кадр повернення в AI на стек навігації */
     if(typeof appNavigationPush === 'function'){
       appNavigationPush('ai-return', function(){
+        if(typeof closeModal === 'function') closeModal();
         if(typeof MTAI !== 'undefined' && MTAI.ui && typeof MTAI.ui.restoreFromNavigation === 'function'){
           MTAI.ui.restoreFromNavigation();
         }
@@ -158,6 +159,7 @@ MTAI.actions = (function(){
 
     if(typeof appNavigationPush === 'function'){
       appNavigationPush('ai-return', function(){
+        if(typeof closeModal === 'function') closeModal();
         if(typeof MTAI !== 'undefined' && MTAI.ui && typeof MTAI.ui.restoreFromNavigation === 'function'){
           MTAI.ui.restoreFromNavigation();
         }

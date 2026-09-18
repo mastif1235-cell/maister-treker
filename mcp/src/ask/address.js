@@ -14,11 +14,13 @@ export function cleanStr(s){
 }
 
 const PREFIX_RE = /^(?:вул(?:иця|\.)?|ул(?:ица|\.)?|просп(?:ект|\.)?|пр(?:-кт|\.)?|пров(?:улок|\.)?|пер(?:еулок|\.)?|бул(?:ьвар|\.)?|наб(?:ережна|\.)?|тупик|узвіз|спуск|шосе|тракт|алея)\s+/i;
-const SUFFIX_RE = /(?:івська|евская|євская|овська|овская|ського|ского|ському|скому|ський|ский|ська|ская|ське|ское|ські|ские|овая|евая|євая|ова|ева|єва|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|івка|овка|евка|євка|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
+const SUFFIX_RE = /(?:івською|івської|івському|івська|івську|івські|івське|івський|евскою|евской|евском|евского|евскому|евская|евскую|евские|евское|евский|євскою|євской|євском|євского|євскому|євская|євскую|євские|євское|євский|овською|овської|овському|овська|овську|овські|овське|овський|овскою|овской|овском|овского|овскому|овская|овскую|овские|овское|овский|ського|ского|ському|скому|ськом|ском|ський|ский|ська|ская|ське|ское|ські|ские|ських|ских|ської|ской|ового|евого|євого|овому|евому|євому|овою|евою|євою|овой|евой|євой|овую|евую|євую|овая|евая|євая|івка|овка|евка|євка|ова|ева|єва|ову|еву|єву|ное|не|ном|ним|нем|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|ями|ами|ях|ах|ям|ам|ому|ем|єм|ом|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
 
 const ROOT_TRANSLATIONS = [
   [/^ліс/i, 'лес'],
   [/^лес/i, 'лес'],
+  [/^підгород/i, 'подгород'],
+  [/^подгород/i, 'подгород'],
   [/^молодіж/i, 'молодеж'],
   [/^молодеж/i, 'молодеж'],
   [/^залізнич/i, 'железнодорож'],
@@ -146,19 +148,40 @@ export function extractPlaces(tickets){
     if(!cityMap.has(cKey)) cityMap.set(cKey, new Map());
     const streetMap = cityMap.get(cKey);
     if(street){
-      if(!streetMap.has(street)) streetMap.set(street, new Set());
-      if(house) streetMap.get(street).add(house);
+      const stem = normalizeStem(street);
+      let targetKey = null;
+      for(const existingStreet of streetMap.keys()){
+        if(normalizeStem(existingStreet) === stem){
+          targetKey = existingStreet;
+          break;
+        }
+      }
+      if(!targetKey){
+        targetKey = street;
+        streetMap.set(targetKey, { canonicalStreet: street, rawVariants: new Set(), houses: new Set() });
+      }
+      const entry = streetMap.get(targetKey);
+      entry.rawVariants.add(street);
+      if(house) entry.houses.add(house);
     }
   }
   const result = [];
   for(const [city, streetMap] of cityMap.entries()){
     const streets = [];
     let cityTicketCount = 0;
-    for(const [street, houseSet] of streetMap.entries()){
-      const houses = Array.from(houseSet).sort();
-      const count = tickets.filter(function(t){ return (t.city || '(не вказано)') === city && t.street === street; }).length;
+    for(const [, entry] of streetMap.entries()){
+      const houses = Array.from(entry.houses).sort(function(a, b){
+        const na = parseInt(a, 10), nb = parseInt(b, 10);
+        if(!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+        return a.localeCompare(b, 'uk');
+      });
+      const count = tickets.filter(function(t){
+        const tCity = t.city || '(не вказано)';
+        if(tCity !== city) return false;
+        return entry.rawVariants.has(t.street) || normalizeStem(t.street) === normalizeStem(entry.canonicalStreet);
+      }).length;
       cityTicketCount += count;
-      streets.push({ street, ticket_count: count, houses });
+      streets.push({ street: entry.canonicalStreet, ticket_count: count, houses, raw_variants: Array.from(entry.rawVariants) });
     }
     result.push({
       city: city === '(не вказано)' ? '' : city,

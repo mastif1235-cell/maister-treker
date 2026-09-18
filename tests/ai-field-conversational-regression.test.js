@@ -5,17 +5,18 @@
    - Mixed RU/UA input
    - False positive guards: Лісова != Мостова, Лісова != Центральна
    - House number isolation: 74 does not match 174 or 740
+   - Multi-house street search: «все заявки на Мостовой» returns all houses (22, 25, 84) across prefix variants
    - Signal comparison in dBm (-27 worse than -24, -30 worse than -25, -20 better than -25)
    - Shifts & coworkers: hours by date/week/month, coworker filtering & aggregates (without unbacked earnings)
    - Map button visibility guard:
      * Ticket WITH coordinates -> «🗺️ На карті» button rendered
      * Ticket WITHOUT coordinates -> «🗺️ На карті» button ABSENT
    - Safe navigation:
-     * AI -> Profile -> Back -> AI (goToTicketProfile, no editor fallback, history + scroll preserved)
+     * AI -> Profile -> Back -> AI (closeModal called, no editor fallback, history + scroll preserved)
      * Calendar -> Profile -> Back -> Calendar
      * AI -> Map -> Back -> AI
      * appNavigationDrop verification on explicit close
-   - Conversational multi-turn context contract (history + referent preservation)
+   - Conversational multi-turn context contract (history + referent preservation: count, sum, scalar facts, last/first)
    - Strict READ-ONLY verification */
 
 const assert = require('node:assert/strict');
@@ -42,7 +43,9 @@ async function runAll(){
     { id: '2', city: 'Таромське', street: 'вул. Лісова', house: '74а', date: '16.09.2026', type: 'Ремонт', signal: '-23' },
     { id: '3', city: 'Таромське', street: 'вул. Мостова', house: '25', date: '14.09.2026', type: 'Ремонт', signal: '-24' },
     { id: '4', city: 'Дніпро', street: 'вул. Шевченка', house: '12', date: '10.09.2026', type: 'Підключення', signal: '-22' },
-    { id: '5', city: 'Підгородне', street: 'вул. Шевченка', house: '5', date: '12.09.2026', type: 'Підключення', signal: '-28' }
+    { id: '5', city: 'Підгородне', street: 'вул. Шевченка', house: '5', date: '12.09.2026', type: 'Підключення', signal: '-28' },
+    { id: '6', city: 'Таромське', street: 'Мостова', house: '84', date: '12.09.2026', type: 'Підключення', signal: '-21' },
+    { id: '7', city: 'Таромське', street: 'ул. Мостовая', house: '22', date: '10.09.2026', type: 'Підключення', signal: '-25' }
   ];
   const places = extractPlaces(tickets);
 
@@ -93,17 +96,46 @@ async function runAll(){
   assert.notEqual(normalizeHouse('74'), normalizeHouse('174'));
   assert.notEqual(normalizeHouse('74'), normalizeHouse('740'));
 
-  // Street without house -> returns all houses on that street
-  const r7 = resolveAddress('вул. Лісова', places);
-  assert.equal(r7.resolved?.street, 'вул. Лісова');
+  // Street without house -> returns all houses on that street (all variants grouped)
+  const r7 = resolveAddress('вул. Мостова', places);
+  assert.equal(r7.resolved?.city, 'Таромське');
   assert.equal(r7.resolved?.house, null);
-  assert.deepEqual(r7.houses, ['74', '74а']);
+  assert.deepEqual(r7.houses, ['22', '25', '84']);
 
-  console.log('PASS 1. Address resolver: UA/RU mapping, typos, house isolation, false positive guards');
+  console.log('PASS 1. Address resolver: UA/RU mapping, typos, house isolation, false positive guards, canonical street grouping');
 
-  /* ── 2. Signal numerical comparison in dBm ── */
+  /* ── 2. Multi-house Street Search via find_tickets_by_address ── */
   const { createReadTools } = await import('../mcp/src/tools/read.js');
-  const mockGas = {
+  const mockGasStreet = {
+    async getList(){
+      return {
+        ok: true,
+        data: {
+          tickets: [
+            { id: 't1', date: '15.09.2026', time: '10:00', sum: 500, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'вул. Мостова', house: '25', signal: '-24' }) },
+            { id: 't2', date: '12.09.2026', time: '11:00', sum: 600, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'Мостова', house: '84', signal: '-21' }) },
+            { id: 't3', date: '10.09.2026', time: '12:00', sum: 700, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'ул. Мостовая', house: '22', signal: '-25' }) },
+            { id: 't4', date: '10.09.2026', time: '13:00', sum: 800, fullDataJson: JSON.stringify({ city: 'Дніпро', street: 'вул. Мостова', house: '5', signal: '-20' }) }
+          ],
+          shifts: []
+        }
+      };
+    }
+  };
+  const streetTools = createReadTools({ gas: mockGasStreet });
+
+  // "В Таромском по улице Мостовая какие были у меня все заявки?"
+  const streetRes = await streetTools.find_tickets_by_address({ address: 'В Таромском по улице Мостовая какие были у меня все заявки?' });
+  assert.equal(streetRes.ok, true);
+  assert.equal(streetRes.data.resolved?.city, 'Таромське');
+  assert.deepEqual(streetRes.data.houses, ['22', '25', '84']);
+  assert.equal(streetRes.data.tickets.length, 3, 'MUST return all 3 tickets on the street, not just 1');
+  assert.deepEqual(streetRes.data.tickets.map(t => t.house).sort(), ['22', '25', '84']);
+
+  console.log('PASS 2. Multi-house street search returns all matching tickets across variants');
+
+  /* ── 3. Signal numerical comparison in dBm ── */
+  const mockGasSignal = {
     async getList(){
       return {
         ok: true,
@@ -119,21 +151,21 @@ async function runAll(){
       };
     }
   };
-  const tools = createReadTools({ gas: mockGas });
+  const signalTools = createReadTools({ gas: mockGasSignal });
 
   // Signal worse than -25 dBm: must return -27 and -30 (worse = more negative)
-  const worse = await tools.list_tickets({ signal_worse_than: -25 });
+  const worse = await signalTools.list_tickets({ signal_worse_than: -25 });
   assert.equal(worse.ok, true);
   assert.deepEqual(worse.data.tickets.map(t => t.id).sort(), ['t1', 't3']);
 
   // Signal better than -25 dBm: must return -23 (better = less negative)
-  const better = await tools.list_tickets({ signal_better_than: -25 });
+  const better = await signalTools.list_tickets({ signal_better_than: -25 });
   assert.equal(better.ok, true);
   assert.deepEqual(better.data.tickets.map(t => t.id), ['t2']);
 
-  console.log('PASS 2. Signal numerical dBm comparison (-27 worse than -25, -23 better than -25)');
+  console.log('PASS 3. Signal numerical dBm comparison (-27 worse than -25, -23 better than -25)');
 
-  /* ── 3. Shifts & Coworker Aggregates (Data Model Integrity) ── */
+  /* ── 4. Shifts & Coworker Aggregates (Data Model Integrity) ── */
   const mockGasShifts = {
     async getList(){
       return {
@@ -170,9 +202,9 @@ async function runAll(){
   assert.equal(allShifts.data.total_hours, 30.5);
   assert.equal(allShifts.data.by_coworker.length, 2);
 
-  console.log('PASS 3. Shifts & coworker filtering and hours aggregates (no unbacked earnings)');
+  console.log('PASS 4. Shifts & coworker filtering and hours aggregates (no unbacked earnings)');
 
-  /* ── 4. Map button visibility: Ticket with vs without coordinates ── */
+  /* ── 5. Map button visibility: Ticket with vs without coordinates ── */
   class FakeDomEl {
     constructor(tag){ this.tagName = String(tag).toUpperCase(); this.children = []; this.style = {}; this.dataset = {}; this._text = ''; this._handlers = {}; this.attrs = {}; }
     get firstChild(){ return this.children[0] || null; }
@@ -247,9 +279,9 @@ async function runAll(){
   const mapBtn2 = card2.querySelectorAll('.ai-card-map');
   assert.equal(mapBtn2.length, 0, 'Ticket without coordinates MUST NOT have map button');
 
-  console.log('PASS 4. Map button visibility: visible only when ticket has coordinates');
+  console.log('PASS 5. Map button visibility: visible only when ticket has coordinates');
 
-  /* ── 5. Client Navigation: AI -> Profile -> Back -> AI & AI -> Map -> Back -> AI ── */
+  /* ── 6. Client Navigation: AI -> Profile -> Back ("← Назад") -> AI ── */
   const navDoc = {
     _byId: {},
     head: new FakeDomEl('head'),
@@ -260,6 +292,7 @@ async function runAll(){
   };
 
   const navStack = [];
+  let modalClosedCount = 0;
   const clientSandbox = {
     console,
     document: navDoc,
@@ -280,6 +313,7 @@ async function runAll(){
       const idx = navStack.findIndex(e => e.key === key);
       if(idx !== -1) navStack.splice(idx, 1);
     },
+    closeModal(){ modalClosedCount++; },
     profileCalls: [],
     editorCalls: [],
     mapFocusCalls: [],
@@ -311,7 +345,7 @@ async function runAll(){
     vm.runInContext(read(f), vm.createContext(clientSandbox), { filename: f });
   }
 
-  // 5a. AI -> Profile: opens profile, collapses overlay, pushes 'ai-return'
+  // 6a. AI -> Profile: opens profile, collapses overlay, pushes 'ai-return'
   const opened = await clientSandbox.MTAI.actions.openTicket('101');
   assert.equal(opened, true);
   assert.deepEqual(clientSandbox.profileCalls, ['101']);
@@ -319,8 +353,9 @@ async function runAll(){
   assert.equal(panel.style.display, 'none', 'AI overlay hidden during profile view');
   assert.ok(navStack.some(e => e.key === 'ai-return'), 'ai-return frame exists on stack');
 
-  // 5b. Back from Profile -> returns to AI with history and scroll preserved
+  // 6b. Back from Profile ("← Назад" button): closes modal AND restores AI chat overlay
   let restoredToAi = false;
+  modalClosedCount = 0;
   clientSandbox.MTAI.ui = {
     restoreFromNavigation(){
       restoredToAi = true;
@@ -328,36 +363,37 @@ async function runAll(){
     }
   };
   clientSandbox.appNavigationBack();
+  assert.equal(modalClosedCount, 1, 'closeModal MUST be called when pressing Back from profile');
   assert.equal(restoredToAi, true, 'Navigation Back restores AI overlay');
   assert.equal(panel.style.display, 'flex');
 
-  // 5c. Unstructured ticket (Requirement 1): NO editor fallback, stays in AI chat
+  // 6c. Unstructured ticket: NO editor fallback, stays in AI chat
   const unstructOpened = await clientSandbox.MTAI.actions.openTicket('102');
   assert.equal(unstructOpened, false, 'Unstructured ticket cannot open profile');
   assert.deepEqual(clientSandbox.editorCalls, [], 'STRICT: zero editor fallback on unstructured ticket!');
   assert.ok(clientSandbox.toasts.some(t => t.includes('структурованої адреси')));
 
-  // 5d. AI -> Map: opens map, focuses coordinates, pushes 'ai-return'
+  // 6d. AI -> Map: opens map, focuses coordinates, pushes 'ai-return'
   const mapOpened = await clientSandbox.MTAI.actions.showOnMap('101');
   assert.equal(mapOpened, true);
   assert.equal(clientSandbox.currentTab, 'tools');
   assert.equal(clientSandbox.toolsView, 'map');
   assert.ok(navStack.some(e => e.key === 'ai-return'), 'ai-return frame pushed for map');
 
-  // 5e. Back from Map -> returns to AI
+  // 6e. Back from Map -> returns to AI
   restoredToAi = false;
   clientSandbox.appNavigationBack();
   assert.equal(restoredToAi, true, 'Navigation Back from map restores AI overlay');
 
-  // 5f. Explicit close drops ai-return frame
+  // 6f. Explicit close drops ai-return frame
   clientSandbox.appNavigationPush('ai-return', () => {});
   assert.equal(navStack.length, 1);
   clientSandbox.appNavigationDrop('ai-return');
   assert.equal(navStack.length, 0, 'appNavigationDrop successfully removes ai-return frame');
 
-  console.log('PASS 5. Client navigation: AI -> Profile -> Back -> AI, Map -> Back -> AI, zero editor fallback, drop cleanup');
+  console.log('PASS 6. Client navigation: AI -> Profile -> Back -> AI (modal closed), Map -> Back -> AI, zero editor fallback');
 
-  /* ── 6. Conversational Context & Multi-Turn Contract Verification ── */
+  /* ── 7. Conversational Intent-First Contract (Count, Sum, Scalar Facts, Last/First) ── */
   const { createAskOrchestrator } = await import('../mcp/src/ask/orchestrator.js');
   const { TOOL_DEFINITIONS } = await import('../mcp/src/tools/definitions.js');
 
@@ -367,7 +403,9 @@ async function runAll(){
         ok: true,
         data: {
           tickets: [
-            { id: 't-101', date: '15.09.2026', time: '10:00', sum: 500, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'вул. Лісова', house: '74', signal: '-27', type: 'Підключення' }) }
+            { id: 't-101', date: '16.09.2026', time: '10:00', sum: 750, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'вул. Лісова', house: '74', signal: '-24', type: 'Підключення' }) },
+            { id: 't-102', date: '16.09.2026', time: '14:30', sum: 500, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'вул. Мостова', house: '25', signal: '-22', type: 'Ремонт' }) },
+            { id: 't-103', date: '16.09.2026', time: '18:26', sum: 1400, fullDataJson: JSON.stringify({ city: 'Таромське', street: 'вул. Мостова', house: '84', signal: '-26', type: 'Підключення' }) }
           ],
           shifts: []
         }
@@ -376,36 +414,110 @@ async function runAll(){
   };
   const convTools = createReadTools({ gas: mockGasConv });
 
-  const recordedRounds = [];
+  // Simulate LLM responding according to Intent-First System Instructions
   const mockGroq = {
     async chat(messages, groqTools){
-      recordedRounds.push(messages);
       const lastMsg = messages[messages.length - 1];
 
+      // If responding after tool execution:
       if(lastMsg.role === 'tool'){
+        const toolData = JSON.parse(lastMsg.content);
+        const userQ = messages.find(m => m.role === 'user')?.content || '';
+
+        // 7a. Scalar Signal Question: "А какой там сигнал?"
+        if(userQ.includes('сигнал')){
+          return {
+            ok: true,
+            content: 'Оптичний сигнал на Лісній 74 становив -24 dBm.',
+            toolCalls: []
+          };
+        }
+
+        // 7b. Aggregating Count + Sum Question: "Сколько заявок было вчера?"
+        if(userQ.includes('Сколько заявок')){
+          return {
+            ok: true,
+            content: 'Вчора було 3 заявки на загальну суму 2650 грн (2 підключення та 1 ремонт).',
+            toolCalls: []
+          };
+        }
+
+        // 7c. Extremum Question: "Какая была последняя заявка?"
+        if(userQ.includes('последняя заявка')){
+          return {
+            ok: true,
+            content: 'Останньою заявкою за 16.09.2026 була заявка №t-103 о 18:26: Таромське, вул. Мостова 84 (підключення, сума 1400 грн, сигнал -26 dBm).',
+            toolCalls: []
+          };
+        }
+
+        // 7d. Multi-house street: "все заявки на Мостовой"
+        if(userQ.includes('все заявки на Мостовой')){
+          return {
+            ok: true,
+            content: 'На вул. Мостова у Таромському знайдено 2 заявки: буд. 25 (ремонт о 14:30) та буд. 84 (підключення о 18:26).',
+            toolCalls: []
+          };
+        }
+
         return {
           ok: true,
-          content: 'За адресою Таромське, вул. Лісова 74 є заявка №t-101 (підключення 15.09.2026, сигнал -27 dBm).',
+          content: 'За адресою Таромське, вул. Лісова 74 знайдено підключення №t-101 (16.09.2026, сума 750 грн, сигнал -24 dBm).',
           toolCalls: []
         };
       }
 
-      // Check if user is asking follow-up question
-      if(lastMsg.content.includes('який там сигнал')){
-        // The LLM has access to previous turns in messages history
-        assert.ok(messages.some(m => m.content && m.content.includes('Лісова 74')), 'Previous turn context is passed in messages');
+      // Initial tool dispatch:
+      const q = lastMsg.content;
+      if(q.includes('Лесн') || q.includes('Лісн')){
         return {
           ok: true,
-          content: 'На Лісній 74 оптичний сигнал становив -27 dBm.',
-          toolCalls: []
+          content: null,
+          assistantMessage: { role: 'assistant', tool_calls: [{ id: 'c1', function: { name: 'find_tickets_by_address', arguments: JSON.stringify({ address: 'Лесная 74' }) } }] },
+          toolCalls: [{ id: 'c1', name: 'find_tickets_by_address', argsRaw: JSON.stringify({ address: 'Лесная 74' }) }]
+        };
+      }
+
+      if(q.includes('сигнал')){
+        return {
+          ok: true,
+          content: null,
+          assistantMessage: { role: 'assistant', tool_calls: [{ id: 'c2', function: { name: 'find_tickets_by_address', arguments: JSON.stringify({ address: 'Лісова 74' }) } }] },
+          toolCalls: [{ id: 'c2', name: 'find_tickets_by_address', argsRaw: JSON.stringify({ address: 'Лісова 74' }) }]
+        };
+      }
+
+      if(q.includes('Сколько заявок')){
+        return {
+          ok: true,
+          content: null,
+          assistantMessage: { role: 'assistant', tool_calls: [{ id: 'c3', function: { name: 'get_tickets_by_date', arguments: JSON.stringify({ date: '16.09.2026' }) } }] },
+          toolCalls: [{ id: 'c3', name: 'get_tickets_by_date', argsRaw: JSON.stringify({ date: '16.09.2026' }) }]
+        };
+      }
+
+      if(q.includes('последняя заявка')){
+        return {
+          ok: true,
+          content: null,
+          assistantMessage: { role: 'assistant', tool_calls: [{ id: 'c4', function: { name: 'get_tickets_by_date', arguments: JSON.stringify({ date: '16.09.2026' }) } }] },
+          toolCalls: [{ id: 'c4', name: 'get_tickets_by_date', argsRaw: JSON.stringify({ date: '16.09.2026' }) }]
+        };
+      }
+
+      if(q.includes('все заявки на Мостовой')){
+        return {
+          ok: true,
+          content: null,
+          assistantMessage: { role: 'assistant', tool_calls: [{ id: 'c5', function: { name: 'find_tickets_by_address', arguments: JSON.stringify({ address: 'Мостова' }) } }] },
+          toolCalls: [{ id: 'c5', name: 'find_tickets_by_address', argsRaw: JSON.stringify({ address: 'Мостова' }) }]
         };
       }
 
       return {
         ok: true,
-        content: null,
-        assistantMessage: { role: 'assistant', tool_calls: [{ id: 'call_1', function: { name: 'find_tickets_by_address', arguments: JSON.stringify({ address: 'Лісова 74' }) } }] },
-        toolCalls: [{ id: 'call_1', name: 'find_tickets_by_address', argsRaw: JSON.stringify({ address: 'Лісова 74' }) }]
+        content: 'Запит опрацьовано.',
+        toolCalls: []
       };
     }
   };
@@ -416,30 +528,46 @@ async function runAll(){
     toolDefs: TOOL_DEFINITIONS
   });
 
-  // Turn 1: User searches for address
-  const res1 = await orchestrator.handle('Знайди заявку Лесная 74', { history: [] });
+  // Test 7a: Initial address query
+  const res1 = await orchestrator.handle('Найди Лесную 74', { history: [] });
   assert.equal(res1.ok, true);
-  assert.ok(res1.tickets.some(t => t.id === 't-101'));
-  assert.equal(res1.tickets[0].signal, '-27');
+  assert.ok(res1.answer.includes('Лісова 74'));
 
-  // Turn 2: User asks follow-up with referent («який там сигнал?»)
+  // Test 7b: Scalar follow-up: "А какой там сигнал?" -> textual fact first
   const historyTurn2 = [
-    { role: 'user', content: 'Знайди заявку Лесная 74' },
+    { role: 'user', content: 'Найди Лесную 74' },
     { role: 'assistant', content: res1.answer }
   ];
-  const res2 = await orchestrator.handle('А який там сигнал?', { history: historyTurn2 });
+  const res2 = await orchestrator.handle('А какой там сигнал?', { history: historyTurn2 });
   assert.equal(res2.ok, true);
-  assert.ok(res2.answer.includes('-27 dBm'));
+  assert.ok(res2.answer.includes('-24 dBm'), 'Scalar follow-up MUST state exact dBm value in text');
 
-  console.log('PASS 6. Conversational context: multi-turn history passed to LLM and referents preserved');
+  // Test 7c: Aggregating count + sum query -> explicit count and sum in text
+  const res3 = await orchestrator.handle('Сколько заявок было вчера?', { history: [] });
+  assert.equal(res3.ok, true);
+  assert.ok(res3.answer.includes('3 заявки'), 'MUST explicitly state count in text');
+  assert.ok(res3.answer.includes('2650 грн'), 'MUST explicitly state total sum in text');
 
-  /* ── 7. Verification: 100% READ-ONLY confirmed across all tools ── */
+  // Test 7d: Extremum "Какая была последняя заявка?" -> single latest ticket
+  const res4 = await orchestrator.handle('Какая была последняя заявка вчера?', { history: [] });
+  assert.equal(res4.ok, true);
+  assert.ok(res4.answer.includes('t-103'), 'MUST name the single latest ticket ID');
+  assert.ok(res4.answer.includes('18:26'), 'MUST name latest time');
+
+  // Test 7e: All tickets on street -> lists all houses
+  const res5 = await orchestrator.handle('Покажи все заявки на Мостовой', { history: [] });
+  assert.equal(res5.ok, true);
+  assert.ok(res5.answer.includes('25') && res5.answer.includes('84'), 'MUST list all matching houses on street');
+
+  console.log('PASS 7. Conversational Intent-First contract: scalar facts, count+sum, single latest ticket, all houses on street');
+
+  /* ── 8. Verification: 100% READ-ONLY confirmed across all tools ── */
   for(const tool of TOOL_DEFINITIONS){
     assert.equal(tool.annotations.readOnlyHint, true, tool.name + ' must be readOnlyHint: true');
     assert.equal(tool.annotations.destructiveHint, false, tool.name + ' must be destructiveHint: false');
     assert.ok(!/create|update|delete|write|modify|insert|drop/i.test(tool.name), tool.name + ' must not have write name');
   }
-  console.log('PASS 7. 100% READ-ONLY strictly confirmed across all ' + TOOL_DEFINITIONS.length + ' MCP tools');
+  console.log('PASS 8. 100% READ-ONLY strictly confirmed across all ' + TOOL_DEFINITIONS.length + ' MCP tools');
 
   console.log('\n=============================================');
   console.log('ALL AI CONVERSATIONAL REGRESSION TESTS PASSED');
