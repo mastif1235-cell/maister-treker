@@ -20,11 +20,20 @@ MTAI.createChatController = function(deps){
       const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
       if(!Array.isArray(raw)) return [];
       return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
-        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:Array.isArray(m.tickets) ? m.tickets.slice(0,8) : []};
+        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets)};
       });
     }catch(_e){ return []; }
   }
   let messages = loadPersisted();       // {role:'user'|'assistant'|'error', text, ts, tickets?}
+  function safeTickets(raw){
+    if(!Array.isArray(raw)) return [];
+    return raw.slice(0,8).map(function(t){
+      if(!t || typeof t !== 'object') return null;
+      const id=String(t.id == null ? '' : t.id).trim().slice(0,64);
+      if(!id || !/^[0-9a-zA-Z_-]{1,64}$/.test(id)) return null;
+      return {id:id,date:String(t.date||'').slice(0,32),time:String(t.time||'').slice(0,16),address:String(t.address||'').slice(0,200),type:String(t.type||'').slice(0,100),sum:String(t.sum||'').slice(0,16),signal:String(t.signal||'').slice(0,32),note:String(t.note||'').slice(0,120)};
+    }).filter(Boolean);
+  }
   function persist(){
     if(!historyStorage) return;
     try{ historyStorage.setItem(HISTORY_KEY, JSON.stringify(messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40))); }catch(_e){}
@@ -83,7 +92,7 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
-      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, tickets:Array.isArray(outcome.tickets) ? outcome.tickets.slice(0,8) : [] });
+      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, tickets:safeTickets(outcome.tickets) });
       persist();
       emit('assistant', { text:outcome.answer, meta:outcome.meta, tickets:outcome.tickets || [] });
       return { ok:true };

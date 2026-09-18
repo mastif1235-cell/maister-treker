@@ -4,7 +4,7 @@
 
 import {
   ticketFromGasRow, redactTicket, redactShift,
-  ticketMatchesQuery, parseDateKey
+  ticketMatchesQuery, parseDateKey, searchableTextFromGasRow
 } from '../gas/mappers.js';
 import {
   extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore
@@ -17,8 +17,12 @@ export function createDataPipeline(gas){
     async getList(){
       const result = await gas.getList();
       if(!result.ok) return result;
+      const mapped = result.data.tickets.map(ticketFromGasRow);
       return {ok:true, data:{
-        tickets: result.data.tickets.map(ticketFromGasRow).map(redactTicket),
+        tickets: mapped.map(redactTicket),
+        /* Internal-only derived search index. It is never returned by a tool;
+           it lets address search use legacy notes without exposing them. */
+        searchIndex: mapped.map(function(ticket){ return {id:ticket.id, text:ticket.searchableText}; }),
         shifts: result.data.shifts.map(redactShift)
       }};
     }
@@ -62,7 +66,7 @@ export function createReadTools(options){
   async function loadRedacted(){
     const result = await data.getList();
     if(!result.ok) return result;
-    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts};
+    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : []};
   }
 
   function inRange(dateStr, from, to){
@@ -143,8 +147,21 @@ export function createReadTools(options){
 
     const places = extractPlaces(data.tickets);
     const resolution = resolveAddress(params.address, places);
+    const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
+    const queryText = normalizeSearch(params.address);
+    const knownCityTokens = new Set(data.tickets.flatMap(function(t){ return normalizeSearch(t.city).split(/\s+/).filter(Boolean); }));
+    const legacyQueryTokens = queryText.split(/\s+/).filter(function(token){ return token.length > 1 && !knownCityTokens.has(token); });
+    const legacyIds = new Set(data.searchIndex.filter(function(item){
+      const text = normalizeSearch(item && item.text);
+      return item && item.id && legacyQueryTokens.length >= 1 && legacyQueryTokens.every(function(token){ return text.includes(token); });
+    }).map(function(item){ return String(item.id); }));
 
     if(!resolution.resolved){
+      if(legacyIds.size){
+        const legacyList = data.tickets.filter(function(t){ return legacyIds.has(String(t.id)) && inRange(t.date, from, to); });
+        const meta = page(legacyList, params);
+        return {ok:true, data:{query:params.address, resolved:null, candidates:[], ambiguous:false, houses:[], tickets:legacyList.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+      }
       return {
         ok:true,
         data:{

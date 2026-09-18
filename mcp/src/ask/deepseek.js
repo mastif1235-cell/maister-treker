@@ -91,34 +91,6 @@ export function retryAfterFromHeaders(headers){
   return direct;
 }
 
-function diagnosticMessageShape(message){
-  const item = message && typeof message === 'object' ? message : {};
-  const contentState = Object.prototype.hasOwnProperty.call(item, 'content')
-    ? (item.content === null ? 'null' : 'string')
-    : 'absent';
-  const calls = Array.isArray(item.tool_calls) ? item.tool_calls : [];
-  return {
-    role: typeof item.role === 'string' ? item.role : 'absent',
-    content_state: contentState,
-    content_length: typeof item.content === 'string' ? item.content.length : 0,
-    has_tool_calls: calls.length > 0,
-    tool_calls_count: calls.length,
-    has_tool_call_id: typeof item.tool_call_id === 'string' && item.tool_call_id.length > 0
-  };
-}
-
-function diagnosticRequestShape(body, round){
-  return {
-    round: Number.isInteger(round) && round > 0 ? round : null,
-    model: body.model,
-    messages_count: Array.isArray(body.messages) ? body.messages.length : 0,
-    messages: Array.isArray(body.messages) ? body.messages.map(diagnosticMessageShape) : [],
-    tools_count: Array.isArray(body.tools) ? body.tools.length : 0,
-    tool_choice: body.tool_choice == null ? null : body.tool_choice,
-    thinking_type: body.thinking && typeof body.thinking.type === 'string' ? body.thinking.type : null
-  };
-}
-
 export function createDeepSeekClient(options){
   const fetchImpl = options.fetchImpl || fetch;
   const apiKey = String(options.apiKey || '');
@@ -127,7 +99,7 @@ export function createDeepSeekClient(options){
   const maxTokens = Number(options.maxTokens) || 4096;
   const temperature = options.temperature == null ? null : Number(options.temperature);
 
-  async function chat(messages, tools, diagnostic){
+  async function chat(messages, tools){
     const controller = new AbortController();
     const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
     let response;
@@ -144,8 +116,6 @@ export function createDeepSeekClient(options){
         },
         temperature == null ? {} : {temperature}
       );
-      const diagnosticBody = diagnosticRequestShape(reqBody, diagnostic && diagnostic.round);
-      console.info('[ask] deepseek diagnostic request', JSON.stringify(diagnosticBody));
       response = await fetchImpl(DEEPSEEK_CHAT_URL, {
         method: 'POST',
         signal: controller.signal,
@@ -161,12 +131,6 @@ export function createDeepSeekClient(options){
       clearTimeout(timer);
     }
 
-    if(response && response.ok){
-      console.info('[ask] deepseek diagnostic response', JSON.stringify({
-        round: diagnostic && diagnostic.round,
-        status: response.status
-      }));
-    }
     if(!response.ok){
       let raw = '';
       try{ raw = await response.text(); }catch(_err){ raw = ''; }
@@ -176,21 +140,7 @@ export function createDeepSeekClient(options){
         if(parsed && parsed.error && typeof parsed.error.message === 'string') detail = parsed.error.message;
       }catch(_err){}
       detail = sanitizeDetail(detail, apiKey);
-      let providerMeta = {};
-      try{
-        const parsed = JSON.parse(raw);
-        const error = parsed && parsed.error;
-        if(error && typeof error === 'object'){
-          if(typeof error.code === 'string') providerMeta.code = error.code.slice(0, 100);
-          if(typeof error.type === 'string') providerMeta.type = error.type.slice(0, 100);
-          if(typeof error.param === 'string') providerMeta.param = error.param.slice(0, 100);
-        }
-      }catch(_err){}
-      console.error('[ask] deepseek diagnostic response', JSON.stringify({
-        round: diagnostic && diagnostic.round,
-        status: response.status,
-        provider_error: providerMeta
-      }));
+      console.error('[ask] deepseek http error:', response.status, detail);
       const result = {ok:false, code:'HTTP_' + response.status, message:'DeepSeek responded ' + response.status, detail};
       if(response.status === 429){
         const wait = retryAfterFromHeaders(response.headers);

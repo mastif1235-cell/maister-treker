@@ -10,7 +10,7 @@ import path from 'node:path';
 import {makeApp, mockGasFetch, rpc, rpcResult, toolCall, toolData} from '../helpers/mcpapp.js';
 import {FIXTURES} from '../fixtures/data.js';
 import {REPO_ROOT} from '../helpers/appvm.js';
-import {createReadTools} from '../../src/tools/read.js';
+import {createReadTools, createDataPipeline} from '../../src/tools/read.js';
 import {ticketFromGasRow, redactTicket} from '../../src/gas/mappers.js';
 
 test('all 9 READ tools return data through the signed GAS reads', async () => {
@@ -128,6 +128,18 @@ test('historical signal filter: structured and legacy notes, precedence, no dupl
   assert.equal(result.data.total_matched, 2);
   const allTime = await tool.list_tickets({signal_worse_than:-25, date_from:'01.01.2024', date_to:'31.12.2026'});
   assert.equal(allTime.data.total_matched, 2);
+});
+
+test('legacy alternate street is searchable through GAS row mapper and READ address tool without leaking notes', async () => {
+  const row = {id:'legacy-address-1', date:'01.01.2024', time:'10:00', content:'', sum:1, tags:[], backupNote:'Приватна нотатка: Старая 44', fullDataJson:JSON.stringify({city:'Місто Тест', street:'Вул Нова', house:'44', note:'', signal:''})};
+  const pipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:[row], shifts:[]}}; }});
+  const data = await pipeline.getList();
+  assert.equal(data.data.tickets[0].street, 'Вул Нова');
+  assert.equal(JSON.stringify(data.data.tickets[0]).includes('Старая'), false);
+  const tool = createReadTools({data:pipeline});
+  const result = await tool.find_tickets_by_address({address:'Місто Тест Старая 44'});
+  assert.equal(result.data.total_matched, 1);
+  assert.equal(result.data.tickets[0].id, 'legacy-address-1');
 });
 
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {

@@ -210,7 +210,7 @@ export function createAskOrchestrator(options){
     for(;;){
       if(rounds >= limits.maxRounds) return {ok:false, code:'TOO_MANY_ROUNDS', meta:{rounds, toolCallsMade}};
       rounds++;
-      const response = await groq.chat(messages, groqTools, {round: rounds});
+      const response = await groq.chat(messages, groqTools);
       if(!response.ok){
         const failure = {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
         if(typeof response.retryAfterSeconds === 'number' && isFinite(response.retryAfterSeconds)){

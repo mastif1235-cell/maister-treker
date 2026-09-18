@@ -23,6 +23,12 @@ export function normalizeOnuSignal(value){
 /* Historical signal values were sometimes written into notes before the
    structured field existed. Only an explicit signal marker qualifies; an
    unrelated negative number in a note never becomes a signal. */
+export function searchableTextFromGasRow(row, fullData){
+  const f = fullData && typeof fullData === 'object' ? fullData : {};
+  return [row && row.content, row && row.backupNote, f.note, f.abonentNote, f.otherNote, f.masterNote]
+    .map(function(value){ return String(value == null ? '' : value).trim(); }).filter(Boolean).join('\\n');
+}
+
 export function parseLegacySignal(text){
   const source = String(text == null ? '' : text);
   const match = /(?:^|[^\p{L}])сигнал\s*(?:[:=]\s*)?(-?\d+(?:[.,]\d+)?)(?=\s*(?:d\s*bm|д\s*бм)?(?:[^\p{L}\d]|$))/iu.exec(source);
@@ -71,7 +77,8 @@ export function ticketFromGasRow(row){
     tags: strArray(row && row.tags),
     fullData: {},
     fullDataError: false,
-    legacySignal: firstLegacySignal([row && row.content, row && row.backupNote])
+    legacySignal: firstLegacySignal([row && row.content, row && row.backupNote]),
+    searchableText: ''
   };
   const raw = row && row.fullDataJson;
   if(raw != null && raw !== ''){
@@ -84,6 +91,7 @@ export function ticketFromGasRow(row){
   if(!t.legacySignal) t.legacySignal = firstLegacySignal([
     t.fullData.note, t.fullData.abonentNote, t.fullData.otherNote, t.fullData.masterNote
   ]);
+  t.searchableText = searchableTextFromGasRow(row, t.fullData);
   return t;
 }
 
