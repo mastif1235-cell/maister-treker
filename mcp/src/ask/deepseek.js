@@ -12,11 +12,48 @@
    Explicitly passes `thinking: { type: 'disabled' }` to use fast direct execution
    without reasoning preamble, ideal for field ticket/address lookups.
 
+   Tool descriptions for DeepSeek:
+   DeepSeek API rejects requests when all 9 tools carry long canonical
+   descriptions (HTTP 400). We provide concise, high-signal function descriptions
+   for DeepSeek while preserving the exact canonical parameters/schemas and
+   without mutating the global TOOL_DEFINITIONS used by Groq and native MCP.
+
    The API key travels ONLY in the Authorization header. It is never logged,
    never placed into the request body, never returned in errors and never
    stored anywhere by this module. */
 
 const DEEPSEEK_CHAT_URL = 'https://api.deepseek.com/chat/completions';
+
+export const DEEPSEEK_COMPACT_DESCRIPTIONS = {
+  list_tickets: 'Список заявок із фільтрами за датами, типом, сигналом та тегами',
+  get_ticket: 'Одна заявка за ID',
+  search_tickets: 'Пошук заявок за текстом, адресою, клієнтом, телефоном, сигналом та тегами',
+  find_tickets_by_address: 'Пошук заявок за адресою з підтримкою варіантів українського та російського написання',
+  list_places: 'Відомі міста, села, вулиці та будинки із заявок',
+  get_tickets_by_date: 'Усі заявки за конкретну дату',
+  get_shifts: 'Робочі зміни, години та напарники',
+  get_reports: 'Денні підсумки: кількість, сума, готівка та безготівка',
+  get_statistics: 'Агрегована статистика за день, тиждень, місяць або весь час'
+};
+
+export function formatDeepSeekTools(tools){
+  if(!Array.isArray(tools) || !tools.length) return undefined;
+  return tools.map(function(tool){
+    if(!tool || typeof tool !== 'object') return tool;
+    const fn = tool.function;
+    if(!fn || typeof fn !== 'object') return tool;
+    const name = fn.name;
+    const compactDesc = DEEPSEEK_COMPACT_DESCRIPTIONS[name] || String(fn.description || '').slice(0, 120);
+    return {
+      type: tool.type || 'function',
+      function: {
+        name: name,
+        description: compactDesc,
+        parameters: fn.parameters
+      }
+    };
+  });
+}
 
 function sanitizeDetail(text, apiKey){
   let out = String(text || '');
@@ -66,14 +103,15 @@ export function createDeepSeekClient(options){
     const controller = new AbortController();
     const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
     let response;
+    const formattedTools = formatDeepSeekTools(tools);
     try{
       const reqBody = Object.assign(
         {
           model: model,
           thinking: { type: 'disabled' },
           messages: messages,
-          tools: tools && tools.length ? tools : undefined,
-          tool_choice: tools && tools.length ? 'auto' : undefined,
+          tools: formattedTools,
+          tool_choice: formattedTools && formattedTools.length ? 'auto' : undefined,
           max_tokens: maxTokens
         },
         temperature == null ? {} : {temperature}
