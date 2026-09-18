@@ -1,6 +1,6 @@
 {
   "name": "maister-treker",
-  "version": "91.35.0",
+  "version": "91.36.0",
   "private": true,
   "description": "Майстер-Трекер — offline-first PWA для заявок, нарядів, карт, фото, резервних копій та опційної синхронізації. Classic-script runtime без framework bundle; npm-залежності потрібні лише для Playwright E2E.",
   "scripts": {
