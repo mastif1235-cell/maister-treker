@@ -101,7 +101,7 @@ test('happy path: Groq tool-call executed locally, final answer returned, no sel
   // request to Groq carried the READ tools; the key never appears in any fetch body
   const groqCall = fetchImpl.calls.find(function(call){ return call.url.includes('api.groq.com'); });
   const groqBody = JSON.parse(groqCall.init.body);
-  assert.equal(groqBody.tools.length, 7);
+  assert.equal(groqBody.tools.length, 9);
   assert.ok(!JSON.stringify(groqBody).includes(GROQ_KEY));
 });
 

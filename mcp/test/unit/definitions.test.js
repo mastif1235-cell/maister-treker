@@ -6,11 +6,21 @@ import assert from 'node:assert/strict';
 import {TOOL_DEFINITIONS, TOOL_NAMES} from '../../src/tools/definitions.js';
 import {validateAgainstSchema} from '../../src/tools/validate.js';
 
-const EXPECTED_TOOLS = ['list_tickets','get_ticket','search_tickets','get_tickets_by_date','get_shifts','get_reports','get_statistics'];
+const EXPECTED_TOOLS = [
+  'find_tickets_by_address',
+  'get_reports',
+  'get_shifts',
+  'get_statistics',
+  'get_ticket',
+  'get_tickets_by_date',
+  'list_places',
+  'list_tickets',
+  'search_tickets'
+];
 
 test('exactly the approved READ toolset is exposed', () => {
   assert.deepEqual(TOOL_NAMES.slice().sort(), EXPECTED_TOOLS.slice().sort());
-  assert.equal(TOOL_DEFINITIONS.length, 7);
+  assert.equal(TOOL_DEFINITIONS.length, 9);
 });
 
 test('every tool is annotated read-only and has a schema + description', () => {

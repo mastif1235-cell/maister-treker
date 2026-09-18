@@ -30,7 +30,7 @@ test('tools/list advertises exactly the READ toolset with input schemas', async 
   const app = await makeApp();
   const {body} = await rawRpc(app, JSON.stringify({jsonrpc:'2.0', method:'tools/list', id:1}));
   const tools = body.result.tools;
-  assert.equal(tools.length, 7);
+  assert.equal(tools.length, 9);
   for(const tool of tools){
     assert.equal(typeof tool.name, 'string');
     assert.equal(tool.inputSchema.type, 'object');

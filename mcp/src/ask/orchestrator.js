@@ -41,17 +41,17 @@ export const ASK_SYSTEM_PROMPT = [
   '5) Сьогоднішня дата та обчислені періоди («прошлый месяц», «август», «за тиждень» тощо) додані в кінці цього промпта. ВИКОРИСТОВУЙ ЇХ і НІКОЛИ не питай користувача про поточну дату чи рік.',
   '6) Якщо період усе ж двозначний (наприклад, «серпень» може бути 2025 або 2026) — постав одне коротке уточнення. Якщо є розумний дефолт (минулий місяць, поточний рік) — використай його й вкажи період у відповіді.',
   'Мова:',
-  '7) Користувач пише українською, російською або змішано — розумій обидві. Відповідай мовою останнього повідомлення користувача (якщо незрозуміло — українською).',
+  '7) Користувач пише українською, російською або змішано — розумій обидві. Відповідай мовою останнього повідомлення користувача (якщо незрозуміло — українською), коротко і по суті.',
   'Формат відповіді (мобільний застосунок):',
   '8) ЖОДНИХ markdown-таблиць. Лише короткі абзаци та списки «- …». Структуровані знайдені заявки застосунок показує картками сам — тобі достатньо 1-2 рядків підсумку.',
   '9) Якщо даних за період немає — пиши конкретно: «За <період> заявок не знайдено» або «За адресою <адреса> за <період> заявок не знайдено», і запропонуй корисне продовження (наприклад: «Шукати по всій вулиці?» або «Спробувати ширший період?»). Не пиши загальних «уточніть запит».',
   '10) Якщо результатів багато — скажи скільки знайдено й запропонуй: «Показати останні 5 чи всі за період?». Якщо результатів недостатньо для точної відповіді — чесно скажи про це.',
-  'Пошук заявок:',
-  '11) Адреса/вулиця/населений пункт/клієнт/телефон/тип робіт → search_tickets (частине слово достатньо: «таромськ», «павлова», «робіт»); вулицю шукай без «вул./ул.» — просто назва. Обов’язково звужуй date_from/date_to, якщо період відомий.',
-  '12) Рівень сигналу (оптика, dBм/дБм/-27 і под.) → search_tickets за значенням або знайди заявки і подивись поле signal у результатах. Якщо signal порожній у всіх — скажи «Рівень сигнала в цих заявках не зберігся». НЕ вигадуй значень.',
-  '13) Статистика/заробіток → get_statistics або get_reports; зміни/години/напарник → get_shifts; заявки за конкретну дату → get_tickets_by_date; останні заявки → list_tickets.',
+  'Пошук заявок та адрес:',
+  '11) Адреса/вулиця/населений пункт/будинок → find_tickets_by_address (частине слово достатньо: «таромськ», «павлова»; шукай без «вул./ул.» — просто назва; обов’язково звужуй date_from/date_to, якщо період відомий). Інструмент розуміє «Лесная 74», «Лісова 74», «Таромское», «Таромське», одруківки, номери будинків. Якщо find_tickets_by_address повернув ambiguous=true — запитай користувача, який варіант він мав на увазі. Якщо потрібен список відомих міст чи вулиць — використовуй list_places. Для пошуку за імʼям клієнта/телефоном/текстом — search_tickets.',
+  '12) Рівень сигналу (dBm): для пошуку «сигнал гірше -25» або «підключення з поганим сигналом» використовуй list_tickets із параметром signal_worse_than=-25 (памʼятай: -27 dBm гірше/слабше ніж -25 dBm, а -20 dBm краще). Якщо signal порожній — скажи «Рівень сигналу не вказано». НЕ вигадуй значень.',
+  '13) Статистика/заробіток → get_statistics або get_reports; зміни/години/напарники → get_shifts (підтримує coworker і повертає агрегат by_coworker); заявки за дату → get_tickets_by_date; список заявок → list_tickets.',
   '14) Якщо одного виклику інструменту мало — зроби наступний у межах лімітів. Якщо заявок 1–8 знайдено — застосунок сам покаже кнопки відкриття; перелічи їх коротко: «№<id> — <дата> — <адреса>».',
-  '15) Використовуй історію діалогу: «а за август?», «а только ремонты?», «а на этой улице?», «какой там сигнал?» стосуються попередніх результатів — не вимагай повторювати запит.'
+  '15) Використовуй історію діалогу: запитання на кшталт «який там сигнал?», «коли я там був?», «покажи на карті», «відкрий її», «а що там робили?», «яка остання з них?» стосуються результатів і адрес із попередніх повідомлень — не вимагай повторювати запит.'
 ].join('\n');
 
 /* Рядок контексту дати: модель не має власного «сьогодні» — без нього
@@ -113,7 +113,6 @@ export function projectTicketsForClient(rawTickets){
   return out;
 }
 
-
 /* Обмежена історія діалогу від PWA: лише user/assistant, обрізані рядки,
    максимум 12 повідомлень (бонус до поточного питання). */
 function sanitizeHistory(raw){
@@ -127,7 +126,7 @@ function sanitizeHistory(raw){
     if(!content) continue;
     out.push({role: role, content: content});
   }
-  return out.slice(-12); // останні повідомлення важливіші за перші
+  return out.slice(-12);
 }
 
 export function createAskOrchestrator(options){
@@ -136,12 +135,6 @@ export function createAskOrchestrator(options){
   const toolDefs = options.toolDefs;
   const limits = Object.assign({}, ASK_LIMITS, options.limits || {});
 
-  /* Groq/OpenAI wire format for tools: {type:'function', function:{name,
-     description, parameters}}. Our TOOL_DEFINITIONS are MCP-style
-     {name, description, inputSchema, annotations} — sending them raw makes
-     Groq reject the whole request with HTTP 400 "property 'type' is
-     missing". Convert once here; the allowlist/validation below keeps
-     working on the original MCP defs. */
   const groqTools = toolDefs.map(function(def){
     return {
       type: 'function',
@@ -157,7 +150,7 @@ export function createAskOrchestrator(options){
     return toolDefs.find(function(def){ return def.name === name; }) || null;
   }
 
-  const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1 };
+  const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1, find_tickets_by_address:1 };
 
   async function executeTool(call, collectedTickets){
     const def = allowedDef(call.name);
@@ -175,8 +168,6 @@ export function createAskOrchestrator(options){
     let outcome;
     try{ outcome = await tools[def.name](args); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
-    /* Поки інструмент читання заявок успішний — збираємо заявки для
-       структурованого контракту /ask (кнопки «Відкрити заявку» в PWA). */
     if(outcome && outcome.ok && TICKET_TOOLS[def.name] && outcome.data){
       const rows = Array.isArray(outcome.data.tickets) ? outcome.data.tickets
         : (outcome.data.ticket ? [outcome.data.ticket] : []);
@@ -214,15 +205,12 @@ export function createAskOrchestrator(options){
       const response = await groq.chat(messages, groqTools);
       if(!response.ok){
         const failure = {ok:false, code:response.code || 'GROQ_ERROR', detail:typeof response.detail === 'string' ? response.detail : undefined, meta:{rounds, toolCallsMade}};
-        /* Upstream 429: carry the real wait (seconds) up to the HTTP layer. */
         if(typeof response.retryAfterSeconds === 'number' && isFinite(response.retryAfterSeconds)){
           failure.retryAfterSeconds = response.retryAfterSeconds;
         }
         return failure;
       }
       if(response.toolCalls.length){
-        // Echo the assistant message back exactly as the API returned it
-        // (standard continuation for tool results).
         messages.push(response.assistantMessage);
         for(const call of response.toolCalls){
           if(toolCallsMade >= limits.maxToolCalls){

@@ -1,16 +1,13 @@
 /* AI: компактні картки заявок у чаті (мобільний UX). Контракт /ask:
-   tickets:[{id,date,time,address,type,sum,signal,note}]. Кнопки
-   «Відкрити» ведуть ЛИШЕ через MTAI.actions.openTicket (валідація id +
-   пошук у локальному списку + існуюча навігація). Жодних href/URL від
-   моделі: createElement/textContent (XSS-safe). Перші 5 карток +
-   «Показати ще». Модуль приймає doc-параметр => тестований у node. */
+   tickets:[{id,date,time,address,type,sum,signal,note}].
+   Кнопки відкриття та карти ведуть ЛИШЕ через MTAI.actions.openTicket
+   та MTAI.actions.showOnMap (валідація id + пошук у локальному списку +
+   існуюча безпечна навігація). Жодних href/URL від моделі. */
 (function(){
 'use strict';
 const MTAI = (typeof globalThis !== 'undefined' ? globalThis : window).MTAI;
 
 MTAI.cards = (function(){
-  /* Нормалізація: лише безпечні рядкові поля (дублює клієнтську
-     валідацію ai-client.normalizeTickets для прямих викликів). */
   function normalize(list){
     if(!Array.isArray(list)) return [];
     const out = [];
@@ -35,10 +32,7 @@ MTAI.cards = (function(){
 
   const FIRST_PAGE = 5;
 
-  /* Рендер: кожна заявка — компактна картка з кнопкою відкриття.
-     Пусті поля не показуються. onOpen(id) — колбек (у чаті:
-     MTAI.actions.openTicket). */
-  function render(container, tickets, onOpen){
+  function render(container, tickets, onOpen, onMap){
     while(container.firstChild) container.removeChild(container.firstChild);
     const items = normalize(tickets);
     if(!items.length) return 0;
@@ -74,15 +68,54 @@ MTAI.cards = (function(){
         n.textContent = item.note;
         card.appendChild(n);
       }
+
+      const actionsRow = doc.createElement('div');
+      actionsRow.className = 'ai-card-actions';
+      actionsRow.style.display = 'flex';
+      actionsRow.style.gap = '6px';
+      actionsRow.style.marginTop = '6px';
+
       const btn = doc.createElement('button');
       btn.type = 'button';
       btn.className = 'btn btn-sm ai-card-open';
       btn.setAttribute('data-ai-ticket-id', item.id);
-      btn.textContent = '📄 Відкрити заявку';
+      btn.textContent = '👤 Відкрити профіль';
       btn.addEventListener('click', function(){
         if(typeof onOpen === 'function') onOpen(item.id);
       });
-      card.appendChild(btn);
+      actionsRow.appendChild(btn);
+
+      // Check whether this specific ticket has saved map coordinates in local database
+      let hasCoords = false;
+      const globalTickets = (typeof window !== 'undefined' && Array.isArray(window.tickets))
+        ? window.tickets
+        : (typeof tickets !== 'undefined' && Array.isArray(tickets) ? tickets : []);
+      const localTicket = globalTickets.find(function(t){ return t && String(t.id) === String(item.id); }) || item;
+      if(typeof MTToolsCore !== 'undefined' && typeof MTToolsCore.explicitCoordinates === 'function'){
+        hasCoords = Boolean(MTToolsCore.explicitCoordinates(localTicket) || (MTToolsCore.parseCoordinates && MTToolsCore.parseCoordinates(localTicket && localTicket.geoLink)));
+      } else if(localTicket){
+        const lat = Number(localTicket.geoLat != null ? localTicket.geoLat : localTicket.lat);
+        const lng = Number(localTicket.geoLng != null ? localTicket.geoLng : localTicket.lng);
+        if(Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180){
+          hasCoords = true;
+        } else if(localTicket.geoLink && String(localTicket.geoLink).trim().length > 0){
+          hasCoords = true;
+        }
+      }
+
+      if(typeof onMap === 'function' && hasCoords){
+        const mapBtn = doc.createElement('button');
+        mapBtn.type = 'button';
+        mapBtn.className = 'btn btn-sm ai-card-map';
+        mapBtn.setAttribute('data-ai-ticket-map-id', item.id);
+        mapBtn.textContent = '🗺️ На карті';
+        mapBtn.addEventListener('click', function(){
+          onMap(item.id);
+        });
+        actionsRow.appendChild(mapBtn);
+      }
+
+      card.appendChild(actionsRow);
       return card;
     };
 

@@ -13,12 +13,15 @@ const OFFSET_ARG = {type:'integer', minimum:0, maximum:10000, description:'Зс�
 export const TOOL_DEFINITIONS = [
   {
     name: 'list_tickets',
-    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна фільтрувати за діапазоном дат і тегами.',
+    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна фільтрувати за діапазоном дат, типом робіт, рівнем сигналу (dBm) та тегами.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{
         date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
         date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'}),
+        type: {type:'string', description:'Опційний фільтр за типом робіт (наприклад: «Підключення», «Ремонт»).'},
+        signal_worse_than: {type:'number', description:'Фільтр заявок з рівнем сигналу гірше (чисельно менше або дорівнює) вказаного dBm (наприклад: -25 dBm відбере -27, -30 тощо).'},
+        signal_better_than: {type:'number', description:'Фільтр заявок з рівнем сигналу краще (чисельно більше або дорівнює) вказаного dBm (наприклад: -25 dBm відбере -22, -18 тощо).'},
         tags: {type:'array', items:{type:'string'}, minItems:1, maxItems:20, description:'Фільтр за тегами: підходить заявка з хоча б одним із перелічених тегів.'},
         limit: LIMIT_ARG,
         offset: OFFSET_ARG
@@ -51,6 +54,32 @@ export const TOOL_DEFINITIONS = [
     annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
   },
   {
+    name: 'find_tickets_by_address',
+    description: 'Розумний пошук заявок за адресою (місто, село, вулиця, будинок) із підтримкою українського та російського написання, відмінків та одруківок. Повертає знайдені заявки, розпізнану адресу та список будинків на вулиці.',
+    inputSchema: {
+      type:'object', additionalProperties:false, required:['address'],
+      properties:{
+        address: {type:'string', minLength:1, maxLength:200, description:'Адреса або її частина (наприклад: «Таромське Лісова 74», «Лесная 74», «вул. Мостова»).'},
+        date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону (включно).'}),
+        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону (включно).'}),
+        limit: LIMIT_ARG,
+        offset: OFFSET_ARG
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'list_places',
+    description: 'Довідник реальних населених пунктів, вулиць та номерів будинків із наявних заявок майстра. Використовуй для перевірки списку відомих вулиць чи адрес на вулиці.',
+    inputSchema: {
+      type:'object', additionalProperties:false,
+      properties:{
+        city: {type:'string', description:'Опційний фільтр за містом/селом.'}
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
     name: 'get_tickets_by_date',
     description: 'Усі заявки за конкретну дату (сортовані за часом, як список у застосунку).',
     inputSchema: {
@@ -61,12 +90,13 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_shifts',
-    description: 'Робочі зміни (напарники, години) за діапазон дат.',
+    description: 'Робочі зміни (напарники, години) за діапазон дат або за напарником.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{
         date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
-        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'})
+        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'}),
+        coworker: {type:'string', description:'Опційний фільтр/пошук за імʼям напарника.'}
       }
     },
     annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}

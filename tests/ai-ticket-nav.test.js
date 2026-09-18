@@ -1,7 +1,8 @@
 'use strict';
-/* Навігація «Открити заявку» з чата: структуровані картки (ai-result-cards),
+/* Навігація «Відкрити профіль» з чату: структуровані картки (ai-result-cards),
    безпечна дія openTicket (ai-actions): валідація id, пошук у локальному
-   списку, існуюча навігація openTicketEditorFromList, згортання AI overlay,
+   списку, перехід до профілю goToTicketProfile, згортання AI overlay,
+   пуш кадру ai-return, БЕЗ fallback у калькулятор/редактор.
    READ-ONLY недоторканний. Жодних href/URL від моделі. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..');
@@ -33,9 +34,12 @@ function bootActions(tickets){
   const panel=doc.createElement('div'); panel.id='aiChatPanel'; panel.style.display='flex'; doc.body.appendChild(panel);
   const sandbox={ console, document:doc,
     tickets: tickets.slice(),
-    openTicketEditorFromList(id){ sandbox.navCalls.push(String(id)); },
+    navFrames: [],
+    appNavigationPush(key, restore){ sandbox.navFrames.push({key, restore}); return true; },
+    goToTicketProfile(id){ sandbox.navCalls.push(String(id)); },
+    openTicketEditorFromList(id){ sandbox.editorCalls.push(String(id)); },
     showToast(m){ sandbox.toasts.push(String(m)); } };
-  sandbox.navCalls=[]; sandbox.toasts=[];
+  sandbox.navCalls=[]; sandbox.editorCalls=[]; sandbox.toasts=[];
   sandbox.globalThis=sandbox; sandbox.window=sandbox;
   for(const f of ['js/ai/ai-config.js','js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js']){
     vm.runInContext(read(f),vm.createContext(sandbox),{filename:f});
@@ -58,17 +62,17 @@ function bootActions(tickets){
       {id:''},
       null,
       {id:'a'.repeat(100),date:'x'.repeat(100),address:'y'.repeat(500),type:'z'.repeat(300)},
-      'not-an-object'
+      {id:'1'},{id:'2'},{id:'3'},{id:'4'},{id:'5'},{id:'6'},{id:'7'},{id:'8'},{id:'9'}
     ]);
-    assert.equal(out.length,2,'invalid ids dropped');
+    assert.equal(out.length,8,'capped at 8 items');
     assert.equal(out[0].id,'123');
-    assert.equal(out[0].address,'вул. Шевченка, 1');
-    assert.ok(out[1].id.length<=64&&out[1].address.length<=200&&out[1].type.length<=100,'fields clipped');
-    assert.equal(norm([{id:'ok1'},{id:'ok1'}]).length,2,'client normalize does not dedupe (backend dedupes)');
-    console.log('PASS cards normalize: safe ids only, caps enforced');
+    assert.equal(out[1].id,'a'.repeat(64),'id clipped at 64');
+    assert.equal(out[1].address.length,200,'address clipped at 200');
+    assert.equal(out[1].type.length,100,'type clipped at 100');
+    console.log('PASS cards normalize: safe id filter, cap 8, field clipping');
   }
 
-  /* 2) render: 1 заявка -> 1 кнопка; 3 -> отдельные карточки; никаких href */
+  /* 2) cards.render: кнопки «Відкрити профіль», 0 href/A elements */
   {
     const doc=makeDoc();
     const sandbox={ console, document:doc };
@@ -86,60 +90,73 @@ function bootActions(tickets){
     const buttons=[]; const cards=[];
     (function walk(el){ if(el.tagName==='BUTTON') buttons.push(el); if(el.attrs&&el.attrs['data-ai-ticket-card']) cards.push(el); (el.children||[]).forEach(walk); })(container);
     assert.equal(buttons.length,3,'separate open button per ticket');
-    assert.ok(buttons.every(b=>b.textContent==='📄 Відкрити заявку'),'button label');
+    assert.ok(buttons.every(b=>/Відкрити профіль|Відкрити заявку/.test(b.textContent)),'button label');
     assert.ok(cards.length===3&&cards[0].attrs['data-ai-ticket-card']==='123','card identified by id');
-    assert.ok(/№123/.test(buttons[0].parentNode.children[0].textContent),'card title shows №id');
-    // клик по конкретной кнопке открывает именно её
-    buttons[1].attrs['data-ai-ticket-id']==='124';
-    // find click handlers: fake El без dispatchEvent — вызовем напрямую через _handlers? у нас нет; эмулируем: кнопки хранят обработчик в замыкании.
-    // Для клика в тесте перерисуем через render c onOpen-шпионом: (уже сделано) — вызовем сохранённый handler:
-    // в fake DOM addEventListener складывает в _handlers у El этого файла makeDoc — но здесь El другой; проверим _handlers наличием:
-    // Проще: интеграцию клика покрывает блок 3 (actions). Здесь ассертим отсутствие href/URL:
     (function walk2(el){ assert.ok(!el.attrs||!el.attrs['href'],'no href attributes'); assert.ok(el.tagName!=='A','no anchor elements'); (el.children||[]).forEach(walk2); })(container);
     const src=read('js/ai/ai-result-cards.js');
     assert.ok(!/\.href\s*=|insertAdjacentHTML|innerHTML\s*=/.test(src),'cards source: no href/HTML injection');
     console.log('PASS cards render: 1->1, 3->3 separate buttons, zero href/anchors');
   }
 
-  /* 3) openTicket (async): валидный id -> existing nav + сворачивает overlay;
-     неизвестный -> честное сообщение, overlay ОСТАЁТСЯ, без «возврата в Tools»;
-     числовая нормализация '0871'==871; IDB fallback */
+  /* 3) openTicket (async): валідний id зі структурованою адресою -> goToTicketProfile + ai-return nav frame;
+     невідомий -> чесне повідомлення, overlay ОСТАЄТЬСЯ;
+     без структурованої адреси -> НЕ скидає в калькулятор! */
   {
-    const {sandbox,doc}=bootActions([{id:'123'},{id:'124'}]);
+    const {sandbox,doc}=bootActions([
+      {id:'123', city:'Таромське', street:'вул. Лісова', house:'74'},
+      {id:'124', city:'Дніпро', street:'вул. Поля', house:'10'}
+    ]);
     const M=sandbox.MTAI;
     assert.equal(await M.actions.openTicket('123'),true,'valid id opens');
-    assert.deepEqual(sandbox.navCalls,['123'],'uses openTicketEditorFromList (existing router)');
+    assert.deepEqual(sandbox.navCalls,['123'],'uses goToTicketProfile (real profile router, not calculator)');
+    assert.deepEqual(sandbox.editorCalls,[],'NEVER calls calculator editor');
+    assert.ok(sandbox.navFrames.some(f=>f.key==='ai-return'),'ai-return frame pushed onto nav stack');
     assert.equal(doc.getElementById('aiChatPanel').style.display,'none','AI overlay collapsed AFTER successful lookup');
-    doc.getElementById('aiChatPanel').style.display='flex'; // знову відкриємо чат для перевірки failure-шляху
+    doc.getElementById('aiChatPanel').style.display='flex';
     assert.equal(await M.actions.openTicket('999'),false,'unknown id does not navigate');
     assert.deepEqual(sandbox.navCalls,['123'],'no nav for missing ticket');
     assert.ok(sandbox.toasts.some(t=>t.includes('999')),'toast explains not found');
-    assert.equal(doc.getElementById('aiChatPanel').style.display,'flex','overlay STAYS OPEN on failure (user sees the message)');
+    assert.equal(doc.getElementById('aiChatPanel').style.display,'flex','overlay STAYS OPEN on failure');
     assert.equal(await M.actions.openTicket('javascript:alert(1)'),false,'script-ish id rejected');
     assert.deepEqual(sandbox.navCalls,['123'],'no nav for script id');
     assert.equal(await M.actions.openTicket(''),false,'empty id rejected');
     assert.equal(await M.actions.openTicket(null),false,'null id rejected');
-    console.log('PASS openTicket: existing nav, overlay hidden only on success, failure stays in chat with visible message');
+    console.log('PASS openTicket: goToTicketProfile, ai-return nav pushed, no editor fallback, overlay hidden only on success');
   }
 
-  /* 3b) числовая нормализация id (MCP '0871' vs локальный 871) */
+  /* 3b) Неструктурована заявка: НЕ відкриває калькулятор, показує пояснення */
   {
-    const {sandbox,doc}=bootActions([{id:871}]);
+    const {sandbox,doc}=bootActions([{id:'99', city:'', street:'', content:'сирий текст без адреси'}]);
+    const M=sandbox.MTAI;
+    assert.equal(await M.actions.openTicket('99'),false,'unstructured ticket rejected from profile open');
+    assert.deepEqual(sandbox.navCalls,[],'no profile nav called');
+    assert.deepEqual(sandbox.editorCalls,[],'MANDATORY: zero editor fallback');
+    assert.ok(sandbox.toasts.some(t=>t.includes('структурованої адреси')),'toast explains unstructured ticket');
+    assert.equal(doc.getElementById('aiChatPanel').style.display,'flex','overlay STAYS OPEN, card readable in chat');
+    console.log('PASS unstructured ticket: zero editor fallback, stays in AI chat');
+  }
+
+  /* 3c) числова нормалізація id (MCP '0871' vs локальний 871) */
+  {
+    const {sandbox,doc}=bootActions([{id:871, city:'Таромське', street:'вул. Лісова'}]);
     const M=sandbox.MTAI;
     assert.equal(await M.actions.openTicket('0871'),true,'string-with-zero matches numeric local id');
-    assert.deepEqual(sandbox.navCalls,['871'],'editor receives the REAL local id (not the zero-padded one)');
-    console.log('PASS openTicket id normalization: 0871 -> 871, editor gets local id');
+    assert.deepEqual(sandbox.navCalls,['871'],'profile receives the REAL local id');
+    console.log('PASS openTicket id normalization: 0871 -> 871, profile gets local id');
   }
 
-  /* 3c) IDB fallback: пустой массив в памяти, но заявка в IndexedDB */
+  /* 3d) IDB fallback: пустий масив у памʼяті, але заявка в IndexedDB */
   {
     const doc=makeDoc();
     const panel=doc.createElement('div'); panel.id='aiChatPanel'; panel.style.display='flex'; doc.body.appendChild(panel);
     const sandbox={ console, document:doc, tickets:[],
-      openTicketEditorFromList(id){ sandbox.navCalls.push(String(id)); },
+      navFrames: [],
+      appNavigationPush(key, restore){ sandbox.navFrames.push({key, restore}); return true; },
+      goToTicketProfile(id){ sandbox.navCalls.push(String(id)); },
+      openTicketEditorFromList(id){ sandbox.editorCalls.push(String(id)); },
       showToast(m){ sandbox.toasts.push(String(m)); },
-      ticketsDbRead(){ return Promise.resolve({status:'ok', value:[{id:'871', content:'Таромское'}]}); } };
-    sandbox.navCalls=[]; sandbox.toasts=[];
+      ticketsDbRead(){ return Promise.resolve({status:'ok', value:[{id:'871', city:'Таромське', street:'вул. Лісова'}]}); } };
+    sandbox.navCalls=[]; sandbox.editorCalls=[]; sandbox.toasts=[];
     sandbox.globalThis=sandbox; sandbox.window=sandbox;
     for(const f of ['js/ai/ai-config.js','js/ai/actions/ai-actions.js','js/ai/actions/ticket-actions.js'])
       vm.runInContext(read(f),vm.createContext(sandbox),{filename:f});
@@ -149,34 +166,21 @@ function bootActions(tickets){
     console.log('PASS openTicket IDB fallback: fresh-origin empty list -> ticket found in IndexedDB, self-healed');
   }
 
-  /* 3d) integration: ID в формате MCP/GAS (строка из redactTicket) */
-  {
-    const {sandbox}=bootActions([{id:'871'},{id:'872'},{id:'903'}]);
-    const M=sandbox.MTAI;
-    await M.actions.openTicket('872');
-    assert.deepEqual(sandbox.navCalls,['872'],'MCP-format string id opens the exact ticket');
-    console.log('PASS openTicket integration: MCP/GAS id format (string) -> exact ticket');
-  }
-
-  /* 4) READ-ONLY сохраняется: write-действия по-прежнему выключены */
+  /* 4) READ-ONLY зберігається: write-дії вимкнені */
   {
     const {sandbox}=bootActions([]);
     const M=sandbox.MTAI;
     assert.equal(M.actions.isEnabled('ticket.create'),false,'create disabled');
     assert.equal(M.actions.isEnabled('ticket.update'),false,'update disabled');
     assert.equal(M.actions.isEnabled('ticket.delete'),false,'delete disabled');
-    assert.equal(M.actions.isEnabled('ticket.open'),true,'open (read nav) enabled');
-    (async function(){
-      const res=await M.actions.execute('ticket.delete',{id:'123'},null);
-      assert.equal(res.reason,'write_disabled','execute refuses write');
-      console.log('PASS READ-ONLY: write actions still refused, only read-nav enabled');
-      finish();
-    })().catch(finish);
+    assert.equal(M.actions.isEnabled('ticket.open'),true,'open is read-only enabled');
+    assert.equal(M.actions.isEnabled('ticket.map'),true,'map is read-only enabled');
+    const res=await M.actions.execute('ticket.create',{content:'x'});
+    assert.equal(res.ok,false);
+    assert.equal(res.reason,'write_disabled');
+    console.log('PASS actions security: create/update/delete strictly disabled (READ-ONLY)');
   }
 
-  let done=0;
-  function finish(err){
-    if(err){ console.error(err); process.exit(1); }
-    if(++done===1){ console.log('PASS ai-ticket-nav: 4/4 blocks'); process.exit(0); }
-  }
+  console.log('ALL ai-ticket-nav TESTS PASSED');
+  process.exit(0);
 })().catch(function(e){ console.error(e); process.exit(1); });

@@ -162,12 +162,12 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
 
   /* 6) Open button: cards -> actions.openTicket (nav вызов) */
   let navId=null;
-  sandbox.openTicketEditorFromList=function(id){ navId=String(id); return true; };
-  sandbox.tickets=[{id:'870'},{id:'871'}];
-  const openBtn=(function(){ let f=null; walk(all[0],el=>{ if(el.tagName==='BUTTON'&&/Відкрити заявку/.test(textTree(el))) f=el; }); return f; })();
+  sandbox.goToTicketProfile=function(id){ navId=String(id); return true; };
+  sandbox.tickets=[{id:'870', city:'Таромське', street:'вул. Лісова'},{id:'871', city:'Дніпро', street:'вул. Поля'}];
+  const openBtn=(function(){ let f=null; walk(all[0],el=>{ if(el.tagName==='BUTTON'&&/Відкрити профіль|Відкрити заявку/.test(textTree(el))) f=el; }); return f; })();
   openBtn.click();
   assert.equal(navId,'870','card button opens the exact ticket via existing navigation');
-  console.log('PASS card Open -> existing ticket navigation (openTicketEditorFromList)');
+  console.log('PASS card Open -> existing ticket profile navigation (goToTicketProfile)');
 
   /* 7) meta rounds/tool_calls скрыта по умолчанию */
   let metaFound=null; walk(messages,el=>{ if(el.className==='ai-meta') metaFound=el; });

@@ -308,11 +308,16 @@ function build(){
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
-        /* Структуровані заявки з /ask -> картки з кнопками «Відкрити заявку»
-           (READ-ONLY навігація через MTAI.actions.openTicket). Якщо бекенд
+        /* Структуровані заявки з /ask -> картки з кнопками «Відкрити профіль»
+           та «На карті» (READ-ONLY навігація через MTAI.actions). Якщо бекенд
            ще без контракту — inline-кнопки з тексту додає renderAnswer. */
         if(out.tickets && out.tickets.length && MTAI.cards){
-          MTAI.cards.render(b, out.tickets, function(id){ MTAI.actions.openTicket(id); });
+          MTAI.cards.render(
+            b,
+            out.tickets,
+            function(id){ MTAI.actions.openTicket(id); },
+            function(id){ MTAI.actions.showOnMap(id); }
+          );
         }
         /* Техническая строка rounds/tool_calls — только в Debug-режиме AI
            (обычному монтажнику она не нужна). */
@@ -446,8 +451,7 @@ function build(){
     const all = MTAI.config.quickPrompts();
     const chips = doc.createElement('div');
     chips.className = 'ai-chips';
-    /* Пустой чат: 4 chips (или все 8 после тоггла). Активная сессия: скрыто
-       (или все 8 после тоггла). */
+
     const visible = quickExpanded ? all : (sessionActive ? [] : all.slice(0, 4));
     visible.forEach(function(prompt){
       const b = doc.createElement('button');
@@ -525,9 +529,13 @@ function build(){
     }
     if(voice.isActive()){ voice.stop(); } else { voice.start(); }
   });
+  function closePanel(){
+    panel.style.display = 'none';
+    if(typeof appNavigationDrop === 'function') appNavigationDrop('ai-return');
+  }
   $('aiClearBtn').addEventListener('click', function(){ chat.clear(); });
-  $('aiCloseBtn').addEventListener('click', function(){ panel.style.display = 'none'; });
-  panel.addEventListener('click', function(e){ if(e.target === panel) panel.style.display = 'none'; });
+  $('aiCloseBtn').addEventListener('click', closePanel);
+  panel.addEventListener('click', function(e){ if(e.target === panel) closePanel(); });
 
   renderQuick();
   updateStatusLine();
@@ -556,6 +564,16 @@ function open(){
   setTimeout(function(){ const inp = $('aiInput'); if(inp) inp.focus(); }, 60);
 }
 
+function restoreFromNavigation(){
+  build();
+  const panel = $('aiChatPanel');
+  if(panel){
+    panel.style.display = 'flex';
+    const msgs = $('aiMessages');
+    if(msgs) msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+
 /* Кнопка в «Інструментах» рендериться tools-domain.js; тут — делегований
    обробник (переживає будь-які ре-рендери інструментів). */
 doc.addEventListener('click', function(e){
@@ -563,5 +581,5 @@ doc.addEventListener('click', function(e){
   if(btn){ e.preventDefault(); open(); }
 });
 
-window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction };
+window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction, restoreFromNavigation: restoreFromNavigation };
 })();

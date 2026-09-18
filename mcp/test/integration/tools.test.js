@@ -1,4 +1,4 @@
-/* Integration tests for the 7 READ tools, incl. the proofs that they can
+/* Integration tests for the 9 READ tools, incl. the proofs that they can
    only read (GET-only, allowlisted actions), are deterministic, and surface
    GAS failures honestly (no fabricated results). */
 
@@ -11,7 +11,7 @@ import {makeApp, mockGasFetch, rpc, rpcResult, toolCall, toolData} from '../help
 import {FIXTURES} from '../fixtures/data.js';
 import {REPO_ROOT} from '../helpers/appvm.js';
 
-test('all 7 READ tools return data through the signed GAS reads', async () => {
+test('all 9 READ tools return data through the signed GAS reads', async () => {
   const fetchImpl = mockGasFetch('ok');
   const app = await makeApp(null, fetchImpl);
 
@@ -29,6 +29,16 @@ test('all 7 READ tools return data through the signed GAS reads', async () => {
   const search = toolData((await toolCall(app, 'search_tickets', {query:'шевченка'})).result);
   assert.deepEqual(search.tickets.map(function(t){ return t.id; }).sort(), ['t-001', 't-003']);
 
+  const places = toolData((await toolCall(app, 'list_places', {})).result);
+  assert.ok(Array.isArray(places.places));
+  assert.ok(places.places.length >= 1);
+
+  const addr = toolData((await toolCall(app, 'find_tickets_by_address', {address:'вул. Шевченка 12'})).result);
+  assert.ok(addr.resolved);
+  assert.equal(addr.resolved.street, 'вул. Шевченка');
+  assert.equal(addr.resolved.house, '12');
+  assert.deepEqual(addr.tickets.map(function(t){ return t.id; }), ['t-003', 't-001']);
+
   const byDate = toolData((await toolCall(app, 'get_tickets_by_date', {date:'16.09.2026'})).result);
   assert.deepEqual(byDate.tickets.map(function(t){ return t.id; }), ['t-003', 't-004']);
   assert.equal(byDate.count, 2);
@@ -36,6 +46,7 @@ test('all 7 READ tools return data through the signed GAS reads', async () => {
   const shifts = toolData((await toolCall(app, 'get_shifts', {date_from:'15.09.2026', date_to:'16.09.2026'})).result);
   assert.equal(shifts.count, 2);
   assert.equal(shifts.total_hours, 15.5);
+  assert.ok(Array.isArray(shifts.by_coworker));
 
   const reports = toolData((await toolCall(app, 'get_reports', {date_from:'15.09.2026', date_to:'16.09.2026'})).result);
   assert.equal(reports.days.length, 2);
@@ -63,7 +74,7 @@ test('static proof: MCP source contains no write actions and no POST fetches', (
   const files = ['src/index.js','src/config.js','src/jsonrpc.js','src/ratelimit.js',
     'src/mcp/server.js','src/tools/definitions.js','src/tools/read.js','src/tools/validate.js',
     'src/gas/client.js','src/gas/mappers.js','src/gas/sync-contract.js','src/auth/bearer.js',
-    'src/data/snapshot.js','src/ask/orchestrator.js'];
+    'src/data/snapshot.js','src/ask/orchestrator.js','src/ask/address.js'];
   const writeActions = /addTicket|updateTicket|deleteTicket|addShift|updateShift|syncAll|deleteRowById|appendRow|setValues|postDataType|text\/plain;charset=utf-8, body:/;
   for(const rel of files){
     const source = readFileSync(path.join(REPO_ROOT, 'mcp', rel), 'utf8');
@@ -73,15 +84,25 @@ test('static proof: MCP source contains no write actions and no POST fetches', (
   }
 });
 
-test('list_tickets: pagination, date range and tag filters', async () => {
+test('list_tickets: pagination, date range, tag, type and dBm signal filters', async () => {
   const app = await makeApp();
   const page1 = toolData((await toolCall(app, 'list_tickets', {limit:2, offset:0})).result);
   assert.equal(page1.total_matched, 5);
   assert.equal(page1.returned, 2);
-  assert.deepEqual(page1.tickets.map(function(t){ return t.id; }), ['t-003', 't-004']); // newest day first, time asc within the day
+  assert.deepEqual(page1.tickets.map(function(t){ return t.id; }), ['t-003', 't-004']);
 
   const ranged = toolData((await toolCall(app, 'list_tickets', {date_from:'15.09.2026', date_to:'15.09.2026'})).result);
   assert.deepEqual(ranged.tickets.map(function(t){ return t.id; }).sort(), ['t-001', 't-002']);
+
+  const byType = toolData((await toolCall(app, 'list_tickets', {type:'Ремонт'})).result);
+  assert.deepEqual(byType.tickets.map(function(t){ return t.id; }), ['t-001']);
+
+  // dBm signal filtering: -67 is worse (more negative) than -60
+  const worse = toolData((await toolCall(app, 'list_tickets', {signal_worse_than:-60})).result);
+  assert.ok(worse.tickets.some(function(t){ return t.id === 't-001'; })); // t-001 has signal -67
+
+  const better = toolData((await toolCall(app, 'list_tickets', {signal_better_than:-60})).result);
+  assert.ok(better.tickets.some(function(t){ return t.id === 't-003'; })); // t-003 has signal -52
 
   const tagged = toolData((await toolCall(app, 'list_tickets', {tags:['ремонт']})).result);
   assert.deepEqual(tagged.tickets.map(function(t){ return t.id; }), ['t-001']);
@@ -89,6 +110,14 @@ test('list_tickets: pagination, date range and tag filters', async () => {
   const none = toolData((await toolCall(app, 'list_tickets', {tags:['немає-такого']})).result);
   assert.equal(none.total_matched, 0);
   assert.deepEqual(none.tickets, []);
+});
+
+test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
+  const app = await makeApp();
+  const oleg = toolData((await toolCall(app, 'get_shifts', {coworker:'Олег'})).result);
+  assert.equal(oleg.count, 2);
+  assert.equal(oleg.total_hours, 15.5);
+  assert.ok(oleg.by_coworker.some(function(c){ return c.coworker.includes('Олег') && c.total_hours === 15.5; }));
 });
 
 test('search_tickets: phone digits, signal and extraPhones coverage', async () => {
@@ -109,6 +138,8 @@ test('determinism: identical data produces byte-identical outputs', async () => 
   const calls = [
     ['list_tickets', {}],
     ['search_tickets', {query:'Дніпро'}],
+    ['list_places', {}],
+    ['find_tickets_by_address', {address:'вул. Шевченка 12'}],
     ['get_tickets_by_date', {date:'16.09.2026'}],
     ['get_shifts', {}],
     ['get_reports', {date_from:'01.08.2026', date_to:'16.09.2026'}],
@@ -133,7 +164,7 @@ test('list cache: repeated reads within TTL hit GAS once', async () => {
 
 test('GAS network failure: tool reports an error result and fabricates nothing', async () => {
   const app = await makeApp(null, mockGasFetch('network'));
-  for(const [name, args] of [['list_tickets',{}], ['search_tickets',{query:'x'}], ['get_tickets_by_date',{date:'16.09.2026'}], ['get_shifts',{}], ['get_reports',{date_from:'15.09.2026',date_to:'16.09.2026'}], ['get_statistics',{period:'all'}]]){
+  for(const [name, args] of [['list_tickets',{}], ['search_tickets',{query:'x'}], ['list_places',{}], ['find_tickets_by_address',{address:'вул. Шевченка'}], ['get_tickets_by_date',{date:'16.09.2026'}], ['get_shifts',{}], ['get_reports',{date_from:'15.09.2026',date_to:'16.09.2026'}], ['get_statistics',{period:'all'}]]){
     const call = await toolCall(app, name, args);
     assert.equal(call.result.isError, true, name);
     assert.match(call.text, /MCP_TOOL_ERROR: NETWORK/);

@@ -6,6 +6,9 @@ import {
   ticketFromGasRow, redactTicket, redactShift,
   ticketMatchesQuery, parseDateKey
 } from '../gas/mappers.js';
+import {
+  extractPlaces, resolveAddress, normalizeHouse, cleanStr
+} from '../ask/address.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -83,9 +86,21 @@ export function createReadTools(options){
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
     const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
+    const wantedType = params.type ? cleanStr(params.type) : null;
+
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
       if(wantedTags && !wantedTags.some(function(tag){ return t.tags.includes(tag); })) return false;
+      if(wantedType && cleanStr(t.type) !== wantedType) return false;
+
+      if(params.signal_worse_than != null || params.signal_better_than != null){
+        const sigText = String(t.signal == null ? '' : t.signal).trim();
+        if(!sigText) return false;
+        const numSignal = Number(sigText);
+        if(!Number.isFinite(numSignal)) return false;
+        if(params.signal_worse_than != null && numSignal > params.signal_worse_than) return false;
+        if(params.signal_better_than != null && numSignal < params.signal_better_than) return false;
+      }
       return true;
     });
     list = sortNewestFirst(list);
@@ -106,6 +121,73 @@ export function createReadTools(options){
     list = sortNewestFirst(list);
     const meta = page(list, params);
     return {ok:true, data:{query:params.query, tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+  }
+
+  async function list_places(params){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    let places = extractPlaces(data.tickets);
+    if(params && params.city){
+      const qCity = cleanStr(params.city);
+      places = places.filter(function(p){ return cleanStr(p.city).includes(qCity); });
+    }
+    return {ok:true, data:{places}};
+  }
+
+  async function find_tickets_by_address(params){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    const from = params.date_from ? parseDateKey(params.date_from) : null;
+    const to = params.date_to ? parseDateKey(params.date_to) : null;
+    if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
+
+    const places = extractPlaces(data.tickets);
+    const resolution = resolveAddress(params.address, places);
+
+    if(!resolution.resolved){
+      return {
+        ok:true,
+        data:{
+          query: params.address,
+          resolved: null,
+          candidates: resolution.candidates || [],
+          ambiguous: !!resolution.ambiguous,
+          houses: [],
+          tickets: [],
+          total_matched: 0,
+          returned: 0,
+          offset: 0,
+          limit: params.limit || 50
+        }
+      };
+    }
+
+    const r = resolution.resolved;
+    let list = data.tickets.filter(function(t){
+      if(!inRange(t.date, from, to)) return false;
+      if(r.city && t.city && cleanStr(t.city) !== cleanStr(r.city)) return false;
+      if(cleanStr(t.street) !== cleanStr(r.street)) return false;
+      if(r.house && normalizeHouse(t.house) !== normalizeHouse(r.house)) return false;
+      return true;
+    });
+
+    list = sortNewestFirst(list);
+    const meta = page(list, params);
+    return {
+      ok:true,
+      data:{
+        query: params.address,
+        resolved: r,
+        candidates: resolution.candidates || [],
+        ambiguous: false,
+        houses: resolution.houses || [],
+        tickets: list.slice(meta.offset, meta.offset + meta.limit),
+        total_matched: meta.total_matched,
+        returned: meta.returned,
+        offset: meta.offset,
+        limit: meta.limit
+      }
+    };
   }
 
   async function get_ticket(params){
@@ -133,10 +215,16 @@ export function createReadTools(options){
     const from = params.date_from ? parseDateKey(params.date_from) : null;
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
-    const list = data.shifts
+    const wantedCoworker = params.coworker ? cleanStr(params.coworker) : null;
+
+    let list = data.shifts
       .filter(function(s){
         const key = parseDateKey(s.date);
-        return !!key && (!from || key >= from) && (!to || key <= to);
+        if(!key) return false;
+        if(from && key < from) return false;
+        if(to && key > to) return false;
+        if(wantedCoworker && !cleanStr(s.coworker).includes(wantedCoworker)) return false;
+        return true;
       })
       .sort(function(a, b){
         const ka = parseDateKey(a.date) || '';
@@ -145,7 +233,27 @@ export function createReadTools(options){
         return String(a.id).localeCompare(String(b.id));
       });
     const totalHours = round1(list.reduce(function(s, item){ return s + (Number(item.hours) || 0); }, 0));
-    return {ok:true, data:{count:list.length, total_hours:totalHours, shifts:list}};
+
+    // Calculate coworker aggregates
+    const coworkerMap = new Map();
+    for(const s of list){
+      const name = String(s.coworker || '').trim() || '(без напарника)';
+      if(!coworkerMap.has(name)){
+        coworkerMap.set(name, { coworker: name, count: 0, total_hours: 0, dates: [], last_date: s.date });
+      }
+      const entry = coworkerMap.get(name);
+      entry.count += 1;
+      entry.total_hours = round1(entry.total_hours + (Number(s.hours) || 0));
+      entry.dates.push(s.date);
+      const curKey = parseDateKey(s.date) || '';
+      const lastKey = parseDateKey(entry.last_date) || '';
+      if(curKey > lastKey) entry.last_date = s.date;
+    }
+    const byCoworker = Array.from(coworkerMap.values()).sort(function(a, b){
+      return b.total_hours - a.total_hours || (a.coworker < b.coworker ? -1 : 1);
+    });
+
+    return {ok:true, data:{count:list.length, total_hours:totalHours, shifts:list, by_coworker:byCoworker}};
   }
 
   async function get_reports(params){
@@ -220,5 +328,5 @@ export function createReadTools(options){
     return {ok:true, data:{period:params.period, anchor_date:anchorKey ? anchorKey.split('-').reverse().join('.') : null, window, totals, by_type:toRows(byType), by_payment:toRows(byPayment)}};
   }
 
-  return {list_tickets, search_tickets, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
+  return {list_tickets, search_tickets, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
 }
