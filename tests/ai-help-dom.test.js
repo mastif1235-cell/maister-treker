@@ -110,15 +110,14 @@ function bootHelp(withSettings){
     console.log('PASS help copy buttons: 2 (groq/deepseek), clipboard fallback safe');
   }
 
-  /* 4) DeepSeek disabled — честная формулировка */
+  /* 4) DeepSeek enabled — честная формулировка */
   {
     const {sandbox,doc}=bootHelp(false);
-    assert.equal(sandbox.MTAI.providers.get('deepseek').enabled,false,'registry: deepseek placeholder disabled');
+    assert.equal(sandbox.MTAI.providers.get('deepseek').enabled,true,'registry: deepseek enabled');
     sandbox.MTAI.help.open();
     const text=textTree(doc.getElementById('aiHelpOverlay'));
-    assert.ok(text.includes('поки не ввімкнено'),'honest disabled status shown');
-    assert.ok(text.includes('Підтримку DeepSeek підготовлено'),'prepared-but-disabled wording');
-    console.log('PASS help DeepSeek disabled: honest wording');
+    assert.ok(text.includes('DeepSeek доступний у застосунку'),'enabled wording');
+    console.log('PASS help DeepSeek enabled: honest wording');
   }
 
   /* 5) Кнопка «📘» создаётся в настройках (полный DOM-путь — ai-connect-dom) */

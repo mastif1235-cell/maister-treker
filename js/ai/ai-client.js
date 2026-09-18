@@ -54,6 +54,9 @@ MTAI.createClient = function(options){
     const code = payload && payload.code ? String(payload.code) : '';
     const detail = payload && typeof payload.detail === 'string' ? payload.detail : '';
     if(status === 401) return { kind:'auth', message:'Невірний токен AI-бекенда. Перевірте його в Налаштуваннях → 🤖 AI.', detail:'' };
+    if(status === 402 || code === 'HTTP_402' || code === 'insufficient_balance' || /insufficient balance/i.test(detail)){
+      return { kind:'billing', message:'Недостатній баланс на акаунті AI-провайдера (DeepSeek Insufficient Balance). Поповніть рахунок на платформі провайдера.', detail: detail };
+    }
     /* Поточний production-Worker віддає upstream-429 як 502 HTTP_429 (нова
        версія віддає чесний 429). Розпізнаємо обидва формати, щоб фікс працював
        і до оновлення Worker'а. */
@@ -61,7 +64,7 @@ MTAI.createClient = function(options){
       || (payload && payload.error === 'rate_limited');
     if(status === 429 || upstreamRateLimit || /rate limit/i.test(detail)){
       /* Джерело істини — нормалізоване число від Worker'а (він бере його з
-         Groq retry-after / x-ratelimit-reset-*). Текст розбираємо лише як
+         Groq/DeepSeek retry-after / x-ratelimit-reset-*). Текст розбираємо лише як
          запасний варіант. Якщо точного часу НЕМАЄ — не вигадуємо countdown:
          краще чесне «спробуйте пізніше», ніж хибне «через 20–30 с». */
       const fromPayload = payload && (payload.retryAfterSeconds != null ? payload.retryAfterSeconds : payload.retry_after_sec);
@@ -71,8 +74,8 @@ MTAI.createClient = function(options){
         : (parseRetryAfter(detail) || null);
       return { kind:'rate_limit',
         message: retryAfterSec
-          ? 'Ліміт Groq (TPM, безкоштовний тариф). Просить зачекати ~' + retryAfterSec + ' с.'
-          : 'Ліміт Groq ще не відновився. Спробуйте пізніше.',
+          ? 'Ліміт запитів AI-провайдера. Просить зачекати ~' + retryAfterSec + ' с.'
+          : 'Ліміт запитів AI-провайдера ще не відновився. Спробуйте пізніше.',
         detail: detail, retryAfterSec: retryAfterSec };
     }
     if(status === 503) return { kind:'not_configured',
@@ -134,7 +137,9 @@ MTAI.createClient = function(options){
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + cfg.bearer },
         body: JSON.stringify({
           question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
-          history: sanitizeHistory(history)
+          history: sanitizeHistory(history),
+          provider: cfg.provider || MTAI.config.DEFAULT_PROVIDER,
+          model: cfg.model || MTAI.config.DEFAULT_MODEL
         }),
         signal: ctrl.signal
       });

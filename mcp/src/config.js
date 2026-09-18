@@ -43,6 +43,8 @@ export async function loadConfig(env){
       snapshotTtlMs: intInRange(env.MCP_SNAPSHOT_TTL_MS, 300000, 30000, 3600000),
       snapshotStaleMs: intInRange(env.MCP_SNAPSHOT_STALE_MS, 86400000, 60000, 604800000),
       /* --- stage D: /ask (optional; absence never disables /mcp) --- */
+      deepseekApiKey: String(env.DEEPSEEK_API_KEY || '').trim(),
+      deepseekModel: String(env.DEEPSEEK_MODEL || 'deepseek-flash').trim() || 'deepseek-flash',
       groqApiKey: String(env.GROQ_API_KEY || '').trim(),
       askModel: String(env.ASK_MODEL || 'openai/gpt-oss-120b').trim() || 'openai/gpt-oss-120b',
       askTokens: askTokens,

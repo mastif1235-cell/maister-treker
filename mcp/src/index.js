@@ -31,6 +31,7 @@ import {authenticate} from './auth/bearer.js';
 import {createRateLimiter} from './ratelimit.js';
 import {parseMessage, makeError, ERROR_CODES, isNotification} from './jsonrpc.js';
 import {createGroqClient} from './ask/groq.js';
+import {createDeepSeekClient} from './ask/deepseek.js';
 import {createAskOrchestrator} from './ask/orchestrator.js';
 import {TOOL_DEFINITIONS} from './tools/definitions.js';
 
@@ -61,17 +62,34 @@ function withCors(response){
    mode, auth flag, providers/models with capabilities. NEVER includes keys,
    tokens, URLs of upstream providers or anything secret — safe to expose. */
 function publicAiConfig(app){
-  const configured = !!(app && app.ok && app.ask);
-  const model = app && app.ok ? app.config.askModel : 'openai/gpt-oss-120b';
+  const deepseekConfigured = !!(app && app.ok && app.deepseekAsk);
+  const groqConfigured = !!(app && app.ok && app.groqAsk);
+  const anyConfigured = deepseekConfigured || groqConfigured;
+  const defaultProvider = deepseekConfigured ? 'deepseek' : (groqConfigured ? 'groq' : 'deepseek');
+  const groqModel = app && app.ok ? app.config.askModel : 'openai/gpt-oss-120b';
+  const deepseekModel = app && app.ok ? app.config.deepseekModel : 'deepseek-flash';
   return {
     ok: true,
     mode: 'read-only',
     auth_required: true,
-    ask_configured: configured,
-    version: 1,
+    ask_configured: anyConfigured,
+    default_provider: defaultProvider,
+    version: 2,
     providers: [
-      { id:'groq', name:'Groq', enabled:configured,
-        models:[{ id:model, capabilities:['text','tools','reasoning'] }] }
+      {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        enabled: deepseekConfigured,
+        default_model: deepseekModel,
+        models: [{ id: deepseekModel, label: 'deepseek-flash', capabilities: ['text', 'tools'] }]
+      },
+      {
+        id: 'groq',
+        name: 'Groq',
+        enabled: groqConfigured,
+        default_model: groqModel,
+        models: [{ id: groqModel, capabilities: ['text', 'tools', 'reasoning'] }]
+      }
     ]
   };
 }
@@ -118,23 +136,40 @@ export function createApp(env, deps){
     const server = createMcpServer({tools});
     const limiter = deps.limiter || createRateLimiter({limitPerMin: config.rateLimitPerMin});
 
-    /* stage D: the orchestrator shares the SAME tool handlers as /mcp and is
-       disabled (without touching /mcp) when its prerequisites are missing. */
-    let ask = null;
-    let askDisabledReason = null;
-    if(!config.groqApiKey) askDisabledReason = 'GROQ_API_KEY is not configured';
-    else if(config.askTokensError) askDisabledReason = 'ASK_BEARER_TOKENS is invalid';
+    /* stage D: providers for /ask (DeepSeek and Groq).
+       DeepSeek is the preferred default if configured. */
+    let deepseekAsk = null;
+    let deepseekDisabledReason = null;
+    if(!config.deepseekApiKey) deepseekDisabledReason = 'DEEPSEEK_API_KEY is not configured';
+    else if(config.askTokensError) deepseekDisabledReason = 'ASK_BEARER_TOKENS is invalid';
     else {
-      const groq = createGroqClient({
+      const deepseekClient = createDeepSeekClient({
+        fetchImpl: deps.fetchImpl || fetch,
+        apiKey: config.deepseekApiKey,
+        model: config.deepseekModel
+      });
+      deepseekAsk = createAskOrchestrator({groq: deepseekClient, tools, toolDefs: TOOL_DEFINITIONS});
+    }
+
+    let groqAsk = null;
+    let groqDisabledReason = null;
+    if(!config.groqApiKey) groqDisabledReason = 'GROQ_API_KEY is not configured';
+    else if(config.askTokensError) groqDisabledReason = 'ASK_BEARER_TOKENS is invalid';
+    else {
+      const groqClient = createGroqClient({
         fetchImpl: deps.fetchImpl || fetch,
         apiKey: config.groqApiKey,
         model: config.askModel
       });
-      ask = createAskOrchestrator({groq, tools, toolDefs: TOOL_DEFINITIONS});
+      groqAsk = createAskOrchestrator({groq: groqClient, tools, toolDefs: TOOL_DEFINITIONS});
     }
+
+    const defaultAsk = deepseekAsk || groqAsk;
+    const ask = defaultAsk;
+    const askDisabledReason = (config.askTokensError ? 'ASK_BEARER_TOKENS is invalid' : (!defaultAsk ? 'No AI provider (DEEPSEEK_API_KEY or GROQ_API_KEY) configured' : null));
     const askAuthTokens = (config.askTokens && config.askTokens.length) ? config.askTokens : config.tokens;
 
-    return {ok:true, config, server, limiter, provider, tools, ask, askDisabledReason, askAuthTokens};
+    return {ok:true, config, server, limiter, provider, tools, ask, deepseekAsk, groqAsk, deepseekDisabledReason, groqDisabledReason, askDisabledReason, askAuthTokens};
   });
 
   async function askHandler(request){
@@ -167,24 +202,49 @@ export function createApp(env, deps){
       return jsonResponse(400, {error:'invalid_question', hint:'question must be a non-empty string of at most 2000 chars'});
     }
 
+    // Determine target provider with strict allowlist
+    const requestedProvider = String((body && body.provider) || '').trim().toLowerCase() || (app.deepseekAsk ? 'deepseek' : 'groq');
+    if(requestedProvider !== 'deepseek' && requestedProvider !== 'groq'){
+      return jsonResponse(400, {error:'invalid_provider', hint:'provider must be "deepseek" or "groq"'});
+    }
+
+    let targetAsk = null;
+    if(requestedProvider === 'deepseek'){
+      if(!app.deepseekAsk){
+        return jsonResponse(503, {error:'deepseek_not_configured', message:'DEEPSEEK_API_KEY is not configured on Worker'});
+      }
+      targetAsk = app.deepseekAsk;
+    } else if(requestedProvider === 'groq'){
+      if(!app.groqAsk){
+        return jsonResponse(503, {error:'groq_not_configured', message:'GROQ_API_KEY is not configured on Worker'});
+      }
+      targetAsk = app.groqAsk;
+    } else {
+      targetAsk = app.ask;
+    }
+
+    if(!targetAsk){
+      console.error('[ask] disabled:', app.askDisabledReason);
+      return jsonResponse(503, {error:'ask_not_configured'});
+    }
+
     /* Обмежена історія поточної AI-сесії з PWA (follow-up «а за август?»,
        «там» тощо). Тільки user/assistant-рядки — див. sanitizeHistory. */
     const history = Array.isArray(body.history) ? body.history : [];
     let outcome;
-    try{ outcome = await app.ask.handle(question, {history: history}); }
+    try{ outcome = await targetAsk.handle(question, {history: history}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
-      const upstream = code === 'GROQ_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code.indexOf('HTTP_') === 0;
-      /* `detail` is a pre-sanitized excerpt of the upstream error (no
-         secrets, see groq.js) — exposes the exact Groq 4xx cause without
-         leaking credentials. */
+      const upstream = code === 'GROQ_ERROR' || code === 'DEEPSEEK_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code.indexOf('HTTP_') === 0;
       const payload = {ok:false, error:'ask_failed', code};
       if(typeof outcome.detail === 'string' && outcome.detail) payload.detail = outcome.detail;
-      /* Upstream rate limit is a RATE LIMIT for the client too: surface it as
-         a real 429 with the normalized wait, instead of an opaque 502 that
-         forced the PWA to guess «20-30 s». retryAfterSeconds is absent when
-         Groq did not say — the UI must then NOT invent a countdown. */
+
+      if(code === 'HTTP_402'){
+        payload.error = 'insufficient_balance';
+        payload.code = 'insufficient_balance';
+        return jsonResponse(402, payload);
+      }
       if(code === 'HTTP_429'){
         payload.error = 'rate_limited';
         payload.code = 'rate_limit';

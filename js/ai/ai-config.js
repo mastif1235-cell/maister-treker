@@ -40,8 +40,8 @@ MTAI.config = {
       return MTAI.config.SHARED_BACKEND;
     }
   },
-  DEFAULT_PROVIDER: 'groq',
-  DEFAULT_MODEL: 'openai/gpt-oss-120b',
+  DEFAULT_PROVIDER: 'deepseek',
+  DEFAULT_MODEL: 'deepseek-flash',
   LIMITS: {
     questionMaxChars: 2000,
     timeoutMs: 90000,

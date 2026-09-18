@@ -21,7 +21,7 @@ function makeApp(env){
   return { app: createApp(env, { fetchImpl }), calls };
 }
 
-test('GET /ai/config: secret-free descriptor, ask_configured=false without GROQ key', async () => {
+test('GET /ai/config: secret-free descriptor, ask_configured=false without keys', async () => {
   const { app } = makeApp(ENV);
   const res = await app.fetch(new Request('https://worker.test/ai/config'));
   assert.equal(res.status, 200);
@@ -30,11 +30,16 @@ test('GET /ai/config: secret-free descriptor, ask_configured=false without GROQ 
   assert.equal(body.mode, 'read-only');
   assert.equal(body.auth_required, true);
   assert.equal(body.ask_configured, false);
-  assert.equal(body.providers[0].id, 'groq');
-  assert.equal(body.providers[0].enabled, false);
-  assert.ok(body.providers[0].models[0].capabilities.includes('tools'));
+  const groq = body.providers.find(p => p.id === 'groq');
+  const deepseek = body.providers.find(p => p.id === 'deepseek');
+  assert.ok(groq);
+  assert.ok(deepseek);
+  assert.equal(groq.enabled, false);
+  assert.equal(deepseek.enabled, false);
+  assert.ok(groq.models[0].capabilities.includes('tools'));
+  assert.ok(deepseek.models[0].capabilities.includes('tools'));
   const text = JSON.stringify(body);
-  for(const banned of ['gsk_', 'GROQ_API_KEY', 'DEEPSEEK_API_KEY', 'secret', 'hmac', 'Bearer mt_test', 'mt_test_token', 'api.groq.com']){
+  for(const banned of ['gsk_', 'GROQ_API_KEY', 'DEEPSEEK_API_KEY', 'secret', 'hmac', 'Bearer mt_test', 'mt_test_token', 'api.groq.com', 'api.deepseek.com']){
     assert.ok(!text.toLowerCase().includes(banned.toLowerCase()), 'no leak: ' + banned);
   }
 });
@@ -44,10 +49,24 @@ test('GET /ai/config: ask_configured=true when GROQ_API_KEY present; model from 
   const res = await app.fetch(new Request('https://worker.test/ai/config'));
   const body = await res.json();
   assert.equal(body.ask_configured, true);
-  assert.equal(body.providers[0].enabled, true);
-  assert.equal(body.providers[0].models[0].id, 'openai/gpt-oss-120b');
+  const groq = body.providers.find(p => p.id === 'groq');
+  assert.equal(groq.enabled, true);
+  assert.equal(groq.models[0].id, 'openai/gpt-oss-120b');
   const text = JSON.stringify(body);
   assert.ok(!text.includes('gsk_test_key_0123456789abcdef0123456789'), 'the key value itself never appears');
+});
+
+test('GET /ai/config: ask_configured=true when DEEPSEEK_API_KEY present; model from env', async () => {
+  const { app } = makeApp(Object.assign({}, ENV, { DEEPSEEK_API_KEY: 'sk-test-deepseek-key-0123456789abcdef' }));
+  const res = await app.fetch(new Request('https://worker.test/ai/config'));
+  const body = await res.json();
+  assert.equal(body.ask_configured, true);
+  assert.equal(body.default_provider, 'deepseek');
+  const deepseek = body.providers.find(p => p.id === 'deepseek');
+  assert.equal(deepseek.enabled, true);
+  assert.equal(deepseek.models[0].id, 'deepseek-flash');
+  const text = JSON.stringify(body);
+  assert.ok(!text.includes('sk-test-deepseek-key-0123456789abcdef'), 'the key value itself never appears');
 });
 
 test('/ai/config non-GET -> 405 with Allow', async () => {

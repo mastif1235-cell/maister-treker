@@ -18,14 +18,14 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   const sb=load(...CORE);
   const M=sb.MTAI;
   const list=M.providers.enabledList();
-  assert.equal(list.length,1,'only groq enabled now');
-  assert.equal(list[0].id,'groq');
-  assert.equal(M.providers.get('deepseek').enabled,false,'deepseek is a disabled placeholder');
-  assert.equal(M.providers.get('deepseek').models.length,2,'deepseek models pre-declared');
+  assert.equal(list.length,2,'both groq and deepseek enabled');
+  assert.equal(M.providers.get('deepseek').enabled,true,'deepseek is active');
+  assert.equal(M.providers.get('deepseek').models[0].id,'deepseek-flash');
+  assert.equal(M.providers.get('groq').enabled,true,'groq is active');
   assert.equal(M.providers.get('groq').models[0].id,'openai/gpt-oss-120b');
   assert.equal(M.providers.get('groq').models[0].capabilities.tools,true);
   assert.equal(M.provider.capsLabel({text:true,vision:true,tools:true}),'Текст · Фото · Tools');
-  console.log('PASS provider registry: groq active, deepseek placeholder, capabilities');
+  console.log('PASS provider registry: groq and deepseek active, capabilities');
 }
 
 // ── storage: allowlist, bearer mid-part, readiness ──
@@ -65,14 +65,14 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
       if(seen.length===5) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_400',detail:"property 'x' is missing"}),{status:400});
       if(seen.length===6) return new Response(JSON.stringify({error:'ask_not_configured'}),{status:503});
       throw new TypeError('fetch failed');
-    }, getConfig: function(){ return { backendUrl:sb.settings.ai.backendUrl, bearer:M.storage.bearer() }; }, timeoutMs:80 });
+    }, getConfig: function(){ return { backendUrl:sb.settings.ai.backendUrl, bearer:M.storage.bearer(), provider:sb.settings.ai.provider, model:sb.settings.ai.model }; }, timeoutMs:80 });
   (async function(){
     const ok=await client.ask('Скільки заявок?');
     assert.equal(ok.ok,true); assert.equal(ok.answer,'389');
     assert.equal(seen[0].url,'https://w.example.dev/ask','exact /ask url');
     assert.equal(seen[0].init.method,'POST');
     assert.equal(seen[0].init.headers.Authorization,'Bearer tok1234567890abcdef','mid-token in header');
-    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?',history:[]},'/ask body: question + empty history on first ask');
+    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?',history:[],provider:'groq',model:'openai/gpt-oss-120b'},'/ask body: question + empty history on first ask');
     const e401=await client.ask('x'); assert.equal(e401.error.kind,'auth');
     const e429=await client.ask('x'); assert.equal(e429.error.kind,'rate_limit'); assert.equal(e429.error.retryAfterSec,20,'retry-after parsed from Ukrainian detail');
     const e500=await client.ask('x'); assert.equal(e500.error.kind,'server');
