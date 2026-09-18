@@ -10,6 +10,8 @@ import path from 'node:path';
 import {makeApp, mockGasFetch, rpc, rpcResult, toolCall, toolData} from '../helpers/mcpapp.js';
 import {FIXTURES} from '../fixtures/data.js';
 import {REPO_ROOT} from '../helpers/appvm.js';
+import {createReadTools} from '../../src/tools/read.js';
+import {ticketFromGasRow, redactTicket} from '../../src/gas/mappers.js';
 
 test('all 9 READ tools return data through the signed GAS reads', async () => {
   const fetchImpl = mockGasFetch('ok');
@@ -110,6 +112,22 @@ test('list_tickets: pagination, date range, tag, type and dBm signal filters', a
   const none = toolData((await toolCall(app, 'list_tickets', {tags:['немає-такого']})).result);
   assert.equal(none.total_matched, 0);
   assert.deepEqual(none.tickets, []);
+});
+
+test('historical signal filter: structured and legacy notes, precedence, no duplicates, all-time range', async () => {
+  const rows = [
+    {id:'structured-old', date:'18.08.2026', time:'15:07', content:'', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:'-27'})},
+    {id:'legacy-old', date:'28.08.2026', time:'13:23', content:'Сигнал -27', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:''})},
+    {id:'unrelated-negative', date:'01.01.2025', time:'10:00', content:'ціна -30', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:''})},
+    {id:'authoritative', date:'02.02.2025', time:'10:00', content:'', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:'-23', note:'Сигнал -27'})}
+  ];
+  const tool = createReadTools({data:{getList:async function(){ return {ok:true, data:{tickets:rows.map(function(row){ return redactTicket(ticketFromGasRow(row)); }), shifts:[]}}; }}});
+  const result = await tool.list_tickets({signal_worse_than:-25});
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.tickets.map(function(t){ return t.id; }).sort(), ['legacy-old','structured-old']);
+  assert.equal(result.data.total_matched, 2);
+  const allTime = await tool.list_tickets({signal_worse_than:-25, date_from:'01.01.2024', date_to:'31.12.2026'});
+  assert.equal(allTime.data.total_matched, 2);
 });
 
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {

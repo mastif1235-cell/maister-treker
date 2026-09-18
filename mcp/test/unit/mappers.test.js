@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   ticketFromGasRow, redactTicket, redactShift,
-  parseDateKey, normalizeOnuSignal, ticketMatchesQuery,
+  parseDateKey, normalizeOnuSignal, parseLegacySignal, ticketMatchesQuery,
   isForbiddenKey, assertNoForbidden, REDACTED_TICKET_FIELDS, REDACTED_SHIFT_FIELDS
 } from '../../src/gas/mappers.js';
 import {FIXTURES} from '../fixtures/data.js';
@@ -25,6 +25,28 @@ test('normalizeOnuSignal mirrors the app (comma decimal, junk -> empty)', () => 
   assert.equal(normalizeOnuSignal(' -67 '), '-67');
   assert.equal(normalizeOnuSignal('abc'), '');
   assert.equal(normalizeOnuSignal(null), '');
+});
+
+test('historical signal parser requires explicit marker and supports common note forms', () => {
+  assert.equal(parseLegacySignal('Сигнал -27'), '-27');
+  assert.equal(parseLegacySignal('сигнал: -27 dBm'), '-27');
+  assert.equal(parseLegacySignal('СИГНАЛ -27 дБм'), '-27');
+  assert.equal(parseLegacySignal('температура -27'), '');
+  assert.equal(parseLegacySignal('ціна -27'), '');
+});
+
+test('historical signal compatibility uses legacy notes only when structured signal is absent', () => {
+  const rows = [
+    {id:'legacy', date:'18.08.2026', time:'15:07', content:'заявка', backupNote:'Сигнал -27', tags:[], fullDataJson:JSON.stringify({signal:''})},
+    {id:'structured', date:'19.08.2026', time:'15:07', content:'Сигнал -27', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:'-23'})},
+    {id:'negative', date:'20.08.2026', time:'15:07', content:'рівень оплати -27', backupNote:'', tags:[], fullDataJson:JSON.stringify({signal:''})}
+  ];
+  const legacy = redactTicket(ticketFromGasRow(rows[0]));
+  const structured = redactTicket(ticketFromGasRow(rows[1]));
+  const negative = redactTicket(ticketFromGasRow(rows[2]));
+  assert.equal(legacy.signal, '-27');
+  assert.equal(structured.signal, '-23');
+  assert.equal(negative.signal, '');
 });
 
 test('redactTicket output keys are exactly the whitelisted set', () => {

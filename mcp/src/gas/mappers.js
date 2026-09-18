@@ -20,6 +20,26 @@ export function normalizeOnuSignal(value){
   return String(number);
 }
 
+/* Historical signal values were sometimes written into notes before the
+   structured field existed. Only an explicit signal marker qualifies; an
+   unrelated negative number in a note never becomes a signal. */
+export function parseLegacySignal(text){
+  const source = String(text == null ? '' : text);
+  const match = /(?:^|[^\p{L}])сигнал\s*(?:[:=]\s*)?(-?\d+(?:[.,]\d+)?)(?=\s*(?:d\s*bm|д\s*бм)?(?:[^\p{L}\d]|$))/iu.exec(source);
+  if(!match) return '';
+  const normalized = normalizeOnuSignal(match[1]);
+  const number = Number(normalized);
+  return Number.isFinite(number) && number >= -100 && number <= 20 ? normalized : '';
+}
+
+function firstLegacySignal(values){
+  for(const value of values){
+    const signal = parseLegacySignal(value);
+    if(signal) return signal;
+  }
+  return '';
+}
+
 /* 'DD.MM.YYYY' -> 'YYYY-MM-DD' for range comparisons; null when invalid. */
 export function parseDateKey(value){
   const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(String(value || ''));
@@ -50,7 +70,8 @@ export function ticketFromGasRow(row){
     sum: num(row && row.sum),
     tags: strArray(row && row.tags),
     fullData: {},
-    fullDataError: false
+    fullDataError: false,
+    legacySignal: firstLegacySignal([row && row.content, row && row.backupNote])
   };
   const raw = row && row.fullDataJson;
   if(raw != null && raw !== ''){
@@ -60,6 +81,9 @@ export function ticketFromGasRow(row){
     if(parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) t.fullData = parsed;
     else t.fullDataError = true;
   }
+  if(!t.legacySignal) t.legacySignal = firstLegacySignal([
+    t.fullData.note, t.fullData.abonentNote, t.fullData.otherNote, t.fullData.masterNote
+  ]);
   return t;
 }
 
@@ -128,7 +152,7 @@ export function redactTicket(t){
     phone: str(f.phone),
     extraPhones: strArray(f.extraPhones),
     macAddress: str(f.macAddress),
-    signal: normalizeOnuSignal(f.signal),
+    signal: normalizeOnuSignal(f.signal) || t.legacySignal || '',
     payment: str(f.payment),
     sum: num(t.sum),
     cashAmount: num(f.cashAmount),
