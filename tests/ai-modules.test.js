@@ -106,7 +106,7 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   assert.ok(!tags.includes('script'),'script never becomes an element');
   assert.ok(textOf(box).includes('<script>alert(1)</script>'),'script text preserved as plain text');
   const btns=(function collect(el,acc){ (el.children||[]).forEach(function(c){ if(c.tagName==='button')acc.push(c); collect(c,acc); }); return acc; })(box,[]);
-  assert.ok(btns.some(function(b){ return b.dataset.ticketId==='42'; }),'#42 → открыть-заявку button');
+  assert.equal(btns.length,0,'natural-language ticket refs are inert without structured metadata');
   const lists=(function collect(el,acc){ (el.children||[]).forEach(function(c){ if(/^[uo]l$/.test(c.tagName))acc.push(c); collect(c,acc); }); return acc; })(box,[]);
   assert.equal(lists.length,2,'bullet + ordered lists built via DOM');
   console.log('PASS ai-render: XSS-safe, lists, ticket-ref buttons');

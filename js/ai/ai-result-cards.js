@@ -46,7 +46,7 @@ MTAI.cards = (function(){
       card.setAttribute('data-ai-ticket-card', item.id);
       const title = doc.createElement('div');
       title.className = 'ai-card-title';
-      title.textContent = '№' + item.id + (item.date ? ' · ' + item.date : '') + (item.time ? ' ' + item.time : '');
+      title.textContent = (item.date ? item.date : '') + (item.time ? ' ' + item.time : '');
       card.appendChild(title);
       if(item.address){
         const addr = doc.createElement('div');

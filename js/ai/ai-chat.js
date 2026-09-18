@@ -9,7 +9,26 @@ MTAI.createChatController = function(deps){
   const attachments = deps.attachments || null;
   const sleep = deps.sleep || function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
   const capabilities = deps.capabilities || function(){ return { vision:false }; };
-  let messages = [];       // {role:'user'|'assistant'|'error', text, ts}
+  const historyStorage = deps.storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  const HISTORY_KEY = 'mtAiChatHistoryV1';
+  function safeHistoryText(value){
+    return String(value == null ? '' : value).replace(/(?:Bearer\s+|sk-|api[_-]?key\s*[:=]\s*)[A-Za-z0-9._-]{12,}/gi, '[redacted]').slice(0, 1500);
+  }
+  function loadPersisted(){
+    if(!historyStorage) return [];
+    try{
+      const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
+      if(!Array.isArray(raw)) return [];
+      return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
+        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:Array.isArray(m.tickets) ? m.tickets.slice(0,8) : []};
+      });
+    }catch(_e){ return []; }
+  }
+  let messages = loadPersisted();       // {role:'user'|'assistant'|'error', text, ts, tickets?}
+  function persist(){
+    if(!historyStorage) return;
+    try{ historyStorage.setItem(HISTORY_KEY, JSON.stringify(messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40))); }catch(_e){}
+  }
   let busy = false;
   let lastFailed = null;   // останнє питання, яке впало (для «Повторити»)
   let cooldownUntil = 0;   // 429/TPM: until-таймстемп, доки Send/Retry заблоковані
@@ -55,7 +74,7 @@ MTAI.createChatController = function(deps){
       .filter(function(m){ return (m.role === 'user' || m.role === 'assistant'); })
       .slice(-8)
       .map(function(m){ return { role: m.role, text: m.text }; });
-    if(!isRetry) messages.push({ role:'user', text:question, ts:Date.now() });
+    if(!isRetry){ messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() }); persist(); }
     let outcome = await client.ask(question, history);
     busy = false;
     emit('busy', false);
@@ -64,7 +83,8 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
-      messages.push({ role:'assistant', text:outcome.answer, ts:Date.now(), meta:outcome.meta, tickets:outcome.tickets || [] });
+      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, tickets:Array.isArray(outcome.tickets) ? outcome.tickets.slice(0,8) : [] });
+      persist();
       emit('assistant', { text:outcome.answer, meta:outcome.meta, tickets:outcome.tickets || [] });
       return { ok:true };
     }
@@ -92,6 +112,7 @@ MTAI.createChatController = function(deps){
   async function retry(){ return lastFailed ? send(lastFailed, { isRetry:true }) : { ok:false, skipped:true }; }
   function clear(){
     messages = []; lastFailed = null; cooldownUntil = 0;
+    if(historyStorage){ try{ historyStorage.removeItem(HISTORY_KEY); }catch(_e){} }
     emit('cleared');
   }
   function history(){ return messages.slice(); }
