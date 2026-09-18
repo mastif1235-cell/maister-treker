@@ -302,6 +302,41 @@ test('DeepSeek HTTP 429 returns retry-after if provided', async () => {
   assert.equal(result.retryAfterSeconds, 15);
 });
 
+test('diagnostic logs are structural, round-aware, and secret/content-free', async () => {
+  const logs = [];
+  const oldInfo = console.info;
+  const oldError = console.error;
+  console.info = function(...args){ logs.push(args.join(' ')); };
+  console.error = function(...args){ logs.push(args.join(' ')); };
+  try{
+    const fetchImpl = async function(_url, init){
+      const body = JSON.parse(init.body);
+      assert.equal(body.messages[1].content, 'PRIVATE USER ADDRESS 74');
+      return new Response(JSON.stringify({error:{code:'bad_request', type:'invalid_request_error', param:'messages', message:'private text'}}), {status:400});
+    };
+    const client = createDeepSeekClient({fetchImpl, apiKey:KEY, model:'deepseek-flash'});
+    const result = await client.chat([
+      {role:'system', content:'PRIVATE SYSTEM'},
+      {role:'user', content:'PRIVATE USER ADDRESS 74'},
+      {role:'assistant', content:'', tool_calls:[{id:'secret-call', type:'function', function:{name:'list_tickets', arguments:'{"phone":"PRIVATE"}'}}]},
+      {role:'tool', tool_call_id:'secret-call', content:'PRIVATE TOOL RESULT'}
+    ], TOOL_DEFINITIONS.map(def => ({type:'function', function:{name:def.name, description:def.description, parameters:def.inputSchema}})), {round:2});
+    assert.equal(result.code, 'HTTP_400');
+    const joined = logs.join(' ');
+    assert.match(joined, /"round":2/);
+    assert.match(joined, /"status":400/);
+    assert.match(joined, /messages_count/);
+    assert.doesNotMatch(joined, /PRIVATE|secret-call|phone/);
+    assert.doesNotMatch(joined, /sk-deepseek-test-key/);
+    assert.match(joined, /bad_request/);
+    assert.match(joined, /invalid_request_error/);
+    assert.match(joined, /messages/);
+  } finally {
+    console.info = oldInfo;
+    console.error = oldError;
+  }
+});
+
 test('DeepSeek network failure and timeout map to NETWORK', async () => {
   const throwing = async function(){ throw new Error('connection reset'); };
   assert.equal((await createDeepSeekClient({fetchImpl:throwing, apiKey:KEY}).chat([], [])).code, 'NETWORK');
