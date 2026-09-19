@@ -13,14 +13,16 @@ const OFFSET_ARG = {type:'integer', minimum:0, maximum:10000, description:'Зс�
 export const TOOL_DEFINITIONS = [
   {
     name: 'list_tickets',
-    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна фільтрувати за діапазоном дат, типом робіт, рівнем сигналу (dBm) та тегами.',
+    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна комбінувати city, date range, type, signal (dBm) та tags для analytics/count/group/unique.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{
         date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
         date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'}),
         type: {type:'string', description:'Опційний фільтр за типом робіт (наприклад: «Підключення», «Ремонт»).'},
-        signal_worse_than: {type:'number', description:'Фільтр заявок з рівнем сигналу гірше (чисельно менше або дорівнює) вказаного dBm (наприклад: -25 dBm відбере -27, -30 тощо).'},
+        city: {type:'string', minLength:1, maxLength:100, description:'Опційний фільтр за населеним пунктом; підтримує UA/RU написання та відмінки.'},
+        signal_worse_than: {type:'number', description:'Строгий фільтр сигналу нижче/гірше чисельно за вказаний dBm: -25 відбере -25.1, -26, але НЕ -25.'},
+        signal_worse_or_equal: {type:'number', description:'Включний фільтр сигналу: вказане значення або чисельно гірше; -25 відбере -25, -25.1, -26.'},
         signal_better_than: {type:'number', description:'Фільтр заявок з рівнем сигналу краще (чисельно більше або дорівнює) вказаного dBm (наприклад: -25 dBm відбере -22, -18 тощо).'},
         tags: {type:'array', items:{type:'string'}, minItems:1, maxItems:20, description:'Фільтр за тегами: підходить заявка з хоча б одним із перелічених тегів.'},
         limit: LIMIT_ARG,

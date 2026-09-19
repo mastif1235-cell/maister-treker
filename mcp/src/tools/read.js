@@ -83,6 +83,26 @@ export function createReadTools(options){
     return {total_matched: list.length, returned: list.slice(offset, offset + limit).length, offset, limit};
   }
 
+  /* Aggregates are calculated from the complete filtered set, never from the
+     paginated ticket page. They let COUNT/GROUP/UNIQUE questions remain exact
+     without sending historical notes or dozens of full rows to the model. */
+  function analytics(list){
+    const cities = Object.create(null), streets = Object.create(null);
+    for(const t of list){
+      const city = String(t.city || '').trim() || 'Населений пункт не вказано';
+      const street = String(t.street || t.address || '').trim() || 'Вулиця не вказана';
+      cities[city] = (cities[city] || 0) + 1;
+      streets[street] = (streets[street] || 0) + 1;
+    }
+    const groups = function(map){ return Object.keys(map).sort().map(function(name){ return {name, count:map[name]}; }); };
+    return {unique_cities:groups(cities), unique_streets:groups(streets)};
+  }
+
+  function resultData(list, params, extra){
+    const meta = page(list, params);
+    return Object.assign({tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit, analytics:analytics(list)}, extra || {});
+  }
+
   async function list_tickets(params){
     const data = await loadRedacted();
     if(!data.ok) return data;
@@ -91,25 +111,40 @@ export function createReadTools(options){
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
     const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
     const wantedType = params.type ? cleanStr(params.type) : null;
+    const wantedCity = params.city ? cleanStr(params.city).replace(/^в\s+/, '') : null;
+    const cityMatches = function(ticket){
+      if(!wantedCity) return true;
+      if(ticket.city) return matchScore(ticket.city, wantedCity) >= 0.72;
+      const indexed = data.searchIndex.find(function(item){ return item.id === ticket.id; });
+      const rawTokens = cleanStr(indexed && indexed.text).replace(/ё/g, 'е').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      const textStems = rawTokens.map(normalizeStem);
+      const cityTokens = wantedCity.split(/\s+/).filter(Boolean).map(normalizeStem);
+      /* Legacy fallback is token/stem based, not substring based: this keeps
+         inflected forms such as «Таромском» aligned with «Таромское» while
+         avoiding accidental matches inside a private note word. */
+      return cityTokens.length > 0 && cityTokens.every(function(stem){ return stem && textStems.includes(stem); });
+    };
 
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
+      if(!cityMatches(t)) return false;
       if(wantedTags && !wantedTags.some(function(tag){ return t.tags.includes(tag); })) return false;
       if(wantedType && cleanStr(t.type) !== wantedType) return false;
 
-      if(params.signal_worse_than != null || params.signal_better_than != null){
+      if(params.signal_worse_than != null || params.signal_worse_or_equal != null || params.signal_better_than != null){
         const sigText = String(t.signal == null ? '' : t.signal).trim();
         if(!sigText) return false;
         const numSignal = Number(sigText);
         if(!Number.isFinite(numSignal)) return false;
-        if(params.signal_worse_than != null && numSignal > params.signal_worse_than) return false;
+        if(params.signal_worse_than != null && numSignal >= params.signal_worse_than) return false;
+        if(params.signal_worse_or_equal != null && numSignal > params.signal_worse_or_equal) return false;
         if(params.signal_better_than != null && numSignal < params.signal_better_than) return false;
       }
       return true;
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:{tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+    return {ok:true, data:resultData(list, params)};
   }
 
   async function search_tickets(params){
@@ -124,7 +159,7 @@ export function createReadTools(options){
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:{query:params.query, tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+    return {ok:true, data:resultData(list, params, {query:params.query})};
   }
 
   async function list_places(params){
@@ -146,6 +181,17 @@ export function createReadTools(options){
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
 
     const places = extractPlaces(data.tickets);
+    const cityQuery = cleanStr(params.address).replace(/^в\s+/, '');
+    const cityCandidates = places.filter(function(place){ return matchScore(place.city, cityQuery) >= 0.75; });
+    if(cityCandidates.length === 1){
+      const cityName = cityCandidates[0].city;
+      let cityList = data.tickets.filter(function(t){
+        return inRange(t.date, from, to) && ((t.city && matchScore(t.city, cityName) >= 0.75) || (data.searchIndex || []).some(function(item){ return item.id === t.id && matchScore(item.text, cityName) >= 0.75; }));
+      });
+      cityList = sortNewestFirst(cityList);
+      const cityMeta = page(cityList, params);
+      return {ok:true, data:{query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:[], ambiguous:false, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}};
+    }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
     const queryText = normalizeSearch(params.address);

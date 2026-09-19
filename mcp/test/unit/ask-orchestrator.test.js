@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createAskOrchestrator, ASK_LIMITS} from '../../src/ask/orchestrator.js';
+import {createAskOrchestrator, ASK_LIMITS, ASK_SYSTEM_PROMPT} from '../../src/ask/orchestrator.js';
 import {TOOL_DEFINITIONS} from '../../src/tools/definitions.js';
 
 function scriptedGroq(steps){
@@ -347,6 +347,54 @@ test('explicit card request returns only the structured card projection', async 
   const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
   const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки', {history:[]});
   assert.equal(outcome.total,1); assert.equal(outcome.tickets.length,1); assert.equal(outcome.tickets[0].id,'t-1');
+});
+
+test('multi-turn follow-up passes prior user/assistant context and executes fresh composable reads', async () => {
+  const cases = [
+    {first:'Найди заявки с сигналом ниже -25 dBm за всё время', second:'А сколько из них в Таромском?', args:{city:'Таромское',signal_worse_than:-25}},
+    {first:'На каких улицах я был в Таромском в августе 2026?', second:'А в июле?', args:{city:'Таромское',date_from:'01.07.2026',date_to:'31.07.2026'}},
+    {first:'Куда я ездил 18 августа 2026?', second:'А только в Таромском?', args:{city:'Таромское',date_from:'18.08.2026',date_to:'18.08.2026'}}
+  ];
+  for(const scenario of cases){
+    const firstRecord = [], firstGroq = scriptedGroq([toolResponse('list_tickets','{}'), finalResponse('Первичный результат.')]);
+    const orch1 = createAskOrchestrator({groq:firstGroq, tools:stubTools(firstRecord), toolDefs:TOOL_DEFINITIONS});
+    const first = await orch1.handle(scenario.first, {history:[]});
+    assert.equal(first.ok,true);
+    const record = [], seen = [];
+    const secondGroq = {chat:async function(messages){ seen.push(messages); return seen.length===1 ? toolResponse('list_tickets',JSON.stringify(scenario.args)) : finalResponse('Оновлений результат.'); }};
+    const orch2 = createAskOrchestrator({groq:secondGroq, tools:stubTools(record), toolDefs:TOOL_DEFINITIONS});
+    const second = await orch2.handle(scenario.second, {history:[{role:'user',content:scenario.first},{role:'assistant',content:first.answer}]});
+    assert.equal(second.ok,true);
+    assert.deepEqual(record[0][1],scenario.args);
+    assert.equal(seen[0].some(function(m){return m.role==='user' && m.content===scenario.first;}),true);
+    assert.equal(seen[0].some(function(m){return m.role==='assistant' && m.content===first.answer;}),true);
+  }
+});
+
+test('standalone follow-up resets stale city and signal filters', async () => {
+  const record = [], seen = [];
+  const groq = {chat:async function(messages){ seen.push(messages); return seen.length===1 ? toolResponse('list_tickets','{"date_from":"18.08.2026","date_to":"18.08.2026"}') : finalResponse('Заявки за 18 серпня.'); }};
+  const orch = createAskOrchestrator({groq, tools:stubTools(record), toolDefs:TOOL_DEFINITIONS});
+  const outcome = await orch.handle('Какие заявки были 18 августа 2026?', {history:[
+    {role:'user',content:'Найди плохие сигналы в Таромском'},
+    {role:'assistant',content:'Найдено 6 заявок в Таромском.'}
+  ]});
+  assert.equal(outcome.ok,true);
+  assert.deepEqual(record[0][1],{date_from:'18.08.2026',date_to:'18.08.2026'});
+  assert.equal(seen[0].some(function(m){return m.role==='user' && /плохие сигналы/.test(m.content);}),true);
+});
+
+test('follow-up re-queries full dataset rather than displayed subset and does not create cards', async () => {
+  const record = [], groq = scriptedGroq([toolResponse('list_tickets','{"city":"Таромское","signal_worse_than":-25}'), finalResponse('У Таромському знайдено 2 заявки.')]);
+  const tools = stubTools(record); tools.list_tickets = async function(args){ record.push(['list_tickets',args]); return {ok:true,data:{tickets:[{id:'page-only'}],total_matched:2,returned:1,limit:1}}; };
+  const outcome = await createAskOrchestrator({groq,tools,toolDefs:TOOL_DEFINITIONS}).handle('А сколько из них в Таромском?',{history:[{role:'user',content:'Найди 75 заявок с плохим сигналом'},{role:'assistant',content:'Показана только первая страница из 75.'}]});
+  assert.equal(outcome.total,2); assert.deepEqual(record[0][1],{city:'Таромское',signal_worse_than:-25}); assert.deepEqual(outcome.tickets,[]);
+});
+
+test('tool-selection guidance distinguishes city analytics from street address lookup', () => {
+  assert.match(ASK_SYSTEM_PROMPT, /city-only analytics\/search\/count\/group\/unique.*list_tickets/);
+  assert.match(ASK_SYSTEM_PROMPT, /Конкретна вулиця\/будинок\/адреса.*find_tickets_by_address/);
+  assert.match(ASK_SYSTEM_PROMPT, /follow-up.*list_tickets/);
 });
 
 test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {

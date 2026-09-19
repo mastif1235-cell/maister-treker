@@ -106,6 +106,16 @@ test('list_tickets: pagination, date range, tag, type and dBm signal filters', a
   const better = toolData((await toolCall(app, 'list_tickets', {signal_better_than:-60})).result);
   assert.ok(better.tickets.some(function(t){ return t.id === 't-003'; })); // t-003 has signal -52
 
+  const strictRows = [{id:'strict-24', date:'01.01.2026', time:'10:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-24'})},
+    {id:'strict-25', date:'01.01.2026', time:'10:01', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-25'})},
+    {id:'strict-251', date:'01.01.2026', time:'10:02', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-25.1'})}];
+  const strictPipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:strictRows, shifts:[]}}; }});
+  const strictTool = createReadTools({data:strictPipeline});
+  const strict = await strictTool.list_tickets({signal_worse_than:-25});
+  assert.deepEqual(strict.data.tickets.map(function(t){ return t.id; }), ['strict-251']);
+  const inclusive = await strictTool.list_tickets({signal_worse_or_equal:-25});
+  assert.deepEqual(inclusive.data.tickets.map(function(t){ return t.id; }).sort(), ['strict-25','strict-251']);
+
   const tagged = toolData((await toolCall(app, 'list_tickets', {tags:['ремонт']})).result);
   assert.deepEqual(tagged.tickets.map(function(t){ return t.id; }), ['t-001']);
 
@@ -140,6 +150,60 @@ test('legacy alternate street is searchable through GAS row mapper and READ addr
   const result = await tool.find_tickets_by_address({address:'Місто Тест Старая 44'});
   assert.equal(result.data.total_matched, 1);
   assert.equal(result.data.tickets[0].id, 'legacy-address-1');
+});
+
+test('city-only address query returns all streets without ambiguity', async () => {
+  const rows = ['Мостова','Берегова','Піщана'].map(function(street, i){ return {id:'city-'+i, date:'01.08.2026', time:'10:0'+i, content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Таромське', street:street, house:String(20+i)})}; });
+  rows.push({id:'other-city', date:'01.08.2026', time:'12:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Миколаївка 2', street:'Центральна', house:'1'})});
+  const pipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:rows, shifts:[]}}; }});
+  const result = await createReadTools({data:pipeline}).find_tickets_by_address({address:'в Таромском'});
+  assert.equal(result.data.total_matched, 3);
+  assert.equal(result.data.ambiguous, false);
+});
+
+test('analytics aggregates use the complete set, not the returned page', async () => {
+  const rows = Array.from({length:75}, function(_, i){ return {id:'bulk-'+i, date:'01.08.2026', time:'10:00', content:'private note '.repeat(100), sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:i%2?'Таромське':'Карнаухівка', street:'Вулиця '+(i%5), house:String(i), signal:i%2?'-26':'-20'})}; });
+  const pipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:rows, shifts:[]}}; }});
+  const result = await createReadTools({data:pipeline}).list_tickets({signal_worse_than:-25, limit:8});
+  assert.equal(result.data.total_matched, 37);
+  assert.equal(result.data.returned, 8);
+  assert.equal(result.data.analytics.unique_cities.find(function(x){ return x.name === 'Таромське'; }).count, 37);
+  assert.equal(result.data.analytics.unique_streets.reduce(function(s,x){ return s+x.count; },0), 37);
+  assert.ok(!JSON.stringify(result).includes('private note'));
+});
+
+test('list_tickets composes city, signal and date filters including legacy rows', async () => {
+  const rows = [
+    {id:'c1',date:'10.04.2026',time:'10:00',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-27'})},
+    {id:'c2',date:'10.04.2026',time:'10:01',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-24'})},
+    {id:'c3',date:'10.04.2026',time:'10:02',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-32'})},
+    {id:'c4',date:'10.04.2026',time:'10:03',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Карнаухівка',street:'Мостова',signal:'-30'})},
+    {id:'legacy-city',date:'10.04.2026',time:'10:04',content:'Таромское ул. Пищана 16 красный LOS сигнал -31 после ремонта сигнал -24',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({})},
+    {id:'structured-other-note-city',date:'10.04.2026',time:'10:05',content:'',sum:0,tags:[],backupNote:'Таромское в приватной заметке',fullDataJson:JSON.stringify({city:'Дніпро',street:'Центральна',signal:'-31'})}
+  ];
+  const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:rows,shifts:[]}};}});
+  const tools = createReadTools({data:pipeline});
+  const result = await tools.list_tickets({city:'Таромское',signal_worse_than:-25,date_from:'01.04.2026',date_to:'30.04.2026'});
+  assert.equal(result.data.total_matched,3);
+  assert.deepEqual(result.data.tickets.map(function(t){return t.id;}).sort(),['c1','c3','legacy-city'].sort());
+  assert.equal(result.data.analytics.unique_cities.reduce(function(s,x){return s+x.count;},0),3);
+  assert.ok(!result.data.tickets.some(function(t){return t.id === 'structured-other-note-city';}));
+  for(const city of ['Таромском','Таромське']){
+    const legacyOnly = await tools.list_tickets({city:city,signal_worse_than:-25,date_from:'01.04.2026',date_to:'30.04.2026'});
+    assert.ok(legacyOnly.data.tickets.some(function(t){return t.id === 'legacy-city';}), city);
+    assert.ok(!legacyOnly.data.tickets.some(function(t){return t.id === 'c4';}), city);
+  }
+});
+
+test('pagination returns disjoint complete pages for 75 rows', async () => {
+  const rows = Array.from({length:75},function(_,i){return {id:'page-'+i,date:'01.08.2026',time:'10:00',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Вулиця '+i,signal:'-30'})};});
+  const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:rows,shifts:[]}};}});
+  const tools = createReadTools({data:pipeline});
+  const a = await tools.list_tickets({signal_worse_than:-25,limit:50});
+  const b = await tools.list_tickets({signal_worse_than:-25,limit:50,offset:50});
+  const ids = a.data.tickets.concat(b.data.tickets).map(function(t){return t.id;});
+  assert.equal(a.data.total_matched,75); assert.equal(b.data.returned,25);
+  assert.equal(new Set(ids).size,75);
 });
 
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
