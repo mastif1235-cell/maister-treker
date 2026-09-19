@@ -391,10 +391,11 @@ test('follow-up re-queries full dataset rather than displayed subset and does no
   assert.equal(outcome.total,2); assert.deepEqual(record[0][1],{city:'Таромское',signal_worse_than:-25}); assert.deepEqual(outcome.tickets,[]);
 });
 
-test('tool-selection guidance distinguishes city analytics from street address lookup', () => {
-  assert.match(ASK_SYSTEM_PROMPT, /city-only analytics\/search\/count\/group\/unique.*list_tickets/);
-  assert.match(ASK_SYSTEM_PROMPT, /Конкретна вулиця\/будинок\/адреса.*find_tickets_by_address/);
-  assert.match(ASK_SYSTEM_PROMPT, /follow-up.*list_tickets/);
+test('tool-selection guidance: query_tickets primary, address lookup preserved, standalone vs follow-up', () => {
+  assert.match(ASK_SYSTEM_PROMPT, /ПЕРШОЮ ЧЕРГОЮ query_tickets/, 'smart structured engine is the primary search tool');
+  assert.match(ASK_SYSTEM_PROMPT, /частине слово достатньо/, 'address lookup by partial word stays available');
+  assert.match(ASK_SYSTEM_PROMPT, /matched\/total_matched\/item_totals/, 'counts come from authoritative metadata, not displayed rows');
+  assert.match(ASK_SYSTEM_PROMPT, /НОВЕ самостійне питання.*НЕ успадковує/, 'standalone queries never inherit stale filters');
 });
 
 test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {

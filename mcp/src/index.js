@@ -231,8 +231,12 @@ export function createApp(env, deps){
     /* Обмежена історія поточної AI-сесії з PWA (follow-up «а за август?»,
        «там» тощо). Тільки user/assistant-рядки — див. sanitizeHistory. */
     const history = Array.isArray(body.history) ? body.history : [];
+    /* Referent context: структуровані заявки з ПОПЕРЕДНЬОЇ відповіді — щоб
+       «відкрий цю заявку» мало реальний обʼєкт дії без повторного пошуку.
+       Тільки безпечна проєкція (див. normalizeContextTickets). */
+    const contextTickets = body && body.context && Array.isArray(body.context.tickets) ? body.context.tickets : [];
     let outcome;
-    try{ outcome = await targetAsk.handle(question, {history: history}); }
+    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
@@ -263,6 +267,10 @@ export function createApp(env, deps){
        (безпечна проєкція без URL; фронтенд відкриває лише свій локальний
        список через власну навігацію). Відсутні, якщо заявок не знайдено. */
     if(Array.isArray(outcome.tickets) && outcome.tickets.length) okPayload.tickets = outcome.tickets;
+    /* Локальний пошук мережевих точок (ФОБ/муфта/вузол): точки живуть ЛИШЕ
+       на пристрої, тож Worker повертає структурований запит, а PWA виконує
+       його по власних локальних даних і показує дію «На карті». */
+    if(outcome.localQuery && typeof outcome.localQuery === 'object') okPayload.localQuery = outcome.localQuery;
     return jsonResponse(200, okPayload);
   }
 
