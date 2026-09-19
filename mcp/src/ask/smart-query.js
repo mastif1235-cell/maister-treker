@@ -18,7 +18,7 @@
    - nothing here ever returns raw private notes, phones or coordinates to
      the caller: rows are compact projections only. */
 
-import {cleanStr, normalizeStem, matchScore, normalizeHouse} from './address.js';
+import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts} from './address.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 
 /* ---------- normalization ---------- */
@@ -451,17 +451,27 @@ export function runSmartQuery(ctx, params){
 
     const reasons = [];
     const legacyText = legacyTextById.get(String(t.id)) || '';
+    /* v91.45 legacy/restored addresses: structured fields stay authoritative;
+       a deterministic parse of the ticket's own address (or the legacy
+       «Місто/Адреса» lines) fills ONLY the missing parts — the same semantics
+       the app's ordinary text search relies on. One parsed view is used by
+       every filter, group and aggregate below, so count/list never diverge. */
+    const addr = effectiveAddressParts(t, legacyText);
+    const tAddr = {city: addr.city, street: addr.street, house: addr.house};
 
-    const cityMatch = cityMatches(t, wantedCity, legacyText);
+    const cityMatch = cityMatches(tAddr, wantedCity, legacyText);
     if(!cityMatch.ok) continue;
-    if(wantedCity) reasons.push('місто:' + (cityMatch.via === 'legacy' ? 'legacy текст' : 'структурне'));
+    if(wantedCity){
+      const via = addr.via.city === 'legacy' ? 'legacy адреса' : (cityMatch.via === 'legacy' ? 'legacy текст' : 'структурне');
+      reasons.push('місто:' + via);
+    }
 
     if(wantedStreet){
-      const st = streetMatches(t, wantedStreet);
+      const st = streetMatches(tAddr, wantedStreet);
       if(!st.ok) continue;
-      reasons.push('вулиця:структурна');
+      reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
     }
-    if(wantedHouse && normalizeHouse(t.house) !== wantedHouse) continue;
+    if(wantedHouse && normalizeHouse(addr.house) !== wantedHouse) continue;
     if(params.apartment != null && cleanStr(t.apartment) !== cleanStr(params.apartment)) continue;
     if(wantedType && cleanStr(t.type) !== wantedType) continue;
     if(paymentTarget && cleanStr(t.payment) !== paymentTarget) continue;
@@ -527,7 +537,7 @@ export function runSmartQuery(ctx, params){
     if(t.has_geo) geoWithCount.with_geo++;
 
     matched.push(t);
-    reasonsFor.set(t.id, {reasons, coworkerEvidence, matchedItemLabels});
+    reasonsFor.set(t.id, {reasons, coworkerEvidence, matchedItemLabels, addr});
   }
 
   const sorted = sortNewestFirst(matched);
@@ -679,9 +689,9 @@ export function runSmartQuery(ctx, params){
         ord:offset + idx + 1,
         id:String(t.id).slice(0, 64),
         date:t.date, time:t.time,
-        city:String(t.city || '').slice(0, 80),
-        street:String(t.street || '').slice(0, 100),
-        house:String(t.house || '').slice(0, 16),
+        city:String(info.addr ? info.addr.city : (t.city || '')).slice(0, 80),
+        street:String(info.addr ? info.addr.street : (t.street || '')).slice(0, 100),
+        house:String(info.addr ? info.addr.house : (t.house || '')).slice(0, 16),
         address:compactAddress(t),
         type:String(t.type || '').slice(0, 80),
         sum:Number(t.sum) || 0,
@@ -694,8 +704,9 @@ export function runSmartQuery(ctx, params){
     /* full-set analytics (independent of the page above) */
     const cities = Object.create(null), streets = Object.create(null);
     for(const t of list){
-      const city = String(t.city || '').trim() || '(без міста)';
-      const street = String(t.street || '').trim() || '(без вулиці)';
+      const a = (args.reasonsFor.get(t.id) || {}).addr || effectiveAddressParts(t, '');
+      const city = a.city || '(без міста)';
+      const street = a.street || '(без вулиці)';
       cities[city] = (cities[city] || 0) + 1;
       streets[street] = (streets[street] || 0) + 1;
     }
@@ -724,15 +735,25 @@ export function runSmartQuery(ctx, params){
       const info = args.reasonsFor.get(t.id) || {};
       switch(args.groupBy){
         case 'city': {
-          let key = String(t.city || '').trim();
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          let key = a.city;
           if(!key && wantedCity && cityMatches(t, wantedCity, legacyTextById.get(String(t.id)) || '').via === 'legacy'){
-            key = wantedCity + ' (legacy)';
+            key = wantedCity;
           }
+          if(key && a.via.city === 'legacy') key += ' (legacy)';
           add(key || '(без міста)', t);
           break;
         }
-        case 'street': add(String(t.street || '').trim() || '(без структурованої вулиці)', t); break;
-        case 'house': add(String(t.house || '').trim() || '(без номера)', t); break;
+        case 'street': {
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          add(a.street || '(без структурованої вулиці)', t);
+          break;
+        }
+        case 'house': {
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          add(a.house || '(без номера)', t);
+          break;
+        }
         case 'date': add(String(t.date || ''), t); break;
         case 'month': {
           const key = parseDateKey(t.date);

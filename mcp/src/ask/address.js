@@ -295,3 +295,73 @@ export function resolveAddress(queryStr, places){
     confidence: Math.round(top.score * 100) / 100
   };
 }
+
+/* ---------- legacy / restored address resolution (v91.45) ----------
+   Старі відновлені заявки часто мають лише текстове поле address (або рядки
+   «️ Місто:» / «📍 Адреса:» у legacy content), без структурованих
+   city/street/house. Звичайний пошук застосунку знаходить їх текстово; щоб
+   AI-рушій не розходився з ним, тут — спільний ДЕТЕРМІНОВАНИЙ розбір такого
+   тексту на частини. Жодних хардкодів назв: лише синтаксис адреси.
+   Structured-поля завжди пріоритетні — цей розбір лише заповнює ВІДСУТНІ. */
+
+const LEGACY_STREET_PREFIX_RE = /^(?:вул|ул|просп|пр|пров|пер|бул|площ|майдан|шосе|спуск|узвіз|тракт|алея)\b/i;
+
+export function legacyAddressFromText(text){
+  const s = String(text || '');
+  if(!s) return '';
+  const cityM = s.match(/(?:🏙️\s*)?(?:місто|город)\s*[:：]\s*([^\n📍📅]+)/i);
+  const addrM = s.match(/(?:📍\s*)?адрес(?:а|у)?\s*[:：]\s*([^\n📅📞👤]+)/i);
+  const city = cityM ? cityM[1].trim() : '';
+  const addr = addrM ? addrM[1].trim() : '';
+  if(city && addr) return city + ', ' + addr;
+  return addr || city || '';
+}
+
+export function parseLegacyAddress(text){
+  let s = String(text || '').replace(/\s+/g, ' ').trim();
+  if(!s) return null;
+  let city = '';
+  const comma = s.indexOf(',');
+  if(comma > 0){
+    const head = s.slice(0, comma).trim();
+    const tail = s.slice(comma + 1).trim();
+    if(tail && head && !LEGACY_STREET_PREFIX_RE.test(head)){
+      city = head;
+      s = tail;
+    }
+  }
+  let street = s.replace(/,+$/, '').trim();
+  let house = '';
+  const hm = street.match(/^(.*?)[,\s]+(\d{1,4}(?:[\/-]\d{1,4})?[а-яa-z]?)$/i);
+  if(hm && hm[1].trim()){
+    street = hm[1].trim().replace(/,+$/, '').trim();
+    house = hm[2];
+  }
+  if(!city && !street) return null;
+  return {city: city, street: street, house: house};
+}
+
+/* Ефективні адресні частини заявки: structured пріоритетні, legacy-розбір
+   заповнює лише порожні. Повертає {city, street, house, via:{...}}, де via
+   позначає походження кожної частини ('structured' | 'legacy' | null). */
+export function effectiveAddressParts(ticket, legacyText){
+  const t = ticket || {};
+  const sCity = String(t.city || '').trim();
+  const sStreet = String(t.street || '').trim();
+  const sHouse = String(t.house || '').trim();
+  let parts = null;
+  if(!sCity || !sStreet || !sHouse){
+    const source = String(t.address || '').trim() || legacyAddressFromText(legacyText);
+    parts = parseLegacyAddress(source);
+  }
+  return {
+    city: sCity || (parts && parts.city) || '',
+    street: sStreet || (parts && parts.street) || '',
+    house: sHouse || (parts && parts.house) || '',
+    via: {
+      city: sCity ? 'structured' : (parts && parts.city ? 'legacy' : null),
+      street: sStreet ? 'structured' : (parts && parts.street ? 'legacy' : null),
+      house: sHouse ? 'structured' : (parts && parts.house ? 'legacy' : null)
+    }
+  };
+}

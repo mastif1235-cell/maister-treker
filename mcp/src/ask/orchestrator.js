@@ -19,6 +19,7 @@
 
 import {validateAgainstSchema} from '../tools/validate.js';
 import {dateHintsLine, resolveDateRanges} from './date-resolver.js';
+import {renumberSequentialLists} from './format.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -397,7 +398,10 @@ export function createAskOrchestrator(options){
         }
         continue;
       }
-      const answer = String(response.content || '').trim().slice(0, limits.maxAnswerChars);
+      /* v91.45: deterministic backstop for list numbering — the model may
+         repeat «1.» for every item; the formatter restores 1..N without ever
+         introducing technical ids. */
+      const answer = renumberSequentialLists(String(response.content || '').trim().slice(0, limits.maxAnswerChars));
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
       /* The last successful ticket-tool result is the active result for this
          final model answer. Do not take Math.max across unrelated calls:
