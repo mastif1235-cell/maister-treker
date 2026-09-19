@@ -20,6 +20,7 @@ export const TOOL_DEFINITIONS = [
         date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону, ДД.ММ.РРРР (включно).'}),
         date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону, ДД.ММ.РРРР (включно).'}),
         type: {type:'string', description:'Опційний фільтр за типом робіт (наприклад: «Підключення», «Ремонт»).'},
+        city: {type:'string', minLength:1, maxLength:100, description:'Опційний фільтр за населеним пунктом; підтримує UA/RU написання та відмінки.'},
         signal_worse_than: {type:'number', description:'Строгий фільтр сигналу нижче/гірше чисельно за вказаний dBm: -25 відбере -25.1, -26, але НЕ -25.'},
         signal_worse_or_equal: {type:'number', description:'Включний фільтр сигналу: вказане значення або чисельно гірше; -25 відбере -25, -25.1, -26.'},
         signal_better_than: {type:'number', description:'Фільтр заявок з рівнем сигналу краще (чисельно більше або дорівнює) вказаного dBm (наприклад: -25 dBm відбере -22, -18 тощо).'},

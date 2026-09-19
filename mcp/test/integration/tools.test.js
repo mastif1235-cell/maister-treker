@@ -172,6 +172,33 @@ test('analytics aggregates use the complete set, not the returned page', async (
   assert.ok(!JSON.stringify(result).includes('private note'));
 });
 
+test('list_tickets composes city, signal and date filters including legacy rows', async () => {
+  const rows = [
+    {id:'c1',date:'10.04.2026',time:'10:00',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-27'})},
+    {id:'c2',date:'10.04.2026',time:'10:01',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-24'})},
+    {id:'c3',date:'10.04.2026',time:'10:02',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-32'})},
+    {id:'c4',date:'10.04.2026',time:'10:03',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Карнаухівка',street:'Мостова',signal:'-30'})},
+    {id:'legacy-city',date:'10.04.2026',time:'10:04',content:'Таромское ул. Пищана 16 красный LOS сигнал -31 после ремонта сигнал -24',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({})}
+  ];
+  const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:rows,shifts:[]}};}});
+  const tools = createReadTools({data:pipeline});
+  const result = await tools.list_tickets({city:'Таромское',signal_worse_than:-25,date_from:'01.04.2026',date_to:'30.04.2026'});
+  assert.equal(result.data.total_matched,3);
+  assert.deepEqual(result.data.tickets.map(function(t){return t.id;}).sort(),['c1','c3','legacy-city'].sort());
+  assert.equal(result.data.analytics.unique_cities.reduce(function(s,x){return s+x.count;},0),3);
+});
+
+test('pagination returns disjoint complete pages for 75 rows', async () => {
+  const rows = Array.from({length:75},function(_,i){return {id:'page-'+i,date:'01.08.2026',time:'10:00',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Вулиця '+i,signal:'-30'})};});
+  const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:rows,shifts:[]}};}});
+  const tools = createReadTools({data:pipeline});
+  const a = await tools.list_tickets({signal_worse_than:-25,limit:50});
+  const b = await tools.list_tickets({signal_worse_than:-25,limit:50,offset:50});
+  const ids = a.data.tickets.concat(b.data.tickets).map(function(t){return t.id;});
+  assert.equal(a.data.total_matched,75); assert.equal(b.data.returned,25);
+  assert.equal(new Set(ids).size,75);
+});
+
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
   const app = await makeApp();
   const oleg = toolData((await toolCall(app, 'get_shifts', {coworker:'Олег'})).result);

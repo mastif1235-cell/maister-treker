@@ -111,9 +111,18 @@ export function createReadTools(options){
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
     const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
     const wantedType = params.type ? cleanStr(params.type) : null;
+    const wantedCity = params.city ? cleanStr(params.city).replace(/^в\s+/, '') : null;
+    const cityMatches = function(ticket){
+      if(!wantedCity) return true;
+      if(ticket.city && matchScore(ticket.city, wantedCity) >= 0.72) return true;
+      const indexed = data.searchIndex.find(function(item){ return item.id === ticket.id; });
+      const text = cleanStr(indexed && indexed.text).replace(/ё/g, 'е');
+      return text.includes(wantedCity) || (wantedCity === 'таромское' && text.includes('таромськ')) || (wantedCity === 'таромське' && text.includes('таромск'));
+    };
 
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
+      if(!cityMatches(t)) return false;
       if(wantedTags && !wantedTags.some(function(tag){ return t.tags.includes(tag); })) return false;
       if(wantedType && cleanStr(t.type) !== wantedType) return false;
 
