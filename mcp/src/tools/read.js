@@ -7,9 +7,14 @@ import {
   ticketMatchesQuery, parseDateKey, searchableTextFromGasRow
 } from '../gas/mappers.js';
 import {
-  extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore
+  extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore,
+  placeIdentity, placeTokens, placeCompatible
 } from '../ask/address.js';
-import {runSmartQuery, buildCatalogData, itemAttributesMatch} from '../ask/smart-query.js';
+import {
+  buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts,
+  streetFilterAccepts, resolveCityFromText, distinctCanonicalCities
+} from '../ask/canonical.js';
+import {runSmartQuery, buildCatalogData, itemAttributesMatch, ticketDateKey, sortNewestFirst} from '../ask/smart-query.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -46,16 +51,78 @@ export function calculateReportTotals(list){
   return {count: tickets.length, total, cashTotal, cardTotal};
 }
 
-function sortNewestFirst(list){
-  return list.slice().sort(function(a, b){
-    const ka = parseDateKey(a.date) || '';
-    const kb = parseDateKey(b.date) || '';
-    if(ka !== kb) return ka < kb ? 1 : -1;
-    return String(a.time || '').localeCompare(String(b.time || ''));
-  });
-}
+/* v91.48: ONE shared ordering for every READ tool: the smart-query engine's
+   sortNewestFirst (date desc, then time desc, legacy-tolerant ticket date,
+   deterministic id tie-break). It used to be duplicated here with an ascending
+   time inside the day, which ordered the same list differently from
+   query_tickets — now there is a single implementation to drift from. */
+
 
 function round1(value){ return Math.round(value * 10) / 10; }
+
+/* v91.48: places built from the CANONICAL effective address of every ticket
+   (same resolver as query_tickets/list_tickets). Output shape is identical
+   to address.js extractPlaces, so callers do not change — only now one real
+   place never splits into «Миколаївка» + «Миколаївка 1» + «Миколаївка1». */
+function buildCanonicalPlaces(tickets, searchIndex){
+  const catalog = buildCanonicalCatalog(tickets);
+  const legacyTextById = new Map((searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
+  const byCity = new Map();
+  for(const t of (tickets || [])){
+    const legacyText = legacyTextById.get(String(t.id)) || '';
+    const addr = resolveCanonicalAddress(t, legacyText, catalog);
+    const city = String(addr.city || '').trim();
+    const street = String(addr.street || '').trim();
+    if(!city && !street) continue;
+    /* One real place may appear under several spellings («Миколаївка 1» /
+       «Миколаївка1»); they merge into ONE entry only when the spellings are
+       provably the same name (identity + surface compatibility). Two really
+       different places that merely share a stem stay separate entries. */
+    let cityLabel = null;
+    for(const existing of byCity.keys()){
+      if(existing === '(не вказано)') continue;
+      if(placeIdentity(existing) === placeIdentity(city) && placeCompatible(existing, city)){ cityLabel = existing; break; }
+    }
+    if(!cityLabel) cityLabel = city || '(не вказано)';
+    if(!byCity.has(cityLabel)) byCity.set(cityLabel, new Map());
+    const streets = byCity.get(cityLabel);
+    if(street){
+      let streetKey = null;
+      for(const existing of streets.keys()){
+        if(placeIdentity(existing) === placeIdentity(street) && placeCompatible(existing, street)){ streetKey = existing; break; }
+      }
+      if(!streetKey) streetKey = street;
+      if(!streets.has(streetKey)) streets.set(streetKey, {street: street, houses: new Set(), count: 0, variants: new Set()});
+      const entry = streets.get(streetKey);
+      /* ticket_count counts TICKETS; `houses` is the set of distinct house
+         values of the street. One house may hold several tickets, so the
+         navigator's house list is never a ticket count. */
+      entry.count++;
+      entry.variants.add(street);
+      if(addr.house) entry.houses.add(String(addr.house).trim());
+    }
+  }
+  const result = [];
+  for(const [city, streets] of byCity){
+    const list = [];
+    let cityCount = 0;
+    for(const [, entry] of streets){
+      const houses = Array.from(entry.houses).sort(function(a, b){
+        const na = parseInt(a, 10), nb = parseInt(b, 10);
+        if(!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+        return a.localeCompare(b, 'uk');
+      });
+      cityCount += entry.count;
+      list.push({street: entry.street, ticket_count: entry.count, houses, raw_variants: Array.from(entry.variants)});
+    }
+    result.push({
+      city: city === '(не вказано)' ? '' : city,
+      ticket_count: cityCount,
+      streets: list.sort(function(a, b){ return b.ticket_count - a.ticket_count || a.street.localeCompare(b.street, 'uk'); })
+    });
+  }
+  return result.sort(function(a, b){ return b.ticket_count - a.ticket_count || a.city.localeCompare(b.city, 'uk'); });
+}
 
 export function createReadTools(options){
   const gas = options.gas;
@@ -73,8 +140,28 @@ export function createReadTools(options){
       snapshotCache: result.cache || null};
   }
 
+  /* v91.48: a question about a name WITHOUT its part number spans every
+     numbered part of that name. The set stays complete, but the parts are
+     reported (exactly like query_tickets does) so the model asks the master to
+     pick one instead of presenting several settlements as one place. */
+  function bareStemParts(list, legacyTextById, catalog){
+    const addresses = (list || []).map(function(ticket){
+      return resolveCanonicalAddress(ticket, legacyTextById.get(String(ticket.id)) || '', catalog);
+    });
+    const parts = distinctCanonicalCities(addresses);
+    return parts.length > 1 ? parts : [];
+  }
+
+  /* v91.48: ONE legacy-tolerant semantics for TICKET-side dates in every READ
+     search path — the same ticketDateKey the smart-query engine uses
+     («5.7.2026» → 2026-07-05). Without it query_tickets saw a legacy row while
+     list_tickets/search_tickets/find_tickets_by_address silently lost it.
+     The USER's date_from/date_to stay strict (parseDateKey above, validated
+     per tool): only ticket data is parsed leniently, never user input.
+     With NO filter at all a row is never dropped for its date format. */
   function inRange(dateStr, from, to){
-    const key = parseDateKey(dateStr);
+    if(!from && !to) return true;
+    const key = ticketDateKey(dateStr);
     if(!key) return false;
     if(from && key < from) return false;
     if(to && key > to) return false;
@@ -115,18 +202,16 @@ export function createReadTools(options){
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
     const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
     const wantedType = params.type ? cleanStr(params.type) : null;
-    const wantedCity = params.city ? cleanStr(params.city).replace(/^в\s+/, '') : null;
+    const wantedCity = params.city ? cleanStr(params.city).replace(/^(?:в|у|во)\s+/, '') : null;
+    /* v91.48: the SAME canonical resolver query_tickets uses, so a count and
+       a list can never disagree about which tickets belong to a city. */
+    const catalog = buildCanonicalCatalog(data.tickets);
+    const legacyTextById = new Map((data.searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
     const cityMatches = function(ticket){
       if(!wantedCity) return true;
-      if(ticket.city) return matchScore(ticket.city, wantedCity) >= 0.72;
-      const indexed = data.searchIndex.find(function(item){ return item.id === ticket.id; });
-      const rawTokens = cleanStr(indexed && indexed.text).replace(/ё/g, 'е').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-      const textStems = rawTokens.map(normalizeStem);
-      const cityTokens = wantedCity.split(/\s+/).filter(Boolean).map(normalizeStem);
-      /* Legacy fallback is token/stem based, not substring based: this keeps
-         inflected forms such as «Таромском» aligned with «Таромское» while
-         avoiding accidental matches inside a private note word. */
-      return cityTokens.length > 0 && cityTokens.every(function(stem){ return stem && textStems.includes(stem); });
+      const legacyText = legacyTextById.get(String(ticket.id)) || '';
+      const addr = resolveCanonicalAddress(ticket, legacyText, catalog);
+      return cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity);
     };
 
     let list = data.tickets.filter(function(t){
@@ -146,9 +231,15 @@ export function createReadTools(options){
       }
       return true;
     });
+    const bareParts = (wantedCity && !placeTokens(wantedCity).digits.length)
+      ? bareStemParts(list, legacyTextById, catalog) : [];
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:resultData(list, params)};
+    return {ok:true, data:resultData(list, params, bareParts.length ? {
+      ambiguous: true,
+      candidates: bareParts.map(function(city){ return {city}; }),
+      notes: ['Запит без номера частини охоплює кілька населених пунктів: ' + bareParts.join(', ') + '. Уточніть, який саме потрібен.']
+    } : {})};
   }
 
   async function search_tickets(params){
@@ -179,25 +270,55 @@ export function createReadTools(options){
         (ticket.additionalWork || []).flatMap(function(w){return [w.desc,w.sum];}));
       return values.some(function(value){return cleanStr(value).includes(q);}) || ticketMatchesQuery(ticket, term);
     };
+    /* v91.48: when the free-text query NAMES a city (the user's own catalog
+       decides that, unambiguously), the tool resolves it exactly like
+       query_tickets/list_tickets — same identity filters, same digit guard,
+       same "bare name = all its numbered parts, flagged ambiguous" rule — so
+       the answer never depends on which READ tool the model happened to pick.
+       A bare name is resolved TEXTUALLY (no row is attributed to a part). */
+    const catalog = buildCanonicalCatalog(data.tickets);
+    const legacyTextById = new Map((data.searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
+    const queryCity = params.query ? resolveCityFromText(params.query, catalog) : '';
+    const queryCityTokens = queryCity ? placeTokens(queryCity) : null;
+    const queryCityIsBare = !!(queryCityTokens && !queryCityTokens.digits.length);
+    /* NOTE: when the query names no city, the answer stays EXACTLY the app's
+       own list predicate (mcp/test/integration/parity.test.js) — no extra
+       legacy-text widening here. Address phrases such as «Миколаївка
+       виноградная» belong to find_tickets_by_address, which resolves them
+       from the address itself. */
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
       if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) return false;
       if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) return false;
       if(params.payment && cleanStr(t.payment) !== cleanStr(params.payment)) return false;
-      if(params.query && !ticketMatchesQuery(t, params.query)) return false;
+      if(params.query){
+        const legacyText = legacyTextById.get(String(t.id)) || '';
+        const addr = resolveCanonicalAddress(t, legacyText, catalog);
+        const hit = queryCity
+          ? (cityFilterAccepts(addr.city, queryCity, legacyText) || cityStemAccepts(addr.city, queryCity))
+          : ticketMatchesQuery(t, params.query);
+        if(!hit) return false;
+      }
       if(terms.length && !terms.every(function(term){ return extendedTermMatch(t, term); })) return false;
       if(itemConditions.length && !itemConditions.every(function(condition){ return itemMatch(t, condition); })) return false;
       return true;
     });
+    /* A question about a name WITHOUT its part number legitimately spans every
+       numbered part of that name; the set stays complete and is flagged
+       exactly like query_tickets does (never silently collapsed into one
+       part, never silently widened past the name). */
+    const bareParts = queryCityIsBare ? bareStemParts(list, legacyTextById, catalog) : [];
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:resultData(list, params, {query:params.query})};
+    return {ok:true, data:resultData(list, params, Object.assign({query:params.query, ambiguous:bareParts.length > 0},
+      bareParts.length ? {candidates: bareParts.map(function(city){ return {city}; }),
+        notes: ['Запит без номера частини охоплює кілька населених пунктів: ' + bareParts.join(', ') + '. Уточніть, який саме потрібен.']} : {}))};
   }
 
   async function list_places(params){
     const data = await loadRedacted();
     if(!data.ok) return data;
-    let places = extractPlaces(data.tickets);
+    let places = buildCanonicalPlaces(data.tickets, data.searchIndex);
     if(params && params.city){
       const qCity = cleanStr(params.city);
       places = places.filter(function(p){ return cleanStr(p.city).includes(qCity); });
@@ -212,17 +333,43 @@ export function createReadTools(options){
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
 
-    const places = extractPlaces(data.tickets);
-    const cityQuery = cleanStr(params.address).replace(/^в\s+/, '');
-    const cityCandidates = places.filter(function(place){ return matchScore(place.city, cityQuery) >= 0.75; });
+    const places = buildCanonicalPlaces(data.tickets, data.searchIndex);
+    const catalog = buildCanonicalCatalog(data.tickets);
+    const legacyTextById = new Map((data.searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
+    const cityQuery = cleanStr(params.address).replace(/^(?:в|у|во)\s+/, '');
+    /* v91.48: identity match first («Николаевка первый» → «Миколаївка 1»),
+       historical score as the fallback. */
+    const queryCityIdentity = placeIdentity(params.address);
+    /* Exact identity first: a score-based rule must never OUTVOTE an exact
+       match (otherwise «Миколаївка 1» collected «Миколаївка» as a second
+       candidate and no city was resolved at all). Score stays the fallback
+       for queries that match no catalog identity. */
+    const exactCityCandidates = places.filter(function(place){
+      const placeIdentityKey = placeIdentity(place.city);
+      return !!(queryCityIdentity && placeIdentityKey && queryCityIdentity === placeIdentityKey);
+    });
+    const cityCandidates = exactCityCandidates.length ? exactCityCandidates : places.filter(function(place){
+      return matchScore(place.city, cityQuery) >= 0.75;
+    });
     if(cityCandidates.length === 1){
       const cityName = cityCandidates[0].city;
       let cityList = data.tickets.filter(function(t){
-        return inRange(t.date, from, to) && ((t.city && matchScore(t.city, cityName) >= 0.75) || (data.searchIndex || []).some(function(item){ return item.id === t.id && matchScore(item.text, cityName) >= 0.75; }));
+        if(!inRange(t.date, from, to)) return false;
+        const legacyText = legacyTextById.get(String(t.id)) || '';
+        const addr = resolveCanonicalAddress(t, legacyText, catalog);
+        /* same predicate as query_tickets/list_tickets: identity first, then
+           the explicit stem rule for a name given WITHOUT its part number */
+        return cityFilterAccepts(addr.city, cityName, legacyText) || cityStemAccepts(addr.city, cityName);
       });
       cityList = sortNewestFirst(cityList);
       const cityMeta = page(cityList, params);
-      return {ok:true, data:{query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:[], ambiguous:false, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}};
+      /* A name WITHOUT its part number legitimately spans several numbered
+         parts: report the alternatives instead of presenting them as one
+         place (same rule as query_tickets/list_tickets). */
+      const bareParts = placeTokens(cityName).digits.length ? [] : bareStemParts(cityList, legacyTextById, catalog);
+      const bareAmbiguous = bareParts.length > 0;
+      const bareCandidates = bareParts.map(function(city){ return {city}; });
+      return {ok:true, data:{query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}};
     }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
@@ -258,15 +405,14 @@ export function createReadTools(options){
     }
 
     const r = resolution.resolved;
-    const rStreetStem = normalizeStem(r.street);
-    const rCityStem = r.city ? normalizeStem(r.city) : '';
 
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
-      if(rCityStem && t.city && normalizeStem(t.city) !== rCityStem && matchScore(t.city, r.city) < 0.75) return false;
-      const tStreetStem = normalizeStem(t.street);
-      if(tStreetStem !== rStreetStem && matchScore(t.street, r.street) < 0.75) return false;
-      if(r.house && normalizeHouse(t.house) !== normalizeHouse(r.house)) return false;
+      const legacyText = legacyTextById.get(String(t.id)) || '';
+      const addr = resolveCanonicalAddress(t, legacyText, catalog);
+      if(r.city && !cityFilterAccepts(addr.city, r.city, legacyText)) return false;
+      if(r.street && !streetFilterAccepts(addr.street, r.street)) return false;
+      if(r.house && normalizeHouse(addr.house) !== normalizeHouse(r.house)) return false;
       return true;
     });
 

@@ -99,7 +99,9 @@ test('happy path DeepSeek: tool-call list_tickets executed locally, final answer
   assert.equal(data.meta.tool_calls, 1);
   assert.ok(Array.isArray(data.tickets));
   assert.ok(data.tickets.length > 0);
-  assert.equal(data.tickets[0].id, 't-003');
+  /* v91.48: порядок списку — як у застосунку (ticketSortKey desc): у межах
+     одного дня пізніший час першим, тому t-004 (16.09 14:00) попереду t-003. */
+  assert.equal(data.tickets[0].id, 't-004');
   assert.equal(calls.deepseek.length, 2);
   assert.equal(calls.deepseek[0].body.model, 'deepseek-flash');
   assert.deepEqual(calls.deepseek[0].body.thinking, { type: 'disabled' });

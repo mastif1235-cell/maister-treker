@@ -18,7 +18,8 @@
    - nothing here ever returns raw private notes, phones or coordinates to
      the caller: rows are compact projections only. */
 
-import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey} from './address.js';
+import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens, ordinalToDigit} from './address.js';
+import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 
 /* ---------- normalization ---------- */
@@ -178,6 +179,36 @@ export function parseDateKeyStrict(value){
   const d = new Date(parts[0], parts[1] - 1, parts[2]);
   if(d.getFullYear() !== parts[0] || d.getMonth() !== parts[1] - 1 || d.getDate() !== parts[2]) return null;
   return key;
+}
+
+/* The name as the user wrote it, with a trailing part number/ordinal removed:
+   «Миколаївка 1» → «Миколаївка», «Миколаївка перша» → «Миколаївка». Only a
+   display helper for the report note — never used for matching. */
+function nameWithoutPart(value){
+  const raw = String(value || '').trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  while(tokens.length){
+    const last = tokens[tokens.length - 1];
+    if(/^\d+$/.test(last) || ordinalToDigit(last)){ tokens.pop(); continue; }
+    break;
+  }
+  return tokens.length ? tokens.join(' ') : raw;
+}
+
+/* v91.48: ticket-side (not user-input) date key. Historical rows may carry
+   «5.7.2026» (single-digit day/month) or stray spaces; the strict parser
+   rejects those, which used to remove the ticket from EVERY query — even a
+   pure city count. Zero-padding recovers the real calendar date; anything
+   that still does not parse stays without a key (and is only excluded when
+   the user actually asked for a date range). User-supplied filter values go
+   through parseDateKeyStrict as before. */
+export function ticketDateKey(value){
+  const strict = parseDateKeyStrict(value);
+  if(strict) return strict;
+  const m = /^\s*(\d{1,2})\s*[.\/]\s*(\d{1,2})\s*[.\/]\s*(\d{4})\s*$/.exec(String(value == null ? '' : value));
+  if(!m) return null;
+  const padded = m[1].padStart(2, '0') + '.' + m[2].padStart(2, '0') + '.' + m[3];
+  return parseDateKeyStrict(padded);
 }
 
 /* ---------- signals ---------- */
@@ -367,12 +398,31 @@ function compactAddress(t){
   return parts.join(', ').slice(0, 200);
 }
 
-function sortNewestFirst(list){
+/* Newest first: DATE desc, then TIME desc — exactly the ordering the app's own
+   ticket lists use (js/data-utils.js ticketSortKey = date + minutes, applied as
+   ticketSortKey(b) - ticketSortKey(a) in js/tickets-domain.js,
+   js/address-render.js and js/tickets-bindings.js). The per-DAY view
+   (js/tickets-domain.js ticketsForDate, time ascending) is a different,
+   intentional order and is mirrored separately by get_tickets_by_date.
+
+   Ticket-side dates go through ticketDateKey, so a legacy «5.7.2026» sorts on
+   its real calendar position instead of landing at the end of the list, and
+   rows with the same date and time fall back to the id so the answer is
+   deterministic. This ONE function serves every READ tool — no copies. */
+export function timeSortKey(value){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value == null ? '' : value));
+  return m ? (Number(m[1]) * 60 + Number(m[2])) : -1;   /* no/unknown time sorts last */
+}
+export function sortNewestFirst(list){
   return list.slice().sort(function(a, b){
-    const ka = parseDateKey(a.date) || '';
-    const kb = parseDateKey(b.date) || '';
+    const ka = ticketDateKey(a.date) || '';
+    const kb = ticketDateKey(b.date) || '';
     if(ka !== kb) return ka < kb ? 1 : -1;
-    return String(b.time || '').localeCompare(String(a.time || ''));
+    const ta = timeSortKey(a.time), tb = timeSortKey(b.time);
+    if(ta !== tb) return tb - ta;
+    const ra = String(a.time || ''), rb = String(b.time || '');
+    if(ra !== rb) return ra < rb ? 1 : -1;
+    return String(a.id).localeCompare(String(b.id));
   });
 }
 
@@ -384,6 +434,10 @@ export function runSmartQuery(ctx, params){
   const shifts = Array.isArray(ctx.shifts) ? ctx.shifts : [];
   const searchIndex = Array.isArray(ctx.searchIndex) ? ctx.searchIndex : [];
   const legacyTextById = new Map(searchIndex.map(function(item){ return [String(item.id), String(item.text || '')]; }));
+  /* v91.48: canonical catalog built from the user's OWN structured values,
+     so legacy/incomplete rows resolve exactly like the app's address
+     navigator groups them. Built once per query — deterministic. */
+  const catalog = buildCanonicalCatalog(tickets);
 
   const mode = params.mode || 'list';
   if(MODES.indexOf(mode) === -1) return {ok:false, code:'INVALID_INPUT', message:'Некоректний mode (доступні: exists, count, list, group, stats)'};
@@ -406,6 +460,17 @@ export function runSmartQuery(ctx, params){
   const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
   const conditions = Array.isArray(params.items) ? params.items : [];
   const notes = [];
+
+  /* v91.48: a query for a NUMBERED part («Миколаївка 1») is answered from rows
+     that PROVED their part; rows of the same name without a part number are
+     deliberately not pulled in (they have no evidence of their own). They are
+     not hidden either — the count is reported so the master can complete the
+     city in those tickets. Only the count travels; no raw data. */
+  const wantedCityTokens = wantedCity ? placeTokens(wantedCity) : null;
+  const wantedCityLetters = wantedCityTokens ? wantedCityTokens.letters.join(' ') : '';
+  const wantsNumberedPart = !!(wantedCityTokens && wantedCityTokens.digits.length);
+  let incompleteCityCount = 0;
+  let incompleteCitySample = '';
 
   /* payment aliases (deterministic, both languages) */
   let paymentTarget = wantedPayment;
@@ -458,10 +523,16 @@ export function runSmartQuery(ctx, params){
   const reasonsFor = new Map();
 
   for(const t of tickets){
-    const key = parseDateKeyStrict(t.date);
-    if(!key) continue;
-    if(from && key < from) continue;
-    if(to && key > to) continue;
+    /* v91.48: a legacy date format («5.7.2026») must not silently exclude a
+       ticket from a query that carries NO date filter at all; when a filter
+       is present the tolerant key is still compared, so such rows are no
+       longer invisible to date questions either. */
+    const key = ticketDateKey(t.date);
+    if(from || to){
+      if(!key) continue;
+      if(from && key < from) continue;
+      if(to && key > to) continue;
+    }
     rangeCount.total++;
 
     const reasons = [];
@@ -471,19 +542,29 @@ export function runSmartQuery(ctx, params){
        «Місто/Адреса» lines) fills ONLY the missing parts — the same semantics
        the app's ordinary text search relies on. One parsed view is used by
        every filter, group and aggregate below, so count/list never diverge. */
-    const addr = effectiveAddressParts(t, legacyText);
+    const addr = resolveCanonicalAddress(t, legacyText, catalog);
     const tAddr = {city: addr.city, street: addr.street, house: addr.house};
 
-    const cityMatch = cityMatches(tAddr, wantedCity, legacyText);
-    if(!cityMatch.ok) continue;
+    /* count rows whose own city/text names the SAME settlement WITHOUT a part
+       number (structured or legacy) — they stay out of a numbered answer, but
+       never silently */
+    if(wantsNumberedPart && addr.canonical !== true && addr.stemLetters === wantedCityLetters){
+      incompleteCityCount++;
+      if(!incompleteCitySample && addr.city) incompleteCitySample = String(addr.city).trim();
+    }
+
+    const cityOk = cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity);
+    if(!cityOk) continue;
     if(wantedCity){
-      const via = addr.via.city === 'legacy' ? 'legacy адреса' : (cityMatch.via === 'legacy' ? 'legacy текст' : 'структурне');
+      const via = addr.via.city === 'legacy' ? 'legacy адреса'
+        : addr.via.city === 'canonical-legacy' ? 'legacy текст (канонічне місто)'
+        : addr.via.city === 'canonical-completed' ? 'структурне (доповнено до канонічного)'
+        : 'структурне';
       reasons.push('місто:' + via);
     }
 
     if(wantedStreet){
-      const st = streetMatches(tAddr, wantedStreet);
-      if(!st.ok) continue;
+      if(!streetFilterAccepts(addr.street, wantedStreet)) continue;
       reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
     }
     if(wantedHouse && normalizeHouse(addr.house) !== wantedHouse) continue;
@@ -589,10 +670,49 @@ export function runSmartQuery(ctx, params){
     }
   }
 
+  /* v91.48: a city asked WITHOUT its part number may legitimately span
+     several numbered parts; the answer stays complete but is flagged so the
+     model asks the user to pick one instead of pretending it is one place. */
+  let cityStemAmbiguous = false;
+  if(wantedCity && !placeTokens(wantedCity).digits.length){
+    const parts = new Set();
+    for(const t of sorted){
+      const info = reasonsFor.get(t.id);
+      const c = String((info && info.addr && info.addr.city) || '').trim();
+      if(c) parts.add(canonicalCityKey(c) || c);
+    }
+    if(parts.size > 1){
+      cityStemAmbiguous = true;
+      const list = [...parts].map(function(k){
+        for(const t of sorted){
+          const info = reasonsFor.get(t.id);
+          const c = String((info && info.addr && info.addr.city) || '').trim();
+          if(c && (canonicalCityKey(c) || c) === k) return c;
+        }
+        return k;
+      }).sort(function(a, b){ return a.localeCompare(b, 'uk'); });
+      notes.push('Запит без номера частини охоплює кілька населених пунктів: ' + list.join(', ') + '. Уточніть, який саме потрібен.');
+    }
+  }
+
+  /* Rows whose own city is this name WITHOUT its part number are reported
+     (never merged, never hidden): the master can complete them in the app. */
+  let unresolvedIncompleteCity = null;
+  if(incompleteCityCount){
+    /* the name as the master himself writes it: the catalogue's digitless
+       spelling, else a row's own spelling, else the query without its number */
+    const incompleteCityDisplay = incompleteStemDisplay(catalog, wantedCityLetters) || incompleteCitySample ||
+      nameWithoutPart(params.city);
+    unresolvedIncompleteCity = {city: incompleteCityDisplay, count: incompleteCityCount};
+    notes.push('Поза відповіддю: ' + incompleteCityCount + ' заяв. — місто «' + incompleteCityDisplay +
+      '» без номера частини. За їхніми даними неможливо довести, до якої частини вони належать.' +
+      ' Доповніть у них місто (наприклад «' + incompleteCityDisplay + ' 1») — тоді вони потраплятимуть у відповідь.');
+  }
+
   return {ok:true, data:envelope({
-    mode, groupBy, ambiguous:false, notes, matched:sorted.length, sorted, reasonsFor,
+    mode, groupBy, ambiguous:cityStemAmbiguous, notes, matched:sorted.length, sorted, reasonsFor,
     signalParsedCount, geoWithCount, resolvedFilters:buildResolvedFilters(), from, to, params, tickets,
-    coworkerQuery, coworkerShiftDates, conditions:resolvedItems
+    coworkerQuery, coworkerShiftDates, conditions:resolvedItems, unresolvedIncompleteCity
   })};
 
   function buildResolvedFilters(){
@@ -653,6 +773,8 @@ export function runSmartQuery(ctx, params){
     if(ctx.data_as_of) base.data_as_of = ctx.data_as_of;
     if(ctx.snapshot_cache) base.snapshot_cache = ctx.snapshot_cache;
     if(args.candidates) base.candidates = args.candidates;
+    /* machine-readable companion of the note above (count only, no raw rows) */
+    if(args.unresolvedIncompleteCity) base.unresolved_incomplete_city = args.unresolvedIncompleteCity;
     return fillByMode(base, args);
   }
 
