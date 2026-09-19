@@ -161,6 +161,17 @@ test('city-only address query returns all streets without ambiguity', async () =
   assert.equal(result.data.ambiguous, false);
 });
 
+test('analytics aggregates use the complete set, not the returned page', async () => {
+  const rows = Array.from({length:75}, function(_, i){ return {id:'bulk-'+i, date:'01.08.2026', time:'10:00', content:'private note '.repeat(100), sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:i%2?'Таромське':'Карнаухівка', street:'Вулиця '+(i%5), house:String(i), signal:i%2?'-26':'-20'})}; });
+  const pipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:rows, shifts:[]}}; }});
+  const result = await createReadTools({data:pipeline}).list_tickets({signal_worse_than:-25, limit:8});
+  assert.equal(result.data.total_matched, 37);
+  assert.equal(result.data.returned, 8);
+  assert.equal(result.data.analytics.unique_cities.find(function(x){ return x.name === 'Таромське'; }).count, 37);
+  assert.equal(result.data.analytics.unique_streets.reduce(function(s,x){ return s+x.count; },0), 37);
+  assert.ok(!JSON.stringify(result).includes('private note'));
+});
+
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
   const app = await makeApp();
   const oleg = toolData((await toolCall(app, 'get_shifts', {coworker:'Олег'})).result);

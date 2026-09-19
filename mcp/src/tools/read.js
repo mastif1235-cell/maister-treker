@@ -83,6 +83,26 @@ export function createReadTools(options){
     return {total_matched: list.length, returned: list.slice(offset, offset + limit).length, offset, limit};
   }
 
+  /* Aggregates are calculated from the complete filtered set, never from the
+     paginated ticket page. They let COUNT/GROUP/UNIQUE questions remain exact
+     without sending historical notes or dozens of full rows to the model. */
+  function analytics(list){
+    const cities = Object.create(null), streets = Object.create(null);
+    for(const t of list){
+      const city = String(t.city || '').trim() || 'Населений пункт не вказано';
+      const street = String(t.street || t.address || '').trim() || 'Вулиця не вказана';
+      cities[city] = (cities[city] || 0) + 1;
+      streets[street] = (streets[street] || 0) + 1;
+    }
+    const groups = function(map){ return Object.keys(map).sort().map(function(name){ return {name, count:map[name]}; }); };
+    return {unique_cities:groups(cities), unique_streets:groups(streets)};
+  }
+
+  function resultData(list, params, extra){
+    const meta = page(list, params);
+    return Object.assign({tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit, analytics:analytics(list)}, extra || {});
+  }
+
   async function list_tickets(params){
     const data = await loadRedacted();
     if(!data.ok) return data;
@@ -110,7 +130,7 @@ export function createReadTools(options){
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:{tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+    return {ok:true, data:resultData(list, params)};
   }
 
   async function search_tickets(params){
@@ -125,7 +145,7 @@ export function createReadTools(options){
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
-    return {ok:true, data:{query:params.query, tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+    return {ok:true, data:resultData(list, params, {query:params.query})};
   }
 
   async function list_places(params){

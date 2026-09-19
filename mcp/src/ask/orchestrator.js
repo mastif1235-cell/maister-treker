@@ -52,7 +52,7 @@ export const ASK_SYSTEM_PROMPT = [
   '10) ЖОДНИХ markdown-таблиць. Використовуй короткі абзаци та списки «- …». Якщо результатів багато — скажи скільки знайдено й перелічи їх коротко: «№<id> — <дата> — <адреса>».',
   'Пошук заявок та адрес:',
   '11) Адреса/вулиця/населений пункт/будинок → find_tickets_by_address (частине слово достатньо: «таромськ», «мостова»; шукай без «вул./ул.»; обов’язково звужуй date_from/date_to, якщо період відомий). Інструмент розуміє UA/RU написання («Лесная» ↔ «Лісова», «Таромское» ↔ «Таромське»), одруківки, відмінки, номери будинків. Якщо find_tickets_by_address повернув ambiguous=true — запитай користувача, який варіант він мав на увазі. Для списку міст і вулиць — list_places. Для пошуку за імʼям/телефоном/текстом — search_tickets.',
-  '12) Рівень оптичного сигналу (dBm): list_tickets із signal_worse_than=-25 (-27 dBm гірше/слабше ніж -25 dBm, а -20 dBm краще). Якщо signal порожній — скажи «Рівень сигналу не вказано». НЕ вигадуй значень.',
+  '12) Рівень оптичного сигналу (dBm): «нижче -25» і «гірше -25» означають строго signal_worse_than=-25: -25 НЕ входить, -25.1/-26/-32 входять. «-25 або гірше» та «-25 і хуже» означають signal_worse_or_equal=-25: -25 входить. Якщо signal порожній — скажи «Рівень сигналу не вказано». НЕ вигадуй значень.',
   '13) Статистика/заробіток → get_statistics або get_reports; зміни/години/напарники → get_shifts (підтримує coworker і повертає by_coworker); заявки за дату → get_tickets_by_date; список заявок → list_tickets.',
   'Контекст діалогу (Referent Resolution):',
   '14) Використовуй історію діалогу: завжди аналізуй попередні повідомлення:',
@@ -193,9 +193,15 @@ export function createAskOrchestrator(options){
     if(outcome && outcome.ok){
       const source = outcome.data || {};
       if(TICKET_TOOLS[def.name] && source && source.total_matched != null){
-        /* Put the authoritative count before rows: if the bounded model
-           context later truncates this JSON, total_matched remains visible. */
-        payload = {result:{total_matched:Number(source.total_matched), returned:source.returned, offset:source.offset, limit:source.limit, tickets:Array.isArray(source.tickets) ? source.tickets : []}};
+        /* Keep only the location/history projection needed for analytics. In
+           particular, never forward notes, phones or raw searchable text. */
+        const compact = Array.isArray(source.tickets) ? source.tickets.filter(function(row){ return row && typeof row === 'object'; }).map(function(row){ return {
+          id:clipStr(row.id,64), date:clipStr(row.date,32), time:clipStr(row.time,16),
+          city:clipStr(row.city,80), street:clipStr(row.street,100), house:clipStr(row.house,16),
+          address:clipStr(row.address,160), type:clipStr(row.type,80), signal:clipStr(row.signal,32)
+        }; }) : [];
+        /* Put authoritative metadata and complete-set analytics before rows. */
+        payload = {result:{total_matched:Number(source.total_matched), returned:source.returned, offset:source.offset, limit:source.limit, analytics:source.analytics || null, tickets:compact}};
       }else{
         payload = {result:source};
       }
@@ -204,9 +210,15 @@ export function createAskOrchestrator(options){
     }
     let text = JSON.stringify(payload);
     if(text.length > limits.maxToolResultChars){
-      text = JSON.stringify({isError:false, truncated:true,
-        hint:'Результат обрізано через розмір: звузь запит (ліміт, діапазон дат або точніший пошук) і повтори',
-        preview:text.slice(0, 1500)});
+      const bounded = payload && payload.result ? Object.assign({}, payload.result, {
+        truncated:true,
+        tickets:Array.isArray(payload.result.tickets) ? payload.result.tickets.slice(0, 20) : []
+      }) : null;
+      text = JSON.stringify({result:bounded, hint:'Показана компактная страница; total_matched и analytics рассчитаны по всему результату. Для полного списка используй pagination.'});
+      if(text.length > limits.maxToolResultChars && bounded){
+        bounded.analytics = null; bounded.tickets = bounded.tickets.slice(0, 8);
+        text = JSON.stringify({result:bounded, hint:'Результат ограничен размером контекста; total_matched authoritative.'});
+      }
     }
     return text;
   }
