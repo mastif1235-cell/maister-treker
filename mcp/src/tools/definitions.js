@@ -46,7 +46,11 @@ export const TOOL_DEFINITIONS = [
     inputSchema: {
       type:'object', additionalProperties:false, required:['query'],
       properties:{
-        query: {type:'string', minLength:1, maxLength:200, description:'Рядок пошуку.'},
+        query: {type:'string', minLength:1, maxLength:200, description:'Рядок пошуку; шукає по тексту заявки, адресі, телефону, обладнанню та виконаним роботам.'},
+        terms: {type:'array', items:{type:'string', minLength:1, maxLength:80}, minItems:1, maxItems:12, description:'Усі перелічені слова/ознаки мають збігтися (логічне AND) для складеного пошуку.'},
+        sum_min: {type:'number', description:'Мінімальна загальна сума заявки.'},
+        sum_max: {type:'number', description:'Максимальна загальна сума заявки.'},
+        payment: {type:'string', maxLength:80, description:'Спосіб оплати.'},
         date_from: Object.assign({}, DATE_ARG, {description:'Обмеження діапазону зліва (включно).'}),
         date_to: Object.assign({}, DATE_ARG, {description:'Обмеження діапазону справа (включно).'}),
         limit: LIMIT_ARG,

@@ -198,7 +198,9 @@ export function createAskOrchestrator(options){
         const compact = Array.isArray(source.tickets) ? source.tickets.filter(function(row){ return row && typeof row === 'object'; }).map(function(row){ return {
           id:clipStr(row.id,64), date:clipStr(row.date,32), time:clipStr(row.time,16),
           city:clipStr(row.city,80), street:clipStr(row.street,100), house:clipStr(row.house,16),
-          address:clipStr(row.address,160), type:clipStr(row.type,80), signal:clipStr(row.signal,32)
+          address:clipStr(row.address,160), type:clipStr(row.type,80), signal:clipStr(row.signal,32),
+          equipment:Array.isArray(row.equipment) ? row.equipment.slice(0,20).map(function(e){ return {label:clipStr(e.label,80), qty:e.qty, price:e.price, total:e.total}; }) : [],
+          presetWorks:Array.isArray(row.presetWorks) ? row.presetWorks.slice(0,20).map(function(w){ return {label:clipStr(w.label || w.desc,80), qty:w.qty, price:w.price, total:w.total || w.sum}; }) : []
         }; }) : [];
         /* Put authoritative metadata and complete-set analytics before rows. */
         payload = {result:{total_matched:Number(source.total_matched), returned:source.returned, offset:source.offset, limit:source.limit, analytics:source.analytics || null, tickets:compact}};

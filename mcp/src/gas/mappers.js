@@ -174,7 +174,7 @@ export function redactTicket(t){
     otherNote: str(f.otherNote),
     geoLink: geoLinkOnly(f.geoLink),
     equipment: Array.isArray(f.equipment) ? f.equipment.map(function(e){
-      return {label: str(e && e.label), price: num(e && e.price)};
+      return {label: str(e && e.label), price: num(e && e.price), qty: num(e && e.qty) || 1, total: num(e && e.price) * (num(e && e.qty) || 1)};
     }).filter(function(e){ return e.label; }) : [],
     cables: Array.isArray(f.cables) ? f.cables.map(function(c){
       return {label: str(c && c.label), meters: num(c && c.meters), pricePerMeter: num(c && c.pricePerMeter)};
@@ -210,12 +210,9 @@ export function ticketMatchesQuery(t, query){
   const q = String(query || '').trim().toLowerCase();
   if(!q) return true;
   const qDigits = q.replace(/\D/g, '');
-  return (t.content || '').toLowerCase().includes(q) ||
-    (t.date || '').includes(q) ||
-    (t.tags || []).some(function(tag){ return tag.toLowerCase().includes(q); }) ||
-    (t.city || '').toLowerCase().includes(q) ||
-    (t.address || '').toLowerCase().includes(q) ||
-    (t.clientName || '').toLowerCase().includes(q) ||
+  const searchable = [t.date, t.city, t.address, t.clientName, ...(t.tags || [])]
+    .map(function(v){ return String(v == null ? '' : v).toLowerCase(); });
+  return searchable.some(function(value){ return value.includes(q); }) ||
     ticketSignalMatchesQuery(t, q) ||
     (qDigits.length >= 3 && String(t.phone || '').replace(/\D/g, '').includes(qDigits)) ||
     (qDigits.length >= 3 && (t.extraPhones || []).some(function(p){ return String(p || '').replace(/\D/g, '').includes(qDigits); }));

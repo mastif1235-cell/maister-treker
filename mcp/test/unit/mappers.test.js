@@ -53,7 +53,7 @@ test('redactTicket output keys are exactly the whitelisted set', () => {
   const ticket = ticketFromGasRow(FIXTURES.BASE_ROWS[0]);
   const redacted = redactTicket(ticket);
   assert.deepEqual(Object.keys(redacted).sort(), REDACTED_TICKET_FIELDS.slice().sort());
-  assert.deepEqual(Object.keys(redacted.equipment[0]).sort(), ['label', 'price']);
+  assert.deepEqual(Object.keys(redacted.equipment[0]).sort(), ['label', 'price', 'qty', 'total']);
   assert.deepEqual(Object.keys(redacted.cables[0]).sort(), ['label', 'meters', 'pricePerMeter']);
   assert.deepEqual(Object.keys(redacted.presetWorks[0]).sort(), ['label', 'price', 'qty']);
   assert.deepEqual(Object.keys(redacted.additionalWork[0]).sort(), ['desc', 'sum']);

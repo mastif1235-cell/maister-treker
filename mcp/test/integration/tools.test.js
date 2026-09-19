@@ -206,6 +206,16 @@ test('pagination returns disjoint complete pages for 75 rows', async () => {
   assert.equal(new Set(ids).size,75);
 });
 
+test('universal search intersects equipment terms and price without leaking private notes', async () => {
+  const row = {id:'router-1500',date:'28.08.2026',time:'11:59',content:'',sum:1600,tags:[],backupNote:'PRIVATE_MASTER_NOTE_SECRET',fullDataJson:JSON.stringify({city:'Таромське',street:'Футбольна',house:'39',type:'Ремонт',equipment:[{label:'Роутер',qty:1,price:1500}],presetWorks:[{label:'Пайка оптики',qty:1,price:100}]})};
+  const other = {id:'router-600',date:'28.08.2026',time:'12:00',content:'',sum:700,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Інша',house:'1',equipment:[{label:'Роутер',qty:1,price:600}]})};
+  const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:[row,other],shifts:[]}};}});
+  const result = await createReadTools({data:pipeline}).search_tickets({terms:['роутер','1500'],date_from:'01.08.2026',date_to:'31.08.2026'});
+  assert.equal(result.data.total_matched,1); assert.equal(result.data.tickets[0].id,'router-1500');
+  assert.equal(result.data.tickets[0].equipment[0].total,1500);
+  assert.ok(!JSON.stringify(result).includes('PRIVATE_MASTER_NOTE_SECRET'));
+});
+
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
   const app = await makeApp();
   const oleg = toolData((await toolCall(app, 'get_shifts', {coworker:'Олег'})).result);

@@ -153,9 +153,24 @@ export function createReadTools(options){
     const from = params.date_from ? parseDateKey(params.date_from) : null;
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
+    const terms = Array.isArray(params.terms) ? params.terms.map(function(v){return String(v).trim();}).filter(Boolean) : [];
+    const extendedTermMatch = function(ticket, term){
+      const q = cleanStr(term);
+      const values = [].concat(ticket.note, ticket.abonentNote, ticket.otherNote, ticket.payment, ticket.street, ticket.house,
+        (ticket.equipment || []).flatMap(function(e){return [e.label,e.price,e.qty,e.total];}),
+        (ticket.cables || []).flatMap(function(c){return [c.label,c.meters,c.pricePerMeter];}),
+        (ticket.presetWorks || []).flatMap(function(w){return [w.label,w.price,w.qty,w.total];}),
+        (ticket.additionalWork || []).flatMap(function(w){return [w.desc,w.sum];}));
+      return values.some(function(value){return cleanStr(value).includes(q);}) || ticketMatchesQuery(ticket, term);
+    };
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
-      return ticketMatchesQuery(t, params.query);
+      if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) return false;
+      if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) return false;
+      if(params.payment && cleanStr(t.payment) !== cleanStr(params.payment)) return false;
+      if(params.query && !ticketMatchesQuery(t, params.query)) return false;
+      if(terms.length && !terms.every(function(term){ return extendedTermMatch(t, term); })) return false;
+      return true;
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
