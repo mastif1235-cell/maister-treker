@@ -19,7 +19,7 @@
      the caller: rows are compact projections only. */
 
 import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens} from './address.js';
-import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts} from './canonical.js';
+import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 
 /* ---------- normalization ---------- */
@@ -428,6 +428,17 @@ export function runSmartQuery(ctx, params){
   const conditions = Array.isArray(params.items) ? params.items : [];
   const notes = [];
 
+  /* v91.48: a query for a NUMBERED part («Миколаївка 1») is answered from rows
+     that PROVED their part; rows of the same name without a part number are
+     deliberately not pulled in (they have no evidence of their own). They are
+     not hidden either — the count is reported so the master can complete the
+     city in those tickets. Only the count travels; no raw data. */
+  const wantedCityTokens = wantedCity ? placeTokens(wantedCity) : null;
+  const wantedCityLetters = wantedCityTokens ? wantedCityTokens.letters.join(' ') : '';
+  const incompleteCityDisplay = (wantedCityTokens && wantedCityTokens.digits.length)
+    ? incompleteStemDisplay(catalog, wantedCityLetters) : '';
+  let incompleteCityCount = 0;
+
   /* payment aliases (deterministic, both languages) */
   let paymentTarget = wantedPayment;
   if(paymentTarget){
@@ -500,6 +511,13 @@ export function runSmartQuery(ctx, params){
        every filter, group and aggregate below, so count/list never diverge. */
     const addr = resolveCanonicalAddress(t, legacyText, catalog);
     const tAddr = {city: addr.city, street: addr.street, house: addr.house};
+
+    /* count rows of the SAME name whose own part number is missing (they stay
+       out of a numbered answer, but never silently) */
+    if(incompleteCityDisplay){
+      const rTokens = placeTokens(addr.city);
+      if(!rTokens.digits.length && rTokens.letters.join(' ') === wantedCityLetters) incompleteCityCount++;
+    }
 
     const cityOk = cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity);
     if(!cityOk) continue;
@@ -643,10 +661,20 @@ export function runSmartQuery(ctx, params){
     }
   }
 
+  /* Rows whose own city is this name WITHOUT its part number are reported
+     (never merged, never hidden): the master can complete them in the app. */
+  let unresolvedIncompleteCity = null;
+  if(incompleteCityCount && incompleteCityDisplay){
+    unresolvedIncompleteCity = {city: incompleteCityDisplay, count: incompleteCityCount};
+    notes.push('Поза відповіддю: ' + incompleteCityCount + ' заяв. — місто «' + incompleteCityDisplay +
+      '» без номера частини. За їхніми даними неможливо довести, до якої частини вони належать.' +
+      ' Доповніть у них місто (наприклад «' + incompleteCityDisplay + ' 1») — тоді вони потраплятимуть у відповідь.');
+  }
+
   return {ok:true, data:envelope({
     mode, groupBy, ambiguous:cityStemAmbiguous, notes, matched:sorted.length, sorted, reasonsFor,
     signalParsedCount, geoWithCount, resolvedFilters:buildResolvedFilters(), from, to, params, tickets,
-    coworkerQuery, coworkerShiftDates, conditions:resolvedItems
+    coworkerQuery, coworkerShiftDates, conditions:resolvedItems, unresolvedIncompleteCity
   })};
 
   function buildResolvedFilters(){
@@ -707,6 +735,8 @@ export function runSmartQuery(ctx, params){
     if(ctx.data_as_of) base.data_as_of = ctx.data_as_of;
     if(ctx.snapshot_cache) base.snapshot_cache = ctx.snapshot_cache;
     if(args.candidates) base.candidates = args.candidates;
+    /* machine-readable companion of the note above (count only, no raw rows) */
+    if(args.unresolvedIncompleteCity) base.unresolved_incomplete_city = args.unresolvedIncompleteCity;
     return fillByMode(base, args);
   }
 

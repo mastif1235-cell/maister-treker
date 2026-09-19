@@ -23,11 +23,26 @@
 
    - digit parts are IDENTITY: «Миколаївка 1» ≠ «Миколаївка 2» ≠ «… 10»;
    - different letter stems never merge («Новомиколаївка» ≠ «Миколаївка»);
-   - an incomplete legacy city is completed only when the evidence points to
-     EXACTLY ONE canonical city (street ownership and/or digit/ordinal); any
-     ambiguity leaves the row unresolved rather than misplacing it;
    - a structured city already matching the catalog is authoritative and is
-     NEVER overridden by notes or free text.
+     NEVER overridden by notes or free text;
+   - an incomplete legacy city is completed ONLY by evidence carried by that
+     very SAME ROW: its own part number or ordinal («Миколаївка1», «первая»,
+     «перша»), or its own street when the catalog knows that street AND
+     exactly one numbered part of that name owns it. Evidence that lives in
+     other rows is not evidence about this row — an incomplete «Миколаївка»
+     row is NEVER moved into «Миколаївка 1» just because some OTHER
+     «Миколаївка» row used a street of that part (there is deliberately no
+     group/town-level assignment here);
+   - ambiguity or conflicting evidence leaves the row unresolved AND flagged:
+     it is never silently placed into a numbered part;
+   - an unresolved row keeps its own spelling, so a question about the bare
+     name («Миколаївка») still lists it (flagged as ambiguous — all parts),
+     while a question about a numbered part never absorbs it. The tools
+     additionally REPORT how many such rows stayed out, so the master can
+     complete their city in the app;
+   - `houses` in the places output is the set of distinct house values of a
+     street, NOT a ticket count: one house may hold several tickets, so the
+     address navigator's list of houses is never a list of tickets.
 
    Deterministic, pure, no I/O. Identity primitives live in address.js, so
    the tools, the /ask engine and the catalog share one definition. */
@@ -107,10 +122,10 @@ function buildCanonicalCatalogUncached(tickets){
     if(!numberedSibling) canonicalKeys.add(cityKey);
   }
 
-  /* Pass 2 — streets: ownership evidence comes ONLY from rows whose own city
-     is canonical (that is what the master really chose from the list). Rows
-     with an incomplete city contribute to their GROUP instead. */
-  const groupStreets = new Map();   /* non-canonical cityKey -> Set(streetKey) */
+  /* Pass 2 — streets. Ownership evidence comes ONLY from rows whose own city
+     IS canonical (that is what the master really chose from the list). Rows
+     with an incomplete city contribute nothing at all: their streets must
+     never be used to attribute anything to anybody. */
   for(const t of (tickets || [])){
     const city = String((t && t.city) || '').trim();
     const street = String((t && t.street) || '').trim();
@@ -118,11 +133,7 @@ function buildCanonicalCatalogUncached(tickets){
     const cityKey = placeIdentity(city);
     const streetKey = placeIdentity(street);
     if(!cityKey || !streetKey) continue;
-    if(!canonicalKeys.has(cityKey)){
-      if(!groupStreets.has(cityKey)) groupStreets.set(cityKey, new Set());
-      groupStreets.get(cityKey).add(streetKey);
-      continue;
-    }
+    if(!canonicalKeys.has(cityKey)) continue;
     if(!streetsByCity.has(cityKey)) streetsByCity.set(cityKey, new Map());
     const sm = streetsByCity.get(cityKey);
     let se = sm.get(streetKey);
@@ -134,33 +145,14 @@ function buildCanonicalCatalogUncached(tickets){
     streetOwners.get(streetKey).add(cityKey);
   }
 
-  /* Group anchors: an incomplete city group («Миколаївка» rows) is pinned to
-     exactly one canonical part when at least one of its streets is owned by
-     exactly one canonical city and no other candidate contradicts it. This
-     is the ONLY way a bare stem may follow its evidence — and it stays a
-     no-op the moment two parts are plausible. */
-  const groupAnchors = new Map();
-  for(const [groupKey, streetKeys] of groupStreets){
-    const group = cities.get(groupKey);
-    if(!group) continue;
-    const candidateSet = new Set();
-    for(const k of (citiesByLetters.get(group.letters) || [])) if(canonicalKeys.has(k)) candidateSet.add(k);
-    if(!candidateSet.size) continue;
-    const anchors = new Set();
-    let contradiction = false;
-    for(const streetKey of streetKeys){
-      const owners = streetOwners.get(streetKey);
-      if(!owners || !owners.size) continue;
-      const inCandidates = [...owners].filter(function(o){ return candidateSet.has(o); });
-      const outside = [...owners].filter(function(o){ return !candidateSet.has(o); });
-      if(outside.length){ contradiction = true; }
-      if(inCandidates.length === 1) anchors.add(inCandidates[0]);
-      else if(inCandidates.length > 1) contradiction = true;
-    }
-    if(!contradiction && anchors.size === 1) groupAnchors.set(groupKey, [...anchors][0]);
-  }
+  /* v91.48 (second revision): there is deliberately NO town/group-level
+     assignment. An earlier draft pinned every row of an incomplete city
+     («Миколаївка») to the part that some street of the group pointed at; that
+     silently moved rows whose real part is unknown (and may even be «… 2»)
+     into «… 1». Only per-row evidence may decide — see
+     resolveCanonicalAddress. */
 
-  return {cities, streetsByCity, streetOwners, citiesByLetters, canonicalKeys, groupStreets, groupAnchors};
+  return {cities, streetsByCity, streetOwners, citiesByLetters, canonicalKeys};
 }
 
 /* Ordered token view of a free-text value: each token with the letters and
@@ -211,12 +203,13 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
   const structuredCity = String(t.city || '').trim();
   if(structuredCity && catalog.canonicalKeys.has(out.cityKey)){
     out.via.city = out.via.city || 'structured';   /* canonical already — authoritative */
+    out.canonical = true;
     return out;
   }
 
-  const streetEvidenceKey = out.streetKey || '';
   const cityTokens = orderedPlaceTokens(structuredCity);
   const textTokens = legacyText ? orderedPlaceTokens(legacyText) : [];
+  const streetEvidenceKey = out.streetKey || '';
   const structuredLetters = structuredCity ? placeTokens(structuredCity).letters : [];
   let candidateKeys = new Set();
 
@@ -272,42 +265,48 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
     }
   }
 
-  /* GROUP ANCHOR: rows sharing one incomplete city value («Миколаївка») are
-     one settlement's history. If one of their streets is owned by exactly one
-     canonical part (evidence from rows whose city IS canonical), the whole
-     group follows — unless some street of the group belongs to another part. */
-  if(candidateKeys.size > 1){
-    const groupKey = structuredCity ? out.cityKey : '';
-    let anchorKey = groupKey ? catalog.groupAnchors.get(groupKey) : null;
-    if(!anchorKey && !structuredCity){
-      /* text-only row: the same anchor applies when the text carries a group
-         key that itself has an anchor */
-      for(const [key, anchor] of catalog.groupAnchors){
-        const group = catalog.cities.get(key);
-        if(!group) continue;
-        const stems = group.letters.split(' ');
-        const hasAll = stems.length && stems.every(function(stem){
-          return textTokens.some(function(tok){ return tok.letters.indexOf(stem) !== -1; });
+  /* PER-ROW EVIDENCE ONLY. There is deliberately no "group anchor": the fact
+     that some OTHER row with the same incomplete city («Миколаївка») carried
+     a street of «Миколаївка 1» says NOTHING about this row — it may well
+     belong to «Миколаївка 2». Such a row is never moved anywhere. */
+
+  /* Rows with NO structured street at all: their OWN legacy text may name a
+     street — that counts only when it names EXACTLY ONE street the user's
+     catalog knows among the still-possible parts (two matching streets cancel
+     each other out, unknown words never match anything). */
+  let ownStreetKey = streetEvidenceKey;
+  let ownStreetFromText = false;
+  if(!ownStreetKey && textTokens.length && candidateKeys.size){
+    const found = new Set();
+    for(const key of candidateKeys){
+      const streets = catalog.streetsByCity.get(key);
+      if(!streets) continue;
+      for(const [key2] of streets){
+        const stems = key2.split('#')[0].split(' ').filter(Boolean);
+        const present = stems.length && stems.every(function(stem){
+          return textTokens.some(function(tok){
+            return tok.letters.some(function(x){ return x === stem || x.startsWith(stem) || stem.startsWith(x); });
+          });
         });
-        if(hasAll){ anchorKey = anchor; break; }
+        if(present) found.add(key2);
       }
     }
-    if(anchorKey && candidateKeys.has(anchorKey)){
-      const mismatch = streetEvidenceKey && (catalog.streetOwners.get(streetEvidenceKey) || new Set()).size &&
-        !(catalog.streetOwners.get(streetEvidenceKey) || new Set()).has(anchorKey);
-      if(!mismatch) candidateKeys = new Set([anchorKey]);
-    }
+    if(found.size === 1){ ownStreetKey = [...found][0]; ownStreetFromText = true; }
   }
 
-  /* Street ownership: with several parts still plausible, the row's street
-     narrows them to the parts that actually own it. A street the canonical
-     catalog has never seen is not evidence against anything — it must not
-     wipe out an already-decided answer (only the single-candidate/anchor
-     rules can decide then). */
-  if(streetEvidenceKey && candidateKeys.size){
-    const owners = catalog.streetOwners.get(streetEvidenceKey);
+  /* This row's OWN street: when the catalog knows it (it was recorded as a
+     structured street of real tickets) and exactly ONE of the still-possible
+     parts owns it, that is deterministic per-row evidence. A street the
+     catalog has never seen is evidence of nothing — it must not wipe out an
+     already-decided answer. A genuine CONFLICT (the street is known, but none
+     of the remaining parts owns it) is not decided either: the row stays
+     unresolved and flagged instead of being silently placed. */
+  if(ownStreetKey && candidateKeys.size){
+    const owners = catalog.streetOwners.get(ownStreetKey);
     if(owners && owners.size){
-      candidateKeys = new Set([...candidateKeys].filter(function(k){ return owners.has(k); }));
+      const owning = [...candidateKeys].filter(function(k){ return owners.has(k); });
+      if(owning.length === 1) candidateKeys = new Set(owning);
+      else if(!owning.length){ candidateKeys = new Set(); out.ambiguous = true; }
     }
   }
 
@@ -322,9 +321,13 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
       /* Street display: adopt the canonical spelling of that city only when
          the identity matches exactly ONE of its streets — two really
          different streets that merely share a stem stay separate. */
-      if(streetEvidenceKey && catalog.streetsByCity.has(key)){
-        const match = catalog.streetsByCity.get(key).get(streetEvidenceKey);
-        if(match) out.street = match.display;
+      if(ownStreetKey && catalog.streetsByCity.has(key)){
+        const match = catalog.streetsByCity.get(key).get(ownStreetKey);
+        if(match){
+          out.street = match.display;
+          out.streetKey = ownStreetKey;
+          if(ownStreetFromText && !String(t.street || '').trim()) out.via.street = 'legacy';
+        }
       }else if(!out.street && textTokens.length && catalog.streetsByCity.has(key)){
         /* Row without any structured street, but its legacy text names one:
            adopt it ONLY when the text matches exactly ONE street of the
@@ -350,8 +353,8 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
     }
   }
   /* Ambiguity never merges: several parts satisfy the evidence and nothing
-     selects one — keep raw values and flag it. */
-  if(candidateKeys.size > 1 && structuredCity) out.ambiguous = true;
+     (of the row's own) selects one — keep raw values and flag it. */
+  if(candidateKeys.size > 1) out.ambiguous = true;
   return out;
 }
 
@@ -400,13 +403,67 @@ export function cityFilterAccepts(resolvedCity, wantedCity, legacyText){
   return wantedTokens.digits.every(function(d){ return textTokens.digits.indexOf(d) !== -1; });
 }
 
-/* The canonical city a free-text query names, when the evidence is
-   unambiguous. Used so a plain-text tool call («Николаевка первый» as a
-   search query) resolves to exactly the same set as the structured one. */
+/* The city a free-text query names, when the evidence is unambiguous. Used so
+   a plain-text tool call («Николаевка первый» as a search query) resolves to
+   exactly the same set as the structured one:
+   - a numbered settlement, or a settlement that has no numbered parts at all
+     («Таромське») → its canonical display;
+   - a settlement named WITHOUT its part number and NOTHING else in the text
+     («Николаевке», «Миколаївка») → the digitless display of that name, i.e.
+     the question is about the whole name: the caller marks the answer
+     ambiguous. This moves no row anywhere — each row still answers with its
+     own resolved identity and the numbered parts only widen what is asked;
+   - anything else (extra words, a street, a house) → '' and the ordinary text
+     search decides, so «Миколаївка виноградная» is not reduced to a city. */
 export function resolveCityFromText(text, catalog){
   const probe = {};
   const resolved = resolveCanonicalAddress(probe, String(text || ''), catalog);
-  return resolved && resolved.canonical ? resolved.city : '';
+  if(resolved && resolved.canonical) return resolved.city;
+  return bareStemCityFromText(text, catalog);
+}
+
+/* «Миколаївка» (or «Николаевке») asked on its own: the text consists of the
+   city name only and that name has numbered parts in the catalog → return the
+   digitless display. Purely textual, no row is attributed to any part. */
+function bareStemCityFromText(text, catalog){
+  const tokens = orderedPlaceTokens(text).filter(function(tok){ return tok.letters.length || tok.digits.length; });
+  if(!tokens.length) return '';
+  if(tokens.some(function(tok){ return tok.digits.length; })) return '';
+  for(const [lettersKey, keys] of catalog.citiesByLetters){
+    const stems = lettersKey.split(' ').filter(Boolean);
+    if(!stems.length || stems.length !== tokens.length) continue;
+    const same = tokens.every(function(tok, i){
+      return tok.letters.length === 1 && tok.letters[0] === stems[i];
+    });
+    if(!same) continue;
+    const group = cityGroupDisplays(keys, catalog);
+    if(group.numbered && group.digitless) return group.digitless;
+  }
+  return '';
+}
+
+/* Displays of one city-name group: the first digitless spelling and whether
+   numbered parts of the same name exist. */
+function cityGroupDisplays(keys, catalog){
+  let digitless = '';
+  let numbered = false;
+  for(const k of (keys || [])){
+    const c = catalog.cities.get(k);
+    if(!c) continue;
+    if(c.digits.length) numbered = true;
+    else if(!digitless) digitless = c.display;
+  }
+  return {digitless, numbered};
+}
+
+/* The incomplete (digitless) spelling of a city NAME — «микола» → «Миколаївка»
+   — but only when the same name also has numbered parts in the catalog
+   (otherwise nothing is incomplete). Used to REPORT rows whose part number is
+   missing from the data instead of hiding them. */
+export function incompleteStemDisplay(catalog, lettersKey){
+  const keys = catalog.citiesByLetters.get(String(lettersKey || ''));
+  const group = cityGroupDisplays(keys, catalog);
+  return group.numbered ? group.digitless : '';
 }
 
 /* A city named WITHOUT its part number («Миколаївка») asks for the whole
@@ -420,6 +477,21 @@ export function cityStemAccepts(resolvedCity, wantedCity){
   const resolved = placeTokens(resolvedCity);
   if(!resolved.letters.length) return false;
   return wanted.letters.join(' ') === resolved.letters.join(' ');
+}
+
+/* Distinct canonical cities of a set of resolved addresses, sorted for
+   display. A question about a name WITHOUT its part number that spans more
+   than one city (or several parts of one name) is reported through this list —
+   never silently collapsed into one part. */
+export function distinctCanonicalCities(addresses){
+  const map = new Map();
+  for(const addr of (addresses || [])){
+    const city = String((addr && addr.city) || '').trim();
+    if(!city) continue;
+    const key = placeIdentity(city) || city;
+    if(!map.has(key)) map.set(key, city);
+  }
+  return Array.from(map.values()).sort(function(a, b){ return a.localeCompare(b, 'uk'); });
 }
 
 /* Street filter with the same identity semantics as cities: canonical
