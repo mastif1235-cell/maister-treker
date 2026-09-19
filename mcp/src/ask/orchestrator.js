@@ -187,11 +187,21 @@ export function createAskOrchestrator(options){
         : (outcome.data.ticket ? [outcome.data.ticket] : []);
       for(const row of rows){ if(row && typeof row === 'object') collectedTickets.push(row); }
       const reported = Number(outcome.data.total_matched != null ? outcome.data.total_matched : (outcome.data.count != null ? outcome.data.count : rows.length));
-      if(Number.isFinite(reported)) totals.push(reported);
+      if(Number.isFinite(reported)) totals.push({tool:def.name, total:reported});
     }
-    const payload = outcome && outcome.ok
-      ? {result:outcome.data}
-      : {isError:true, error:String((outcome && outcome.code) || 'ERROR'), message:String((outcome && outcome.message) || '')};
+    let payload;
+    if(outcome && outcome.ok){
+      const source = outcome.data || {};
+      if(TICKET_TOOLS[def.name] && source && source.total_matched != null){
+        /* Put the authoritative count before rows: if the bounded model
+           context later truncates this JSON, total_matched remains visible. */
+        payload = {result:{total_matched:Number(source.total_matched), returned:source.returned, offset:source.offset, limit:source.limit, tickets:Array.isArray(source.tickets) ? source.tickets : []}};
+      }else{
+        payload = {result:source};
+      }
+    }else{
+      payload = {isError:true, error:String((outcome && outcome.code) || 'ERROR'), message:String((outcome && outcome.message) || '')};
+    }
     let text = JSON.stringify(payload);
     if(text.length > limits.maxToolResultChars){
       text = JSON.stringify({isError:false, truncated:true,
@@ -246,7 +256,10 @@ export function createAskOrchestrator(options){
       }
       const answer = String(response.content || '').trim().slice(0, limits.maxAnswerChars);
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
-      const total = toolTotals.length ? Math.max.apply(Math, toolTotals) : collectedTickets.length;
+      /* The last successful ticket-tool result is the active result for this
+         final model answer. Do not take Math.max across unrelated calls:
+         compound or refinement turns can legitimately have different totals. */
+      const total = toolTotals.length ? toolTotals[toolTotals.length - 1].total : collectedTickets.length;
       const cards = questionRequestsCards(questionText) ? projectTicketsForClient(collectedTickets) : [];
       return {ok:true, answer, meta:{rounds, toolCallsMade, total}, total, tickets:cards};
     }

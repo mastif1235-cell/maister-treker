@@ -321,6 +321,27 @@ test('total is independent from the 8-card presentation cap and ordinary search 
   assert.equal(outcome.meta.total,25); assert.equal(outcome.total,25); assert.deepEqual(outcome.tickets,[]);
 });
 
+test('authoritative total survives a truncated oversized tool result and ordinary query returns no cards', async () => {
+  let secondRequest = null;
+  const rows = Array.from({length:25}, function(_, i){ return {id:'t-'+i, date:'01.08.2026', address:'Адрес '+i, note:'x'.repeat(900)}; });
+  const groq = {calls:0, chat:async function(messages){
+    this.calls++;
+    if(this.calls === 2) secondRequest = messages;
+    return this.calls === 1
+      ? toolResponse('list_tickets', '{"signal_worse_than":-25}')
+      : finalResponse('Всього знайдено 25 заявок.');
+  }};
+  const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:rows, total_matched:25, returned:25, limit:50}}; };
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS, limits:{maxToolResultChars:12000}}).handle('Скільки всього заявок із сигналом нижче -25?', {history:[]});
+  const toolMessage = secondRequest.find(function(message){ return message.role === 'tool'; });
+  assert.ok(toolMessage.content.length <= 12000);
+  assert.match(toolMessage.content, /total_matched/);
+  assert.match(toolMessage.content, /25/);
+  assert.equal(outcome.answer, 'Всього знайдено 25 заявок.');
+  assert.equal(outcome.total, 25);
+  assert.deepEqual(outcome.tickets, []);
+});
+
 test('explicit card request returns only the structured card projection', async () => {
   const groq = scriptedGroq([toolResponse('list_tickets', '{}'), finalResponse('Показую картку заявки.')]);
   const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
