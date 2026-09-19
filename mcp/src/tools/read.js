@@ -9,6 +9,7 @@ import {
 import {
   extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore
 } from '../ask/address.js';
+import {runSmartQuery, buildCatalogData, itemAttributesMatch} from '../ask/smart-query.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -66,7 +67,10 @@ export function createReadTools(options){
   async function loadRedacted(){
     const result = await data.getList();
     if(!result.ok) return result;
-    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : []};
+    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : [],
+      /* snapshot freshness (only when the KV snapshot stage is active) */
+      savedAt: typeof result.savedAt === 'number' ? result.savedAt : null,
+      snapshotCache: result.cache || null};
   }
 
   function inRange(dateStr, from, to){
@@ -161,10 +165,9 @@ export function createReadTools(options){
       return pools.filter(function(pool){return !condition.kind || condition.kind === pool.kind;}).some(function(pool){ return pool.items.some(function(item){
         const label = cleanStr(item.label || item.desc);
         if(!label.includes(needle)) return false;
-        if(condition.unit_price != null && Number(item.price || item.pricePerMeter || item.sum) !== Number(condition.unit_price)) return false;
-        if(condition.quantity != null && Number(item.qty || item.meters || 0) !== Number(condition.quantity)) return false;
-        if(condition.total != null && Number(item.total || item.sum || (Number(item.price||0)*Number(item.qty||1))) !== Number(condition.total)) return false;
-        return true;
+        /* Shared deterministic core with the smart-query engine: price/qty/
+           total are bound to THIS item, never to a sibling work. */
+        return itemAttributesMatch(item, condition);
       }); });
     };
     const extendedTermMatch = function(ticket, term){
@@ -424,5 +427,29 @@ export function createReadTools(options){
     return {ok:true, data:{period:params.period, anchor_date:anchorKey ? anchorKey.split('-').reverse().join('.') : null, window, totals, by_type:toRows(byType), by_payment:toRows(byPayment)}};
   }
 
-  return {list_tickets, search_tickets, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
+  /* Universal deterministic smart-search engine (v91.44). Filtering,
+     intersections, normalization, grouping, aggregation and pagination all
+     happen HERE over the full dataset; the model only formats the result. */
+  async function query_tickets(params){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    const ctx = {
+      tickets: data.tickets,
+      shifts: data.shifts,
+      searchIndex: data.searchIndex,
+      data_as_of: data.savedAt ? new Date(data.savedAt).toISOString() : null,
+      snapshot_cache: data.snapshotCache
+    };
+    return runSmartQuery(ctx, params);
+  }
+
+  /* Compact catalog derived from ACTUAL ticket data (what was really used),
+     so the model resolves natural-language item names against real labels. */
+  async function list_catalog(){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    return {ok:true, data:buildCatalogData(data.tickets, data.shifts)};
+  }
+
+  return {list_tickets, search_tickets, query_tickets, list_catalog, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
 }

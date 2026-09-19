@@ -24,16 +24,20 @@
 
 const DEEPSEEK_CHAT_URL = 'https://api.deepseek.com/chat/completions';
 
+/* Total compact budget is regression-tested (< 500 chars for ALL tools):
+   heavy payloads contributed to past DeepSeek HTTP 400 incidents. */
 export const DEEPSEEK_COMPACT_DESCRIPTIONS = {
-  list_tickets: 'Список заявок із фільтрами за датами, типом, сигналом та тегами',
-  get_ticket: 'Одна заявка за ID',
-  search_tickets: 'Пошук заявок за текстом, адресою, клієнтом, телефоном, сигналом та тегами',
-  find_tickets_by_address: 'Пошук заявок за адресою з підтримкою варіантів українського та російського написання',
-  list_places: 'Відомі міста, села, вулиці та будинки із заявок',
-  get_tickets_by_date: 'Усі заявки за конкретну дату',
-  get_shifts: 'Робочі зміни, години та напарники',
-  get_reports: 'Денні підсумки: кількість, сума, готівка та безготівка',
-  get_statistics: 'Агрегована статистика за день, тиждень, місяць або весь час'
+  list_tickets: 'Заявки з фільтрами: дати, тип, сигнал, теги',
+  get_ticket: 'Заявка за ID',
+  search_tickets: 'Текстовий пошук: адреса, телефон, сигнал, теги',
+  query_tickets: 'Структурований пошук: дати, адреса, сигнал, позиції з ціною, телефон, договір, MAC, напарник; exists/count/list/group/stats',
+  list_catalog: 'Реальні назви використаних матеріалів, робіт, міст і напарників',
+  find_tickets_by_address: 'Пошук за адресою (варіанти написання)',
+  list_places: 'Міста, вулиці, будинки з заявок',
+  get_tickets_by_date: 'Заявки за дату',
+  get_shifts: 'Зміни, години, напарники',
+  get_reports: 'Денні звіти: кількість, суми',
+  get_statistics: 'Статистика за день/тиждень/місяць/весь час'
 };
 
 export function formatDeepSeekTools(tools){

@@ -61,6 +61,45 @@ export const TOOL_DEFINITIONS = [
     annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
   },
   {
+    name: 'query_tickets',
+    description: 'Універсальний структурований пошук по всій базі заявок: дата, адреса (місто/вулиця/будинок), тип, оплата, сума, сигнал (суворі порівняння), матеріали/роботи з привʼязкою ціни до самої позиції, телефон/договір/MAC, напарник, режим існує/кількість/список/групи/статистика. Усі агрегати рахуються по повному результату ДО сторінкового обмеження.',
+    inputSchema: {
+      type:'object', additionalProperties:false,
+      properties:{
+        mode: {type:'string', enum:['exists','count','list','group','stats'], description:'exists=чи був; count=кількість(+підсумок позицій); list=сторінка заявок; group=групування; stats=гроші/сигнал/тип/оплата.'},
+        group_by: {type:'string', enum:['city','street','house','date','month','type','payment','item','coworker'], description:'Вимір групування для mode=group.'},
+        date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону (включно).'}),
+        date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону (включно).'}),
+        city: {type:'string', maxLength:100, description:'Населений пункт (розуміє UA/RU, відмінки, «в/у»).'},
+        street: {type:'string', maxLength:100, description:'Вулиця без префікса «вул./ул.».'},
+        house: {type:'string', maxLength:16, description:'Номер будинку.'},
+        apartment: {type:'string', maxLength:16, description:'Номер квартири.'},
+        type: {type:'string', maxLength:80, description:'Тип робіт (точно як у даних).'},
+        tags: {type:'array', items:{type:'string'}, minItems:1, maxItems:20},
+        payment: {type:'string', maxLength:80, description:'Спосіб оплати (готівка/безготівка/змішана/безкоштовно, розуміє «наличка» тощо).'},
+        sum_min: {type:'number'}, sum_max: {type:'number'},
+        signal_worse_than: {type:'number', description:'Строго нижче (чисельно): -25 НЕ входить.'},
+        signal_worse_or_equal: {type:'number', description:'Включно: -25 входить.'},
+        signal_better_than: {type:'number'},
+        has_signal: {type:'boolean', description:'true=лише з визначеним сигналом.'},
+        items: {type:'array', minItems:1, maxItems:8, items:{type:'object', additionalProperties:false, properties:{text:{type:'string',minLength:1,maxLength:80}, kind:{type:'string',enum:['equipment','cable','preset_work','additional_work']}, unit_price:{type:'number'}, quantity:{type:'number'}, total:{type:'number'}}, required:['text']}, description:'Усі умови — логічне AND; ціна/кількість/сума привʼязуються до ТОЇ Ж позиції (роутер по 1500 ≠ інша робота за 1500).'},
+        phone_digits: {type:'string', maxLength:20, description:'Цифри телефону (або їх хвіст, ≥3 цифр).'},
+        contract: {type:'string', maxLength:40, description:'Номер договору (частина теж підходить).'},
+        mac: {type:'string', maxLength:20, description:'MAC-адреса або її частина.'},
+        coworker: {type:'string', maxLength:60, description:'Напарник: пряма привʼязка у заявці або збіг зі зміною того ж дня (позначається окремо).'},
+        limit: LIMIT_ARG,
+        offset: OFFSET_ARG
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'list_catalog',
+    description: 'Каталог РЕАЛЬНО використаних у заявках матеріалів/робіт/міст/тегів/напарників із кількостями. Перевіряй тут справжні назви позицій перед пошуком.',
+    inputSchema: {type:'object', additionalProperties:false, properties:{}},
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
     name: 'find_tickets_by_address',
     description: 'Розумний пошук заявок за адресою (місто, село, вулиця, будинок) із підтримкою українського та російського написання, відмінків та одруківок. Повертає знайдені заявки, розпізнану адресу та список будинків на вулиці.',
     inputSchema: {

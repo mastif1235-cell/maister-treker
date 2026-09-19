@@ -1,4 +1,4 @@
-/* Integration tests for the 9 READ tools, incl. the proofs that they can
+/* Integration tests for the 11 READ tools, incl. the proofs that they can
    only read (GET-only, allowlisted actions), are deterministic, and surface
    GAS failures honestly (no fabricated results). */
 
@@ -13,7 +13,7 @@ import {REPO_ROOT} from '../helpers/appvm.js';
 import {createReadTools, createDataPipeline} from '../../src/tools/read.js';
 import {ticketFromGasRow, redactTicket} from '../../src/gas/mappers.js';
 
-test('all 9 READ tools return data through the signed GAS reads', async () => {
+test('all 11 READ tools return data through the signed GAS reads', async () => {
   const fetchImpl = mockGasFetch('ok');
   const app = await makeApp(null, fetchImpl);
 
@@ -76,7 +76,8 @@ test('static proof: MCP source contains no write actions and no POST fetches', (
   const files = ['src/index.js','src/config.js','src/jsonrpc.js','src/ratelimit.js',
     'src/mcp/server.js','src/tools/definitions.js','src/tools/read.js','src/tools/validate.js',
     'src/gas/client.js','src/gas/mappers.js','src/gas/sync-contract.js','src/auth/bearer.js',
-    'src/data/snapshot.js','src/ask/orchestrator.js','src/ask/address.js'];
+    'src/data/snapshot.js','src/ask/orchestrator.js','src/ask/address.js','src/ask/smart-query.js',
+    'src/ask/date-resolver.js'];
   const writeActions = /addTicket|updateTicket|deleteTicket|addShift|updateShift|syncAll|deleteRowById|appendRow|setValues|postDataType|text\/plain;charset=utf-8, body:/;
   for(const rel of files){
     const source = readFileSync(path.join(REPO_ROOT, 'mcp', rel), 'utf8');

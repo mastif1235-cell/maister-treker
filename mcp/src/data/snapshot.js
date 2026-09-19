@@ -72,17 +72,17 @@ export function createSnapshotProvider(options){
     const cached = await kvGet();
     if(cached){
       const age = now() - cached.savedAt;
-      if(age <= ttlMs) return {ok:true, data:cached.data, cache:'fresh'};
+      if(age <= ttlMs) return {ok:true, data:cached.data, cache:'fresh', savedAt:cached.savedAt};
       if(age <= staleMs){
         waitUntil(refresh());
-        return {ok:true, data:cached.data, cache:'stale'};
+        return {ok:true, data:cached.data, cache:'stale', savedAt:cached.savedAt};
       }
     }
     const result = await fetchProjection();
     if(result.ok) return result;
     if(cached){
       log('snapshot_gas_failed_serving_last_known_good');
-      return {ok:true, data:cached.data, cache:'stale'};
+      return {ok:true, data:cached.data, cache:'stale', savedAt:cached.savedAt};
     }
     return result;
   }
