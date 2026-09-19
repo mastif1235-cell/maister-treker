@@ -143,6 +143,15 @@ function geoLinkOnly(value){
   return typeof value === 'string' && /^https:\/\//i.test(value) ? value : '';
 }
 
+/* A coordinate counts as present only when it is a real, non-empty number
+   (null/''/'null'/'undefined' must never become has_geo:true). */
+function coordPresent(value){
+  if(value == null) return false;
+  const s = String(value).trim();
+  if(!s || s === 'null' || s === 'undefined') return false;
+  return Number.isFinite(Number(s));
+}
+
 /* Whitelist projection of one ticket for MCP clients. Field order is fixed
    (deterministic JSON output for identical inputs). */
 export function redactTicket(t){
@@ -177,7 +186,7 @@ export function redactTicket(t){
     /* has_geo is a derived BOOLEAN only: coordinates themselves never enter
        the projection (geoLink URLs stay whitelisted for MCP parity, but the
        /ask orchestrator forwards neither geoLink nor coordinates). */
-    has_geo: !!(geoLinkOnly(f.geoLink) || (Number.isFinite(Number(f.geoLat)) && Number.isFinite(Number(f.geoLng)) && String(f.geoLat).trim() !== '' && String(f.geoLng).trim() !== '')),
+    has_geo: !!(geoLinkOnly(f.geoLink) || (coordPresent(f.geoLat) && coordPresent(f.geoLng))),
     equipment: Array.isArray(f.equipment) ? f.equipment.map(function(e){
       const qty = num(e && e.qty);
       /* Saved equipment rows carry no native quantity in the app data model;
