@@ -114,7 +114,7 @@ export function createReadTools(options){
     const wantedCity = params.city ? cleanStr(params.city).replace(/^в\s+/, '') : null;
     const cityMatches = function(ticket){
       if(!wantedCity) return true;
-      if(ticket.city && matchScore(ticket.city, wantedCity) >= 0.72) return true;
+      if(ticket.city) return matchScore(ticket.city, wantedCity) >= 0.72;
       const indexed = data.searchIndex.find(function(item){ return item.id === ticket.id; });
       const rawTokens = cleanStr(indexed && indexed.text).replace(/ё/g, 'е').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       const textStems = rawTokens.map(normalizeStem);

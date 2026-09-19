@@ -178,7 +178,8 @@ test('list_tickets composes city, signal and date filters including legacy rows'
     {id:'c2',date:'10.04.2026',time:'10:01',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-24'})},
     {id:'c3',date:'10.04.2026',time:'10:02',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Таромське',street:'Мостова',signal:'-32'})},
     {id:'c4',date:'10.04.2026',time:'10:03',content:'',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({city:'Карнаухівка',street:'Мостова',signal:'-30'})},
-    {id:'legacy-city',date:'10.04.2026',time:'10:04',content:'Таромское ул. Пищана 16 красный LOS сигнал -31 после ремонта сигнал -24',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({})}
+    {id:'legacy-city',date:'10.04.2026',time:'10:04',content:'Таромское ул. Пищана 16 красный LOS сигнал -31 после ремонта сигнал -24',sum:0,tags:[],backupNote:'',fullDataJson:JSON.stringify({})},
+    {id:'structured-other-note-city',date:'10.04.2026',time:'10:05',content:'',sum:0,tags:[],backupNote:'Таромское в приватной заметке',fullDataJson:JSON.stringify({city:'Дніпро',street:'Центральна',signal:'-31'})}
   ];
   const pipeline = createDataPipeline({getList:async function(){return {ok:true,data:{tickets:rows,shifts:[]}};}});
   const tools = createReadTools({data:pipeline});
@@ -186,6 +187,7 @@ test('list_tickets composes city, signal and date filters including legacy rows'
   assert.equal(result.data.total_matched,3);
   assert.deepEqual(result.data.tickets.map(function(t){return t.id;}).sort(),['c1','c3','legacy-city'].sort());
   assert.equal(result.data.analytics.unique_cities.reduce(function(s,x){return s+x.count;},0),3);
+  assert.ok(!result.data.tickets.some(function(t){return t.id === 'structured-other-note-city';}));
   for(const city of ['Таромском','Таромське']){
     const legacyOnly = await tools.list_tickets({city:city,signal_worse_than:-25,date_from:'01.04.2026',date_to:'30.04.2026'});
     assert.ok(legacyOnly.data.tickets.some(function(t){return t.id === 'legacy-city';}), city);
