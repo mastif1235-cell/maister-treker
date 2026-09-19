@@ -100,17 +100,23 @@ MTAI.createChatController = function(deps){
        навіть коли картки при звичайному пошуку НЕ рендерились); fallback —
        видимі tickets зі старих збережених сесій. */
     let referent = [];
+    for(let i = messages.length - 1; i >= 0; i--){
+      const m = messages[i];
+      if(m.role !== 'assistant') continue;
+      const ref = (Array.isArray(m.referentTickets) && m.referentTickets.length) ? m.referentTickets
+        : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
+      if(ref.length){ referent = ref; break; }
+    }
+    /* v91.46: структурований follow-up контекст — ТІЛЬКИ з безпосередньо
+       попередньої assistant-відповіді (активний контекст розмови). Жодного
+       сканування вглиб: якщо попередня відповідь його не має — контекст
+       протух і надсилати старі фільтри не можна. */
     let followUpQueryContext = null;
     for(let i = messages.length - 1; i >= 0; i--){
       const m = messages[i];
       if(m.role !== 'assistant') continue;
-      if(!referent.length){
-        const ref = (Array.isArray(m.referentTickets) && m.referentTickets.length) ? m.referentTickets
-          : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
-        if(ref.length) referent = ref;
-      }
-      if(!followUpQueryContext && m.queryContext && typeof m.queryContext === 'object') followUpQueryContext = m.queryContext;
-      if(referent.length && followUpQueryContext) break;
+      if(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) followUpQueryContext = m.queryContext;
+      break;
     }
     if(!isRetry){ messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() }); persist(); }
     /* v91.46: структурований follow-up контекст (авторитетні фільтри

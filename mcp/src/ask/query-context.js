@@ -40,6 +40,11 @@ function validDate(value){
   return /^\d{2}\.\d{2}\.\d{4}$/.test(s) ? s : null;
 }
 
+const ITEM_KIND_ENUM = ['equipment', 'cable', 'preset_work', 'additional_work'];
+
+/* Carry the ORIGINAL condition only: text + pool kind + attribute binding.
+   kind restricts the pool — dropping it would widen the follow-up search;
+   resolved_labels/concept are re-derived deterministically by the engine. */
 function projectItems(raw){
   if(!Array.isArray(raw)) return [];
   const out = [];
@@ -48,14 +53,10 @@ function projectItems(raw){
     const text = clip(item.text, 80).trim();
     if(!text) continue;
     const clean = {text: text};
-    if(typeof item.concept === 'string') clean.concept = clip(item.concept, 40);
-    if(Array.isArray(item.resolved_labels)){
-      clean.resolved_labels = item.resolved_labels.slice(0, 6).map(function(l){ return clip(l, 80); });
-    }
-    if(typeof item.in_catalog === 'boolean') clean.in_catalog = item.in_catalog;
+    if(ITEM_KIND_ENUM.indexOf(item.kind) !== -1) clean.kind = item.kind;
     for(const k of ['unit_price', 'quantity', 'total']){
       const n = Number(item[k]);
-      if(Number.isFinite(n)) clean[k] = n;
+      if(Number.isFinite(n) && item[k] !== null && item[k] !== '') clean[k] = n;
     }
     out.push(clean);
   }
@@ -132,6 +133,24 @@ export function sanitizeIncomingQueryContext(raw){
     mode: typeof raw.mode === 'string' ? clip(raw.mode, 12) : 'list',
     total_matched: Number.isFinite(Number(raw.total_matched)) ? Number(raw.total_matched) : null
   };
+}
+
+/* ---------- explicit anaphoric follow-up detection (v91.46) ----------
+   SMALL deterministic detector (not a phrase router): explicit «show/list
+   THEM» formulations in UA/RU. Used only as a safety net — inheritance is
+   still refused when the model call carries its own structural filters. */
+const ANAPHORA_TOKENS = new Set(['их', 'їх', 'этих', 'ці', 'эти', 'такие', 'такі', 'усі', 'всі', 'все', 'список', 'списком', 'поіменно', 'поименно']);
+const SHOW_VERB_RE = /покаж|показ(?:ат|ати)|перечисл|перераху|вивед|розпиш|напиш(?:іть|ите)?|дай(?:те)?[\s?!]|список|списком/;
+const WHICH_EXACTLY_RE = /(?:які|какие|що|что)\s+(?:саме|именно|конкретно)/;
+
+export function isAnaphoricListFollowUp(question){
+  const q = String(question == null ? '' : question).toLowerCase().replace(/ё/g, 'е').replace(/[?!….\s]+$/, '').trim();
+  if(!q || q.length > 60) return false;
+  if(!SHOW_VERB_RE.test(q) && !WHICH_EXACTLY_RE.test(q)) return false;
+  const tokens = q.split(/[^\p{L}\p{N}']+/u).filter(Boolean);
+  if(tokens.some(function(t){ return ANAPHORA_TOKENS.has(t); })) return true;
+  if(WHICH_EXACTLY_RE.test(q)) return true;
+  return false;
 }
 
 export function hasStructuralParams(args){

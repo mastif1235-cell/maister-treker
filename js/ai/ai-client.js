@@ -181,6 +181,8 @@ MTAI.createClient = function(options){
             const text = String(item.text == null ? '' : item.text).slice(0,80).trim();
             if(!text) return null;
             const clean = {text:text};
+            /* kind — обмеження пулу позицій; лише з дозволеного enum. */
+            if(['equipment','cable','preset_work','additional_work'].indexOf(item.kind) !== -1) clean.kind = item.kind;
             for(const nk of ['unit_price','quantity','total']){
               const n = Number(item[nk]);
               if(isFinite(n) && item[nk] !== null && item[nk] !== undefined && item[nk] !== '') clean[nk] = n;

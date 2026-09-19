@@ -74,3 +74,38 @@ test('hasStructuralParams sees every param that marks a new question', () => {
   assert.equal(hasStructuralParams({mac:'aa'}), true);
   assert.equal(hasStructuralParams({items:[{text:'роутер'}]}), true);
 });
+
+/* ---------- v91.46 r2: anaphoric follow-up detector ---------- */
+
+import {isAnaphoricListFollowUp} from '../../src/ask/query-context.js';
+
+test('isAnaphoricListFollowUp: explicit «show/list THEM» formulations (UA/RU)', () => {
+  for(const q of ['Покажи их', 'покажи эти заявки', 'Покажи список', 'перечисли их', 'дай их списком', 'а какие именно?', 'Покажіть їх', 'перерахуй їх', 'Покажи ці заявки', 'покажи усі', 'які саме заявки?']){
+    assert.equal(isAnaphoricListFollowUp(q), true, q);
+  }
+});
+
+test('isAnaphoricListFollowUp: independent questions never match', () => {
+  for(const q of ['Скільки заявок у Миколаївці 1?', 'Покажи картку заявки', 'покажи карту', 'Скільки заробив за серпень?', 'Покажи заявки за вчора', 'відкрий цю заявку', 'Які вулиці є в Миколаївці 1?', '']){
+    assert.equal(isAnaphoricListFollowUp(q), false, q);
+  }
+});
+
+/* ---------- v91.46 r2: tags and item kind are carried verbatim ---------- */
+
+test('projectQueryFilters keeps tags and item kind from the allowed enum only', () => {
+  const out = projectQueryFilters({
+    tags:['Терміново', 'Гарантія'],
+    items:[
+      {text:'роутер', kind:'equipment', unit_price:1500, resolved_labels:['x'], concept:'router', in_catalog:true},
+      {text:'кабель', kind:'evil_pool', quantity:10},
+      {text:'муфта'}
+    ]
+  });
+  assert.deepEqual(out.tags, ['Терміново', 'Гарантія']);
+  assert.deepEqual(out.items, [
+    {text:'роутер', kind:'equipment', unit_price:1500},
+    {text:'кабель', quantity:10},
+    {text:'муфта'}
+  ], 'kind survives only from the enum; labels/concept are not carried');
+});

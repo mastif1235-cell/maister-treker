@@ -224,3 +224,130 @@ test('follow-up context injection carries no private fields', async () => {
     assert.ok(!system.content.includes(banned), 'forbidden in system prompt: ' + banned);
   }
 });
+
+/* ---------- v91.46 r2: deterministic backstop WITHOUT the model flag ----------
+   The real production risk: DeepSeek answers «Покажи их» with a plain
+   query_tickets({mode:'list'}) — no inherit_previous_filters. The Worker
+   must still apply the previous authoritative filters (fresh READ). */
+
+test('BACKSTOP: «Покажи их» with {mode:"list"} ONLY — Worker inherits city deterministically', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'list'}), /* the model forgot the flag — production risk */
+    finalAnswer('Ось заявки Миколаївки 1:')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Покажи их', {
+    history: [
+      {role:'user', content:'Скільки заявок у Миколаївці 1?'},
+      {role:'assistant', content:'У Миколаївці 1 всього 8 заявок.'}
+    ],
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.equal(turn2.ok, true);
+  assert.equal(record2[0].city, 'Миколаївка 1', 'deterministic backstop applied without the flag');
+  assert.equal(turn2.total, 8, 'COUNT and LIST still agree');
+  const listEnv = await runSmartQuery(BASE, record2[0]);
+  for(const row of listEnv.data.tickets){
+    assert.ok(!String(row.city).includes('Миколаївка 2'), 'Миколаївка 2 cannot leak in even when the model forgets the flag');
+  }
+});
+
+test('BACKSTOP does not fire for independent questions (no anaphora)', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'count'}), /* model sends an empty count — a NEW question */
+    finalAnswer('У базі 19 заявок.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  await orch2.handle('Скільки взагалі заявок?', {
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.equal(record2[0].city, undefined, 'old filters must not hijack an independent question');
+});
+
+test('BACKSTOP yields to the model call when it passes its own structural filters', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'list', city:'Миколаївка 2'}),
+    finalAnswer('Ось Миколаївка 2.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Покажи их', {
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.equal(record2[0].city, 'Миколаївка 2', 'the explicit new filter wins — merge refused');
+  assert.equal(turn2.total, 3);
+});
+
+/* ---------- v91.46 r2: tags + item kind are the SAME filters on follow-up ---------- */
+
+function makeQueryToolsOn(base, record){
+  return {
+    query_tickets: async function(args){
+      record.push(args);
+      return runSmartQuery(base, args);
+    }
+  };
+}
+
+test('TAGS: count → «покажи их» inherits the tag filter, same matched set', async () => {
+  const rows = GAS_ROWS.map(function(r){ return Object.assign({}, r); });
+  rows[0].tags = ['Терміново'];
+  rows[3].tags = ['Терміново'];
+  rows[9].tags = ['Терміново']; /* Миколаївка 2 — must NOT enter the city query */
+  const mapped = rows.map(ticketFromGasRow);
+  const base = {tickets: mapped.map(redactTicket), shifts: [], searchIndex: mapped.map(function(t){ return {id:t.id, text:t.searchableText}; })};
+
+  const record1 = [];
+  const groq1 = scriptedGroq([
+    toolCall({mode:'count', city:'Миколаївка 1', tags:['Терміново']}),
+    finalAnswer('Дві термінові.')
+  ]);
+  const orch1 = createAskOrchestrator({groq:groq1, tools:makeQueryToolsOn(base, record1), toolDefs:TOOL_DEFINITIONS});
+  const turn1 = await orch1.handle('Скільки термінових у Миколаївці 1?');
+  assert.equal(turn1.total, 2);
+  assert.deepEqual(turn1.queryContext.resolved_filters.tags, ['Терміново'], 'tags saved into resolved_filters');
+
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'list'}), /* no flag: backstop path */
+    finalAnswer('Ось вони.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryToolsOn(base, record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Покажи их', {queryContext: turn1.queryContext});
+  assert.deepEqual(record2[0].tags, ['Терміново'], 'tag filter inherited verbatim');
+  assert.equal(record2[0].city, 'Миколаївка 1');
+  assert.equal(turn2.total, 2, 'same matched set as COUNT');
+});
+
+test('ITEM KIND: follow-up keeps text + kind=equipment + unit_price and never widens to other pools', async () => {
+  /* Row E: «Роутер» exists in BOTH pools at the same price — only the
+     equipment one may match when kind=equipment. Row F: cable-only. */
+  const rows = [
+    {id:'e1', date:'10.09.2026', time:'10:00', content:'', sum:1500, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Дніпро', equipment:[{label:'Роутер', price:1500, qty:1, total:1500}], cables:[{label:'Роутер', meters:5, pricePerMeter:300}]})},
+    {id:'f1', date:'11.09.2026', time:'10:00', content:'', sum:1500, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Дніпро', cables:[{label:'Роутер', meters:5, pricePerMeter:300}]})}
+  ];
+  const mapped = rows.map(ticketFromGasRow);
+  const base = {tickets: mapped.map(redactTicket), shifts: [], searchIndex: mapped.map(function(t){ return {id:t.id, text:t.searchableText}; })};
+
+  const record1 = [];
+  const groq1 = scriptedGroq([
+    toolCall({mode:'count', items:[{text:'роутер', kind:'equipment', unit_price:1500}]}),
+    finalAnswer('Одна.')
+  ]);
+  const orch1 = createAskOrchestrator({groq:groq1, tools:makeQueryToolsOn(base, record1), toolDefs:TOOL_DEFINITIONS});
+  const turn1 = await orch1.handle('Скільки роутерів по 1500?');
+  assert.equal(turn1.total, 1, 'only the equipment pool matches (kind constraint)');
+  assert.deepEqual(turn1.queryContext.resolved_filters.items, [{text:'роутер', kind:'equipment', unit_price:1500}], 'kind + attribute survive the round trip');
+
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'list'}), /* no flag: backstop path */
+    finalAnswer('Ось:')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryToolsOn(base, record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Покажи их', {queryContext: turn1.queryContext});
+  assert.deepEqual(record2[0].items, [{text:'роутер', kind:'equipment', unit_price:1500}], 'follow-up re-runs the SAME structured condition');
+  assert.equal(turn2.total, 1, 'the cable-only row with the same label never matches');
+});

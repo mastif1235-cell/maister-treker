@@ -20,7 +20,7 @@
 import {validateAgainstSchema} from '../tools/validate.js';
 import {dateHintsLine, resolveDateRanges} from './date-resolver.js';
 import {renumberSequentialLists} from './format.js';
-import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters} from './query-context.js';
+import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters, isAnaphoricListFollowUp} from './query-context.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -289,12 +289,18 @@ export function createAskOrchestrator(options){
        resolved_filters deterministically. Only an explicit flag triggers it,
        and only when the call itself carries no structural filters (a call
        with its own filters is a NEW question — no stale inheritance). */
-    if(def.name === 'query_tickets' && args.inherit_previous_filters === true && capture && capture.queryContext){
-      args = mergeInheritedFilters(args, capture.queryContext.resolved_filters);
-    } else if(def.name === 'query_tickets' && args.inherit_previous_filters != null){
-      const stripped = Object.assign({}, args);
-      delete stripped.inherit_previous_filters;
-      args = stripped;
+    if(def.name === 'query_tickets'){
+      const wantsInherit = args.inherit_previous_filters === true ||
+        !!(capture && capture.anaphoricFollowUp && capture.queryContext);
+      if(wantsInherit && capture && capture.queryContext){
+        /* mergeInheritedFilters itself refuses when the call already carries
+           structural filters — a NEW question never gets stale filters. */
+        args = mergeInheritedFilters(args, capture.queryContext.resolved_filters);
+      } else if(args.inherit_previous_filters != null){
+        const stripped = Object.assign({}, args);
+        delete stripped.inherit_previous_filters;
+        args = stripped;
+      }
     }
     let outcome;
     try{ outcome = await tools[def.name](args); }
@@ -380,6 +386,11 @@ export function createAskOrchestrator(options){
        only (no notes/phones/PII); injected for the model and enforced
        deterministically for inherit_previous_filters calls. */
     const queryContext = sanitizeIncomingQueryContext(options && options.queryContext);
+    /* v91.46 backstop: explicit anaphoric follow-up («покажи их», «перечисли
+       их», «які саме?») + previous queryContext → the inherited filters are
+       applied EVEN IF the model forgets inherit_previous_filters. Inheritance
+       is still refused when the call carries its own structural filters. */
+    const anaphoricFollowUp = !!(queryContext && isAnaphoricListFollowUp(questionText));
     let queryContextLine = '';
     if(queryContext){
       queryContextLine = '\nСтруктурні фільтри попереднього запиту (авторитетні, з інструменту; попередній результат: ' +
@@ -423,7 +434,8 @@ export function createAskOrchestrator(options){
           toolCallsMade++;
           const resultText = await executeTool(call, collectedTickets, toolTotals, {
             setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
-            queryContext: queryContext
+            queryContext: queryContext,
+            anaphoricFollowUp: anaphoricFollowUp
           });
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
