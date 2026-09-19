@@ -20,22 +20,170 @@ export function cleanStr(s){
    «Миколаївка 2» must NEVER merge. The key is internal only; UI display
    always stays a real human variant from the data. */
 export function canonicalCityKey(city){
-  const tokens = cleanStr(city).split(/\s+/).filter(Boolean);
-  const stemTokens = [];
-  const digitTokens = [];
-  for(const tok of tokens){
-    if(/^\d+$/.test(tok)) digitTokens.push(tok);
-    else {
-      const stem = normalizeStem(tok);
-      if(stem) stemTokens.push(stem);
-    }
+  return placeIdentity(city);
+}
+
+/* Deterministic UA↔RU toponym root aliases. These are the SAME place name
+   in two languages, not similar names: applied only to whole reduced stems
+   («Новомиколаївка» → stem «новомикола» is untouched). */
+const CITY_STEM_ALIASES = [
+  ['никола', 'микола'],       /* Николаевка ↔ Миколаївка */
+  ['александр', 'олександр'], /* Александровка ↔ Олександрівка */
+  ['елизавет', 'єлизавет'],
+  ['екатерин', 'катерин']
+];
+
+/* Explicit UA↔RU root pairs (ROOT_TRANSLATIONS) are the same kind of proof
+   as CITY_STEM_ALIASES: the two spellings are one name in two languages. */
+function rootTranslationApplies(word){
+  const w = cleanStr(word);
+  for(const [pat] of ROOT_TRANSLATIONS){
+    if(pat.test(w)) return true;
   }
-  if(!stemTokens.length && !digitTokens.length) return '';
-  return stemTokens.join(' ') + (digitTokens.length ? '#' + digitTokens.join('#') : '');
+  return false;
+}
+
+function aliasStem(stem){
+  for(const pair of CITY_STEM_ALIASES){
+    if(stem === pair[0]) return pair[1];
+  }
+  return stem;
+}
+
+/* Textual ordinals → digit part. Explicit closed list (1..10, UA+RU common
+   forms); anything else stays a plain word and never becomes a digit. */
+const ORDINAL_TO_DIGIT = Object.create(null);
+(function(){
+  const table = {
+    1: ['перша','перший','перше','першою','першому','першій','першого','першу','первая','первый','первое','первой','первую','первом','перві'],
+    2: ['друга','другий','друге','другою','другому','другій','другого','другу','вторая','второй','второе','втором'],
+    3: ['третя','третій','третє','третьою','третьому','третьої','третю','третья','третье','третьей','третью','третьему'],
+    4: ['четверта','четвертий','четверте','четверту','четвертая','четвертый','четвертое','четвертой','четвертую'],
+    5: ['пята','пятий','пяте','пятою','пятая','пятый','пятое','пятой','пятую'],
+    6: ['шоста','шостий','шосте','шосту','шестая','шестой','шестое','шестую'],
+    7: ['сьома','сьомий','сьоме','сьому','семая','семой','семый','семое','седьмая','седьмой','седьмое'],
+    8: ['восьма','восьмий','восьме','восьму','восьмая','восьмой','восьмое','восьмую'],
+    9: ['девята','девятий','девять','девятая','девятой','девятую'],
+    10: ['десята','десятий','десяте','десяту','десятая','десятый','десятое','десятой','десятую']
+  };
+  for(const digit of Object.keys(table)){
+    for(const word of table[digit]) ORDINAL_TO_DIGIT[word] = digit;
+  }
+})();
+
+export function ordinalToDigit(word){
+  return ORDINAL_TO_DIGIT[cleanStr(word)] || null;
+}
+
+/* Split a place value into letter stems and digit parts. Handles:
+   «Миколаївка1» (no space) → [миколаївка]+[1]; «Миколаївка перша»
+   (ordinal) → [миколаївка]+[1]; «Николаевка 1» (RU) → [микола]+[1];
+   «Николаевке» (case form) → [микола]. Digits are identity-bearing. */
+const NOISE_TOKENS = new Set(['в','у','во','на','с','из','до','от','із','та','и','й']);
+const STREET_PREFIX_TOKENS = new Set(['вул','вулиця','улица','ул','просп','проспект','пр','пров','переулок','пер','бул','бульвар','наб','набережна','набережная','шосе','шоссе','спуск','узвіз','тракт','алея','площа','площадь','майдан']);
+
+export function placeTokens(value){
+  const letters = [];
+  const digits = [];
+  const state = {aliased: false};
+  const cleaned = cleanStr(value);
+  if(!cleaned) return {letters, digits};
+  const tokens = cleaned.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  for(const tok of tokens){
+    if(/^\d+$/.test(tok)){ digits.push(String(Number(tok))); continue; }
+    const ordinal = ORDINAL_TO_DIGIT[tok];
+    if(ordinal){ digits.push(ordinal); continue; }
+    if(NOISE_TOKENS.has(tok) || STREET_PREFIX_TOKENS.has(tok)) continue;
+    const glued = /^(\p{L}+?)(\d{1,4})$/u.exec(tok);
+    if(glued){
+      const stem = normalizeStem(glued[1]);
+      const aliased = aliasStem(stem);
+      if(aliased !== stem) state.aliased = true;
+      if(stem) letters.push(aliased);
+      digits.push(String(Number(glued[2])));
+      continue;
+    }
+    const stem = normalizeStem(tok);
+    const aliased = aliasStem(stem);
+    if(aliased !== stem) state.aliased = true;
+    else if(rootTranslationApplies(tok)) state.aliased = true;
+    if(stem) letters.push(aliased);
+  }
+  return {letters, digits, aliased: state.aliased};
+}
+
+/* True when a UA↔RU alias translation took part in reducing this value:
+   direct evidence that the value is the OTHER language's spelling of a
+   name, which is exactly when two different-looking surfaces are allowed
+   to be the same place. */
+export function aliasApplied(value){
+  return placeTokens(value).aliased;
+}
+
+/* Readable surface of a place value: service words («вул», «ул.») dropped,
+   textual ordinals folded to their digit, number tokens normalized, the
+   remaining spelling kept AS WRITTEN. Used only to verify that two values
+   with one identity key really look like the same name. */
+export function placeSurface(value){
+  const tokens = cleanStr(value).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const out = [];
+  for(const tok of tokens){
+    if(/^\d+$/.test(tok)){ out.push(String(Number(tok))); continue; }
+    const ordinal = ORDINAL_TO_DIGIT[tok];
+    if(ordinal){ out.push(ordinal); continue; }
+    if(NOISE_TOKENS.has(tok) || STREET_PREFIX_TOKENS.has(tok)) continue;
+    out.push(tok);
+  }
+  return out.join(' ');
+}
+
+/* Two values are the SAME place when the identity keys agree AND the
+   surface forms are compatible: identical, explained by the UA↔RU alias
+   table, prefix-related, or within a tiny edit distance (typos, inflected
+   forms). Genuinely different derivations that merely share a stem
+   («Виноградна» vs «Виноградівська») are NOT merged — identity equality
+   alone is never enough to fuse two readable names. */
+export function placeCompatible(a, b){
+  const ia = placeIdentity(a), ib = placeIdentity(b);
+  if(!ia || !ib || ia !== ib) return false;
+  const ra = placeSurface(a), rb = placeSurface(b);
+  if(!ra || !rb) return false;
+  if(ra === rb) return true;
+  if(aliasApplied(cleanStr(a)) || aliasApplied(cleanStr(b))) return true;   /* explicit RU↔UA pair */
+  const maxLen = Math.max(ra.length, rb.length);
+  if(ra.startsWith(rb) || rb.startsWith(ra)){
+    const minLen = Math.min(ra.length, rb.length);
+    if(minLen >= 4 && (minLen / maxLen) >= 0.7) return true;
+  }
+  /* Same word stem, difference confined to the ENDING, and the whole word
+     barely longer/shorter — that is a UA↔RU ending pair («Таромське» /
+     «Таромское») or a case form. Encoded derivations that change the word
+     («Виноградна» / «Виноградівська») differ too much in length: rejected. */
+  if(stemSurface(ra) === stemSurface(rb) && Math.abs(ra.length - rb.length) <= 2) return true;
+  const dist = damerauLevenshtein(ra, rb);
+  if(maxLen >= 10) return dist <= 2;
+  if(maxLen >= 6) return dist <= 1;
+  return dist === 0;
+}
+
+/* The surface with the language/case ending removed from every token. */
+export function stemSurface(surface){
+  return String(surface || '').split(' ').map(function(tok){
+    if(/^\d+$/.test(tok)) return tok;
+    return tok.replace(SUFFIX_RE, '');
+  }).join(' ');
+}
+
+/* Deterministic identity key of a city or street value. Equal key = the
+   same place under catalog semantics; different key = a different place. */
+export function placeIdentity(value){
+  const t = placeTokens(value);
+  if(!t.letters.length && !t.digits.length) return '';
+  return t.letters.join(' ') + (t.digits.length ? '#' + t.digits.join('#') : '');
 }
 
 const PREFIX_RE = /^(?:вул(?:иця|\.)?|ул(?:ица|\.)?|просп(?:ект|\.)?|пр(?:-кт|\.)?|пров(?:улок|\.)?|пер(?:еулок|\.)?|бул(?:ьвар|\.)?|наб(?:ережна|\.)?|тупик|узвіз|спуск|шосе|тракт|алея)\s+/i;
-const SUFFIX_RE = /(?:івською|івської|івському|івська|івську|івські|івське|івський|евскою|евской|евском|евского|евскому|евская|евскую|евские|евское|евский|євскою|євской|євском|євского|євскому|євская|євскую|євские|євское|євский|овською|овської|овському|овська|овську|овські|овське|овський|овскою|овской|овском|овского|овскому|овская|овскую|овские|овское|овский|ського|ского|ському|скому|ськом|ском|ський|ский|ська|ская|ське|ское|ські|ские|ських|ских|ської|ской|ового|евого|євого|овому|евому|євому|овою|евою|євою|овой|евой|євой|овую|евую|євую|овая|евая|євая|івка|овка|евка|євка|ова|ева|єва|ову|еву|єву|ное|не|ном|ним|нем|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|ями|ами|ях|ах|ям|ам|ому|ем|єм|ом|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
+const SUFFIX_RE = /(?:івською|івської|івському|івська|івську|івські|івське|івський|евскою|евской|евском|евского|евскому|евская|евскую|евские|евское|евский|євскою|євской|євском|євского|євскому|євская|євскую|євские|євское|євский|овською|овської|овському|овська|овську|овські|овське|овський|овскою|овской|овском|овского|овскому|овская|овскую|овские|овское|овский|ського|ского|ському|скому|ськом|ском|ський|ский|ська|ская|ське|ское|ські|ские|ських|ских|ської|ской|ового|евого|євого|овому|евому|євому|овою|евою|євою|овой|евой|євой|овую|евую|євую|овая|евая|євая|ївками|івками|евками|овками|ївках|івках|евках|овках|ївкою|івкою|евкою|овкою|евке|овке|ївці|івці|евці|овці|ївок|івок|евок|овок|ївки|івки|евки|овки|ївка|ївку|івку|евку|овку|евої|ової|евій|овій|евому|овому|евим|овим|еві|ові|еве|ове|еву|ову|івка|овка|евка|євка|ова|ева|єва|ову|еву|єву|ное|не|ном|ним|нем|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|ями|ами|ях|ах|ям|ам|ому|ем|єм|ом|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
 
 const ROOT_TRANSLATIONS = [
   [/^ліс/i, 'лес'],

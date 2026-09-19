@@ -9,6 +9,9 @@
    key name is present — defense in depth that tests exercise. */
 
 export const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
+
+/* Private marker lines of the app's own backup note (UA + RU variants). */
+const PRIVATE_NOTE_LINE_RE = /^(?:Логін|Логин|Пароль|Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера|ПовніДаніJSON)\s*:/i;
 export const TIME_RE = /^\d{2}:\d{2}$/;
 
 /* Exact mirror of the app's normalizeOnuSignal (js/ticket-form-domain.js). */
@@ -25,7 +28,20 @@ export function normalizeOnuSignal(value){
    unrelated negative number in a note never becomes a signal. */
 export function searchableTextFromGasRow(row, fullData){
   const f = fullData && typeof fullData === 'object' ? fullData : {};
-  return [row && row.content, row && row.backupNote, f.note, f.abonentNote, f.otherNote, f.masterNote]
+  /* v91.48 privacy fix: the internal search index (and therefore the KV
+     snapshot copy of it) is built ONLY from address-relevant public text.
+     The app's own private markers — «Приватна примітка майстра:», «Логін:»,
+     «Пароль:», and the «ПовніДаніJSON:» line (which carries login/password
+     values inside its JSON) — are excluded, and masterNote (master-private
+     by design) is no longer indexed. Structured fields from that JSON line
+     still reach the tools through the normal mapper path, so legacy address
+     matching is unaffected; only private notes stop being searchable. */
+  const publicBackupNote = String(row && row.backupNote || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter(function(line){ return !PRIVATE_NOTE_LINE_RE.test(line.trim()); })
+    .join('\n');
+  return [row && row.content, publicBackupNote, f.note, f.abonentNote, f.otherNote]
     .map(function(value){ return String(value == null ? '' : value).trim(); }).filter(Boolean).join('\\n');
 }
 

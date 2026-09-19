@@ -13,8 +13,10 @@
                                      by name, no values).
 
    Only the REDACTED projection (exactly the objects the MCP tools return to
-   clients) is ever written to KV — raw rows, fullDataJson and secrets never
-   enter the cache. SNAPSHOT_VERSION invalidates old shapes on schema or
+   clients) plus the internal address search index built from PUBLIC address
+   text is ever written to KV — raw rows, fullDataJson and secrets never
+   enter the cache. Since v91.48 the search index excludes the app's private
+   marker lines and masterNote (mappers.searchableTextFromGasRow). SNAPSHOT_VERSION invalidates old shapes on schema or
    redaction changes.
 
    v2 (v91.44): the REDACTED schema changed — equipment rows now carry
