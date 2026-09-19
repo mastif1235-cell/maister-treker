@@ -289,18 +289,19 @@ export function createAskOrchestrator(options){
        resolved_filters deterministically. Only an explicit flag triggers it,
        and only when the call itself carries no structural filters (a call
        with its own filters is a NEW question — no stale inheritance). */
-    if(def.name === 'query_tickets'){
-      const wantsInherit = args.inherit_previous_filters === true ||
-        !!(capture && capture.anaphoricFollowUp && capture.queryContext);
-      if(wantsInherit && capture && capture.queryContext){
-        /* mergeInheritedFilters itself refuses when the call already carries
-           structural filters — a NEW question never gets stale filters. */
-        args = mergeInheritedFilters(args, capture.queryContext.resolved_filters);
-      } else if(args.inherit_previous_filters != null){
-        const stripped = Object.assign({}, args);
-        delete stripped.inherit_previous_filters;
-        args = stripped;
-      }
+    /* v91.47 authoritative follow-up: on an explicit anaphoric turn the
+       ticket data was ALREADY computed deterministically before the loop —
+       whatever ticket-search tool the model calls gets that same payload
+       (no wider scope, no second source, no duplicate rows). */
+    if(capture && capture.authoritativeFollowUp && capture.authoritativeText && TICKET_TOOLS[def.name]){
+      return capture.authoritativeText;
+    }
+    if(def.name === 'query_tickets' && args.inherit_previous_filters === true && capture && capture.queryContext){
+      args = mergeInheritedFilters(args, capture.queryContext.resolved_filters);
+    } else if(def.name === 'query_tickets' && args.inherit_previous_filters != null){
+      const stripped = Object.assign({}, args);
+      delete stripped.inherit_previous_filters;
+      args = stripped;
     }
     let outcome;
     try{ outcome = await tools[def.name](args); }
@@ -392,13 +393,50 @@ export function createAskOrchestrator(options){
        is still refused when the call carries its own structural filters. */
     const anaphoricFollowUp = !!(queryContext && isAnaphoricListFollowUp(questionText));
     let queryContextLine = '';
-    if(queryContext){
+    if(queryContext && !anaphoricFollowUp){
       queryContextLine = '\nСтруктурні фільтри попереднього запиту (авторитетні, з інструменту; попередній результат: ' +
         String(queryContext.total_matched == null ? '' : queryContext.total_matched) + '): ' +
         JSON.stringify(queryContext.resolved_filters) +
         ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
     }
     let lastQueryEnvelope = null;
+    /* v91.47: AUTHORITATIVE anaphoric follow-up. For an explicit «покажи их»
+       turn with a valid immediate queryContext the result must NOT depend on
+       which tool the model picks (production bypass: search_tickets /
+       find_tickets_by_address / a self-re-derived broader filter widened
+       8 → 11). The Worker runs ONE fresh deterministic query_tickets with
+       the inherited resolved_filters BEFORE the model loop, serves that as
+       the only ticket data of the turn, and overrides any ticket-search
+       tool the model tries to call with the same authoritative payload. */
+    let authoritativeFollowUp = false;
+    let authoritativeText = null;
+    if(anaphoricFollowUp){
+      const forcedArgs = mergeInheritedFilters({mode:'list', limit:50}, queryContext.resolved_filters);
+      const forcedCall = {name:'query_tickets', argsRaw: JSON.stringify(forcedArgs)};
+      const capture = {
+        setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
+        queryContext: null,
+        authoritativeText: null
+      };
+      const forcedText = await executeTool(forcedCall, collectedTickets, toolTotals, capture);
+      try{
+        const parsed = JSON.parse(forcedText);
+        if(parsed && parsed.result){
+          authoritativeFollowUp = true;
+          authoritativeText = forcedText;
+          queryContextLine = '\nАВТОРИТАТИВНИЙ РЕЗУЛЬТАТ для цього питання (виконано детерміновано зі ТИМИ САМИМИ структурованими фільтрами попереднього запиту, свіжий READ бази): ' +
+            forcedText +
+            '\nВідповідай на «покажи их» ЛИШЕ за цим результатом: перелік і кількість бери звідси (matched/total_matched). НЕ викликай інструменти пошуку повторно і не розширюй область пошуку.';
+        }
+      }catch(_err){
+        /* malformed payload: fall back to the normal model-driven loop with
+           the standard hint, so the context is never silently dropped */
+        queryContextLine = '\nСтруктурні фільтри попереднього запиту (авторитетні, з інструменту; попередній результат: ' +
+          String(queryContext.total_matched == null ? '' : queryContext.total_matched) + '): ' +
+          JSON.stringify(queryContext.resolved_filters) +
+          ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
+      }
+    }
     /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
        an explicit card turn must win over the previous referent (otherwise the
        8-card cap could show old tickets instead of the freshly found one). */
@@ -435,7 +473,8 @@ export function createAskOrchestrator(options){
           const resultText = await executeTool(call, collectedTickets, toolTotals, {
             setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
             queryContext: queryContext,
-            anaphoricFollowUp: anaphoricFollowUp
+            authoritativeFollowUp: authoritativeFollowUp,
+            authoritativeText: authoritativeText
           });
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }

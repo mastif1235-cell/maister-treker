@@ -60,6 +60,22 @@ function makeQueryTools(record){
     query_tickets: async function(args){
       record.push(args);
       return runSmartQuery(BASE, args);
+    },
+    /* Wider tools the model may reach for — each records a {tool,args} marker
+       so the regressions can prove they were NOT executed on authoritative
+       turns; their "wider" result (all 19 rows) would reproduce the 8→11 bug
+       if it ever became the data source of the turn. */
+    search_tickets: async function(args){
+      record.push({tool:'search_tickets', args});
+      return {ok:true, data:{tickets: REDACTED, total_matched: REDACTED.length}};
+    },
+    list_tickets: async function(args){
+      record.push({tool:'list_tickets', args});
+      return {ok:true, data:{tickets: REDACTED, total_matched: REDACTED.length}};
+    },
+    find_tickets_by_address: async function(args){
+      record.push({tool:'find_tickets_by_address', args});
+      return {ok:true, data:{tickets: REDACTED, total_matched: REDACTED.length}};
     }
   };
 }
@@ -77,9 +93,12 @@ function scriptedGroq(steps){
   };
 }
 function toolCall(args){
+  return toolCallNamed('query_tickets', args);
+}
+function toolCallNamed(name, args){
   const raw = JSON.stringify(args);
-  return {ok:true, content:'', toolCalls:[{id:'call_1', name:'query_tickets', argsRaw:raw}],
-    assistantMessage:{role:'assistant', content:'', tool_calls:[{id:'call_1', type:'function', function:{name:'query_tickets', arguments:raw}}]}};
+  return {ok:true, content:'', toolCalls:[{id:'call_1', name, argsRaw:raw}],
+    assistantMessage:{role:'assistant', content:'', tool_calls:[{id:'call_1', type:'function', function:{name, arguments:raw}}]}};
 }
 function finalAnswer(text){ return {ok:true, content:text, toolCalls:[], assistantMessage:{role:'assistant', content:text}}; }
 
@@ -194,7 +213,7 @@ test('«Які вулиці в Миколаївці 1?» after a signal question
   assert.equal(record2[0].city, 'Миколаївка 1');
 });
 
-test('inherit flag with NEW own filters refuses inheritance (own filters win)', async () => {
+test('non-anaphoric narrowing question: model filters still win (flag path kept)', async () => {
   const record2 = [];
   const groq2 = scriptedGroq([
     toolCall({mode:'count', city:'Таромське', signal_worse_than:-30, inherit_previous_filters:true}),
@@ -206,7 +225,6 @@ test('inherit flag with NEW own filters refuses inheritance (own filters win)', 
   });
   assert.equal(record2[0].city, 'Таромське', 'new city replaces the old one');
   assert.equal(record2[0].signal_worse_than, -30);
-  assert.ok(!('Миколаївка 1' === record2[0].city), 'old city must not survive');
 });
 
 /* ---------- privacy: nothing private in the carried context ---------- */
@@ -266,7 +284,7 @@ test('BACKSTOP does not fire for independent questions (no anaphora)', async () 
   assert.equal(record2[0].city, undefined, 'old filters must not hijack an independent question');
 });
 
-test('BACKSTOP yields to the model call when it passes its own structural filters', async () => {
+test('v91.47: the model may not swap the authoritative scope on an explicit anaphora (no new condition in the question)', async () => {
   const record2 = [];
   const groq2 = scriptedGroq([
     toolCall({mode:'list', city:'Миколаївка 2'}),
@@ -276,8 +294,85 @@ test('BACKSTOP yields to the model call when it passes its own structural filter
   const turn2 = await orch2.handle('Покажи их', {
     queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
   });
-  assert.equal(record2[0].city, 'Миколаївка 2', 'the explicit new filter wins — merge refused');
-  assert.equal(turn2.total, 3);
+  assert.equal(record2.length, 1, 'only the deterministic authoritative query ran');
+  assert.equal(record2[0].city, 'Миколаївка 1', 'the model cannot replace the inherited scope on its own');
+  assert.equal(turn2.total, 8);
+});
+
+/* ---------- v91.47: AUTHORITATIVE follow-up — model tool choice cannot widen scope ----------
+   The REAL production hole: DeepSeek answered «покажи их» with a wider
+   non-query_tickets search (11 instead of 8). v91.46 protected only the
+   query_tickets branch. v91.47: on an explicit anaphoric turn with a valid
+   immediate queryContext the Worker itself runs ONE deterministic
+   query_tickets with the inherited filters and overrides ANY ticket-search
+   tool the model tries. */
+
+test('v91.47 HOLE REPRO: model reaches for search_tickets — result stays city=Миколаївка 1, 8 not 11', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCallNamed('search_tickets', {query:'Миколаївка'}), /* the production bypass */
+    finalAnswer('Ось заявки.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('покажи их пожалуйста', {
+    history: [
+      {role:'user', content:'Скільки заявок у Миколаївці 1?'},
+      {role:'assistant', content:'У Миколаївці 1 всього 8 заявок.'}
+    ],
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.equal(turn2.ok, true);
+  assert.ok(!record2.some(function(e){ return e && e.tool; }), 'no wider tool was actually executed');
+  assert.equal(record2.length, 1, 'exactly ONE deterministic query ran');
+  assert.equal(record2[0].city, 'Миколаївка 1', 'the inherited structured filter was applied');
+  assert.equal(turn2.total, 8, 'authoritative matched = 8, not the wider 11');
+  const env = await runSmartQuery(BASE, record2[0]);
+  for(const row of env.data.tickets){
+    assert.ok(!String(row.city).includes('Миколаївка 2'), 'Миколаївка 2 cannot leak in');
+  }
+  const system = groq2.seenMessages.find(function(m){ return m.role === 'system'; });
+  assert.ok(/АВТОРИТАТИВНИЙ РЕЗУЛЬТАТ/.test(system.content), 'the model is told to answer only from the authoritative result');
+});
+
+test('v91.47: model reaches for find_tickets_by_address — still overridden', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCallNamed('find_tickets_by_address', {address_part:'Миколаївка'}),
+    finalAnswer('Ось.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Покажи їх', {
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.ok(!record2.some(function(e){ return e && e.tool; }));
+  assert.equal(record2[0].city, 'Миколаївка 1');
+  assert.equal(turn2.total, 8);
+});
+
+test('v91.47: model passes a self-re-derived BROADER query_tickets scope — overridden', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCall({mode:'list', city:'Миколаївка'}), /* broader: no trailing digit */
+    finalAnswer('Ось.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('покажи их пожалуйста', {
+    queryContext: {resolved_filters:{city:'Миколаївка 1'}, mode:'count', total_matched:8}
+  });
+  assert.equal(record2.length, 1, 'the model call never reached the database');
+  assert.equal(record2[0].city, 'Миколаївка 1', 'the exact inherited filter, not the broader one');
+  assert.equal(turn2.total, 8);
+});
+
+test('v91.47: anaphoric question WITHOUT queryContext stays model-driven (nothing to inherit)', async () => {
+  const record2 = [];
+  const groq2 = scriptedGroq([
+    toolCallNamed('search_tickets', {query:'щось'}),
+    finalAnswer('Ось.')
+  ]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:makeQueryTools(record2), toolDefs:TOOL_DEFINITIONS});
+  await orch2.handle('покажи их');
+  assert.ok(record2.some(function(e){ return e && e.tool === 'search_tickets'; }), 'no queryContext -> no authoritative override');
 });
 
 /* ---------- v91.46 r2: tags + item kind are the SAME filters on follow-up ---------- */

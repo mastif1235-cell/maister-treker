@@ -70,3 +70,54 @@ test('blank-separated broken + correct tail still one logical list', () => {
   const input = '1. **A**\n\n1. **B**\n\n2. **C**\n\n1. **D**';
   assert.equal(renumberSequentialLists(input), '1. **A**\n\n2. **B**\n\n3. **C**\n\n4. **D**');
 });
+
+/* ---------- v91.47: multi-line items with continuations (REAL production output) ----------
+   The exact format DeepSeek produced in production and v91.46 froze
+   unchanged (repeated «1.»): every item spans TWO lines (header +
+   indented dash continuation) and items are separated by blank lines. */
+
+test('v91.47 PRODUCTION REPRO: multi-line items + blank lines renumbered to 1..N', () => {
+  const input = [
+    '1. **15.09.2026, 12:30** — Вул Садова 19',
+    '   — ремонт, безкоштовно',
+    '',
+    '1. **19.08.2026, 14:41** — Вул Генерала Пушкіна 55',
+    '   — ремонт, 300 грн',
+    '',
+    '1. **06.08.2026, 16:42** — Вул Садова 21',
+    '   — ремонт, 599 грн'
+  ].join('\n');
+  const expected = [
+    '1. **15.09.2026, 12:30** — Вул Садова 19',
+    '   — ремонт, безкоштовно',
+    '',
+    '2. **19.08.2026, 14:41** — Вул Генерала Пушкіна 55',
+    '   — ремонт, 300 грн',
+    '',
+    '3. **06.08.2026, 16:42** — Вул Садова 21',
+    '   — ремонт, 599 грн'
+  ].join('\n');
+  assert.equal(renumberSequentialLists(input), expected);
+});
+
+test('v91.47: column-0 dash continuations and extra blank lines keep the run open', () => {
+  const input = 'Ось заявки:\n1. перша — Садова 19\n- ремонт\n\n\n1. друга — Пушкіна 55\n— ремонт\n\n1. третя — Садова 21';
+  const expected = 'Ось заявки:\n1. перша — Садова 19\n- ремонт\n\n\n2. друга — Пушкіна 55\n— ремонт\n\n3. третя — Садова 21';
+  assert.equal(renumberSequentialLists(input), expected);
+});
+
+test('v91.47: correct multi-line numbering with continuations passes untouched', () => {
+  const input = '1. A\n   — деталі A\n\n2. B\n   — деталі B\n\n3. C';
+  assert.equal(renumberSequentialLists(input), input);
+});
+
+test('v91.47: two separate multi-line lists split by a text line are not merged', () => {
+  const input = 'Ремонти:\n1. р1\n   — д1\n1. р2\n   — д2\n\nВсього 2.\nПідключення:\n1. п1\n   — д3\n1. п2';
+  const expected = 'Ремонти:\n1. р1\n   — д1\n2. р2\n   — д2\n\nВсього 2.\nПідключення:\n1. п1\n   — д3\n2. п2';
+  assert.equal(renumberSequentialLists(input), expected);
+});
+
+test('v91.47: dates, prices and house numbers are never treated as items', () => {
+  const input = 'Разом 300 грн.\nДата: 15.09.2026, 12:30.\nБудинок 55, кв 21.';
+  assert.equal(renumberSequentialLists(input), input);
+});
