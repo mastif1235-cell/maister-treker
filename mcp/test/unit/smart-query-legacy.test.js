@@ -207,3 +207,43 @@ test('effectiveAddressParts fills each missing part independently', () => {
   assert.equal(p.house, '7', 'structured house wins over the parsed 99');
   assert.deepEqual(p.via, {city:'legacy', street:'legacy', house:'structured'});
 });
+
+/* ---------- v91.45 r3: effective address in ambiguity + group identity ---------- */
+
+test('street ambiguity sees legacy/effective cities, not only raw t.city', () => {
+  const rows = [
+    ticket('a1', '01.09.2026', {city:'Дніпро', street:'Вул Садова', house:'1'}),
+    ticket('b1', '02.09.2026', {address:'Таромське, Вул Садова 2'}) /* legacy row */
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'list', street:'Вул Садова'});
+  assert.equal(r.data.ambiguous, true, 'the same street exists in two REAL cities');
+  assert.deepEqual(
+    r.data.candidates.map(function(c){ return c.city; }).sort(),
+    ['Дніпро', 'Таромське'],
+    'both cities come from the SAME effective address the filter used'
+  );
+});
+
+test('street ambiguity stays false when the street is in one city only', () => {
+  const rows = [
+    ticket('a1', '01.09.2026', {city:'Дніпро', street:'Вул Садова', house:'1'}),
+    ticket('a2', '02.09.2026', {address:'Дніпро, Вул Садова 2'})
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'list', street:'Вул Садова'});
+  assert.equal(r.data.ambiguous, false);
+  assert.equal(r.data.total_matched, 2);
+});
+
+test('group_by city merges structured and legacy rows of one real city into ONE group', () => {
+  const rows = [
+    ticket('s1', '01.09.2026', {city:'Таромське', street:'вул. Мостова', house:'1'}),
+    ticket('l1', '02.09.2026', {address:'Таромське, вул. Польова 2'})
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'group', group_by:'city'});
+  assert.equal(r.data.groups.length, 1, 'no «Таромське (legacy)» split — origin is evidence, not identity');
+  const g = r.data.groups[0];
+  assert.equal(g.key, 'Таромське');
+  assert.equal(g.count, 2);
+  assert.equal(g.sum, 1600);
+  assert.equal(g.last_date, '02.09.2026');
+});

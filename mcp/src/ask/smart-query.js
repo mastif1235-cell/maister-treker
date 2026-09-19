@@ -546,7 +546,15 @@ export function runSmartQuery(ctx, params){
      reported, never guessed. */
   if(wantedStreet && !wantedCity){
     const cities = new Set();
-    for(const t of sorted){ if(String(t.city || '').trim()) cities.add(String(t.city).trim()); }
+    /* v91.45: ambiguity must see the SAME effective address the ticket passed
+       the street filter with — raw t.city is empty on legacy rows, so the
+       effective city is read from the addr view already stored in
+       reasonsFor (no second parse). */
+    for(const t of sorted){
+      const info = reasonsFor.get(t.id);
+      const c = String((info && info.addr && info.addr.city) || '').trim();
+      if(c) cities.add(c);
+    }
     if(cities.size > 1){
       const list = Array.from(cities).sort(function(a, b){ return a.localeCompare(b, 'uk'); });
       return {ok:true, data:envelope({
@@ -735,12 +743,14 @@ export function runSmartQuery(ctx, params){
       const info = args.reasonsFor.get(t.id) || {};
       switch(args.groupBy){
         case 'city': {
+          /* v91.45: the city identity is ONE normalized name — structured and
+             legacy/effective rows of the same real city form ONE group. The
+             origin stays in match_reasons, never in the identity dimension. */
           const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
           let key = a.city;
           if(!key && wantedCity && cityMatches(t, wantedCity, legacyTextById.get(String(t.id)) || '').via === 'legacy'){
             key = wantedCity;
           }
-          if(key && a.via.city === 'legacy') key += ' (legacy)';
           add(key || '(без міста)', t);
           break;
         }
