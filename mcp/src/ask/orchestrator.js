@@ -59,7 +59,9 @@ export const ASK_SYSTEM_PROMPT = [
   '   - Якщо користувач після знайденої адреси/заявки питає «а який там сигнал?», «коли я там був?», «яка там була сума?», «хто абонент?», «покажи на карті», «відкрий її» — бери адресу або id заявки з попереднього повідомлення і дай відповідь на НОВЕ конкретне запитання.',
   '   - Якщо користувач після списку заявок питає «скільки їх?», «яка з них остання?», «чи були там підключення?», «а які номери будинків?» — працюй із цим списком і дай чітку відповідь на запитання, не перелічуючи знову весь список без потреби.',
   '15) Контекст попереднього результату зберігай ТІЛЬКИ для явного продовження («із цих», «серед них», «на тій», «а яка з них»). Нове самостійне питання («яка остання заявка?», «де я був?» тощо) починай без старих фільтрів і заново обери інструмент та параметри.',
-  '16) Складене питання має кілька обовʼязкових частин: спочатку отримай усі потрібні заявки, потім виконай кожен аналіз/порівняння з питання і ОБОВʼЯЗКОВО дай текстову відповідь на кожну частину. Картки — лише додаток, вони не замінюють висновок; для «яка сума більша і чому» назви заявку, суму та підтверджену причину з даних.'
+  '16) Складене питання має кілька обовʼязкових частин: спочатку отримай усі потрібні заявки, потім виконай кожен аналіз/порівняння з питання і ОБОВʼЯЗКОВО дай текстову відповідь на кожну частину. Картки — лише додаток, вони не замінюють висновок; для «яка сума більша і чому» назви заявку, суму та підтверджену причину з даних.',
+  '17) Для питань «скільки/кількість/усього» використовуй total_matched/count з результату інструменту, а не кількість переданих або показаних заявок. Ліміт списку чи карток ніколи не є загальною кількістю.',
+  '18) Не проси і не показуй картки автоматично після пошуку. Повні картки доречні лише коли користувач прямо просить «покажи картку/картки», «картку другої» або іншу явну presentation action. Для звичайного пошуку дай текст і компактний список.'
 ].join('\n');
 
 /* Рядок контексту дати: модель не має власного «сьогодні» — без нього
@@ -94,6 +96,10 @@ function ticketAddress(row){
   push(row.apartment ? 'кв. ' + clipStr(row.apartment, 12) : '');
   push(row.address);
   return parts.join(', ').slice(0, TICKET_PROJECTION_LIMITS.address);
+}
+
+function questionRequestsCards(question){
+  return /(?:карточк|картки|картку|картка|карток|card|cards|відкрити профіль|відкрий профіль)/i.test(String(question || ''));
 }
 
 export function projectTicketsForClient(rawTickets){
@@ -160,7 +166,7 @@ export function createAskOrchestrator(options){
 
   const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1, find_tickets_by_address:1 };
 
-  async function executeTool(call, collectedTickets){
+  async function executeTool(call, collectedTickets, totals){
     const def = allowedDef(call.name);
     if(!def) return JSON.stringify({isError:true, error:'UNKNOWN_TOOL'});
     let args = null;
@@ -180,6 +186,8 @@ export function createAskOrchestrator(options){
       const rows = Array.isArray(outcome.data.tickets) ? outcome.data.tickets
         : (outcome.data.ticket ? [outcome.data.ticket] : []);
       for(const row of rows){ if(row && typeof row === 'object') collectedTickets.push(row); }
+      const reported = Number(outcome.data.total_matched != null ? outcome.data.total_matched : (outcome.data.count != null ? outcome.data.count : rows.length));
+      if(Number.isFinite(reported)) totals.push(reported);
     }
     const payload = outcome && outcome.ok
       ? {result:outcome.data}
@@ -197,6 +205,7 @@ export function createAskOrchestrator(options){
     const now = options && options.now instanceof Date ? options.now : new Date();
     const history = sanitizeHistory(options && options.history);
     const collectedTickets = [];
+    const toolTotals = [];
     const questionText = String(question == null ? '' : question).trim().slice(0, limits.maxQuestionChars);
     const contextLine = askDateContextLine(now);
     const hints = dateHintsLine(questionText, now);
@@ -225,7 +234,7 @@ export function createAskOrchestrator(options){
             return {ok:false, code:'TOO_MANY_TOOL_CALLS', meta:{rounds, toolCallsMade}};
           }
           toolCallsMade++;
-          const resultText = await executeTool(call, collectedTickets);
+          const resultText = await executeTool(call, collectedTickets, toolTotals);
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
         let totalChars = 0;
@@ -237,8 +246,9 @@ export function createAskOrchestrator(options){
       }
       const answer = String(response.content || '').trim().slice(0, limits.maxAnswerChars);
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
-      const tickets = projectTicketsForClient(collectedTickets);
-      return {ok:true, answer, meta:{rounds, toolCallsMade}, tickets};
+      const total = toolTotals.length ? Math.max.apply(Math, toolTotals) : collectedTickets.length;
+      const cards = questionRequestsCards(questionText) ? projectTicketsForClient(collectedTickets) : [];
+      return {ok:true, answer, meta:{rounds, toolCallsMade, total}, total, tickets:cards};
     }
   }
 
