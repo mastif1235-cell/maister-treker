@@ -232,3 +232,66 @@ test('projectTicketsForClient keeps the safe card shape', () => {
   assert.equal(cards[0].id, 't-101');
   assert.ok(!('match_reasons' in cards[0]));
 });
+
+/* ---------- real two-turn referent chain (server side) ---------- */
+
+const ROW_SAD = {ord:1, id:'t-sad19', date:'12.09.2026', time:'10:20', city:'Миколаївка 1', street:'Вул Садова', house:'19',
+  address:'Миколаївка 1, Вул Садова 19', type:'Ремонт', sum:900, payment:'Готівка', signal:'-19', has_geo:false,
+  match_reasons:['вулиця:структурна']};
+const ROW_B = {ord:1, id:'t-202', date:'13.09.2026', time:'09:00', city:'Миколаївка 1', street:'Вул Садова', house:'21',
+  address:'Миколаївка 1, Вул Садова 21', type:'Підключення', sum:1200, payment:'Картка', signal:'-18', has_geo:true,
+  match_reasons:['вулиця:структурна']};
+
+test('referent chain: ordinary search stores hidden referent, next open turn resolves the real id', async () => {
+  /* TURN 1 — ordinary search: the model runs query_tickets; NO card intent. */
+  const groq1 = scriptedGroq([
+    toolResponse('query_tickets', '{"mode":"list","street":"Садова","house":"19"}'),
+    finalResponse('Знайдено 1 заявку: №1, Миколаївка 1, Вул Садова 19.')
+  ]);
+  const orch1 = createAskOrchestrator({groq:groq1, tools:queryToolsStub([ROW_SAD]), toolDefs:TOOL_DEFINITIONS});
+  const turn1 = await orch1.handle('Покажи мне заявку Садовая 19', {});
+  assert.equal(turn1.ok, true);
+  assert.equal(turn1.meta.intent, undefined, 'address-targeted search is NOT an open intent');
+  assert.equal(turn1.tickets.length, 0, 'ordinary search renders no visible cards (UX rule)');
+  assert.equal(turn1.referentTickets.length, 1, 'hidden referent stored for the next turn');
+  assert.equal(turn1.referentTickets[0].id, 't-sad19', 'referent carries the real id from the tool result');
+  const refJson = JSON.stringify(turn1.referentTickets);
+  for(const forbidden of ['phone', 'geoLink', 'geoLat', 'geoLng', 'mac', 'contract', 'password']){
+    assert.ok(!refJson.includes(forbidden), 'referent carries no ' + forbidden);
+  }
+
+  /* TURN 2 — the client sends back EXACTLY what turn1 returned (as ai-client
+     does with payload.referentTickets); no manual ROW injection. */
+  const groq2 = scriptedGroq([finalResponse('Відкриваю заявку №1.')]);
+  const orch2 = createAskOrchestrator({groq:groq2, tools:queryToolsStub([]), toolDefs:TOOL_DEFINITIONS});
+  const turn2 = await orch2.handle('Открой мне эту заявку', {contextTickets:turn1.referentTickets});
+  assert.equal(turn2.ok, true);
+  assert.equal(turn2.meta.intent, 'open');
+  assert.equal(turn2.tickets.length, 1, 'visible card on the explicit open turn');
+  assert.equal(turn2.tickets[0].id, 't-sad19', 'card carries the real id for the PWA open action');
+  assert.equal(turn2.tickets[0].address, 'Миколаївка 1, Вул Садова 19');
+  assert.equal(turn2.referentTickets[0].id, 't-sad19');
+});
+
+test('explicit card turn with a NEW query: fresh result wins over the old referent', async () => {
+  /* Old referent A exists; the explicit card turn runs a NEW query that finds B.
+     The UI must receive B only — never A+B under the 8-cap. */
+  const groq = scriptedGroq([
+    toolResponse('query_tickets', '{"mode":"list","street":"Садова","house":"21"}'),
+    finalResponse('Карточка знайденої заявки №1.')
+  ]);
+  const orch = createAskOrchestrator({groq, tools:queryToolsStub([ROW_B]), toolDefs:TOOL_DEFINITIONS});
+  const outcome = await orch.handle('Дай карточку этой заявки', {contextTickets:[ROW_A]});
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(outcome.tickets.map(function(t){ return t.id; }), ['t-202'], 'new result B wins, old referent A dropped');
+  assert.deepEqual(outcome.referentTickets.map(function(t){ return t.id; }), ['t-202'], 'next-turn referent is B too');
+});
+
+test('open intent requires anaphora: address-targeted «покажи заявку X» stays an ordinary search', () => {
+  assert.equal(cardIntentFor('Покажи мне заявку Садовая 19'), null, 'search with own target');
+  assert.equal(cardIntentFor('Покажи заявку Садова 19'), null);
+  assert.equal(cardIntentFor('Открой мне эту заявку'), 'open', 'anaphoric reference still opens');
+  assert.equal(cardIntentFor('Відкрий цю заявку'), 'open');
+  assert.equal(cardIntentFor('открой последнюю заявку'), 'open');
+  assert.equal(cardIntentFor('Покажи заявку Садовая 19. Дай карточку'), 'cards', 'explicit card word still wins');
+});

@@ -10,6 +10,7 @@ import {
   ticketItemEvidence, parseDateKeyStrict, ticketSignalNumber,
   cityMatches, streetMatches, coworkerNameMatches, runSmartQuery
 } from '../../src/ask/smart-query.js';
+import {redactTicket, ticketFromGasRow} from '../../src/gas/mappers.js';
 
 function ticket(id, date, extra){
   return Object.assign({
@@ -263,4 +264,37 @@ test('coworker: direct ticket evidence is distinct from same-day shift evidence'
   assert.ok(directRow.match_reasons.some(function(r){ return r.includes('структурно'); }));
   assert.ok(shiftRow.match_reasons.some(function(r){ return r.includes('зміною того ж дня'); }));
   assert.ok(!result.data.tickets.some(function(t){ return t.id === 'other-day'; }));
+});
+
+/* ---------- geo regression: mapper boolean is the single source ---------- */
+
+test('geo regression: valid coordinates without geoLink -> has_geo true in rows and coverage, payload coordinate-free', () => {
+  const red = redactTicket(ticketFromGasRow({id:'g1', date:'10.09.2026', time:'09:00', content:'', sum:500, tags:[], backupNote:'',
+    fullDataJson: JSON.stringify({geoLat:48.464, geoLng:35.046})}));
+  assert.equal(red.has_geo, true, 'mapper: coordinate pair without geoLink is geo');
+  const env = runSmartQuery({tickets:[red], shifts:[], searchIndex:[]}, {mode:'list'});
+  assert.equal(env.data.coverage.tickets_with_geo, 1, 'coverage counts the coordinate-only ticket');
+  assert.equal(env.data.tickets[0].has_geo, true, 'query_tickets row has_geo=true via mapper boolean');
+  const serialized = JSON.stringify(env);
+  assert.ok(!serialized.includes('48.464') && !serialized.includes('35.046'), 'coordinates never enter the model payload');
+  assert.ok(!serialized.includes('geoLink') && !serialized.includes('geoLat') && !serialized.includes('geoLng'), 'no geo raw field names in payload');
+});
+
+test('geo regression: null/empty/single coordinate stays false end-to-end', () => {
+  const mk = function(fullData){
+    return redactTicket(ticketFromGasRow({id:'g2', date:'10.09.2026', time:'09:00', content:'', sum:0, tags:[], backupNote:'',
+      fullDataJson: JSON.stringify(fullData)}));
+  };
+  for(const bad of [{geoLat:48.464}, {geoLat:null, geoLng:null}, {geoLat:'', geoLng:''}, {}]){
+    const red = mk(bad);
+    assert.equal(red.has_geo, false, 'mapper honesty for ' + JSON.stringify(bad));
+    const env = runSmartQuery({tickets:[red], shifts:[], searchIndex:[]}, {mode:'list'});
+    assert.equal(env.data.coverage.tickets_with_geo, 0);
+    assert.equal(env.data.tickets[0].has_geo, false);
+  }
+  const linkOnly = mk({geoLink:'https://maps.google.com/?q=48.4,35.0'});
+  assert.equal(linkOnly.has_geo, true, 'https geoLink alone is geo');
+  const envLink = runSmartQuery({tickets:[linkOnly], shifts:[], searchIndex:[]}, {mode:'list'});
+  assert.equal(envLink.data.coverage.tickets_with_geo, 1);
+  assert.ok(!JSON.stringify(envLink).includes('maps.google.com'), 'geoLink value never enters the model payload');
 });

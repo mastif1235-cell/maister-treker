@@ -524,7 +524,7 @@ export function runSmartQuery(ctx, params){
 
     /* full-set coverage counters (computed for every row passing the range) */
     if(sigNum != null) signalParsedCount.parsed++; else signalParsedCount.missing++;
-    if(String(t.geoLink || '').trim()) geoWithCount.with_geo++;
+    if(t.has_geo) geoWithCount.with_geo++;
 
     matched.push(t);
     reasonsFor.set(t.id, {reasons, coworkerEvidence, matchedItemLabels});
@@ -687,7 +687,7 @@ export function runSmartQuery(ctx, params){
         sum:Number(t.sum) || 0,
         payment:String(t.payment || '').slice(0, 40),
         signal:sigNum != null ? String(sigNum) : '',
-        has_geo:!!String(t.geoLink || '').trim(),
+        has_geo:!!t.has_geo,
         match_reasons:info.reasons.slice(0, 6)
       };
     });

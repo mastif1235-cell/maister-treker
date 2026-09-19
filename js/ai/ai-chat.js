@@ -20,7 +20,7 @@ MTAI.createChatController = function(deps){
       const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
       if(!Array.isArray(raw)) return [];
       return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
-        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets)};
+        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeTickets(m.referentTickets)};
       });
     }catch(_e){ return []; }
   }
@@ -83,13 +83,18 @@ MTAI.createChatController = function(deps){
       .filter(function(m){ return (m.role === 'user' || m.role === 'assistant'); })
       .slice(-8)
       .map(function(m){ return { role: m.role, text: m.text }; });
-    /* Референтний контекст: структуровані заявки ОСТАННЬОЇ відповіді, щоб
-       «відкрий цю заявку» мало реальний об'єкт дії без повторного пошуку.
-       Беремо лише останню відповідь із заявками — безпечна проєкція. */
+    /* Референтний контекст: безпечна проєкція активного результату ОСТАННЬОЇ
+       відповіді, щоб «відкрий цю заявку» мало реальний об'єкт дії без
+       повторного пошуку. Пріоритет — прихований referentTickets (зберігається
+       навіть коли картки при звичайному пошуку НЕ рендерились); fallback —
+       видимі tickets зі старих збережених сесій. */
     let referent = [];
     for(let i = messages.length - 1; i >= 0; i--){
       const m = messages[i];
-      if(m.role === 'assistant' && Array.isArray(m.tickets) && m.tickets.length){ referent = m.tickets; break; }
+      if(m.role !== 'assistant') continue;
+      const ref = (Array.isArray(m.referentTickets) && m.referentTickets.length) ? m.referentTickets
+        : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
+      if(ref.length){ referent = ref; break; }
     }
     if(!isRetry){ messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() }); persist(); }
     let outcome = await client.ask(question, history, { tickets: referent });
@@ -100,9 +105,9 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
-      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets) });
+      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeTickets(outcome.referentTickets) });
       persist();
-      emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, tickets:outcome.tickets || [], localQuery:outcome.localQuery || null });
+      emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null });
       return { ok:true };
     }
     lastFailed = question;

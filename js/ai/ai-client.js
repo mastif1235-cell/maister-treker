@@ -165,7 +165,7 @@ MTAI.createClient = function(options){
       });
       const payload = await res.json().catch(function(){ return null; });
       if(res.ok && payload && payload.ok){
-        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), localQuery: sanitizeLocalQuery(payload.localQuery) };
+        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), referentTickets: normalizeTickets(payload.referentTickets), localQuery: sanitizeLocalQuery(payload.localQuery) };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };
     }catch(err){

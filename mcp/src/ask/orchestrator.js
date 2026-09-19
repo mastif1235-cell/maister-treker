@@ -100,7 +100,10 @@ function ticketAddress(row){
   const street = [clipStr(row.street, 80), clipStr(row.house, 16)].filter(Boolean).join(' ');
   push(street);
   push(row.apartment ? 'кв. ' + clipStr(row.apartment, 12) : '');
-  push(row.address);
+  /* No duplicates: when the structured pieces already form the address, the
+     combined `address` field is added only if it carries extra information. */
+  const addr = clipStr(row.address, 80);
+  if(addr && !(street && addr.includes(street)) && parts.indexOf(addr) === -1) parts.push(addr);
   return parts.join(', ').slice(0, TICKET_PROJECTION_LIMITS.address);
 }
 
@@ -113,8 +116,11 @@ export function cardIntentFor(question){
   /* map first: «покажи эту заявку на карте» is a map action even though it
      also mentions the ticket. */
   if(/(?:покажи|показати|відкрий|открой|де вона|де він)[^.!?;]{0,40}?(?:на карті|на карте|на мапі)\b|на карті\??$|на карте\??$/i.test(q)) return 'map';
-  if(/(?:відкрий|открой|дай|скинь|покажи)[^.!?;]{0,40}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
-  if(/відкрити профіль|відкрий профіль|открыть профиль|відкрити заявку|открыть заявку|перейти в заявку|перейдіть в заявку|перейти в неї|перейти в нього|мені потрібно.*перейт|хочу.*перейти в неї|в неё перешёл|в неї перешл/i.test(q)) return 'open';
+  /* Open intent needs an ANAPHORIC marker (эту/цю/неё…): a bare
+     «покажи заявку Садова 19» is a SEARCH with its own address target, not a
+     reference to a previous result — it must stay an ordinary search. */
+  if(/(?:відкрий|открой|дай|скинь|покажи)[^.!?;]{0,40}?(?:эту|цю|этой|цієї|останн[юа]|последн[юа]|неё|нее|нього|ту\s)[^.!?;]{0,20}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
+  if(/відкрити профіль|відкрий профіль|открыть профиль|перейти в заявку|перейдіть в заявку|перейти в неї|перейти в нього|мені потрібно.*перейт|хочу.*перейти в неї|в неё перешёл|в неї перешл|(?:відкрити|открыть)[^.!?;]{0,40}?(?:эту|цю|этой|цієї|останн[юа]|последн[юа]|неё|нее|нього|ту\s)[^.!?;]{0,20}?заявку/i.test(q)) return 'open';
   return null;
 }
 
@@ -318,7 +324,9 @@ export function createAskOrchestrator(options){
        model makes no new tool call; also surfaced to the model so ordinals
        («картку другої») resolve deterministically. */
     const contextTickets = normalizeContextTickets(options && options.contextTickets);
-    for(const t of contextTickets) collectedTickets.push(t);
+    /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
+       an explicit card turn must win over the previous referent (otherwise the
+       8-card cap could show old tickets instead of the freshly found one). */
     let referentLine = '';
     if(contextTickets.length){
       referentLine = '\nЗаявки з попередньої відповіді (користувач може посилатися: «ця/остання/друга»): ' +
@@ -364,13 +372,22 @@ export function createAskOrchestrator(options){
       /* The last successful ticket-tool result is the active result for this
          final model answer. Do not take Math.max across unrelated calls:
          compound or refinement turns can legitimately have different totals. */
-      const total = toolTotals.length ? toolTotals[toolTotals.length - 1].total : collectedTickets.length;
       const intent = cardIntentFor(questionText);
-      /* Cards for open/card/map intents: includes the previous answer's
-         tickets (referent context), so «открой эту заявку» gets a real,
-         validated open action instead of a textual refusal. */
-      const cards = intent ? projectTicketsForClient(collectedTickets) : [];
-      const result = {ok:true, answer, meta:{rounds, toolCallsMade, total, intent:intent || undefined}, total, tickets:cards};
+      /* Active result of THIS turn: fresh tool results win over the previous
+         referent; the referent is used only when the model made no new ticket
+         query (the «открой эту заявку» resolution case). */
+      const activeSource = collectedTickets.length ? collectedTickets
+        : (intent && contextTickets.length ? contextTickets : []);
+      const total = toolTotals.length ? toolTotals[toolTotals.length - 1].total : activeSource.length;
+      /* Visible cards ONLY for explicit card/open/map intent — an ordinary
+         search stays text-only (UX rule preserved). */
+      const cards = intent ? projectTicketsForClient(activeSource) : [];
+      /* Hidden referent for the NEXT turn: the same safe compact projection of
+         the active result. The client stores it for «відкрий цю заявку» but
+         never renders it as cards for an ordinary search. No private fields:
+         projectTicketsForClient strips notes/phones/coordinates/URLs. */
+      const referentTickets = projectTicketsForClient(activeSource);
+      const result = {ok:true, answer, meta:{rounds, toolCallsMade, total, intent:intent || undefined}, total, tickets:cards, referentTickets};
       /* Network points (FOB/splice/node) live ONLY on the device. Attach a
          deterministic local-search request; the PWA executes it against its
          own localStorage points and renders results with a map action. */

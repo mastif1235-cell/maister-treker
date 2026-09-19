@@ -267,6 +267,10 @@ export function createApp(env, deps){
        (безпечна проєкція без URL; фронтенд відкриває лише свій локальний
        список через власну навігацію). Відсутні, якщо заявок не знайдено. */
     if(Array.isArray(outcome.tickets) && outcome.tickets.length) okPayload.tickets = outcome.tickets;
+    /* Прихований referent-контекст для НАСТУПНОГО turn: безпечна проєкція
+       активного результату цього turn. Клієнт зберігає його для «відкрий цю
+       заявку», але НЕ рендерить картками при звичайному пошуку. */
+    if(Array.isArray(outcome.referentTickets) && outcome.referentTickets.length) okPayload.referentTickets = outcome.referentTickets;
     /* Локальний пошук мережевих точок (ФОБ/муфта/вузол): точки живуть ЛИШЕ
        на пристрої, тож Worker повертає структурований запит, а PWA виконує
        його по власних локальних даних і показує дію «На карті». */
