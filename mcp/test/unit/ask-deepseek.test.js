@@ -62,9 +62,9 @@ test('DeepSeek chat sends the documented request shape with deepseek-flash, thin
   assert.ok(!JSON.stringify(seen.body).includes(KEY));
 });
 
-test('A-D, I: DeepSeek receives exactly 9 READ-only tools with compact descriptions and intact schemas', async () => {
+test('A-D, I: DeepSeek receives exactly 11 READ-only tools with compact descriptions and intact schemas', async () => {
   const canonicalOpenAiTools = openaiToolsFromDefinitions(TOOL_DEFINITIONS);
-  assert.equal(canonicalOpenAiTools.length, 9, 'canonical definitions must have exactly 9 tools');
+  assert.equal(canonicalOpenAiTools.length, 11, 'canonical definitions must have exactly 11 tools');
 
   let seenBody = null;
   const fetchImpl = async function(url, init){
@@ -76,8 +76,8 @@ test('A-D, I: DeepSeek receives exactly 9 READ-only tools with compact descripti
   await client.chat([{role:'user', content:'тест'}], canonicalOpenAiTools);
 
   const outboundTools = seenBody.tools;
-  // A. Exactly 9 tools
-  assert.equal(outboundTools.length, 9);
+  // A. Exactly 11 tools
+  assert.equal(outboundTools.length, 11);
   // B. Tool names preserved
   const outboundNames = outboundTools.map(t => t.function.name);
   assert.deepEqual(outboundNames, TOOL_NAMES);
@@ -113,7 +113,7 @@ test('E: Groq does NOT get DeepSeek-specific reductions (canonical descriptions 
   const client = createGroqClient({fetchImpl, apiKey:GROQ_KEY, model:'openai/gpt-oss-120b'});
   await client.chat([{role:'user', content:'тест'}], canonicalOpenAiTools);
 
-  assert.equal(seenBody.tools.length, 9);
+  assert.equal(seenBody.tools.length, 11);
   for(let i = 0; i < TOOL_DEFINITIONS.length; i++){
     const canonical = TOOL_DEFINITIONS[i];
     const outbound = seenBody.tools[i];
@@ -206,7 +206,7 @@ test('J: Tool-call round trip: assistant tool_call -> local READ tool -> repeat 
     assert.equal(call.body.model, 'deepseek-flash');
     assert.deepEqual(call.body.thinking, { type: 'disabled' });
     assert.equal(call.body.tool_choice, 'auto');
-    assert.equal(call.body.tools.length, 9);
+    assert.equal(call.body.tools.length, 11);
     assert.equal(call.body.tools[0].function.description, DEEPSEEK_COMPACT_DESCRIPTIONS.list_tickets);
   }
   // Messages in round 2 must contain the tool response

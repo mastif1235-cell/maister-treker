@@ -319,6 +319,12 @@ function build(){
             function(id){ MTAI.actions.showOnMap(id); }
           );
         }
+        /* Локальний запит від /ask (мережеві точки ФОБ/муфта/вузол): точки
+           живуть лише на пристрої — виконуємо пошук локально і показуємо
+           дію «На карті». Координати не приходять від моделі. */
+        if(out.localQuery && out.localQuery.kind === 'network_points' && MTAI.localActions){
+          MTAI.localActions.renderResults(b, out.localQuery);
+        }
         /* Техническая строка rounds/tool_calls — только в Debug-режиме AI
            (обычному монтажнику она не нужна). */
         if(out.meta && MTAI.storage.get().debug === true){

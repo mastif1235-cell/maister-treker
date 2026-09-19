@@ -9,6 +9,7 @@ import {
 import {
   extractPlaces, resolveAddress, normalizeHouse, cleanStr, normalizeStem, matchScore
 } from '../ask/address.js';
+import {runSmartQuery, buildCatalogData, itemAttributesMatch} from '../ask/smart-query.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -66,7 +67,10 @@ export function createReadTools(options){
   async function loadRedacted(){
     const result = await data.getList();
     if(!result.ok) return result;
-    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : []};
+    return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : [],
+      /* snapshot freshness (only when the KV snapshot stage is active) */
+      savedAt: typeof result.savedAt === 'number' ? result.savedAt : null,
+      snapshotCache: result.cache || null};
   }
 
   function inRange(dateStr, from, to){
@@ -153,9 +157,37 @@ export function createReadTools(options){
     const from = params.date_from ? parseDateKey(params.date_from) : null;
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
+    const terms = Array.isArray(params.terms) ? params.terms.map(function(v){return String(v).trim();}).filter(Boolean) : [];
+    const itemConditions = Array.isArray(params.item_conditions) ? params.item_conditions : [];
+    const itemMatch = function(ticket, condition){
+      const needle = cleanStr(condition.text);
+      const pools = [{kind:'equipment',items:ticket.equipment||[]},{kind:'cable',items:ticket.cables||[]},{kind:'preset_work',items:ticket.presetWorks||[]},{kind:'additional_work',items:ticket.additionalWork||[]}];
+      return pools.filter(function(pool){return !condition.kind || condition.kind === pool.kind;}).some(function(pool){ return pool.items.some(function(item){
+        const label = cleanStr(item.label || item.desc);
+        if(!label.includes(needle)) return false;
+        /* Shared deterministic core with the smart-query engine: price/qty/
+           total are bound to THIS item, never to a sibling work. */
+        return itemAttributesMatch(item, condition);
+      }); });
+    };
+    const extendedTermMatch = function(ticket, term){
+      const q = cleanStr(term);
+      const values = [].concat(ticket.note, ticket.abonentNote, ticket.otherNote, ticket.payment, ticket.street, ticket.house,
+        (ticket.equipment || []).flatMap(function(e){return [e.label,e.price,e.qty,e.total];}),
+        (ticket.cables || []).flatMap(function(c){return [c.label,c.meters,c.pricePerMeter];}),
+        (ticket.presetWorks || []).flatMap(function(w){return [w.label,w.price,w.qty,w.total];}),
+        (ticket.additionalWork || []).flatMap(function(w){return [w.desc,w.sum];}));
+      return values.some(function(value){return cleanStr(value).includes(q);}) || ticketMatchesQuery(ticket, term);
+    };
     let list = data.tickets.filter(function(t){
       if(!inRange(t.date, from, to)) return false;
-      return ticketMatchesQuery(t, params.query);
+      if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) return false;
+      if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) return false;
+      if(params.payment && cleanStr(t.payment) !== cleanStr(params.payment)) return false;
+      if(params.query && !ticketMatchesQuery(t, params.query)) return false;
+      if(terms.length && !terms.every(function(term){ return extendedTermMatch(t, term); })) return false;
+      if(itemConditions.length && !itemConditions.every(function(condition){ return itemMatch(t, condition); })) return false;
+      return true;
     });
     list = sortNewestFirst(list);
     const meta = page(list, params);
@@ -395,5 +427,29 @@ export function createReadTools(options){
     return {ok:true, data:{period:params.period, anchor_date:anchorKey ? anchorKey.split('-').reverse().join('.') : null, window, totals, by_type:toRows(byType), by_payment:toRows(byPayment)}};
   }
 
-  return {list_tickets, search_tickets, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
+  /* Universal deterministic smart-search engine (v91.44). Filtering,
+     intersections, normalization, grouping, aggregation and pagination all
+     happen HERE over the full dataset; the model only formats the result. */
+  async function query_tickets(params){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    const ctx = {
+      tickets: data.tickets,
+      shifts: data.shifts,
+      searchIndex: data.searchIndex,
+      data_as_of: data.savedAt ? new Date(data.savedAt).toISOString() : null,
+      snapshot_cache: data.snapshotCache
+    };
+    return runSmartQuery(ctx, params);
+  }
+
+  /* Compact catalog derived from ACTUAL ticket data (what was really used),
+     so the model resolves natural-language item names against real labels. */
+  async function list_catalog(){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    return {ok:true, data:buildCatalogData(data.tickets, data.shifts)};
+  }
+
+  return {list_tickets, search_tickets, query_tickets, list_catalog, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
 }

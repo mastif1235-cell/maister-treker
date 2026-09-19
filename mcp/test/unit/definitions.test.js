@@ -13,14 +13,16 @@ const EXPECTED_TOOLS = [
   'get_statistics',
   'get_ticket',
   'get_tickets_by_date',
+  'list_catalog',
   'list_places',
   'list_tickets',
+  'query_tickets',
   'search_tickets'
 ];
 
 test('exactly the approved READ toolset is exposed', () => {
   assert.deepEqual(TOOL_NAMES.slice().sort(), EXPECTED_TOOLS.slice().sort());
-  assert.equal(TOOL_DEFINITIONS.length, 9);
+  assert.equal(TOOL_DEFINITIONS.length, 11);
 });
 
 test('every tool is annotated read-only and has a schema + description', () => {

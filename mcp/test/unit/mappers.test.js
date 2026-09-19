@@ -53,7 +53,7 @@ test('redactTicket output keys are exactly the whitelisted set', () => {
   const ticket = ticketFromGasRow(FIXTURES.BASE_ROWS[0]);
   const redacted = redactTicket(ticket);
   assert.deepEqual(Object.keys(redacted).sort(), REDACTED_TICKET_FIELDS.slice().sort());
-  assert.deepEqual(Object.keys(redacted.equipment[0]).sort(), ['label', 'price']);
+  assert.deepEqual(Object.keys(redacted.equipment[0]).sort(), ['label', 'price', 'qty', 'qty_derived', 'total']);
   assert.deepEqual(Object.keys(redacted.cables[0]).sort(), ['label', 'meters', 'pricePerMeter']);
   assert.deepEqual(Object.keys(redacted.presetWorks[0]).sort(), ['label', 'price', 'qty']);
   assert.deepEqual(Object.keys(redacted.additionalWork[0]).sort(), ['desc', 'sum']);
@@ -146,4 +146,43 @@ test('search predicate mirrors app field coverage (text/date/tags/city/address/n
   assert.equal(ticketMatchesQuery(t, 'неттакого'), false);
   assert.equal(ticketMatchesQuery(t4, '-67.5'), true);
   assert.equal(ticketMatchesQuery(t, ''), true);
+});
+
+test('has_geo is an honest boolean: links count, nulls never do', () => {
+  const mk = function(fullData){
+    return redactTicket(ticketFromGasRow({id:'g', date:'01.01.2026', time:'10:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify(fullData)}));
+  };
+  assert.equal(mk({geoLink:'https://maps.google.com/?q=48.4,35.0'}).has_geo, true);
+  assert.equal(mk({geoLink:'javascript:alert(1)'}).has_geo, false, 'non-https link is not geo');
+  assert.equal(mk({geoLat:48.464, geoLng:35.046}).has_geo, true);
+  assert.equal(mk({geoLat:null, geoLng:null}).has_geo, false, 'null coordinates are not geo');
+  assert.equal(mk({geoLat:'', geoLng:''}).has_geo, false);
+  assert.equal(mk({geoLat:48.464, geoLng:null}).has_geo, false, 'a single coordinate is not geo');
+  assert.equal(mk({}).has_geo, false);
+  const serialized = JSON.stringify(mk({geoLat:48.464, geoLng:35.046}));
+  assert.ok(!serialized.includes('48.464'), 'coordinates themselves never enter the projection');
+});
+
+test('connectMasters projects to names only and survives odd shapes', () => {
+  const mk = function(connectMasters){
+    return redactTicket(ticketFromGasRow({id:'c', date:'01.01.2026', time:'10:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({connectMasters})}));
+  };
+  assert.deepEqual(mk([{name:'Женя', letter:'Ж'}, {name:'Олег', letter:'О'}]).connectMasters, ['Женя', 'Олег']);
+  assert.deepEqual(mk(['Женя']).connectMasters, ['Женя']);
+  assert.deepEqual(mk([{}, {name:''}]).connectMasters, []);
+  assert.deepEqual(mk(undefined).connectMasters, []);
+});
+
+test('equipment qty provenance: stored qty wins, missing qty is flagged derived', () => {
+  const mk = function(equipment){
+    return redactTicket(ticketFromGasRow({id:'e', date:'01.01.2026', time:'10:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({equipment})}));
+  };
+  const derived = mk([{label:'Роутер', price:1500}]);
+  assert.equal(derived.equipment[0].qty, 1);
+  assert.equal(derived.equipment[0].total, 1500);
+  assert.equal(derived.equipment[0].qty_derived, true, 'no native qty in saved equipment -> derived, not original');
+  const stored = mk([{label:'Кабель', price:10, qty:3}]);
+  assert.equal(stored.equipment[0].qty, 3);
+  assert.equal(stored.equipment[0].total, 30);
+  assert.equal(stored.equipment[0].qty_derived, false);
 });

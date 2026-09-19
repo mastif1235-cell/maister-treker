@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {createApp} from '../../src/index.js';
 import {scheduledHandler} from '../../src/index.js';
 import {FIXTURES} from '../fixtures/data.js';
-import {snapshotKey} from '../../src/data/snapshot.js';
+import {snapshotKey, SNAPSHOT_VERSION} from '../../src/data/snapshot.js';
 import {makeApp, mockGasFetch, toolCall, toolData} from '../helpers/mcpapp.js';
 
 function fakeKv(){
@@ -38,7 +38,7 @@ test('two /mcp list calls hit GAS once when KV is bound; cached value is redacte
   assert.equal(listCalls, 1); // second call served from KV
 
   const stored = JSON.parse(kv.map.get(snapshotKey()));
-  assert.equal(stored.v, 1);
+  assert.equal(stored.v, SNAPSHOT_VERSION); // v2 since the v91.44 redaction/schema change
   const serialized = JSON.stringify(stored.data);
   assert.ok(!serialized.includes('fullDataJson'));
   assert.ok(!serialized.includes('backupNote'));

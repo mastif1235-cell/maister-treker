@@ -44,11 +44,54 @@ const L = '(?<![a-zа-яїієґ0-9])';
 const R = '(?![a-zа-яїієґ0-9])';
 const MONTH = '(місяц|месяц)'; // UA «місяць/місяця» + RU «месяц/месяца»
 
-function pushRange(out, phrase, from, to){
+function pushRange(out, phrase, from, to, meta){
   for(const item of out){
-    if(item.from === fmt(from) && item.to === fmt(to)) return; // без дублів
+    if(item.from === fmt(from) && item.to === fmt(to) && !item.approximate) return; // без дублів
   }
-  out.push({ phrase, from: fmt(from), to: fmt(to) });
+  const entry = { phrase, from: fmt(from), to: fmt(to) };
+  if(meta && meta.approximate){
+    entry.approximate = true;
+    entry.note = meta.note || 'розширено ±' + APPROX_PAD_DAYS + ' дні (приблизно)';
+  }
+  out.push(entry);
+}
+
+/* «Приблизно/примерно» expands any resolved window by a deterministic,
+   documented padding — the model never invents its own fuzzy range. */
+const APPROX_PAD_DAYS = 3;
+const APPROX_RE = /(приблизно|примерно|прибл\.?|десь|ориентовно|примерн)/;
+
+function expandApprox(from, to){
+  return { from: addDays(from, -APPROX_PAD_DAYS), to: addDays(to, APPROX_PAD_DAYS) };
+}
+
+/* Sub-month phases: deterministic documented windows.
+   начало/початок = 1..10; середина = 11..20; кінець/конец = 21..останній день. */
+const PHASE_RE = /(початок|початку|середин[аиу]|кінець|кінці|конец|конце|начала|начало)/;
+function phaseBounds(phaseText, year, monthIdx){
+  const first = new Date(year, monthIdx, 1);
+  const last = new Date(year, monthIdx + 1, 0);
+  if(/початок|початку|начала|начало/.test(phaseText)) return { from: first, to: new Date(year, monthIdx, 10) };
+  if(/середин/.test(phaseText)) return { from: new Date(year, monthIdx, 11), to: new Date(year, monthIdx, 20) };
+  return { from: new Date(year, monthIdx, 21), to: last };
+}
+
+/* Month (index) mentioned anywhere in the text via MONTH_STEMS, else null. */
+function findMonthInText(t, now){
+  const yearRe = new RegExp('(20\\d{2})');
+  for(let idx = 0; idx < MONTH_STEMS.length; idx++){
+    for(const stem of MONTH_STEMS[idx]){
+      const re = new RegExp(L + '(' + stem + '[а-яїієґ]*)' + R);
+      const m = re.exec(t);
+      if(!m) continue;
+      const ym = yearRe.exec(t.slice(m.index));
+      let year = now.getFullYear();
+      if(ym) year = parseInt(ym[1], 10);
+      else if(idx > now.getMonth()) year = now.getFullYear() - 1;
+      return {idx, year, word:m[1]};
+    }
+  }
+  return null;
 }
 
 export function resolveDateRanges(text, now){
@@ -63,7 +106,7 @@ export function resolveDateRanges(text, now){
     const mon = mondayOf(now);
     pushRange(out, 'цей тиждень/эта неделя', mon, addDays(mon, 6));
   }
-  if(new RegExp(L + '(минулий|минулого|прошлый|прошлого|прошлую)\\s+недел').test(t)){
+  if(new RegExp(L + '(минулий|минулого|минулої|прошлый|прошлого|прошлую|прошлой)\\s+недел').test(t)){
     const mon = addDays(mondayOf(now), -7);
     pushRange(out, 'минулий тиждень/прошлая неделя', mon, addDays(mon, 6));
   }
@@ -72,7 +115,7 @@ export function resolveDateRanges(text, now){
     const r = monthRange(now.getFullYear(), now.getMonth());
     pushRange(out, 'цей місяць/этот месяц', r.from, r.to);
   }
-  if(new RegExp(L + '(минулий|минулого|прошлый|прошлого)\\s+' + MONTH).test(t)){
+  if(new RegExp(L + '(минулий|минулого|минулому|прошлый|прошлого|прошлом|прошлым)\\s+' + MONTH).test(t)){
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const r = monthRange(prev.getFullYear(), prev.getMonth());
     pushRange(out, 'минулий місяць/прошлый месяц', r.from, r.to);
@@ -98,14 +141,42 @@ export function resolveDateRanges(text, now){
     pushRange(out, 'за тиждень/за неделю', addDays(now, -6), now);
   }
 
+  /* «Приблизно/примерно Н тижнів тому» — детерміноване вікно: рівно Н
+     тижнів тому, розширене ±3 дні (документований запас). */
+  const approxWeeksAgo = new RegExp(L + '(?:приблизно|примерно|десь)\\s+(?:один|одну|два|две|дві|1|2)\\s+(?:тижн|недел)[а-яїієґ]*\\s+(?:тому|назад)').exec(t);
+  if(approxWeeksAgo){
+    const weeks = /два|две|дві|2/.test(approxWeeksAgo[0]) ? 2 : 1;
+    const from = addDays(now, -(weeks * 7 + APPROX_PAD_DAYS));
+    const to = addDays(now, -(weeks * 7 - 1) + APPROX_PAD_DAYS);
+    pushRange(out, 'приблизно ' + weeks + ' тиж. тому', from, to, {approximate:true});
+  }
+
+  /* Фази місяця: «початок/середина/кінець місяця», «в конце августа».
+     Межі фіксовані й документовані: 1–10 / 11–20 / 21–останній день;
+     «приблизно» розширює вікно ±3 дні. */
+  const phaseMatch = PHASE_RE.exec(t);
+  if(phaseMatch){
+    const mentioned = findMonthInText(t, now);
+    const year = mentioned ? mentioned.year : now.getFullYear();
+    const monthIdx = mentioned ? mentioned.idx : now.getMonth();
+    const bounds = phaseBounds(phaseMatch[0], year, monthIdx);
+    const approximate = APPROX_RE.test(t);
+    const window = approximate ? expandApprox(bounds.from, bounds.to) : bounds;
+    const label = mentioned ? '«' + phaseMatch[0] + '» ' + mentioned.word + ' ' + year : '«' + phaseMatch[0] + '» поточного місяця';
+    pushRange(out, label, window.from, window.to, approximate ? {approximate:true} : null);
+  }
+
   /* Назви місяців (+ рік). Рік: з тексту, інакше поточний; якщо місяць ще
-     не настав цього року — попередній рік (даних у майбутньому немає). */
+     не настав цього року — попередній рік (даних у майбутньому немає).
+     Якщо поруч указана фаза («в конце августа») — повний місяць не
+     дублюємо: діапазон фази точніший. */
   const yearRe = new RegExp('(20\\d{2})');
   MONTH_STEMS.forEach(function(stems, idx){
     for(const stem of stems){
       const re = new RegExp(L + '(' + stem + '[а-яїієґ]*)' + R);
       const m = re.exec(t);
       if(!m) continue;
+      if(phaseMatch) break; /* фазове вікно вже покриває цей місяць */
       const ym = yearRe.exec(t.slice(m.index));
       let year = now.getFullYear();
       if(ym) year = parseInt(ym[1], 10);
@@ -124,5 +195,5 @@ export function dateHintsLine(text, now){
   const ranges = resolveDateRanges(text, now);
   if(!ranges.length) return '';
   return 'Обчислені періоди із запиту: ' +
-    ranges.map(function(r){ return '«' + r.phrase + '» = ' + r.from + '–' + r.to; }).join('; ') + '.';
+    ranges.map(function(r){ return '«' + r.phrase + '» = ' + r.from + '–' + r.to + (r.note ? ' (' + r.note + ')' : ''); }).join('; ') + '.';
 }

@@ -15,9 +15,14 @@
    Only the REDACTED projection (exactly the objects the MCP tools return to
    clients) is ever written to KV — raw rows, fullDataJson and secrets never
    enter the cache. SNAPSHOT_VERSION invalidates old shapes on schema or
-   redaction changes. */
+   redaction changes.
 
-export const SNAPSHOT_VERSION = 1;
+   v2 (v91.44): the REDACTED schema changed — equipment rows now carry
+   qty/total/qty_derived, and tickets gained connectMasters and has_geo.
+   Old v1 envelopes must never feed the new code: they are simply ignored
+   (the old KV key is left untouched, never deleted manually). */
+
+export const SNAPSHOT_VERSION = 2;
 
 export function snapshotKey(){
   return 'mt:snapshot:v' + SNAPSHOT_VERSION;
@@ -72,17 +77,17 @@ export function createSnapshotProvider(options){
     const cached = await kvGet();
     if(cached){
       const age = now() - cached.savedAt;
-      if(age <= ttlMs) return {ok:true, data:cached.data, cache:'fresh'};
+      if(age <= ttlMs) return {ok:true, data:cached.data, cache:'fresh', savedAt:cached.savedAt};
       if(age <= staleMs){
         waitUntil(refresh());
-        return {ok:true, data:cached.data, cache:'stale'};
+        return {ok:true, data:cached.data, cache:'stale', savedAt:cached.savedAt};
       }
     }
     const result = await fetchProjection();
     if(result.ok) return result;
     if(cached){
       log('snapshot_gas_failed_serving_last_known_good');
-      return {ok:true, data:cached.data, cache:'stale'};
+      return {ok:true, data:cached.data, cache:'stale', savedAt:cached.savedAt};
     }
     return result;
   }

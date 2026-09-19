@@ -100,7 +100,8 @@ export const REDACTED_TICKET_FIELDS = [
   'address', 'clientName', 'phone', 'extraPhones', 'macAddress', 'signal',
   'payment', 'sum', 'cashAmount', 'cardAmount', 'callFee', 'tariff',
   'tags', 'contractNumber', 'note', 'abonentNote', 'otherNote', 'geoLink',
-  'equipment', 'cables', 'presetWorks', 'additionalWork', 'cloudImported'
+  'equipment', 'cables', 'presetWorks', 'additionalWork', 'cloudImported',
+  'connectMasters', 'has_geo'
 ];
 
 export const REDACTED_SHIFT_FIELDS = ['id', 'date', 'hours', 'coworker'];
@@ -142,6 +143,15 @@ function geoLinkOnly(value){
   return typeof value === 'string' && /^https:\/\//i.test(value) ? value : '';
 }
 
+/* A coordinate counts as present only when it is a real, non-empty number
+   (null/''/'null'/'undefined' must never become has_geo:true). */
+function coordPresent(value){
+  if(value == null) return false;
+  const s = String(value).trim();
+  if(!s || s === 'null' || s === 'undefined') return false;
+  return Number.isFinite(Number(s));
+}
+
 /* Whitelist projection of one ticket for MCP clients. Field order is fixed
    (deterministic JSON output for identical inputs). */
 export function redactTicket(t){
@@ -173,8 +183,16 @@ export function redactTicket(t){
     abonentNote: str(f.abonentNote),
     otherNote: str(f.otherNote),
     geoLink: geoLinkOnly(f.geoLink),
+    /* has_geo is a derived BOOLEAN only: coordinates themselves never enter
+       the projection (geoLink URLs stay whitelisted for MCP parity, but the
+       /ask orchestrator forwards neither geoLink nor coordinates). */
+    has_geo: !!(geoLinkOnly(f.geoLink) || (coordPresent(f.geoLat) && coordPresent(f.geoLng))),
     equipment: Array.isArray(f.equipment) ? f.equipment.map(function(e){
-      return {label: str(e && e.label), price: num(e && e.price)};
+      const qty = num(e && e.qty);
+      /* Saved equipment rows carry no native quantity in the app data model;
+         qty falls back to 1 and is explicitly flagged as DERIVED so smart
+         search never reports it as an original database quantity. */
+      return {label: str(e && e.label), price: num(e && e.price), qty: qty || 1, total: num(e && e.price) * (qty || 1), qty_derived: !qty};
     }).filter(function(e){ return e.label; }) : [],
     cables: Array.isArray(f.cables) ? f.cables.map(function(c){
       return {label: str(c && c.label), meters: num(c && c.meters), pricePerMeter: num(c && c.pricePerMeter)};
@@ -185,6 +203,11 @@ export function redactTicket(t){
     additionalWork: Array.isArray(f.additionalWork) ? f.additionalWork.map(function(w){
       return {desc: str(w && w.desc), sum: num(w && w.sum)};
     }).filter(function(w){ return w.desc || w.sum; }) : [],
+    /* Coworkers recorded ON THE TICKET itself (direct evidence for «с кем
+       работал»). Projected to names only (no letters/initials structures). */
+    connectMasters: Array.isArray(f.connectMasters)
+      ? f.connectMasters.map(function(m){ return str(typeof m === 'string' ? m : (m && m.name)).trim(); }).filter(Boolean).slice(0, 10)
+      : [],
     cloudImported: f.cloudImported === true
   };
   assertNoForbidden(out);
@@ -210,12 +233,9 @@ export function ticketMatchesQuery(t, query){
   const q = String(query || '').trim().toLowerCase();
   if(!q) return true;
   const qDigits = q.replace(/\D/g, '');
-  return (t.content || '').toLowerCase().includes(q) ||
-    (t.date || '').includes(q) ||
-    (t.tags || []).some(function(tag){ return tag.toLowerCase().includes(q); }) ||
-    (t.city || '').toLowerCase().includes(q) ||
-    (t.address || '').toLowerCase().includes(q) ||
-    (t.clientName || '').toLowerCase().includes(q) ||
+  const searchable = [t.date, t.city, t.address, t.clientName, ...(t.tags || [])]
+    .map(function(v){ return String(v == null ? '' : v).toLowerCase(); });
+  return searchable.some(function(value){ return value.includes(q); }) ||
     ticketSignalMatchesQuery(t, q) ||
     (qDigits.length >= 3 && String(t.phone || '').replace(/\D/g, '').includes(qDigits)) ||
     (qDigits.length >= 3 && (t.extraPhones || []).some(function(p){ return String(p || '').replace(/\D/g, '').includes(qDigits); }));

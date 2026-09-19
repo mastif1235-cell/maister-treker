@@ -192,7 +192,9 @@ test('system prompt: date context line present, honest empty-data/ambiguity/no-h
   assert.match(ASK_SYSTEM_PROMPT, /search_tickets.*частине слово|частине слово достатньо/, 'address search guidance');
   assert.match(ASK_SYSTEM_PROMPT, /signal/, 'signal field guidance');
   assert.match(ASK_SYSTEM_PROMPT, /історію діалогу/, 'follow-up context rule');
-  assert.match(ASK_SYSTEM_PROMPT, /№<id>/, 'found tickets listed as №id');
+  assert.ok(!/№<id>/.test(ASK_SYSTEM_PROMPT), 'system prompt no longer suggests the №<id> list format');
+  assert.match(ASK_SYSTEM_PROMPT, /ТЕХНІЧНІ ІДЕНТИФІКАТОРИ/, 'technical-id hiding rule stays');
+  assert.match(ASK_SYSTEM_PROMPT, /ПОРЯДКОВОЮ НУМЕРАЦІЄЮ/, 'user lists use ordinal numbering only');
   assert.match(ASK_SYSTEM_PROMPT, /Сьогоднішня дата та обчислені періоди/, 'date context referenced');
   const line = askDateContextLine(new Date(2026, 7, 31, 12, 0, 0));
   assert.match(line, /Сьогодні: 31\.08\.2026/, 'date line format DD.MM.YYYY');
@@ -391,10 +393,11 @@ test('follow-up re-queries full dataset rather than displayed subset and does no
   assert.equal(outcome.total,2); assert.deepEqual(record[0][1],{city:'Таромское',signal_worse_than:-25}); assert.deepEqual(outcome.tickets,[]);
 });
 
-test('tool-selection guidance distinguishes city analytics from street address lookup', () => {
-  assert.match(ASK_SYSTEM_PROMPT, /city-only analytics\/search\/count\/group\/unique.*list_tickets/);
-  assert.match(ASK_SYSTEM_PROMPT, /Конкретна вулиця\/будинок\/адреса.*find_tickets_by_address/);
-  assert.match(ASK_SYSTEM_PROMPT, /follow-up.*list_tickets/);
+test('tool-selection guidance: query_tickets primary, address lookup preserved, standalone vs follow-up', () => {
+  assert.match(ASK_SYSTEM_PROMPT, /ПЕРШОЮ ЧЕРГОЮ query_tickets/, 'smart structured engine is the primary search tool');
+  assert.match(ASK_SYSTEM_PROMPT, /частине слово достатньо/, 'address lookup by partial word stays available');
+  assert.match(ASK_SYSTEM_PROMPT, /matched\/total_matched\/item_totals/, 'counts come from authoritative metadata, not displayed rows');
+  assert.match(ASK_SYSTEM_PROMPT, /НОВЕ самостійне питання.*НЕ успадковує/, 'standalone queries never inherit stale filters');
 });
 
 test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {
