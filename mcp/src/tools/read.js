@@ -97,12 +97,13 @@ export function createReadTools(options){
       if(wantedTags && !wantedTags.some(function(tag){ return t.tags.includes(tag); })) return false;
       if(wantedType && cleanStr(t.type) !== wantedType) return false;
 
-      if(params.signal_worse_than != null || params.signal_better_than != null){
+      if(params.signal_worse_than != null || params.signal_worse_or_equal != null || params.signal_better_than != null){
         const sigText = String(t.signal == null ? '' : t.signal).trim();
         if(!sigText) return false;
         const numSignal = Number(sigText);
         if(!Number.isFinite(numSignal)) return false;
-        if(params.signal_worse_than != null && numSignal > params.signal_worse_than) return false;
+        if(params.signal_worse_than != null && numSignal >= params.signal_worse_than) return false;
+        if(params.signal_worse_or_equal != null && numSignal > params.signal_worse_or_equal) return false;
         if(params.signal_better_than != null && numSignal < params.signal_better_than) return false;
       }
       return true;
@@ -146,6 +147,17 @@ export function createReadTools(options){
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
 
     const places = extractPlaces(data.tickets);
+    const cityQuery = cleanStr(params.address).replace(/^в\s+/, '');
+    const cityCandidates = places.filter(function(place){ return matchScore(place.city, cityQuery) >= 0.75; });
+    if(cityCandidates.length === 1){
+      const cityName = cityCandidates[0].city;
+      let cityList = data.tickets.filter(function(t){
+        return inRange(t.date, from, to) && ((t.city && matchScore(t.city, cityName) >= 0.75) || (data.searchIndex || []).some(function(item){ return item.id === t.id && matchScore(item.text, cityName) >= 0.75; }));
+      });
+      cityList = sortNewestFirst(cityList);
+      const cityMeta = page(cityList, params);
+      return {ok:true, data:{query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:[], ambiguous:false, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}};
+    }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
     const queryText = normalizeSearch(params.address);

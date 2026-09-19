@@ -106,6 +106,16 @@ test('list_tickets: pagination, date range, tag, type and dBm signal filters', a
   const better = toolData((await toolCall(app, 'list_tickets', {signal_better_than:-60})).result);
   assert.ok(better.tickets.some(function(t){ return t.id === 't-003'; })); // t-003 has signal -52
 
+  const strictRows = [{id:'strict-24', date:'01.01.2026', time:'10:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-24'})},
+    {id:'strict-25', date:'01.01.2026', time:'10:01', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-25'})},
+    {id:'strict-251', date:'01.01.2026', time:'10:02', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({signal:'-25.1'})}];
+  const strictPipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:strictRows, shifts:[]}}; }});
+  const strictTool = createReadTools({data:strictPipeline});
+  const strict = await strictTool.list_tickets({signal_worse_than:-25});
+  assert.deepEqual(strict.data.tickets.map(function(t){ return t.id; }), ['strict-251']);
+  const inclusive = await strictTool.list_tickets({signal_worse_or_equal:-25});
+  assert.deepEqual(inclusive.data.tickets.map(function(t){ return t.id; }).sort(), ['strict-25','strict-251']);
+
   const tagged = toolData((await toolCall(app, 'list_tickets', {tags:['ремонт']})).result);
   assert.deepEqual(tagged.tickets.map(function(t){ return t.id; }), ['t-001']);
 
@@ -140,6 +150,15 @@ test('legacy alternate street is searchable through GAS row mapper and READ addr
   const result = await tool.find_tickets_by_address({address:'Місто Тест Старая 44'});
   assert.equal(result.data.total_matched, 1);
   assert.equal(result.data.tickets[0].id, 'legacy-address-1');
+});
+
+test('city-only address query returns all streets without ambiguity', async () => {
+  const rows = ['Мостова','Берегова','Піщана'].map(function(street, i){ return {id:'city-'+i, date:'01.08.2026', time:'10:0'+i, content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Таромське', street:street, house:String(20+i)})}; });
+  rows.push({id:'other-city', date:'01.08.2026', time:'12:00', content:'', sum:0, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Миколаївка 2', street:'Центральна', house:'1'})});
+  const pipeline = createDataPipeline({getList:async function(){ return {ok:true, data:{tickets:rows, shifts:[]}}; }});
+  const result = await createReadTools({data:pipeline}).find_tickets_by_address({address:'в Таромском'});
+  assert.equal(result.data.total_matched, 3);
+  assert.equal(result.data.ambiguous, false);
 });
 
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {
