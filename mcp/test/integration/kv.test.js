@@ -38,7 +38,7 @@ test('two /mcp list calls hit GAS once when KV is bound; cached value is redacte
   assert.equal(listCalls, 1); // second call served from KV
 
   const stored = JSON.parse(kv.map.get(snapshotKey()));
-  assert.equal(stored.v, SNAPSHOT_VERSION); // v2 since the v91.44 redaction/schema change
+  assert.equal(stored.v, SNAPSHOT_VERSION); // v3 since the v91.45 legacy fullData parity change
   const serialized = JSON.stringify(stored.data);
   assert.ok(!serialized.includes('fullDataJson'));
   assert.ok(!serialized.includes('backupNote'));

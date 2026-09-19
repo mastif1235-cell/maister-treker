@@ -304,13 +304,18 @@ export function resolveAddress(queryStr, places){
    тексту на частини. Жодних хардкодів назв: лише синтаксис адреси.
    Structured-поля завжди пріоритетні — цей розбір лише заповнює ВІДСУТНІ. */
 
-const LEGACY_STREET_PREFIX_RE = /^(?:вул|ул|просп|пр|пров|пер|бул|площ|майдан|шосе|спуск|узвіз|тракт|алея)\b/i;
+/* \b is ASCII-only and never fires after Cyrillic letters, so the guard is an
+   explicit lookahead: the prefix must end the token (space/punct/end). */
+const LEGACY_STREET_PREFIX_RE = /^(?:проспект|провулок|вулиця|улица|площа|майдан|шосе|спуск|узвіз|тракт|алея|просп|бул|пров|пер|вул|ул|пр)(?=$|[\s.,])/i;
 
 export function legacyAddressFromText(text){
   const s = String(text || '');
   if(!s) return '';
-  const cityM = s.match(/(?:🏙️\s*)?(?:місто|город)\s*[:：]\s*([^\n📍📅]+)/i);
-  const addrM = s.match(/(?:📍\s*)?адрес(?:а|у)?\s*[:：]\s*([^\n📅📞👤]+)/i);
+  /* Lazy capture stopped at the NEXT service marker/emoji/newline, so a
+     marker never swallows the rest of the line (in old content markers are
+     often separated by spaces, not newlines). */
+  const cityM = s.match(/(?:🏙️\s*)?(?:місто|город)\s*[:：]\s*(.+?)(?=\s*(?:📍|🔒|📅|📞|👤|\n|$|адрес(?:а|у)?\s*[:：]))/i);
+  const addrM = s.match(/(?:📍\s*)?адрес(?:а|у)?\s*[:：]\s*(.+?)(?=\s*(?:🏙️|🔒|📅|📞|👤|\n|$|(?:місто|город)\s*[:：]))/i);
   const city = cityM ? cityM[1].trim() : '';
   const addr = addrM ? addrM[1].trim() : '';
   if(city && addr) return city + ', ' + addr;

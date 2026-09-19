@@ -167,3 +167,43 @@ test('I: legacy private text used only for local parsing, absent from the model-
   assert.ok(!payload.includes('не дзвонити'), 'no raw private fragments');
   assert.ok(payload.includes('Пʼятихатки'), 'the parsed address part itself may appear (it is the address)');
 });
+
+/* ---------- v91.45: parser against REAL legacy record formats ----------
+   Formats observed in old app records: explicit «Місто:/Адреса:» lines,
+   comma variants, prefixed streets, lettered/fractional house numbers. */
+
+test('legacy content with explicit «Місто:» and «Адреса:» lines', () => {
+  assert.equal(legacyAddressFromText('🏙️ Місто: Миколаївка 1 📍 Адреса: Вул Садова 19'), 'Миколаївка 1, Вул Садова 19');
+  assert.equal(legacyAddressFromText('Місто: Таромське Адреса: вул. Мостова 25'), 'Таромське, вул. Мостова 25');
+  assert.equal(legacyAddressFromText('📍 Адреса: Педагогічна 1'), 'Педагогічна 1');
+  assert.equal(legacyAddressFromText('🏙️ Місто: Дніпро'), 'Дніпро');
+});
+
+test('parseLegacyAddress handles the comma/spelling variants of old records', () => {
+  /* city, street house */
+  assert.deepEqual(parseLegacyAddress('Миколаївка 1, Вул Садова 19'), {city:'Миколаївка 1', street:'Вул Садова', house:'19'});
+  /* city, street, house (house separated by comma) */
+  assert.deepEqual(parseLegacyAddress('Миколаївка 1, Вул Садова, 19'), {city:'Миколаївка 1', street:'Вул Садова', house:'19'});
+  /* street, house — no city part */
+  assert.deepEqual(parseLegacyAddress('Вул Криворізька, 3'), {city:'', street:'Вул Криворізька', house:'3'});
+  /* street house — no comma at all */
+  assert.deepEqual(parseLegacyAddress('Педагогічна 1'), {city:'', street:'Педагогічна', house:'1'});
+  /* Russian «ул.» prefix is not mistaken for a city */
+  assert.deepEqual(parseLegacyAddress('ул. Шевченка 12'), {city:'', street:'ул. Шевченка', house:'12'});
+  /* lettered house number */
+  assert.deepEqual(parseLegacyAddress('Дніпро, просп. Миру 12а'), {city:'Дніпро', street:'просп. Миру', house:'12а'});
+  /* fractional house number */
+  assert.deepEqual(parseLegacyAddress('Дніпро, ул. Польова 3/14'), {city:'Дніпро', street:'ул. Польова', house:'3/14'});
+  /* digit glued to the street name stays one token — no guessing */
+  assert.deepEqual(parseLegacyAddress('Миколаївка 1, Садова19'), {city:'Миколаївка 1', street:'Садова19', house:''});
+});
+
+test('effectiveAddressParts fills each missing part independently', () => {
+  /* structured house present, city/street missing -> legacy fills only those two */
+  const t = {city:'', street:'', house:'7', address:'Миколаївка 1, Вул Садова 99'};
+  const p = effectiveAddressParts(t, '');
+  assert.equal(p.city, 'Миколаївка 1');
+  assert.equal(p.street, 'Вул Садова');
+  assert.equal(p.house, '7', 'structured house wins over the parsed 99');
+  assert.deepEqual(p.via, {city:'legacy', street:'legacy', house:'structured'});
+});

@@ -20,9 +20,15 @@
    v2 (v91.44): the REDACTED schema changed — equipment rows now carry
    qty/total/qty_derived, and tickets gained connectMasters and has_geo.
    Old v1 envelopes must never feed the new code: they are simply ignored
-   (the old KV key is left untouched, never deleted manually). */
+   (the old KV key is left untouched, never deleted manually).
 
-export const SNAPSHOT_VERSION = 2;
+   v3 (v91.45): the projection CONTENT semantics changed — legacy rows whose
+   structured fields live in the backupNote «ПовніДаніJSON:» payload now
+   carry city/street/house. Cached v2 projections built by the old mapper
+   would keep hiding those addresses until they expire, so they are ignored
+   exactly like v1 (old KV key left untouched, never deleted manually). */
+
+export const SNAPSHOT_VERSION = 3;
 
 export function snapshotKey(){
   return 'mt:snapshot:v' + SNAPSHOT_VERSION;
