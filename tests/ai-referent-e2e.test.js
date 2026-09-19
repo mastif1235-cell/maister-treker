@@ -170,3 +170,74 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     console.log('PASS referent privacy: client normalizer enforces the minimal set');
   })().catch(function(e){ console.error(e); process.exit(1); });
 }
+
+// ── v91.46: COUNT → «покажи их» — структурований follow-up контекст ──
+{
+  const sb=load(...CHAT_MODULES); const M=sb.MTAI;
+  sb.settings=JSON.parse(JSON.stringify(SETTINGS));
+  const store=memStorage();
+  const requests=[];
+  const fetchImpl=async function(url,init){
+    const body=JSON.parse(init.body); requests.push(body);
+    if(requests.length===1){
+      /* Сервер повертає авторитетні структуровані фільтри попереднього
+         запиту; спроба пронести приватні ключі відсікається клієнтом. */
+      return new Response(JSON.stringify({ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1', masterNote:'ЗЛОВМИСНА-НОТАТКА', phone:'0671234567'},mode:'count',total_matched:8}}),{status:200});
+    }
+    return new Response(JSON.stringify({ok:true,answer:'Ось заявки.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'list',total_matched:8}}),{status:200});
+  };
+  const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  const assistant=[];
+  const chat=M.createChatController({client:client,hooks:{assistant:function(p){ assistant.push(p); }},storage:store});
+  (async function(){
+    await chat.send('Скільки заявок у Миколаївці 1?');
+    assert.equal(requests.length,1);
+    assert.ok(!requests[0].context,'перше питання без контексту');
+
+    await chat.send('Покажи их');
+    assert.equal(requests.length,2);
+    const ctx2=requests[1].context;
+    assert.ok(ctx2 && ctx2.queryContext,'TURN 2: структурований follow-up контекст передано');
+    assert.deepEqual(ctx2.queryContext.resolved_filters,{city:'Миколаївка 1'},
+      'ТІЛЬКИ біла проєкція фільтрів — жодних приватних ключів');
+    assert.ok(!JSON.stringify(ctx2).includes('ЗЛОВМИСНА-НОТАТКА'),'нотатка не їде на сервер');
+    assert.ok(!JSON.stringify(ctx2).includes('0671234567'),'телефон не їде на сервер');
+
+    const persisted=JSON.parse(store.getItem('mtAiChatHistoryV1'));
+    const lastAssistant=persisted.slice().reverse().find(function(m){ return m.role==='assistant'; });
+    assert.ok(lastAssistant.queryContext && lastAssistant.queryContext.resolved_filters.city==='Миколаївка 1',
+      'контекст переживає персист для наступних turn');
+    console.log('PASS v91.46 follow-up context: whitelist-only round-trip through the real client chain');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}
+
+// ── v91.46 r2: жодного застарілого queryContext крізь чужі відповіді ──
+{
+  const sb=load(...CHAT_MODULES); const M=sb.MTAI;
+  sb.settings=JSON.parse(JSON.stringify(SETTINGS));
+  const store=memStorage();
+  const requests=[];
+  const fetchImpl=async function(url,init){
+    const body=JSON.parse(init.body); requests.push(body);
+    if(requests.length===1){
+      return new Response(JSON.stringify({ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'count',total_matched:8}}),{status:200});
+    }
+    if(requests.length===2){
+      /* Інше питання (зміни/години) — відповідь БЕЗ queryContext. */
+      return new Response(JSON.stringify({ok:true,answer:'За серпень 160 годин.',meta:{}}),{status:200});
+    }
+    return new Response(JSON.stringify({ok:true,answer:'Ось.',meta:{}}),{status:200});
+  };
+  const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  const chat=M.createChatController({client:client,hooks:{assistant:function(){}},storage:store});
+  (async function(){
+    await chat.send('Скільки заявок у Миколаївці 1?');
+    await chat.send('Скільки годин за серпень?');
+    await chat.send('Покажи их');
+    assert.equal(requests.length,3);
+    assert.ok(requests[1].context && requests[1].context.queryContext,'turn 2 ще бачить активний контекст turn 1');
+    assert.ok(!requests[2].context || !requests[2].context.queryContext,
+      'turn 3: попередня відповідь не має queryContext — старі фільтри Миколаївки 1 НЕ надсилаються');
+    console.log('PASS v91.46 r2: no stale queryContext — only the immediate previous answer counts');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}

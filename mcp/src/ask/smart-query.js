@@ -243,6 +243,8 @@ function topCityVariant(variants){
 
 /* ---------- item conditions ---------- */
 
+export const ITEM_KINDS = ['equipment', 'cable', 'preset_work', 'additional_work'];
+
 const ITEM_POOLS = [
   {kind:'equipment', pick:function(t){ return t.equipment; }, label:function(e){ return e && e.label; }},
   {kind:'cable', pick:function(t){ return t.cables; }, label:function(c){ return c && c.label; }},
@@ -601,6 +603,7 @@ export function runSmartQuery(ctx, params){
     if(wantedStreet) rf.street = params.street;
     if(wantedHouse) rf.house = String(params.house);
     if(params.apartment != null) rf.apartment = String(params.apartment);
+    if(wantedTags && wantedTags.length) rf.tags = wantedTags.slice(0, 20).map(function(tag){ return String(tag).slice(0, 60); });
     if(wantedType) rf.type = params.type;
     if(paymentTarget) rf.payment = params.payment;
     if(params.sum_min != null) rf.sum_min = params.sum_min;
@@ -616,9 +619,10 @@ export function runSmartQuery(ctx, params){
     if(resolvedItems.length){
       rf.items = resolvedItems.map(function(entry){
         const out = {text:String(entry.condition.text).slice(0, 80)};
-        if(entry.resolution.concept) out.concept = entry.resolution.concept;
-        out.resolved_labels = entry.resolution.labels.slice(0, 6);
-        out.in_catalog = entry.resolution.matchedInCatalog;
+        /* v91.46: keep the ORIGINAL condition (what the engine re-runs).
+           kind is the pool constraint — losing it would silently widen a
+           follow-up search to other item pools. */
+        if(ITEM_KINDS.indexOf(entry.condition.kind) !== -1) out.kind = entry.condition.kind;
         if(entry.condition.unit_price != null) out.unit_price = entry.condition.unit_price;
         if(entry.condition.quantity != null) out.quantity = entry.condition.quantity;
         if(entry.condition.total != null) out.total = entry.condition.total;

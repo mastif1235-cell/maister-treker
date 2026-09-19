@@ -152,6 +152,53 @@ MTAI.createClient = function(options){
     return out.slice(-12);
   }
 
+  /* v91.46: структурований follow-up контекст (авторитетні структуровані
+     фільтри попереднього query_tickets) — строга біла проєкція, дзеркало
+     серверного mcp/src/ask/query-context.js. Ніяких нотаток/телефонів/ПІБ:
+     невідомі ключі відкидаються. */
+  const QC_INHERITABLE = ['date_from','date_to','city','street','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items'];
+  function sanitizeQueryContext(raw){
+    if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const rf = raw.resolved_filters;
+    if(!rf || typeof rf !== 'object' || Array.isArray(rf)) return null;
+    const out = {};
+    for(const key of QC_INHERITABLE){
+      const v = rf[key];
+      if(v === undefined || v === null || v === '') continue;
+      if(key === 'date_from' || key === 'date_to'){
+        if(/^\d{2}\.\d{2}\.\d{4}$/.test(String(v))) out[key] = String(v);
+      }else if(key === 'sum_min' || key === 'sum_max' || key === 'signal_worse_than' || key === 'signal_worse_or_equal' || key === 'signal_better_than'){
+        const n = Number(v);
+        if(isFinite(n)) out[key] = n;
+      }else if(key === 'has_signal'){
+        if(typeof v === 'boolean') out[key] = v;
+      }else if(key === 'tags'){
+        if(Array.isArray(v)) out[key] = v.slice(0,20).map(function(t){ return String(t == null ? '' : t).slice(0,60); }).filter(Boolean);
+      }else if(key === 'items'){
+        if(Array.isArray(v)){
+          const items = v.slice(0,8).map(function(item){
+            if(!item || typeof item !== 'object' || Array.isArray(item)) return null;
+            const text = String(item.text == null ? '' : item.text).slice(0,80).trim();
+            if(!text) return null;
+            const clean = {text:text};
+            /* kind — обмеження пулу позицій; лише з дозволеного enum. */
+            if(['equipment','cable','preset_work','additional_work'].indexOf(item.kind) !== -1) clean.kind = item.kind;
+            for(const nk of ['unit_price','quantity','total']){
+              const n = Number(item[nk]);
+              if(isFinite(n) && item[nk] !== null && item[nk] !== undefined && item[nk] !== '') clean[nk] = n;
+            }
+            return clean;
+          }).filter(Boolean);
+          if(items.length) out[key] = items;
+        }
+      }else{
+        out[key] = String(v).slice(0, key === 'coworker' ? 60 : 100);
+      }
+    }
+    if(!Object.keys(out).length) return null;
+    return {resolved_filters:out};
+  }
+
   /* Структурований контекст попередньої відповіді (референт для «відкрий
      цю заявку»): лише та сама безпечна проєкція заявок. */
   function sanitizeLocalQuery(raw){
@@ -181,6 +228,12 @@ MTAI.createClient = function(options){
        тіло запиту байт-в-байт таким самим, як раніше. */
     const ctxTickets = context && Array.isArray(context.tickets) ? normalizeReferentTickets(context.tickets) : [];
     if(ctxTickets.length) body.context = { tickets: ctxTickets };
+    /* v91.46: follow-up контекст додається ЛИШЕ коли він є. */
+    const ctxQuery = sanitizeQueryContext(context && context.queryContext);
+    if(ctxQuery){
+      body.context = body.context || {};
+      body.context.queryContext = ctxQuery;
+    }
     try{
       const res = await fetchImpl(cfg.backendUrl + '/ask', {
         method:'POST',
@@ -190,7 +243,7 @@ MTAI.createClient = function(options){
       });
       const payload = await res.json().catch(function(){ return null; });
       if(res.ok && payload && payload.ok){
-        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), localQuery: sanitizeLocalQuery(payload.localQuery) };
+        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery) };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };
     }catch(err){

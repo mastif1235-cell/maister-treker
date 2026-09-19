@@ -20,7 +20,7 @@ MTAI.createChatController = function(deps){
       const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
       if(!Array.isArray(raw)) return [];
       return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
-        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeReferent(m.referentTickets)};
+        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeReferent(m.referentTickets), queryContext:(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) ? m.queryContext : null};
       });
     }catch(_e){ return []; }
   }
@@ -107,8 +107,22 @@ MTAI.createChatController = function(deps){
         : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
       if(ref.length){ referent = ref; break; }
     }
+    /* v91.46: структурований follow-up контекст — ТІЛЬКИ з безпосередньо
+       попередньої assistant-відповіді (активний контекст розмови). Жодного
+       сканування вглиб: якщо попередня відповідь його не має — контекст
+       протух і надсилати старі фільтри не можна. */
+    let followUpQueryContext = null;
+    for(let i = messages.length - 1; i >= 0; i--){
+      const m = messages[i];
+      if(m.role !== 'assistant') continue;
+      if(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) followUpQueryContext = m.queryContext;
+      break;
+    }
     if(!isRetry){ messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() }); persist(); }
-    let outcome = await client.ask(question, history, { tickets: referent });
+    /* v91.46: структурований follow-up контекст (авторитетні фільтри
+       попереднього query_tickets) — «покажи їх» успадковує ТІ САМІ фільтри
+       на свіжому READ; повторно валідується клієнтом і сервером. */
+    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext });
     busy = false;
     emit('busy', false);
     if(outcome.ok){
@@ -116,7 +130,7 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
-      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets) });
+      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets), queryContext:(outcome.queryContext && typeof outcome.queryContext === 'object' && !Array.isArray(outcome.queryContext)) ? outcome.queryContext : null });
       persist();
       emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null });
       return { ok:true };
