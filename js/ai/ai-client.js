@@ -127,25 +127,45 @@ MTAI.createClient = function(options){
     return out.slice(-12);
   }
 
-  async function ask(question, history){
+  /* Структурований контекст попередньої відповіді (референт для «відкрий
+     цю заявку»): лише та сама безпечна проєкція заявок. */
+  function sanitizeLocalQuery(raw){
+    if(!raw || typeof raw !== 'object' || raw.kind !== 'network_points') return null;
+    const dateOk = function(v){ return /^\d{2}\.\d{2}\.\d{4}$/.test(String(v || '')) ? String(v) : null; };
+    return {
+      kind: 'network_points',
+      type: typeof raw.type === 'string' ? raw.type.slice(0, 20) : null,
+      text: String(raw.text == null ? '' : raw.text).slice(0, 300),
+      date_from: dateOk(raw.date_from),
+      date_to: dateOk(raw.date_to),
+      period_note: typeof raw.period_note === 'string' ? raw.period_note.slice(0, 120) : null
+    };
+  }
+
+  async function ask(question, history, context){
     const cfg = getConfig();
     const ctrl = new AbortController();
     const timer = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
+    const body = {
+      question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
+      history: sanitizeHistory(history),
+      provider: cfg.provider || MTAI.config.DEFAULT_PROVIDER,
+      model: cfg.model || MTAI.config.DEFAULT_MODEL
+    };
+    /* Контекст додається ЛИШЕ коли він є — перше питання сесії лишає
+       тіло запиту байт-в-байт таким самим, як раніше. */
+    const ctxTickets = context && Array.isArray(context.tickets) ? normalizeTickets(context.tickets) : [];
+    if(ctxTickets.length) body.context = { tickets: ctxTickets };
     try{
       const res = await fetchImpl(cfg.backendUrl + '/ask', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + cfg.bearer },
-        body: JSON.stringify({
-          question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
-          history: sanitizeHistory(history),
-          provider: cfg.provider || MTAI.config.DEFAULT_PROVIDER,
-          model: cfg.model || MTAI.config.DEFAULT_MODEL
-        }),
+        body: JSON.stringify(body),
         signal: ctrl.signal
       });
       const payload = await res.json().catch(function(){ return null; });
       if(res.ok && payload && payload.ok){
-        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets) };
+        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), localQuery: sanitizeLocalQuery(payload.localQuery) };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };
     }catch(err){
@@ -183,7 +203,7 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, sanitizeHistory: sanitizeHistory };
+  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, sanitizeHistory: sanitizeHistory, sanitizeLocalQuery: sanitizeLocalQuery };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут
