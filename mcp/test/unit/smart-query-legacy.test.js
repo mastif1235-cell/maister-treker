@@ -247,3 +247,62 @@ test('group_by city merges structured and legacy rows of one real city into ONE 
   assert.equal(g.sum, 1600);
   assert.equal(g.last_date, '02.09.2026');
 });
+
+/* ---------- v91.45 r4: canonical city identity ---------- */
+
+import {canonicalCityKey} from '../../src/ask/address.js';
+
+test('canonicalCityKey collapses UA/RU spellings and keeps the trailing-digit guard', () => {
+  assert.equal(canonicalCityKey('Таромське'), canonicalCityKey('Таромское'));
+  assert.equal(canonicalCityKey('Дніпро'), canonicalCityKey('Днепр'));
+  assert.notEqual(canonicalCityKey('Миколаївка 1'), canonicalCityKey('Миколаївка 2'), 'digit guard: two distinct settlements');
+  assert.notEqual(canonicalCityKey('Миколаївка 1'), canonicalCityKey('Миколаївка'));
+  assert.equal(canonicalCityKey(''), '');
+});
+
+test('A: one street in Таромське vs Таромское is NOT ambiguous — one real settlement', () => {
+  const rows = [
+    ticket('a1', '01.09.2026', {city:'Таромське', street:'Вул Садова', house:'1'}),
+    ticket('b1', '02.09.2026', {address:'Таромское, Вул Садова 2'}) /* legacy, RU spelling */
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'list', street:'Вул Садова'});
+  assert.equal(r.data.ambiguous, false, 'spelling variants of one city never produce ambiguity');
+  assert.equal(r.data.total_matched, 2);
+});
+
+test('B: group_by city merges Таромське + Таромское into ONE group with a real human name', () => {
+  const rows = [
+    ticket('a1', '01.09.2026', {city:'Таромське', street:'Вул Садова', house:'1'}),
+    ticket('b1', '02.09.2026', {address:'Таромское, Вул Садова 2'})
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'group', group_by:'city'});
+  assert.equal(r.data.groups.length, 1, 'one real city = one group');
+  assert.equal(r.data.groups[0].count, 2);
+  assert.ok(/^(Таромське|Таромское)$/.test(r.data.groups[0].key), 'display stays a real variant, not a stem: ' + r.data.groups[0].key);
+});
+
+test('digit guard end-to-end: Миколаївка 1 and Миколаївка 2 stay two cities everywhere', () => {
+  const rows = [
+    ticket('m1', '01.09.2026', {city:'Миколаївка 1', street:'Вул Садова', house:'3'}),
+    ticket('m2', '02.09.2026', {address:'Миколаївка 2, Вул Садова 7'})
+  ];
+  const groups = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'group', group_by:'city'});
+  assert.equal(groups.data.groups.length, 2, 'never merge distinct settlements sharing a name stem');
+  const amb = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'list', street:'Вул Садова'});
+  assert.equal(amb.data.ambiguous, true);
+  assert.deepEqual(amb.data.candidates.map(function(c){ return c.city; }).sort(), ['Миколаївка 1', 'Миколаївка 2']);
+});
+
+test('full-set unique_cities analytics collapses spellings of one city', () => {
+  const rows = [
+    ticket('a1', '01.09.2026', {city:'Таромське', street:'вул. А', house:'1'}),
+    ticket('b1', '02.09.2026', {address:'Таромское, вул. Б 2'}),
+    ticket('c1', '03.09.2026', {city:'Дніпро', street:'вул. В', house:'3'})
+  ];
+  const r = runSmartQuery({tickets:rows, shifts:[], searchIndex:[]}, {mode:'list', limit:100});
+  const names = r.data.analytics.unique_cities.map(function(c){ return c.name; }).sort();
+  assert.equal(names.length, 2, 'Таромське/Таромское counted once');
+  assert.ok(names.includes('Дніпро'));
+  const tar = r.data.analytics.unique_cities.find(function(c){ return /Таром/.test(c.name); });
+  assert.equal(tar.count, 2);
+});

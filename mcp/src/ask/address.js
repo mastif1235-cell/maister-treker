@@ -13,6 +13,27 @@ export function cleanStr(s){
   return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/["'`’]/g, '').trim();
 }
 
+/* v91.45: single deterministic city IDENTITY key. Built from the same
+   normalization cityMatches/normalizeStem already use (UA↔RU bridges), so
+   «Таромське» and «Таромское» collapse into one key. Trailing-digit guard:
+   pure-digit tokens are kept verbatim in the key — «Миколаївка 1» and
+   «Миколаївка 2» must NEVER merge. The key is internal only; UI display
+   always stays a real human variant from the data. */
+export function canonicalCityKey(city){
+  const tokens = cleanStr(city).split(/\s+/).filter(Boolean);
+  const stemTokens = [];
+  const digitTokens = [];
+  for(const tok of tokens){
+    if(/^\d+$/.test(tok)) digitTokens.push(tok);
+    else {
+      const stem = normalizeStem(tok);
+      if(stem) stemTokens.push(stem);
+    }
+  }
+  if(!stemTokens.length && !digitTokens.length) return '';
+  return stemTokens.join(' ') + (digitTokens.length ? '#' + digitTokens.join('#') : '');
+}
+
 const PREFIX_RE = /^(?:вул(?:иця|\.)?|ул(?:ица|\.)?|просп(?:ект|\.)?|пр(?:-кт|\.)?|пров(?:улок|\.)?|пер(?:еулок|\.)?|бул(?:ьвар|\.)?|наб(?:ережна|\.)?|тупик|узвіз|спуск|шосе|тракт|алея)\s+/i;
 const SUFFIX_RE = /(?:івською|івської|івському|івська|івську|івські|івське|івський|евскою|евской|евском|евского|евскому|евская|евскую|евские|евское|евский|євскою|євской|євском|євского|євскому|євская|євскую|євские|євское|євский|овською|овської|овському|овська|овську|овські|овське|овський|овскою|овской|овском|овского|овскому|овская|овскую|овские|овское|овский|ського|ского|ському|скому|ськом|ском|ський|ский|ська|ская|ське|ское|ські|ские|ських|ских|ської|ской|ового|евого|євого|овому|евому|євому|овою|евою|євою|овой|евой|євой|овую|евую|євую|овая|евая|євая|івка|овка|евка|євка|ова|ева|єва|ову|еву|єву|ное|не|ном|ним|нем|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|ями|ами|ях|ах|ям|ам|ому|ем|єм|ом|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
 
