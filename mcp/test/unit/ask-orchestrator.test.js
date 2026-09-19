@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createAskOrchestrator, ASK_LIMITS} from '../../src/ask/orchestrator.js';
+import {createAskOrchestrator, ASK_LIMITS, ASK_SYSTEM_PROMPT} from '../../src/ask/orchestrator.js';
 import {TOOL_DEFINITIONS} from '../../src/tools/definitions.js';
 
 function scriptedGroq(steps){
@@ -389,6 +389,12 @@ test('follow-up re-queries full dataset rather than displayed subset and does no
   const tools = stubTools(record); tools.list_tickets = async function(args){ record.push(['list_tickets',args]); return {ok:true,data:{tickets:[{id:'page-only'}],total_matched:2,returned:1,limit:1}}; };
   const outcome = await createAskOrchestrator({groq,tools,toolDefs:TOOL_DEFINITIONS}).handle('А сколько из них в Таромском?',{history:[{role:'user',content:'Найди 75 заявок с плохим сигналом'},{role:'assistant',content:'Показана только первая страница из 75.'}]});
   assert.equal(outcome.total,2); assert.deepEqual(record[0][1],{city:'Таромское',signal_worse_than:-25}); assert.deepEqual(outcome.tickets,[]);
+});
+
+test('tool-selection guidance distinguishes city analytics from street address lookup', () => {
+  assert.match(ASK_SYSTEM_PROMPT, /city-only analytics\/search\/count\/group\/unique.*list_tickets/);
+  assert.match(ASK_SYSTEM_PROMPT, /Конкретна вулиця\/будинок\/адреса.*find_tickets_by_address/);
+  assert.match(ASK_SYSTEM_PROMPT, /follow-up.*list_tickets/);
 });
 
 test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {

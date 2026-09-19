@@ -116,8 +116,13 @@ export function createReadTools(options){
       if(!wantedCity) return true;
       if(ticket.city && matchScore(ticket.city, wantedCity) >= 0.72) return true;
       const indexed = data.searchIndex.find(function(item){ return item.id === ticket.id; });
-      const text = cleanStr(indexed && indexed.text).replace(/ё/g, 'е');
-      return text.includes(wantedCity) || (wantedCity === 'таромское' && text.includes('таромськ')) || (wantedCity === 'таромське' && text.includes('таромск'));
+      const rawTokens = cleanStr(indexed && indexed.text).replace(/ё/g, 'е').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      const textStems = rawTokens.map(normalizeStem);
+      const cityTokens = wantedCity.split(/\s+/).filter(Boolean).map(normalizeStem);
+      /* Legacy fallback is token/stem based, not substring based: this keeps
+         inflected forms such as «Таромском» aligned with «Таромское» while
+         avoiding accidental matches inside a private note word. */
+      return cityTokens.length > 0 && cityTokens.every(function(stem){ return stem && textStems.includes(stem); });
     };
 
     let list = data.tickets.filter(function(t){

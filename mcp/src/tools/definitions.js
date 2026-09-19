@@ -13,7 +13,7 @@ const OFFSET_ARG = {type:'integer', minimum:0, maximum:10000, description:'Зс�
 export const TOOL_DEFINITIONS = [
   {
     name: 'list_tickets',
-    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна фільтрувати за діапазоном дат, типом робіт, рівнем сигналу (dBm) та тегами.',
+    description: 'Список заявок «Майстер-Трекера» (новіші дати спочатку, усередині дня — за часом). Можна комбінувати city, date range, type, signal (dBm) та tags для analytics/count/group/unique.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{

@@ -186,6 +186,11 @@ test('list_tickets composes city, signal and date filters including legacy rows'
   assert.equal(result.data.total_matched,3);
   assert.deepEqual(result.data.tickets.map(function(t){return t.id;}).sort(),['c1','c3','legacy-city'].sort());
   assert.equal(result.data.analytics.unique_cities.reduce(function(s,x){return s+x.count;},0),3);
+  for(const city of ['Таромском','Таромське']){
+    const legacyOnly = await tools.list_tickets({city:city,signal_worse_than:-25,date_from:'01.04.2026',date_to:'30.04.2026'});
+    assert.ok(legacyOnly.data.tickets.some(function(t){return t.id === 'legacy-city';}), city);
+    assert.ok(!legacyOnly.data.tickets.some(function(t){return t.id === 'c4';}), city);
+  }
 });
 
 test('pagination returns disjoint complete pages for 75 rows', async () => {
