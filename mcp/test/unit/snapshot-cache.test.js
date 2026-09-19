@@ -39,32 +39,36 @@ function gasStub(){
 
 test('snapshotKey is versioned', () => {
   assert.equal(snapshotKey(), 'mt:snapshot:v' + SNAPSHOT_VERSION);
-  assert.equal(SNAPSHOT_VERSION, 2, 'v91.44 redaction/schema change invalidates v1');
-  assert.equal(snapshotKey(), 'mt:snapshot:v2');
+  assert.equal(SNAPSHOT_VERSION, 3, 'v91.45 legacy fullData parity invalidates v1+v2 projections');
+  assert.equal(snapshotKey(), 'mt:snapshot:v3');
 });
 
-test('v1 envelope is NOT accepted as the current v2 snapshot (v91.44 schema bump)', async () => {
-  /* Leftover v1 shape at the current key: treated as a miss, never served. */
+test('old-version envelopes are NOT accepted as the current v3 snapshot (v91.44 v1 bump, v91.45 v2 bump)', async () => {
+  /* Leftover v2 shape at the current key — a projection built by the
+     pre-v91.45 mapper that hid legacy ПовніДаніJSON addresses: treated as a
+     miss, never served (same for a v1 leftover). */
   const kv = fakeKv();
-  kv.map.set(snapshotKey(), JSON.stringify({v:1, savedAt:Date.now(), data:projection(7)}));
+  kv.map.set(snapshotKey(), JSON.stringify({v:2, savedAt:Date.now(), data:projection(7)}));
   let calls = 0;
   const provider = createSnapshotProvider({fetchFn:async function(){ calls++; return {ok:true, data:projection(42)}; }, kv, ttlMs:300000, staleMs:86400000});
   const result = await provider.getList();
-  assert.equal(calls, 1, 'v1 envelope forces a fresh read instead of serving stale shape');
-  assert.deepEqual(result.data, projection(42), 'fresh data served, not the v1 projection');
+  assert.equal(calls, 1, 'v2 envelope forces a fresh read instead of serving the stale pre-v91.45 projection');
+  assert.deepEqual(result.data, projection(42), 'fresh data served, not the old projection');
 
-  /* The old production key mt:snapshot:v1 is neither read nor deleted: the
-     new code only ever touches the v2 key. */
+  /* The old production keys mt:snapshot:v1 and mt:snapshot:v2 are neither
+     read nor deleted: the new code only ever touches the v3 key. */
   const kv2 = fakeKv();
   kv2.map.set('mt:snapshot:v1', JSON.stringify({v:1, savedAt:1, data:projection(7)}));
+  kv2.map.set('mt:snapshot:v2', JSON.stringify({v:2, savedAt:1, data:projection(8)}));
   let calls2 = 0;
   const provider2 = createSnapshotProvider({fetchFn:async function(){ calls2++; return {ok:true, data:projection(2)}; }, kv:kv2, ttlMs:300000, staleMs:86400000, waitUntil:function(p){ return Promise.resolve(p).catch(function(){}); }});
   await provider2.getList();
   await new Promise(function(r){ setTimeout(r, 0); });
-  assert.equal(calls2, 1, 'v1 key is not used by v2 code (cold miss)');
+  assert.equal(calls2, 1, 'old keys are not used by v3 code (cold miss)');
   assert.equal(kv2.map.get('mt:snapshot:v1'), JSON.stringify({v:1, savedAt:1, data:projection(7)}), 'old v1 KV value left untouched');
-  const written = JSON.parse(kv2.map.get('mt:snapshot:v2'));
-  assert.equal(written.v, 2, 'new writes go to the v2 envelope');
+  assert.equal(kv2.map.get('mt:snapshot:v2'), JSON.stringify({v:2, savedAt:1, data:projection(8)}), 'old v2 KV value left untouched');
+  const written = JSON.parse(kv2.map.get('mt:snapshot:v3'));
+  assert.equal(written.v, 3, 'new writes go to the v3 envelope');
 });
 
 test('cold miss -> GAS -> cache write; fresh hit -> no GAS call', async () => {

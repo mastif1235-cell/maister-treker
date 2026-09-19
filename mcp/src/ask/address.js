@@ -13,6 +13,27 @@ export function cleanStr(s){
   return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/["'`’]/g, '').trim();
 }
 
+/* v91.45: single deterministic city IDENTITY key. Built from the same
+   normalization cityMatches/normalizeStem already use (UA↔RU bridges), so
+   «Таромське» and «Таромское» collapse into one key. Trailing-digit guard:
+   pure-digit tokens are kept verbatim in the key — «Миколаївка 1» and
+   «Миколаївка 2» must NEVER merge. The key is internal only; UI display
+   always stays a real human variant from the data. */
+export function canonicalCityKey(city){
+  const tokens = cleanStr(city).split(/\s+/).filter(Boolean);
+  const stemTokens = [];
+  const digitTokens = [];
+  for(const tok of tokens){
+    if(/^\d+$/.test(tok)) digitTokens.push(tok);
+    else {
+      const stem = normalizeStem(tok);
+      if(stem) stemTokens.push(stem);
+    }
+  }
+  if(!stemTokens.length && !digitTokens.length) return '';
+  return stemTokens.join(' ') + (digitTokens.length ? '#' + digitTokens.join('#') : '');
+}
+
 const PREFIX_RE = /^(?:вул(?:иця|\.)?|ул(?:ица|\.)?|просп(?:ект|\.)?|пр(?:-кт|\.)?|пров(?:улок|\.)?|пер(?:еулок|\.)?|бул(?:ьвар|\.)?|наб(?:ережна|\.)?|тупик|узвіз|спуск|шосе|тракт|алея)\s+/i;
 const SUFFIX_RE = /(?:івською|івської|івському|івська|івську|івські|івське|івський|евскою|евской|евском|евского|евскому|евская|евскую|евские|евское|евский|євскою|євской|євском|євского|євскому|євская|євскую|євские|євское|євский|овською|овської|овському|овська|овську|овські|овське|овський|овскою|овской|овском|овского|овскому|овская|овскую|овские|овское|овский|ського|ского|ському|скому|ськом|ском|ський|ский|ська|ская|ське|ское|ські|ские|ських|ских|ської|ской|ового|евого|євого|овому|евому|євому|овою|евою|євою|овой|евой|євой|овую|евую|євую|овая|евая|євая|івка|овка|евка|євка|ова|ева|єва|ову|еву|єву|ное|не|ном|ним|нем|ная|на|ний|ный|ного|ному|ної|ной|ої|ой|ями|ами|ях|ах|ям|ам|ому|ем|єм|ом|ая|яя|ий|ій|ый|ой|ка|ко|ів|ев|ов|а|я|е|є|о|у|ю|і|ы|и)$/i;
 
@@ -293,5 +314,80 @@ export function resolveAddress(queryStr, places){
     ambiguous: false,
     houses: top.houses,
     confidence: Math.round(top.score * 100) / 100
+  };
+}
+
+/* ---------- legacy / restored address resolution (v91.45) ----------
+   Старі відновлені заявки часто мають лише текстове поле address (або рядки
+   «️ Місто:» / «📍 Адреса:» у legacy content), без структурованих
+   city/street/house. Звичайний пошук застосунку знаходить їх текстово; щоб
+   AI-рушій не розходився з ним, тут — спільний ДЕТЕРМІНОВАНИЙ розбір такого
+   тексту на частини. Жодних хардкодів назв: лише синтаксис адреси.
+   Structured-поля завжди пріоритетні — цей розбір лише заповнює ВІДСУТНІ. */
+
+/* \b is ASCII-only and never fires after Cyrillic letters, so the guard is an
+   explicit lookahead: the prefix must end the token (space/punct/end). */
+const LEGACY_STREET_PREFIX_RE = /^(?:проспект|провулок|вулиця|улица|площа|майдан|шосе|спуск|узвіз|тракт|алея|просп|бул|пров|пер|вул|ул|пр)(?=$|[\s.,])/i;
+
+export function legacyAddressFromText(text){
+  const s = String(text || '');
+  if(!s) return '';
+  /* Lazy capture stopped at the NEXT service marker/emoji/newline, so a
+     marker never swallows the rest of the line (in old content markers are
+     often separated by spaces, not newlines). */
+  const cityM = s.match(/(?:🏙️\s*)?(?:місто|город)\s*[:：]\s*(.+?)(?=\s*(?:📍|🔒|📅|📞|👤|\n|$|адрес(?:а|у)?\s*[:：]))/i);
+  const addrM = s.match(/(?:📍\s*)?адрес(?:а|у)?\s*[:：]\s*(.+?)(?=\s*(?:🏙️|🔒|📅|📞|👤|\n|$|(?:місто|город)\s*[:：]))/i);
+  const city = cityM ? cityM[1].trim() : '';
+  const addr = addrM ? addrM[1].trim() : '';
+  if(city && addr) return city + ', ' + addr;
+  return addr || city || '';
+}
+
+export function parseLegacyAddress(text){
+  let s = String(text || '').replace(/\s+/g, ' ').trim();
+  if(!s) return null;
+  let city = '';
+  const comma = s.indexOf(',');
+  if(comma > 0){
+    const head = s.slice(0, comma).trim();
+    const tail = s.slice(comma + 1).trim();
+    if(tail && head && !LEGACY_STREET_PREFIX_RE.test(head)){
+      city = head;
+      s = tail;
+    }
+  }
+  let street = s.replace(/,+$/, '').trim();
+  let house = '';
+  const hm = street.match(/^(.*?)[,\s]+(\d{1,4}(?:[\/-]\d{1,4})?[а-яa-z]?)$/i);
+  if(hm && hm[1].trim()){
+    street = hm[1].trim().replace(/,+$/, '').trim();
+    house = hm[2];
+  }
+  if(!city && !street) return null;
+  return {city: city, street: street, house: house};
+}
+
+/* Ефективні адресні частини заявки: structured пріоритетні, legacy-розбір
+   заповнює лише порожні. Повертає {city, street, house, via:{...}}, де via
+   позначає походження кожної частини ('structured' | 'legacy' | null). */
+export function effectiveAddressParts(ticket, legacyText){
+  const t = ticket || {};
+  const sCity = String(t.city || '').trim();
+  const sStreet = String(t.street || '').trim();
+  const sHouse = String(t.house || '').trim();
+  let parts = null;
+  if(!sCity || !sStreet || !sHouse){
+    const source = String(t.address || '').trim() || legacyAddressFromText(legacyText);
+    parts = parseLegacyAddress(source);
+  }
+  return {
+    city: sCity || (parts && parts.city) || '',
+    street: sStreet || (parts && parts.street) || '',
+    house: sHouse || (parts && parts.house) || '',
+    via: {
+      city: sCity ? 'structured' : (parts && parts.city ? 'legacy' : null),
+      street: sStreet ? 'structured' : (parts && parts.street ? 'legacy' : null),
+      house: sHouse ? 'structured' : (parts && parts.house ? 'legacy' : null)
+    }
   };
 }

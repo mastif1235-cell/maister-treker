@@ -186,3 +186,98 @@ test('equipment qty provenance: stored qty wins, missing qty is flagged derived'
   assert.equal(stored.equipment[0].total, 30);
   assert.equal(stored.equipment[0].qty_derived, false);
 });
+
+/* ---------- v91.45: legacy fullData parity (the 14-vs-9 data path) ----------
+   Proven defect: rows created before the dedicated повніДаніJSON column carry
+   their structured fields as a «ПовніДаніJSON:» line inside backupNote. The
+   PWA restore (js/restore-from-sheets.js + parseBackupNote) merges that line
+   into structured city/street/house — the address navigator shows them — but
+   the AI mapper read ONLY the fullDataJson column, so the same Sheets row was
+   structured on the phone yet «без адреси» for the AI. These tests pin the
+   parity: fullDataJson always wins; the legacy line fills only empty rows. */
+
+import {fullDataFromBackupNote} from '../../src/gas/mappers.js';
+import {runSmartQuery} from '../../src/ask/smart-query.js';
+
+test('v91.45: legacy row with ПовніДаніJSON in backupNote gets structured fields for the AI', () => {
+  const row = {
+    id:'legacy-1', date:'04.02.2024', time:'12:00',
+    content:'Монтаж, Миколаївка 1', sum:900, tags:[],
+    backupNote:'Геолокація: https://maps.google.com/?q=1\nПовніДаніJSON: {"city":"Миколаївка 1","street":"Вул Криворізька","house":"3","address":"Миколаївка 1, Вул Криворізька 3","login":"root","password":"p@ss","masterNote":"приватне"}',
+    fullDataJson:''
+  };
+  const red = redactTicket(ticketFromGasRow(row));
+  assert.equal(red.city, 'Миколаївка 1');
+  assert.equal(red.street, 'Вул Криворізька');
+  assert.equal(red.house, '3');
+  assert.equal(red.address, 'Миколаївка 1, Вул Криворізька 3');
+  assertNoForbidden(red); /* throws if any forbidden key leaked */
+  const payload = JSON.stringify(red);
+  assert.ok(!payload.includes('root'), 'login from the legacy payload never reaches MCP output');
+  assert.ok(!payload.includes('p@ss'), 'password from the legacy payload never reaches MCP output');
+  assert.ok(!payload.includes('приватне'), 'masterNote from the legacy payload never reaches MCP output');
+});
+
+test('v91.45: fullDataJson ALWAYS wins over the backupNote legacy line (app priority)', () => {
+  const row = {
+    id:'both', date:'05.02.2024', time:'12:00', content:'x', sum:0, tags:[],
+    backupNote:'ПовніДаніJSON: {"city":"СТАРЕ","street":"Стара вул.","house":"1"}',
+    fullDataJson:JSON.stringify({city:'Нове', street:'Нова вул.', house:'2'})
+  };
+  const red = redactTicket(ticketFromGasRow(row));
+  assert.equal(red.city, 'Нове');
+  assert.equal(red.street, 'Нова вул.');
+  assert.equal(red.house, '2');
+});
+
+test('v91.45: malformed fullDataJson does NOT fall back to backupNote (parity: app marks the row invalid)', () => {
+  const row = {
+    id:'broken', date:'06.02.2024', time:'12:00', content:'x', sum:0, tags:[],
+    backupNote:'ПовніДаніJSON: {"city":"Миколаївка 1","street":"Вул Садова","house":"9"}',
+    fullDataJson:'{not-json'
+  };
+  const t = ticketFromGasRow(row);
+  assert.equal(t.fullDataError, true);
+  const red = redactTicket(t);
+  assert.equal(red.city, '', 'no guessing when the dedicated column is corrupt');
+});
+
+test('v91.45: backupNote without the marker produces no structured fields', () => {
+  const row = {
+    id:'plain', date:'07.02.2024', time:'12:00', content:'Миколаївка 1, Вул Садова 5', sum:0, tags:[],
+    backupNote:'Приватна примітка майстра: щось', fullDataJson:''
+  };
+  const red = redactTicket(ticketFromGasRow(row));
+  assert.equal(red.city, '');
+  assert.equal(red.street, '');
+});
+
+test('v91.45: fullDataFromBackupNote mirrors parseBackupNote (last parseable marker wins, malformed skipped)', () => {
+  const note = 'ПовніДаніJSON: {bad\nПовніДаніJSON: {"city":"А"}\nПовніДаніJSON: {"city":"Б"}';
+  assert.deepEqual(fullDataFromBackupNote(note), {city:'Б'});
+  assert.equal(fullDataFromBackupNote('без маркера'), null);
+  assert.equal(fullDataFromBackupNote('ПовніДаніJSON: {тільки сміття'), null);
+});
+
+test('v91.45: the SAME Sheets dataset — phone restore and AI smart-query now agree on the city count', () => {
+  /* 2 rows with the dedicated column, 3 legacy rows whose structured fields
+     live only in backupNote — like the Миколаївка 1 phone screenshot. */
+  const rows = [
+    {id:'s1', date:'03.09.2026', time:'10:00', content:'', sum:800, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Миколаївка 1', street:'Вул Садова', house:'19'})},
+    {id:'s2', date:'05.09.2026', time:'10:00', content:'', sum:800, tags:[], backupNote:'', fullDataJson:JSON.stringify({city:'Миколаївка 1', street:'Вул Центральна', house:'4'})},
+    {id:'l1', date:'01.09.2026', time:'10:00', content:'', sum:800, tags:[], backupNote:'ПовніДаніJSON: {"city":"Миколаївка 1","street":"Вул Генерала Пушкіна","house":"1"}', fullDataJson:''},
+    {id:'l2', date:'02.09.2026', time:'10:00', content:'', sum:800, tags:[], backupNote:'ПовніДаніJSON: {"city":"Миколаївка 1","street":"Педагогічна","house":"5"}', fullDataJson:''},
+    {id:'l3', date:'06.09.2026', time:'10:00', content:'', sum:800, tags:[], backupNote:'ПовніДаніJSON: {"city":"Миколаївка 1","street":"Вул Криворізька","house":"3"}', fullDataJson:''}
+  ];
+  const mapped = rows.map(ticketFromGasRow);
+  const redacted = mapped.map(redactTicket);
+  const ctx = {
+    tickets: redacted, shifts: [],
+    searchIndex: mapped.map(function(t){ return {id:t.id, text:t.searchableText}; })
+  };
+  const count = runSmartQuery(ctx, {mode:'count', city:'Миколаївка 1'});
+  assert.equal(count.data.total_matched, 5, 'all 5 rows are structured now — no 2-vs-5 divergence');
+  const groups = runSmartQuery(ctx, {mode:'group', group_by:'street', city:'Миколаївка 1'});
+  const keys = groups.data.groups.map(function(g){ return g.key; }).sort();
+  assert.deepEqual(keys, ['Вул Генерала Пушкіна', 'Вул Криворізька', 'Вул Садова', 'Вул Центральна', 'Педагогічна']);
+});

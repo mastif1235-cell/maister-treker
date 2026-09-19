@@ -18,7 +18,7 @@
    - nothing here ever returns raw private notes, phones or coordinates to
      the caller: rows are compact projections only. */
 
-import {cleanStr, normalizeStem, matchScore, normalizeHouse} from './address.js';
+import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey} from './address.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 
 /* ---------- normalization ---------- */
@@ -226,6 +226,19 @@ export function streetMatches(ticket, wantedStreet){
   if(!tStreet) return {ok:false, via:null};
   if(normalizeStem(tStreet) === normalizeStem(wantedStreet)) return {ok:true, via:'structured'};
   return matchScore(tStreet, wantedStreet) >= 0.75 ? {ok:true, via:'structured'} : {ok:false, via:null};
+}
+
+/* v91.45: one real city may appear under several historical spellings
+   (Таромське / Таромское). Identity = canonicalCityKey; the DISPLAYED name
+   stays a real human variant from the data — the most frequent one, with a
+   deterministic localeCompare tie-break. */
+function topCityVariant(variants){
+  let best = null;
+  for(const entry of variants){
+    const name = entry[0], count = entry[1];
+    if(!best || count > best.count || (count === best.count && name.localeCompare(best.name, 'uk') < 0)) best = {name: name, count: count};
+  }
+  return best ? best.name : '';
 }
 
 /* ---------- item conditions ---------- */
@@ -451,17 +464,27 @@ export function runSmartQuery(ctx, params){
 
     const reasons = [];
     const legacyText = legacyTextById.get(String(t.id)) || '';
+    /* v91.45 legacy/restored addresses: structured fields stay authoritative;
+       a deterministic parse of the ticket's own address (or the legacy
+       «Місто/Адреса» lines) fills ONLY the missing parts — the same semantics
+       the app's ordinary text search relies on. One parsed view is used by
+       every filter, group and aggregate below, so count/list never diverge. */
+    const addr = effectiveAddressParts(t, legacyText);
+    const tAddr = {city: addr.city, street: addr.street, house: addr.house};
 
-    const cityMatch = cityMatches(t, wantedCity, legacyText);
+    const cityMatch = cityMatches(tAddr, wantedCity, legacyText);
     if(!cityMatch.ok) continue;
-    if(wantedCity) reasons.push('місто:' + (cityMatch.via === 'legacy' ? 'legacy текст' : 'структурне'));
+    if(wantedCity){
+      const via = addr.via.city === 'legacy' ? 'legacy адреса' : (cityMatch.via === 'legacy' ? 'legacy текст' : 'структурне');
+      reasons.push('місто:' + via);
+    }
 
     if(wantedStreet){
-      const st = streetMatches(t, wantedStreet);
+      const st = streetMatches(tAddr, wantedStreet);
       if(!st.ok) continue;
-      reasons.push('вулиця:структурна');
+      reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
     }
-    if(wantedHouse && normalizeHouse(t.house) !== wantedHouse) continue;
+    if(wantedHouse && normalizeHouse(addr.house) !== wantedHouse) continue;
     if(params.apartment != null && cleanStr(t.apartment) !== cleanStr(params.apartment)) continue;
     if(wantedType && cleanStr(t.type) !== wantedType) continue;
     if(paymentTarget && cleanStr(t.payment) !== paymentTarget) continue;
@@ -527,7 +550,7 @@ export function runSmartQuery(ctx, params){
     if(t.has_geo) geoWithCount.with_geo++;
 
     matched.push(t);
-    reasonsFor.set(t.id, {reasons, coworkerEvidence, matchedItemLabels});
+    reasonsFor.set(t.id, {reasons, coworkerEvidence, matchedItemLabels, addr});
   }
 
   const sorted = sortNewestFirst(matched);
@@ -535,10 +558,25 @@ export function runSmartQuery(ctx, params){
   /* Ambiguity: same street name in multiple cities without a city filter is
      reported, never guessed. */
   if(wantedStreet && !wantedCity){
-    const cities = new Set();
-    for(const t of sorted){ if(String(t.city || '').trim()) cities.add(String(t.city).trim()); }
-    if(cities.size > 1){
-      const list = Array.from(cities).sort(function(a, b){ return a.localeCompare(b, 'uk'); });
+    /* v91.45: ambiguity must see the SAME effective address the ticket passed
+       the street filter with — raw t.city is empty on legacy rows, so the
+       effective city is read from the addr view already stored in
+       reasonsFor (no second parse). Spellings of one real city are collapsed
+       by canonicalCityKey, so Таромське/Таромское never produce a false
+       ambiguity, while Миколаївка 1/Миколаївка 2 always remain two cities. */
+    const citiesByCanonical = new Map();
+    for(const t of sorted){
+      const info = reasonsFor.get(t.id);
+      const c = String((info && info.addr && info.addr.city) || '').trim();
+      if(!c) continue;
+      const key = canonicalCityKey(c) || c;
+      if(!citiesByCanonical.has(key)) citiesByCanonical.set(key, new Map());
+      const variants = citiesByCanonical.get(key);
+      variants.set(c, (variants.get(c) || 0) + 1);
+    }
+    if(citiesByCanonical.size > 1){
+      const list = Array.from(citiesByCanonical.values()).map(topCityVariant)
+        .sort(function(a, b){ return a.localeCompare(b, 'uk'); });
       return {ok:true, data:envelope({
         mode, ambiguous:true,
         candidates:list.map(function(c){ return {city:c}; }),
@@ -679,9 +717,9 @@ export function runSmartQuery(ctx, params){
         ord:offset + idx + 1,
         id:String(t.id).slice(0, 64),
         date:t.date, time:t.time,
-        city:String(t.city || '').slice(0, 80),
-        street:String(t.street || '').slice(0, 100),
-        house:String(t.house || '').slice(0, 16),
+        city:String(info.addr ? info.addr.city : (t.city || '')).slice(0, 80),
+        street:String(info.addr ? info.addr.street : (t.street || '')).slice(0, 100),
+        house:String(info.addr ? info.addr.house : (t.house || '')).slice(0, 16),
         address:compactAddress(t),
         type:String(t.type || '').slice(0, 80),
         sum:Number(t.sum) || 0,
@@ -691,13 +729,28 @@ export function runSmartQuery(ctx, params){
         match_reasons:info.reasons.slice(0, 6)
       };
     });
-    /* full-set analytics (independent of the page above) */
+    /* full-set analytics (independent of the page above); city spellings are
+       collapsed by canonicalCityKey so one real city never doubles up. */
     const cities = Object.create(null), streets = Object.create(null);
+    const cityAnalyticsVariants = new Map();
     for(const t of list){
-      const city = String(t.city || '').trim() || '(без міста)';
-      const street = String(t.street || '').trim() || '(без вулиці)';
-      cities[city] = (cities[city] || 0) + 1;
+      const a = (args.reasonsFor.get(t.id) || {}).addr || effectiveAddressParts(t, '');
+      const street = a.street || '(без вулиці)';
       streets[street] = (streets[street] || 0) + 1;
+      if(!a.city){ cities['(без міста)'] = (cities['(без міста)'] || 0) + 1; continue; }
+      const key = canonicalCityKey(a.city) || a.city;
+      cities[key] = (cities[key] || 0) + 1;
+      if(!cityAnalyticsVariants.has(key)) cityAnalyticsVariants.set(key, new Map());
+      const variants = cityAnalyticsVariants.get(key);
+      variants.set(a.city, (variants.get(a.city) || 0) + 1);
+    }
+    for(const key of Object.keys(cities)){
+      const variants = cityAnalyticsVariants.get(key);
+      if(!variants) continue;
+      const display = topCityVariant(variants);
+      if(display === key) continue;
+      cities[display] = cities[key];
+      delete cities[key];
     }
     const groups = function(map, cap){
       return Object.keys(map).sort(function(a, b){ return map[b] - map[a] || a.localeCompare(b, 'uk'); })
@@ -710,6 +763,7 @@ export function runSmartQuery(ctx, params){
 
   function buildGroups(list, args){
     const map = new Map();
+    const cityVariantCounts = new Map(); /* canonical key -> Map(display -> count) */
     const add = function(keyLabel, t){
       if(!keyLabel) return;
       if(!map.has(keyLabel)) map.set(keyLabel, {key:keyLabel, count:0, sum:0, last_date:null});
@@ -724,15 +778,34 @@ export function runSmartQuery(ctx, params){
       const info = args.reasonsFor.get(t.id) || {};
       switch(args.groupBy){
         case 'city': {
-          let key = String(t.city || '').trim();
-          if(!key && wantedCity && cityMatches(t, wantedCity, legacyTextById.get(String(t.id)) || '').via === 'legacy'){
-            key = wantedCity + ' (legacy)';
+          /* v91.45: city identity = canonicalCityKey — structured, legacy and
+             differently-spelled variants of ONE real city form ONE group.
+             The displayed group name stays a real human variant from the
+             data (the most frequent spelling); the origin stays in
+             match_reasons, never in the identity dimension. */
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          let display = a.city;
+          if(!display && wantedCity && cityMatches(t, wantedCity, legacyTextById.get(String(t.id)) || '').via === 'legacy'){
+            display = wantedCity;
           }
-          add(key || '(без міста)', t);
+          if(!display){ add('(без міста)', t); break; }
+          const key = canonicalCityKey(display) || display;
+          if(!cityVariantCounts.has(key)) cityVariantCounts.set(key, new Map());
+          const variants = cityVariantCounts.get(key);
+          variants.set(display, (variants.get(display) || 0) + 1);
+          add(key, t);
           break;
         }
-        case 'street': add(String(t.street || '').trim() || '(без структурованої вулиці)', t); break;
-        case 'house': add(String(t.house || '').trim() || '(без номера)', t); break;
+        case 'street': {
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          add(a.street || '(без структурованої вулиці)', t);
+          break;
+        }
+        case 'house': {
+          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          add(a.house || '(без номера)', t);
+          break;
+        }
         case 'date': add(String(t.date || ''), t); break;
         case 'month': {
           const key = parseDateKey(t.date);
@@ -755,7 +828,11 @@ export function runSmartQuery(ctx, params){
       }
     }
     const rows = Array.from(map.values()).map(function(entry){
-      return {key:entry.key, count:entry.count, sum:entry.sum, last_date:entry.last_date};
+      /* Canonical keys are internal; restore a real human city name for
+         display (most frequent spelling inside the group). */
+      const variants = args.groupBy === 'city' ? cityVariantCounts.get(entry.key) : null;
+      const displayKey = (variants && topCityVariant(variants)) || entry.key;
+      return {key:displayKey, count:entry.count, sum:entry.sum, last_date:entry.last_date};
     }).sort(function(a, b){ return b.count - a.count || a.key.localeCompare(b.key, 'uk'); });
     return rows.slice(0, 100);
   }

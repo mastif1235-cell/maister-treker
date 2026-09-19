@@ -63,6 +63,28 @@ async function postAsk(app, bodyText, headers){
 
 const ASK_BODY = JSON.stringify({question:'Скільки заявок зараз у базі?'});
 
+/* v91.45 regression: list numbering must be fixed deterministically by the
+   Worker, not by trusting the LLM. The model returns repeated «1.» markers
+   (the real phone defect); /ask must serve a clean 1..N sequence. */
+test('v91.45: /ask renumbers broken «1. 1. 1.» list numbering deterministically', async () => {
+  function groqBrokenNumbering(){
+    return function(){
+      return new Response(JSON.stringify({choices:[{message:{role:'assistant',
+        content:'Заявки з поганим сигналом:\n1. Садова 19, 10.09 (-26)\n1. Пушкіна 1, 10.09 (-27)\n1. Мостова 25, 11.09 (-28)'}}]}), {status:200});
+    };
+  }
+  const {app} = await makeAskApp(null, groqBrokenNumbering());
+  const res = await postAsk(app, ASK_BODY);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.ok !== false, JSON.stringify(body));
+  assert.equal(body.answer,
+    'Заявки з поганим сигналом:\n1. Садова 19, 10.09 (-26)\n2. Пушкіна 1, 10.09 (-27)\n3. Мостова 25, 11.09 (-28)',
+    'numbering is a plain 1..N sequence, no UUIDs');
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}/i.test(body.answer), 'no technical ids in the answer');
+});
+
+
 test('/ask requires auth: 401 without token, wrong token, and GAS never contacted', async () => {
   const {app, fetchImpl} = await makeAskApp();
   const before = fetchImpl.gasCalls.length;

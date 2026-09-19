@@ -61,6 +61,23 @@ function strArray(value){
   return Array.isArray(value) ? value.map(function(item){ return item == null ? '' : String(item); }).filter(Boolean) : [];
 }
 
+/* Mirror of the app's ПовніДаніJSON: extraction (js/app-format-utils.js
+   parseBackupNote): scan every line, the LAST parseable marker wins, a
+   malformed JSON line is skipped. Returns null when no marker qualifies. */
+export function fullDataFromBackupNote(backupNote){
+  const lines = String(backupNote == null ? '' : backupNote).replace(/\r\n?/g, '\n').split('\n');
+  let result = null;
+  for(const line of lines){
+    const m = /^ПовніДаніJSON:\s*(.+)$/.exec(line);
+    if(!m) continue;
+    try{
+      const parsed = JSON.parse(m[1].trim());
+      if(parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) result = parsed;
+    }catch(_err){ /* malformed legacy line: no structured data from it */ }
+  }
+  return result;
+}
+
 /* Parse one GAS row ({id,date,time,content,sum,tags,backupNote,fullDataJson})
    into the internal structured ticket. The raw columns backupNote/fullDataJson
    are NEVER copied into the result of redact*(); they exist here only as
@@ -87,6 +104,21 @@ export function ticketFromGasRow(row){
     catch(_err){ t.fullDataError = true; }
     if(parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) t.fullData = parsed;
     else t.fullDataError = true;
+  } else {
+    /* v91.45 data-path parity with the app restore
+       (js/restore-from-sheets.js + js/app-format-utils.js parseBackupNote):
+       rows created before the dedicated повніДаніJSON column carry their
+       structured fields as a «ПовніДаніJSON:» line INSIDE backupNote. The
+       PWA restore merges that line into structured city/street/house, so the
+       address navigator shows them; if the AI mapper ignored it, the same
+       Sheets row was structured on the phone but «без адреси» for the AI —
+       exactly the observed 14-vs-9 divergence. fullDataJson ALWAYS wins
+       (app priority); the legacy line is used only when the column is empty.
+       The parsed object flows through the same whitelist redaction below:
+       private keys it may carry (masterNote/login/password/...) never reach
+       any MCP output. */
+    const legacyFull = fullDataFromBackupNote(row && row.backupNote);
+    if(legacyFull) t.fullData = legacyFull;
   }
   if(!t.legacySignal) t.legacySignal = firstLegacySignal([
     t.fullData.note, t.fullData.abonentNote, t.fullData.otherNote, t.fullData.masterNote
