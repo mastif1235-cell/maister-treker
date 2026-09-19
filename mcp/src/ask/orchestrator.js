@@ -20,6 +20,7 @@
 import {validateAgainstSchema} from '../tools/validate.js';
 import {dateHintsLine, resolveDateRanges} from './date-resolver.js';
 import {renumberSequentialLists} from './format.js';
+import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters} from './query-context.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -59,7 +60,8 @@ export const ASK_SYSTEM_PROMPT = [
   '14) Використовуй історію діалогу: завжди аналізуй попередні повідомлення:',
   '   - Якщо користувач після знайденої адреси/заявки питає «а який там сигнал?», «коли я там був?», «яка там була сума?», «хто абонент?», «покажи на карті», «відкрий її» — бери адресу або id заявки з попереднього повідомлення і дай відповідь на НОВЕ конкретне запитання.',
   '   - Якщо користувач після списку заявок питає «скільки їх?», «яка з них остання?», «чи були там підключення?», «а які номери будинків?» — працюй із цим списком і дай чітку відповідь на запитання, не перелічуючи знову весь список без потреби.',
-  '15) КОЖНЕ питання — НОВИЙ повний READ по всій базі; ніколи не фільтруй лише показані раніше рядки/картки. Явне звуження («а скільки з них у Таромському?», «а тільки в Таромському?») успадковує релевантні фільтри попереднього питання й додає нове; якщо змінено вимір (місяць/дата/місто) — заміни старе значення. НОВЕ самостійне питання про іншу адресу чи суть («Які вулиці є в Миколаївка 1?», «Які будинки на Садовій?», «Був ли я на Мостовій?») НЕ успадковує сигнал, дати чи інші фільтри попереднього питання — передавай інструменту лише те, що названо в новому питанні.',
+  '15) КОЖНЕ питання — НОВИЙ повний READ по всій базі; ніколи не фільтруй лише показані раніше рядки/картки і не кешуй старі рядки. Явне звуження («а скільки з них у Таромському?», «а тільки в Таромському?») успадковує релевантні фільтри попереднього питання й додає нове; якщо змінено вимір (місяць/дата/місто) — заміни старе значення. НОВЕ самостійне питання про іншу адресу чи суть («Які вулиці є в Миколаївка 1?», «Які будинки на Садовій?», «Був ли я на Мостовій?») НЕ успадковує сигнал, дати чи інші фільтри попереднього питання — передавай інструменту лише те, що названо в новому питанні.',
+  '15а) Структурне продовження запиту: якщо в кінці промпта є рядок «Структурні фільтри попереднього запиту» і користувач просить ПРОДОВЖЕННЯ того самого запиту («покажи їх», «покажи ці заявки», «перечисли їх», «а які саме?», «дай списком») — виклич query_tickets з прапорцем inherit_previous_filters=true і потрібним новим mode (зазвичай list): сервер детерміновано застосує ТІ САМІ фільтри до свіжої бази, і кількість збіжиться з попередньою відповіддю. Для самостійного нового питання прапорець НЕ став: передай лише фільтри, названі в новому питанні.',
   '16) Складене питання має кілька обовʼязкових частин: спочатку отримай усі потрібні заявки, потім виконай кожен аналіз/порівняння з питання і ОБОВʼЯЗКОВО дай текстову відповідь на кожну частину. Картки — лише додаток, вони не замінюють висновок; для «яка сума більша і чому» назви заявку, суму та підтверджену причину з даних.',
   '17) Для питань «скільки/кількість/усього» використовуй matched/total_matched/item_totals з результату інструменту, а не кількість переданих або показаних заявок. Ліміт списку чи карток ніколи не є загальною кількістю.',
   '18) Картки/відкриття заявки: ВІДКРИТИ наявну заявку в застосунку МОЖНА — це дія читання, а не зміна даних. Коли прямо просять «покажи картку/карточку», «відкрий заявку», «дай карточку», «покажи її на карті» — знайди цю заявку інструментом (за адресою/id із контексту) і повідом, що картку з кнопками «Відкрити профіль»/«На карті» показано нижче відповіді. НІКОЛИ не відповідай, що відкрити неможливо через режим читання. Для звичайного пошуку/рахунку картки не потрібні — дай текст.',
@@ -270,7 +272,7 @@ export function createAskOrchestrator(options){
 
   const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1, find_tickets_by_address:1, query_tickets:1 };
 
-  async function executeTool(call, collectedTickets, totals){
+  async function executeTool(call, collectedTickets, totals, capture){
     const def = allowedDef(call.name);
     if(!def) return JSON.stringify({isError:true, error:'UNKNOWN_TOOL'});
     let args = null;
@@ -283,6 +285,17 @@ export function createAskOrchestrator(options){
     if(!validation.ok){
       return JSON.stringify({isError:true, error:'INVALID_ARGUMENTS', details:validation.errors.slice(0, 5)});
     }
+    /* v91.46: COUNT → «покажи их» — inherit the PREVIOUS turn's authoritative
+       resolved_filters deterministically. Only an explicit flag triggers it,
+       and only when the call itself carries no structural filters (a call
+       with its own filters is a NEW question — no stale inheritance). */
+    if(def.name === 'query_tickets' && args.inherit_previous_filters === true && capture && capture.queryContext){
+      args = mergeInheritedFilters(args, capture.queryContext.resolved_filters);
+    } else if(def.name === 'query_tickets' && args.inherit_previous_filters != null){
+      const stripped = Object.assign({}, args);
+      delete stripped.inherit_previous_filters;
+      args = stripped;
+    }
     let outcome;
     try{ outcome = await tools[def.name](args); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
@@ -292,6 +305,13 @@ export function createAskOrchestrator(options){
       for(const row of rows){ if(row && typeof row === 'object') collectedTickets.push(row); }
       const reported = Number(outcome.data.total_matched != null ? outcome.data.total_matched : (outcome.data.count != null ? outcome.data.count : rows.length));
       if(Number.isFinite(reported)) totals.push({tool:def.name, total:reported});
+    }
+    if(def.name === 'query_tickets' && outcome && outcome.ok && outcome.data && capture && typeof capture.setQueryEnvelope === 'function'){
+      capture.setQueryEnvelope({
+        resolved_filters: outcome.data.resolved_filters || {},
+        mode: outcome.data.mode,
+        total_matched: outcome.data.total_matched
+      });
     }
     let payload;
     if(outcome && outcome.ok){
@@ -355,6 +375,19 @@ export function createAskOrchestrator(options){
        model makes no new tool call; also surfaced to the model so ordinals
        («картку другої») resolve deterministically. */
     const contextTickets = normalizeContextTickets(options && options.contextTickets);
+    /* v91.46: structured follow-up context — the previous turn's
+       authoritative resolved_filters, echoed back by the PWA. Whitelisted
+       only (no notes/phones/PII); injected for the model and enforced
+       deterministically for inherit_previous_filters calls. */
+    const queryContext = sanitizeIncomingQueryContext(options && options.queryContext);
+    let queryContextLine = '';
+    if(queryContext){
+      queryContextLine = '\nСтруктурні фільтри попереднього запиту (авторитетні, з інструменту; попередній результат: ' +
+        String(queryContext.total_matched == null ? '' : queryContext.total_matched) + '): ' +
+        JSON.stringify(queryContext.resolved_filters) +
+        ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
+    }
+    let lastQueryEnvelope = null;
     /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
        an explicit card turn must win over the previous referent (otherwise the
        8-card cap could show old tickets instead of the freshly found one). */
@@ -364,7 +397,7 @@ export function createAskOrchestrator(options){
         contextTickets.map(function(t, i){ return (i + 1) + ') ' + [t.date, t.time, t.address, t.type].filter(Boolean).join(' ') + ' [id:' + t.id + ']'; }).join('; ');
     }
     const messages = [
-      {role:'system', content:ASK_SYSTEM_PROMPT + '\n' + contextLine + (hints ? '\n' + hints : '') + referentLine}
+      {role:'system', content:ASK_SYSTEM_PROMPT + '\n' + contextLine + (hints ? '\n' + hints : '') + referentLine + queryContextLine}
     ];
     for(const h of history) messages.push(h);
     messages.push({role:'user', content:questionText});
@@ -388,7 +421,10 @@ export function createAskOrchestrator(options){
             return {ok:false, code:'TOO_MANY_TOOL_CALLS', meta:{rounds, toolCallsMade}};
           }
           toolCallsMade++;
-          const resultText = await executeTool(call, collectedTickets, toolTotals);
+          const resultText = await executeTool(call, collectedTickets, toolTotals, {
+            setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
+            queryContext: queryContext
+          });
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
         let totalChars = 0;
@@ -423,6 +459,12 @@ export function createAskOrchestrator(options){
          an ordinary search. */
       const referentTickets = projectReferentForClient(activeSource);
       const result = {ok:true, answer, meta:{rounds, toolCallsMade, total, intent:intent || undefined}, total, tickets:cards, referentTickets};
+      /* v91.46: structured follow-up context for the NEXT turn — the
+         whitelist projection of the last authoritative query_tickets
+         envelope of THIS turn (null when no query ran or it had no
+         inheritable filters). */
+      const nextQueryContext = projectQueryContext(lastQueryEnvelope);
+      if(nextQueryContext) result.queryContext = nextQueryContext;
       /* Network points (FOB/splice/node) live ONLY on the device. Attach a
          deterministic local-search request; the PWA executes it against its
          own localStorage points and renders results with a map action. */

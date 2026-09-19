@@ -87,6 +87,7 @@ export const TOOL_DEFINITIONS = [
         contract: {type:'string', maxLength:40, description:'Номер договору (частина теж підходить).'},
         mac: {type:'string', maxLength:20, description:'MAC-адреса або її частина.'},
         coworker: {type:'string', maxLength:60, description:'Напарник: пряма привʼязка у заявці або збіг зі зміною того ж дня (позначається окремо).'},
+        inherit_previous_filters: {type:'boolean', description:'ТІЛЬКИ для прямого продовження попереднього запиту («покажи їх», «перечисли»): сервер детерміновано застосує ті самі структуровані фільтри попереднього авторитетного запиту до свіжої бази. Не ставити для самостійних нових питань.'},
         limit: LIMIT_ARG,
         offset: OFFSET_ARG
       }

@@ -235,8 +235,12 @@ export function createApp(env, deps){
        «відкрий цю заявку» мало реальний обʼєкт дії без повторного пошуку.
        Тільки безпечна проєкція (див. normalizeContextTickets). */
     const contextTickets = body && body.context && Array.isArray(body.context.tickets) ? body.context.tickets : [];
+    /* v91.46: structured follow-up context (resolved_filters of the previous
+       turn's authoritative query_tickets) — echoed back by the PWA so
+       «покажи их» re-runs the SAME structured filters on a fresh READ. */
+    const queryContext = body && body.context && body.context.queryContext ? body.context.queryContext : null;
     let outcome;
-    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets}); }
+    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets, queryContext}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
@@ -271,6 +275,10 @@ export function createApp(env, deps){
        активного результату цього turn. Клієнт зберігає його для «відкрий цю
        заявку», але НЕ рендерить картками при звичайному пошуку. */
     if(Array.isArray(outcome.referentTickets) && outcome.referentTickets.length) okPayload.referentTickets = outcome.referentTickets;
+    /* v91.46: whitelist projection of the last authoritative query_tickets
+       filters of this turn — the PWA echoes it back so follow-ups («покажи
+       их») inherit the SAME structured filters on a fresh READ. */
+    if(outcome.queryContext && typeof outcome.queryContext === 'object') okPayload.queryContext = outcome.queryContext;
     /* Локальний пошук мережевих точок (ФОБ/муфта/вузол): точки живуть ЛИШЕ
        на пристрої, тож Worker повертає структурований запит, а PWA виконує
        його по власних локальних даних і показує дію «На карті». */

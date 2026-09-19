@@ -41,3 +41,32 @@ test('numbers are never replaced with technical ids; only the marker changes', (
 test('indentation is preserved when renumbering', () => {
   assert.equal(renumberSequentialLists('  1. aaa\n  1. bbb'), '  1. aaa\n  2. bbb');
 });
+
+/* ---------- v91.46: markdown blank-line lists (real DeepSeek output) ---------- */
+
+test('blank-line-separated «1. 1. 1.» items are ONE list and get renumbered', () => {
+  const input = 'Заявки:\n1. **A**\n\n1. **B**\n\n1. **C**';
+  assert.equal(renumberSequentialLists(input), 'Заявки:\n1. **A**\n\n2. **B**\n\n3. **C**');
+});
+
+test('mixed broken numbering renumbers the whole run', () => {
+  const input = '1. **A**\n2. **B**\n1. **C**\n1. **D**';
+  assert.equal(renumberSequentialLists(input), '1. **A**\n2. **B**\n3. **C**\n4. **D**');
+});
+
+test('correct numbering with blank lines passes untouched', () => {
+  const input = '1. A\n\n2. B\n\n3. C';
+  assert.equal(renumberSequentialLists(input), input);
+});
+
+test('two genuinely separate lists (split by real content) are not merged', () => {
+  const input = 'Ремонти:\n1. р1\n2. р2\n\nПідключення:\n1. п1\n2. п2';
+  assert.equal(renumberSequentialLists(input), input, 'text header splits runs; each run is already correct');
+  const broken2 = 'Ремонти:\n1. р1\n1. р2\n\nПідключення:\n1. п1\n1. п2';
+  assert.equal(renumberSequentialLists(broken2), 'Ремонти:\n1. р1\n2. р2\n\nПідключення:\n1. п1\n2. п2', 'each run renumbered independently');
+});
+
+test('blank-separated broken + correct tail still one logical list', () => {
+  const input = '1. **A**\n\n1. **B**\n\n2. **C**\n\n1. **D**';
+  assert.equal(renumberSequentialLists(input), '1. **A**\n\n2. **B**\n\n3. **C**\n\n4. **D**');
+});
