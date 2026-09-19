@@ -25,16 +25,23 @@
    - different letter stems never merge («Новомиколаївка» ≠ «Миколаївка»);
    - a structured city already matching the catalog is authoritative and is
      NEVER overridden by notes or free text;
-   - an incomplete legacy city is completed ONLY by evidence carried by that
-     very SAME ROW: its own part number or ordinal («Миколаївка1», «первая»,
-     «перша»), or its own street when the catalog knows that street AND
-     exactly one numbered part of that name owns it. Evidence that lives in
-     other rows is not evidence about this row — an incomplete «Миколаївка»
-     row is NEVER moved into «Миколаївка 1» just because some OTHER
-     «Миколаївка» row used a street of that part (there is deliberately no
-     group/town-level assignment here);
-   - ambiguity or conflicting evidence leaves the row unresolved AND flagged:
-     it is never silently placed into a numbered part;
+   - an incomplete city may be completed to a NUMBERED part ONLY by its own
+     EXPLICIT part evidence inside the same row: a digit or textual ordinal
+     written as part of the place name («Миколаївка1», «Николаевка 1»,
+     «Миколаївка перша», «в Николаеве первой …»). Nothing else — not the
+     streets of other rows, and NOT even a street this row shares with some
+     part (see below);
+   - the ticket base's street inventory is NOT a proof of ownership. The
+     Worker has no authoritative settings catalogue of the phone: it only sees
+     the rows it has. «This street was observed only under Миколаївка 1» does
+     not prove the street does not exist in «Миколаївка 2» — absence of an
+     observation is not a proof of absence. Street values are therefore used
+     for SPELLING only (adopting the canonical spelling of a street the row
+     itself names), never to assign a part, and never as evidence in any
+     direction;
+   - a row with no explicit part evidence stays unresolved AND flagged, even
+     if its street is known to the catalogue: ambiguity is never resolved by
+     inference;
    - an unresolved row keeps its own spelling, so a question about the bare
      name («Миколаївка») still lists it (flagged as ambiguous — all parts),
      while a question about a numbered part never absorbs it. The tools
@@ -54,8 +61,10 @@ import {
 /* Build the canonical catalog from the tickets themselves.
    - cities:          identity -> {display, count, letters, digits}
    - streetsByCity:   cityIdentity -> Map(streetIdentity -> {display, houses:Set, count})
-   - streetOwners:    streetIdentity -> Set(cityIdentity)
-   - citiesByLetters: joined letter stems -> Set(cityIdentity) */
+   - citiesByLetters: joined letter stems -> Set(cityIdentity)
+   There is deliberately NO street->city ownership map: such a map can only be
+   an observation about the rows at hand, and observations are not proof (see
+   the header). Street data is used for spelling/completeness only. */
 const CATALOG_CACHE = new WeakMap();
 
 export function buildCanonicalCatalog(tickets){
@@ -68,7 +77,6 @@ export function buildCanonicalCatalog(tickets){
 function buildCanonicalCatalogUncached(tickets){
   const cities = new Map();
   const streetsByCity = new Map();
-  const streetOwners = new Map();      /* canonical rows only — real evidence */
   const citiesByLetters = new Map();
   const cityVariants = new Map();
   const rowsByCityKey = new Map();
@@ -122,10 +130,8 @@ function buildCanonicalCatalogUncached(tickets){
     if(!numberedSibling) canonicalKeys.add(cityKey);
   }
 
-  /* Pass 2 — streets. Ownership evidence comes ONLY from rows whose own city
-     IS canonical (that is what the master really chose from the list). Rows
-     with an incomplete city contribute nothing at all: their streets must
-     never be used to attribute anything to anybody. */
+  /* Pass 2 — streets, for SPELLING only (what a street is called in the
+     master's own structured data). Never ownership, never attribution. */
   for(const t of (tickets || [])){
     const city = String((t && t.city) || '').trim();
     const street = String((t && t.street) || '').trim();
@@ -141,18 +147,16 @@ function buildCanonicalCatalogUncached(tickets){
     se.count++;
     const house = String((t && t.house) || '').trim();
     if(house) se.houses.add(house);
-    if(!streetOwners.has(streetKey)) streetOwners.set(streetKey, new Set());
-    streetOwners.get(streetKey).add(cityKey);
   }
 
-  /* v91.48 (second revision): there is deliberately NO town/group-level
-     assignment. An earlier draft pinned every row of an incomplete city
-     («Миколаївка») to the part that some street of the group pointed at; that
-     silently moved rows whose real part is unknown (and may even be «… 2»)
-     into «… 1». Only per-row evidence may decide — see
-     resolveCanonicalAddress. */
+  /* v91.48 (third revision): no group-level AND no street-level assignment.
+     An earlier draft pinned an incomplete «Миколаївка» row to the part that
+     «owned» its street inside the current ticket rows; that is exactly the
+     guess this module must not make (the real catalogue lives on the phone,
+     not in the rows the Worker can see). Only a part number written in the
+     row itself may decide — see resolveCanonicalAddress. */
 
-  return {cities, streetsByCity, streetOwners, citiesByLetters, canonicalKeys};
+  return {cities, streetsByCity, citiesByLetters, canonicalKeys};
 }
 
 /* Ordered token view of a free-text value: each token with the letters and
@@ -213,6 +217,7 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
   const structuredLetters = structuredCity ? placeTokens(structuredCity).letters : [];
   let candidateKeys = new Set();
 
+  const matchedNameKeys = [];
   if(structuredCity){
     /* Incomplete/non-canonical structured city: every canonical city whose
        letter stems all appear in the row's own city value. */
@@ -224,6 +229,7 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
           structuredLetters.some(function(x){ return x.startsWith(stem) || stem.startsWith(x); });
       });
       if(!present) continue;
+      matchedNameKeys.push(lettersKey);
       for(const k of keys) if(catalog.canonicalKeys.has(k)) candidateKeys.add(k);
     }
     /* A digit next to the city name narrows to that part; digits elsewhere in
@@ -240,7 +246,9 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
     }
   } else {
     /* No structured city at all: the row's own legacy text must carry the
-       place. Same letters-first rule, digits only when adjacent to the name. */
+       place. Same letters-first rule; the part digit counts only when it sits
+       NEXT TO the city name itself (a house number after a street word is not
+       a part number). */
     const lettersAll = [];
     for(const tok of textTokens) for(const l of tok.letters) lettersAll.push(l);
     for(const [lettersKey, keys] of catalog.citiesByLetters){
@@ -251,10 +259,13 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
           lettersAll.some(function(x){ return x.startsWith(stem) || stem.startsWith(x); });
       });
       if(!present) continue;
+      matchedNameKeys.push(lettersKey);
       for(const k of keys) if(catalog.canonicalKeys.has(k)) candidateKeys.add(k);
     }
-    if(candidateKeys.size > 1){
-      const cityDigits = adjacentCityDigits(textTokens, lettersAll);
+    /* Only an unambiguous name may contribute part digits: with several names
+       in the text there is no single "next to the name" position. */
+    if(candidateKeys.size > 1 && matchedNameKeys.length === 1){
+      const cityDigits = adjacentCityDigits(textTokens, matchedNameKeys[0].split(' '));
       if(cityDigits.size){
         const narrowed = [...candidateKeys].filter(function(k){
           const c = catalog.cities.get(k);
@@ -265,50 +276,17 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
     }
   }
 
-  /* PER-ROW EVIDENCE ONLY. There is deliberately no "group anchor": the fact
-     that some OTHER row with the same incomplete city («Миколаївка») carried
-     a street of «Миколаївка 1» says NOTHING about this row — it may well
-     belong to «Миколаївка 2». Such a row is never moved anywhere. */
-
-  /* Rows with NO structured street at all: their OWN legacy text may name a
-     street — that counts only when it names EXACTLY ONE street the user's
-     catalog knows among the still-possible parts (two matching streets cancel
-     each other out, unknown words never match anything). */
-  let ownStreetKey = streetEvidenceKey;
-  let ownStreetFromText = false;
-  if(!ownStreetKey && textTokens.length && candidateKeys.size){
-    const found = new Set();
-    for(const key of candidateKeys){
-      const streets = catalog.streetsByCity.get(key);
-      if(!streets) continue;
-      for(const [key2] of streets){
-        const stems = key2.split('#')[0].split(' ').filter(Boolean);
-        const present = stems.length && stems.every(function(stem){
-          return textTokens.some(function(tok){
-            return tok.letters.some(function(x){ return x === stem || x.startsWith(stem) || stem.startsWith(x); });
-          });
-        });
-        if(present) found.add(key2);
-      }
-    }
-    if(found.size === 1){ ownStreetKey = [...found][0]; ownStreetFromText = true; }
-  }
-
-  /* This row's OWN street: when the catalog knows it (it was recorded as a
-     structured street of real tickets) and exactly ONE of the still-possible
-     parts owns it, that is deterministic per-row evidence. A street the
-     catalog has never seen is evidence of nothing — it must not wipe out an
-     already-decided answer. A genuine CONFLICT (the street is known, but none
-     of the remaining parts owns it) is not decided either: the row stays
-     unresolved and flagged instead of being silently placed. */
-  if(ownStreetKey && candidateKeys.size){
-    const owners = catalog.streetOwners.get(ownStreetKey);
-    if(owners && owners.size){
-      const owning = [...candidateKeys].filter(function(k){ return owners.has(k); });
-      if(owning.length === 1) candidateKeys = new Set(owning);
-      else if(!owning.length){ candidateKeys = new Set(); out.ambiguous = true; }
-    }
-  }
+  /* NO STREET-BASED ASSIGNMENT — deliberately, in both directions.
+     (a) The streets of OTHER rows are not evidence about this row (no group
+         anchor).
+     (b) Even this row's OWN street is not a part proof: the Worker sees only
+         the rows that exist, so «this street appears only under Миколаївка 1»
+         is an observation, not the phone's authoritative catalogue. A street
+         the master never used in a structured row, or used in a part that is
+         missing from the current data, would silently misplace the ticket.
+     Therefore: a row without explicit part evidence in its own city value
+     stays unresolved (and flagged). Street identity is used only to adopt the
+     canonical SPELLING (see below), never to choose a part. */
 
   if(candidateKeys.size === 1){
     const key = [...candidateKeys][0];
@@ -321,12 +299,11 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
       /* Street display: adopt the canonical spelling of that city only when
          the identity matches exactly ONE of its streets — two really
          different streets that merely share a stem stay separate. */
-      if(ownStreetKey && catalog.streetsByCity.has(key)){
-        const match = catalog.streetsByCity.get(key).get(ownStreetKey);
+      if(streetEvidenceKey && catalog.streetsByCity.has(key)){
+        const match = catalog.streetsByCity.get(key).get(streetEvidenceKey);
         if(match){
           out.street = match.display;
-          out.streetKey = ownStreetKey;
-          if(ownStreetFromText && !String(t.street || '').trim()) out.via.street = 'legacy';
+          out.streetKey = streetEvidenceKey;
         }
       }else if(!out.street && textTokens.length && catalog.streetsByCity.has(key)){
         /* Row without any structured street, but its legacy text names one:
@@ -353,8 +330,13 @@ export function resolveCanonicalAddress(ticket, legacyText, catalog){
     }
   }
   /* Ambiguity never merges: several parts satisfy the evidence and nothing
-     (of the row's own) selects one — keep raw values and flag it. */
-  if(candidateKeys.size > 1) out.ambiguous = true;
+     (of the row's own) selects one — keep raw values and flag it. The matched
+     NAME is exposed so callers can honestly report "rows of this name without
+     a part number" (stemLetters is the name group, never a part). */
+  if(candidateKeys.size > 1){
+    out.ambiguous = true;
+    if(matchedNameKeys.length === 1) out.stemLetters = matchedNameKeys[0];
+  }
   return out;
 }
 

@@ -13,12 +13,16 @@
    кількість 14 — вона перевіряє лише ПРАВИЛА вирішення адрес.
 
    Правила, які вона фіксує (і які перевіряють регресії):
-   - рядок отримує номер частини ЛИШЕ за власним доказом: явний номер
-     («Миколаївка1», «Николаевка 1»), словесний номер («перша»/«первый»),
-     або власна вулиця, яку канонічний каталог знає І яку має рівно одна
-     нумерована частина цієї назви;
-   - доказ ІНШОГО рядка («у сусіднього «Миколаївка» була вулиця частини 1»)
-     НЕ є доказом для цього рядка — жодного переносу цілої групи;
+   - номер частини дає ЛИШЕ власний ЯВНИЙ доказ у самому рядку: номер у назві
+     («Миколаївка1», «Николаевка 1») або словесний номер («перша»/«первый»/
+     «первой»), у structured-полі або у власному тексті рядка;
+   - НІ доказ іншого рядка («у сусідньої «Миколаївки» була вулиця частини 1»),
+     НІ унікальність вулиці в ticket-derived каталозі частину НЕ присвоюють:
+     Worker не має справжнього settings-каталогу телефона, а «серед наявних
+     рядків такої вулиці немає» — це спостереження, а не доказ відсутності;
+   - рядок без явного доказу лишається unresolved/ambiguous (навіть якщо його
+     вулиця каталогу відома), видимий за назвою без номера й порахований
+     окремо; він не потрапляє автоматично ні в «… 1», ні в «… 2»;
    - structured-місто, яке вже є в каталозі, авторитетне й не перекривається
      примітками;
    - недостатньо доказів → рядок лишається нерозв'язаним (ambiguous), але не
@@ -66,11 +70,10 @@ const MYKOLAIVKA = [
   row('m08', {content:'в Николаеве первой ул центральная дом не помню'}),
   /* Педагогічна 9 */
   row('m09', {full:{city:'Миколаївка 1', street:'Вул Педагогічна', house:'9'}}),
-  /* Виноградна 7 — місто без номера частини, вулиці немає в жодному
-     канонічному structured-рядку → ВЛАСНОГО доказу немає */
+  /* Виноградна 7 — місто без номера частини → явного доказу немає */
   row('m10', {full:{city:'Миколаївка', street:'Вул Виноградна', house:'7'}, content:'Миколаївка виноградная 7'}),
-  /* Криворізська 9/39/16 — місто без номера, без пробілу, legacy-нотатка;
-     власний доказ m11/m13: саме цю вулицю має канонічний рядок m12 */
+  /* Криворізська 9/39/16 — без пробілу (явний номер) і двічі БЕЗ номера:
+     сама лише «ця вулиця є тільки під частиною 1» частину не присвоює */
   row('m11', {full:{city:'Миколаївка', street:'Вул Криворізська', house:'9'}}),
   row('m12', {full:{city:'Миколаївка1', street:'Вул Криворізська', house:'39'}}),
   row('m13', {backupNote:'Геолокація: https://maps.google.com/?q=1\nПовніДаніJSON: {"city":"Миколаївка","street":"Вул Криворізька","house":"16"}'}),
@@ -108,9 +111,11 @@ function countOf(result){
 }
 
 const BASE = makeBase(MYKOLAIVKA.concat(NEIGHBOURS));
-/* рядки, які ДОВОДЯТЬ свою частину 1 власними даними */
-const PROVEN1 = ['m01','m02','m03','m04','m05','m06','m07','m08','m09','m11','m12','m13','m14'].sort();
-const UNPROVEN = ['m10'];                       /* власного доказу немає */
+/* рядки з ВЛАСНИМ ЯВНИМ доказом частини 1 (номер у назві або словесний) */
+const PROVEN1 = ['m01','m02','m03','m04','m05','m06','m07','m08','m09','m12','m14'].sort();
+/* рядки з містом «Миколаївка» БЕЗ явного номера: частину НЕ присвоюємо навіть
+   тоді, коли їхня вулиця трапляється в каталозі лише під «Миколаївка 1» */
+const UNPROVEN = ['m10','m11','m13'];
 const BARE_GROUP = PROVEN1.concat(UNPROVEN, ['n01','n02','n03','n04','n05']).sort();
 
 /* ---------- 1. головний acceptance: лише доведені рядки ---------- */
@@ -131,7 +136,7 @@ test('v91.48: недоведений рядок не зникає — він у 
   const tools = makeTools(BASE);
   const numbered = await tools.query_tickets({mode:'list', city:'Миколаївка 1', limit:50});
   assert.ok(!idsOf(numbered).includes('m10'));
-  assert.deepEqual(numbered.data.unresolved_incomplete_city, {city:'Миколаївка', count:1});
+  assert.deepEqual(numbered.data.unresolved_incomplete_city, {city:'Миколаївка', count:3});
   assert.ok(numbered.data.notes.some(function(n){ return n.includes('без номера частини'); }), 'майстер бачить, що рядок не включено');
 
   const bare = await tools.query_tickets({mode:'list', city:'Миколаївка', limit:50});
@@ -157,9 +162,7 @@ test('v91.48: кожне історичне написання мапиться 
     m03:['structured', 'structured', false],           /* «Миколаївка1» — той самий ключ */
     m04:['structured', 'structured', false],           /* «Николаевка 1» — той самий ключ */
     m06:['structured', 'structured', false],
-    m08:['canonical-legacy', 'legacy', true],           /* адреса лише в legacy-тексті */
-    m11:['canonical-completed', 'structured', true],    /* власна вулиця: Криворізська лише в 1 */
-    m13:['canonical-completed', 'structured', true],    /* те саме, написання з «ПовніДаніJSON:» */
+    m08:['canonical-legacy', 'legacy', true],           /* словесний номер «первой» у власному тексті */
     m14:['structured', 'structured', false]             /* «перша» → 1 (власний словесний номер) */
   };
   for(const [id, [via, streetVia, shown]] of Object.entries(expectations)){
@@ -172,13 +175,17 @@ test('v91.48: кожне історичне написання мапиться 
     assert.equal(resolved.canonical, true, `${id}: канонічне місто підтверджено`);
   }
 
-  /* m10 власного доказу не має: частину НЕ призначено */
-  const m10 = BASE.tickets.find(function(t){ return t.id === 'm10'; });
-  const r10 = resolveCanonicalAddress(m10, legacyTextById.get('m10') || '', catalog);
-  assert.equal(r10.canonical, undefined, 'm10 не отримує номер частини');
-  assert.equal(placeIdentity(r10.city), placeIdentity('Миколаївка'), 'm10 зберігає ВЛАСНЕ написання міста');
-  assert.equal(r10.ambiguous, true, 'm10 позначено як невизначений');
-  assert.equal(r10.via.city, 'structured', 'місто взято зі structured-поля рядка');
+  /* Рядки з містом «Миколаївка» без явного номера: частину НЕ призначено —
+     навіть коли їхня власна вулиця (Криворізська) трапляється в каталозі лише
+     під «Миколаївка 1»: унікальність вулиці серед наявних рядків не є доказом. */
+  for(const id of ['m10','m11','m13']){
+    const ticket = BASE.tickets.find(function(t){ return t.id === id; });
+    const resolved = resolveCanonicalAddress(ticket, legacyTextById.get(id) || '', catalog);
+    assert.equal(resolved.canonical, undefined, `${id}: номер частини не присвоєно`);
+    assert.equal(placeIdentity(resolved.city), placeIdentity('Миколаївка'), `${id}: збережено ВЛАСНЕ написання міста`);
+    assert.equal(resolved.ambiguous, true, `${id}: позначено як невизначений`);
+    assert.equal(resolved.via.city, 'structured', `${id}: місто взято зі structured-поля рядка`);
+  }
 });
 
 /* ---------- 3. сусіди не потрапляють у відповідь ---------- */
@@ -200,7 +207,7 @@ test('v91.48: Миколаївка 2 / 10 / 11 / Новомиколаївка н
   const novo = await tools.query_tickets({mode:'count', city:'Новомиколаївка'});
   assert.equal(novo.data.matched, 1);
   /* запит за частиною 2 теж попереджає про неповні рядки цієї ж назви */
-  assert.deepEqual(two.data.unresolved_incomplete_city, {city:'Миколаївка', count:1});
+  assert.deepEqual(two.data.unresolved_incomplete_city, {city:'Миколаївка', count:3});
 });
 
 /* ---------- 4. structured-місто перемагає суперечливу legacy-примітку ---------- */
@@ -222,7 +229,7 @@ test('v91.48: той самий механізм працює для вигад�
   const rows = [
     row('g1', {full:{city:'Зеленогірка 3', street:'Вул Лугова', house:'1'}}),
     row('g2', {full:{city:'Зеленогірка3', street:'Вул Лугова', house:'2'}}),      /* без пробілу */
-    row('g3', {full:{city:'Зеленогірка', street:'Вул Кленова', house:'3'}}),      /* власний доказ: Кленова лише в 3 */
+    row('g3', {full:{city:'Зеленогірка', street:'Вул Кленова', house:'3'}}),      /* без номера частини → unresolved */
     row('g4', {full:{city:'Зеленогірка третя', street:'Вул Лугова', house:'4'}}), /* словесний номер */
     row('g5', {content:'Зеленогірка 3, Вул Лугова 5'}),                            /* лише legacy-текст */
     row('g6', {full:{city:'Зеленогірка 3', street:'Вул Кленова', house:'6'}}),
@@ -230,11 +237,14 @@ test('v91.48: той самий механізм працює для вигад�
   ];
   const tools = makeTools(makeBase(rows));
   const counted = await tools.query_tickets({mode:'count', city:'Зеленогірка 3'});
-  assert.equal(counted.data.matched, 6, 'усі шість форм однієї частини');
+  assert.equal(counted.data.matched, 5, 'усі форми з ЯВНИМ номером частини');
   const listed = await tools.query_tickets({mode:'list', city:'Зеленогірка 3', limit:50});
-  assert.deepEqual(idsOf(listed), ['g1','g2','g3','g4','g5','g6']);
+  assert.deepEqual(idsOf(listed), ['g1','g2','g4','g5','g6'], 'g3 без номера частини сюди не входить');
+  assert.deepEqual(counted.data.unresolved_incomplete_city, {city:'Зеленогірка', count:1});
   const other = await tools.query_tickets({mode:'count', city:'Зеленогірка 4'});
   assert.equal(other.data.matched, 1, 'інша частина не змішується');
+  const bare = await tools.query_tickets({mode:'count', city:'Зеленогірка'});
+  assert.equal(bare.data.matched, 7, 'за назвою без номера видно всі рядки');
 });
 
 /* ---------- 6-7. вулиці: RU/UA/префікс — одна; схожі але різні — ні ---------- */
@@ -286,6 +296,35 @@ test('v91.48: рядок із legacy-датою 5.7.2026 входить у city-
   assert.deepEqual(idsOf(ranged), ['m06'], 'дата прочитана як 05.07.2026');
   const otherRange = await tools.query_tickets({mode:'list', city:'Миколаївка 1', date_from:'01.09.2026', date_to:'30.09.2026', limit:50});
   assert.ok(!idsOf(otherRange).includes('m06'), 'у вересні його немає');
+});
+
+test('v91.48: legacy-дата однакова в УСІХ чотирьох READ search paths (одна семантика)', async () => {
+  const tools = makeTools(BASE);
+  const window = {date_from:'01.07.2026', date_to:'31.07.2026', limit:50};
+  const viaQuery = await tools.query_tickets(Object.assign({mode:'list', city:'Миколаївка 1'}, window));
+  const viaList = await tools.list_tickets(Object.assign({city:'Миколаївка 1'}, window));
+  const viaSearch = await tools.search_tickets(Object.assign({query:'Николаевка первый'}, window));
+  const viaAddress = await tools.find_tickets_by_address(Object.assign({address:'Миколаївка 1'}, window));
+  for(const [name, res] of [['query_tickets', viaQuery], ['list_tickets', viaList], ['search_tickets', viaSearch], ['find_tickets_by_address', viaAddress]]){
+    assert.deepEqual(idsOf(res), ['m06'], `${name}: legacy-рядок не губиться у фільтрі дат`);
+  }
+
+  /* без фільтра дат legacy-рядок теж у наборі — в усіх чотирьох */
+  const noFilter = {limit:50};
+  const plainList = await tools.list_tickets(Object.assign({city:'Миколаївка 1'}, noFilter));
+  const plainSearch = await tools.search_tickets(Object.assign({query:'Николаевка первый'}, noFilter));
+  const plainAddress = await tools.find_tickets_by_address(Object.assign({address:'Миколаївка 1'}, noFilter));
+  for(const [name, res] of [['list_tickets', plainList], ['search_tickets', plainSearch], ['find_tickets_by_address', plainAddress]]){
+    assert.ok(idsOf(res).includes('m06'), `${name}: без фільтра дат legacy-рядок на місці`);
+  }
+  /* а поза вікном фільтра його немає ніде */
+  const outside = {date_from:'01.09.2026', date_to:'30.09.2026', limit:50};
+  const outsideList = await tools.list_tickets(Object.assign({city:'Миколаївка 1'}, outside));
+  const outsideSearch = await tools.search_tickets(Object.assign({query:'Николаевка первый'}, outside));
+  const outsideAddress = await tools.find_tickets_by_address(Object.assign({address:'Миколаївка 1'}, outside));
+  for(const [name, res] of [['list_tickets', outsideList], ['search_tickets', outsideSearch], ['find_tickets_by_address', outsideAddress]]){
+    assert.ok(!idsOf(res).includes('m06'), `${name}: у вересні legacy-рядка немає`);
+  }
 });
 
 /* ---------- 9-13. вибір READ-тула не змінює набір ---------- */
@@ -393,70 +432,81 @@ test('v91.48: «скільки заявок у Николаевке первый
 /* ---------- 15. НЕГАТИВНА регресія: жодного переносу цілої історичної групи ---- */
 
 const GROUP_NEGATIVE = [
-  row('g1', {full:{city:'Миколаївка 1', street:'Вул Садова', house:'19'}}),   /* канонічний власник Садової в 1 */
-  row('g2', {full:{city:'Миколаївка 2', street:'Вул Дружби', house:'8'}}),    /* канонічний власник Дружби в 2 */
-  row('g3', {full:{city:'Миколаївка', street:'Вул Садова', house:'21'}}),     /* ВЛАСНИЙ доказ → 1 */
-  row('g4', {full:{city:'Миколаївка', street:'Вул Нова', house:'1'}}),        /* доказів немає → unresolved */
-  row('g5', {full:{city:'Миколаївка', street:'Вул Дружби', house:'10'}}),     /* ВЛАСНИЙ доказ → 2 */
-  row('g6', {full:{city:'Миколаївка', street:'Вул Нова', house:'2'}})         /* дзеркально: не їде в 2 */
+  row('g1', {full:{city:'Миколаївка 1', street:'Вул Садова', house:'19'}}),   /* Садова спостерігається лише тут */
+  row('g2', {full:{city:'Миколаївка 2', street:'Вул Дружби', house:'8'}}),    /* Дружби спостерігається лише тут */
+  row('g3', {full:{city:'Миколаївка', street:'Вул Садова', house:'21'}}),     /* без явного номера → unresolved */
+  row('g4', {full:{city:'Миколаївка', street:'Вул Нова', house:'1'}}),        /* вулиця невідома → unresolved */
+  row('g5', {full:{city:'Миколаївка', street:'Вул Дружби', house:'10'}}),     /* без явного номера → unresolved */
+  row('g6', {full:{city:'Миколаївка', street:'Вул Нова', house:'2'}})         /* дзеркально → unresolved */
 ];
 const GROUP_BASE = makeBase(GROUP_NEGATIVE);
 
-test('v91.48 NEGATIVE: «Миколаївка — Вул Нова» не уїжджає в частину лише через інший рядок групи', async () => {
+test('v91.48 NEGATIVE: унікальність вулиці в ticket-derived каталозі НЕ присвоює частину', async () => {
   const tools = makeTools(GROUP_BASE);
   const catalog = buildCanonicalCatalog(GROUP_BASE.tickets);
   const legacyTextById = new Map(GROUP_BASE.searchIndex.map(function(i){ return [String(i.id), i.text]; }));
 
-  /* 1. Стріт Садова є лише в частині 1 → рядок g3 має ВЛАСНИЙ доказ */
+  /* 0. передумова фікстури: Садова справді трапляється лише під «Миколаївка 1»,
+        а Дружби — лише під «Миколаївка 2» (це СПОСТЕРЕЖЕННЯ, не доказ) */
+  assert.equal(catalog.streetOwners, undefined, 'карти власників вулиць більше немає');
+
+  /* 1. Запит за номером частини: у частину 1 входить ТІЛЬКИ канонічний рядок */
   const one = await tools.query_tickets({mode:'list', city:'Миколаївка 1', limit:50});
-  assert.deepEqual(idsOf(one), ['g1','g3'], 'до частини 1 входять лише доведені рядки');
+  assert.deepEqual(idsOf(one), ['g1'], 'жоден incomplete-рядок не присвоєно частині 1');
+  assert.ok(!idsOf(one).includes('g3'), 'g3 (Садова, але без номера) НЕ присвоюється частині 1');
 
-  /* 2. g4 («Вул Нова») НЕ отримує частину 1 тільки тому, що g3 її отримав */
-  assert.ok(!idsOf(one).includes('g4'), 'g4 не можна переносити в частину 1 через сусідній рядок');
-
-  /* 3. зеркальний кейс для частини 2 */
+  /* 2. дзеркально для частини 2 */
   const two = await tools.query_tickets({mode:'list', city:'Миколаївка 2', limit:50});
-  assert.deepEqual(idsOf(two), ['g2','g5'], 'до частини 2 входять лише доведені рядки');
-  assert.ok(!idsOf(two).includes('g6'), 'g6 не можна переносити в частину 2 через сусідній рядок');
+  assert.deepEqual(idsOf(two), ['g2'], 'g5 (Дружби, але без номера) НЕ присвоюється частині 2');
+  assert.ok(!idsOf(two).includes('g6'), 'g6 не присвоюється частині 2');
 
-  /* 4. обидва недоведені рядки лишаються видимими за назвою без номера
-        (там нічого не «виключено», тож і попередження немає) */
+  /* 3. недоведені рядки не зникають: видно за назвою без номера,
+        і вони пораховані окремо в запиті за частиною */
   const bare = await tools.query_tickets({mode:'list', city:'Миколаївка', limit:50});
   assert.deepEqual(idsOf(bare), ['g1','g2','g3','g4','g5','g6']);
   assert.equal(bare.data.ambiguous, true);
   assert.equal(bare.data.unresolved_incomplete_city, undefined);
-  /* а запит за номером частини рахує їх окремо: 2 недоведені рядки тієї назви */
-  assert.deepEqual(one.data.unresolved_incomplete_city, {city:'Миколаївка', count:2});
-  assert.deepEqual(two.data.unresolved_incomplete_city, {city:'Миколаївка', count:2});
+  assert.deepEqual(one.data.unresolved_incomplete_city, {city:'Миколаївка', count:4});
+  assert.deepEqual(two.data.unresolved_incomplete_city, {city:'Миколаївка', count:4});
 
-  /* 5. і в резолвері вони теж не мають частини */
-  for(const id of ['g4','g6']){
+  /* 4. резолвер: частини немає ні в кого, крім канонічних рядків */
+  for(const id of ['g3','g4','g5','g6']){
     const ticket = GROUP_BASE.tickets.find(function(t){ return t.id === id; });
     const resolved = resolveCanonicalAddress(ticket, legacyTextById.get(id) || '', catalog);
-    assert.equal(resolved.canonical, undefined, `${id}: без власного доказу частини немає`);
+    assert.equal(resolved.canonical, undefined, `${id}: частину не присвоєно`);
     assert.equal(placeIdentity(resolved.city), placeIdentity('Миколаївка'), `${id}: місто лишається як у даних`);
     assert.equal(resolved.ambiguous, true, `${id}: позначено неоднозначним`);
   }
+  /* 5. і канонічні рядки не «розтягуються» на incomplete-сусідів */
+  for(const [id, provable] of [['g1','Миколаївка 1'], ['g2','Миколаївка 2']]){
+    const ticket = GROUP_BASE.tickets.find(function(t){ return t.id === id; });
+    const resolved = resolveCanonicalAddress(ticket, legacyTextById.get(id) || '', catalog);
+    assert.equal(resolved.canonical, true, `${id}: канонічний рядок лишається канонічним`);
+    assert.equal(placeIdentity(resolved.city), placeIdentity(provable));
+  }
 
-  /* 6. структурний захист: у каталозі більше немає карти якорів груп */
+  /* 6. структурний захист: карти якорів груп і власників вулиць видалені */
   assert.equal(catalog.groupAnchors, undefined, 'groupAnchors більше не існує');
   assert.equal(catalog.groupStreets, undefined, 'groupStreets більше не існує');
 });
 
-test('v91.48 NEGATIVE: доказ іншого рядка не діє навіть для текстового рядка без міста', async () => {
+test('v91.48 NEGATIVE: для текстового рядка вулиця теж не є доказом частини', async () => {
   const rows = [
     row('t1', {full:{city:'Миколаївка 1', street:'Вул Садова', house:'1'}}),
     row('t2', {full:{city:'Миколаївка 2', street:'Вул Дружби', house:'2'}}),
-    row('t3', {content:'Миколаївка, Садова 3'}),      /* власний текст: словесного номера немає, вулиця є → 1 */
-    row('t4', {content:'Миколаївка, Нова 4'})         /* жодного доказу → нікуди не переїжджає */
+    row('t3', {content:'Миколаївка, Садова 3'}),      /* вулиця є, але номера частини немає → unresolved */
+    row('t4', {content:'Миколаївка, Нова 4'}),        /* жодного доказу → unresolved */
+    row('t5', {content:'в Николаеве первой ул Садова 5'}),  /* словесний номер у власному тексті → 1 */
+    row('t6', {content:'Миколаївка, Садова 12'})      /* 12 — номер будинку, НЕ номер частини */
   ];
   const tools = makeTools(makeBase(rows));
   const one = await tools.query_tickets({mode:'list', city:'Миколаївка 1', limit:50});
-  assert.deepEqual(idsOf(one), ['t1','t3'], 'текстовий рядок із канонічною вулицею має власний доказ');
+  assert.deepEqual(idsOf(one), ['t1','t5'], 'лише явний номер частини (словесний у власному тексті) вирішує');
   const two = await tools.query_tickets({mode:'list', city:'Миколаївка 2', limit:50});
-  assert.deepEqual(idsOf(two), ['t2'], 'рядок t4 не їде і в частину 2');
+  assert.deepEqual(idsOf(two), ['t2'], 'текстові рядки без номера не їдуть ні в 1, ні в 2');
   const bare = await tools.query_tickets({mode:'count', city:'Миколаївка'});
-  assert.equal(bare.data.matched, 4, 'за назвою без номера видно всі рядки');
+  assert.equal(bare.data.matched, 6, 'за назвою без номера видно всі рядки');
+  assert.deepEqual(one.data.unresolved_incomplete_city, {city:'Миколаївка', count:3});
 });
 
 /* ---------- 16. будинки в навігаторі ≠ кількість заявок ---------- */
@@ -502,5 +552,5 @@ test('v91.48: runSmartQuery не тягне недоведений рядок у
   const result = await runSmartQuery({tickets:base.tickets, shifts:[], searchIndex:base.searchIndex}, {mode:'count', city:'Миколаївка 1'});
   assert.equal(result.ok, true);
   assert.equal(result.data.matched, PROVEN1.length);
-  assert.deepEqual(result.data.unresolved_incomplete_city, {city:'Миколаївка', count:1});
+  assert.deepEqual(result.data.unresolved_incomplete_city, {city:'Миколаївка', count:3});
 });

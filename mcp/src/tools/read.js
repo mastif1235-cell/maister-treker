@@ -14,7 +14,7 @@ import {
   buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts,
   streetFilterAccepts, resolveCityFromText, distinctCanonicalCities
 } from '../ask/canonical.js';
-import {runSmartQuery, buildCatalogData, itemAttributesMatch} from '../ask/smart-query.js';
+import {runSmartQuery, buildCatalogData, itemAttributesMatch, ticketDateKey} from '../ask/smart-query.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -51,10 +51,12 @@ export function calculateReportTotals(list){
   return {count: tickets.length, total, cashTotal, cardTotal};
 }
 
+/* v91.48: sorting uses the same legacy-tolerant ticket key as filtering, so a
+   «5.7.2026» row is ordered by its real date instead of falling to the end. */
 function sortNewestFirst(list){
   return list.slice().sort(function(a, b){
-    const ka = parseDateKey(a.date) || '';
-    const kb = parseDateKey(b.date) || '';
+    const ka = ticketDateKey(a.date) || '';
+    const kb = ticketDateKey(b.date) || '';
     if(ka !== kb) return ka < kb ? 1 : -1;
     return String(a.time || '').localeCompare(String(b.time || ''));
   });
@@ -154,12 +156,16 @@ export function createReadTools(options){
     return parts.length > 1 ? parts : [];
   }
 
-  /* v91.48: when the user asked for NO date range, a legacy date format
-     («5.7.2026») must not remove the ticket from the result; the range check
-     applies only to the filters that were actually requested. */
+  /* v91.48: ONE legacy-tolerant semantics for TICKET-side dates in every READ
+     search path — the same ticketDateKey the smart-query engine uses
+     («5.7.2026» → 2026-07-05). Without it query_tickets saw a legacy row while
+     list_tickets/search_tickets/find_tickets_by_address silently lost it.
+     The USER's date_from/date_to stay strict (parseDateKey above, validated
+     per tool): only ticket data is parsed leniently, never user input.
+     With NO filter at all a row is never dropped for its date format. */
   function inRange(dateStr, from, to){
     if(!from && !to) return true;
-    const key = parseDateKey(dateStr);
+    const key = ticketDateKey(dateStr);
     if(!key) return false;
     if(from && key < from) return false;
     if(to && key > to) return false;

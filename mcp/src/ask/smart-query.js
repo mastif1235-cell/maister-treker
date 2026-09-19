@@ -18,7 +18,7 @@
    - nothing here ever returns raw private notes, phones or coordinates to
      the caller: rows are compact projections only. */
 
-import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens} from './address.js';
+import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens, ordinalToDigit} from './address.js';
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 
@@ -179,6 +179,20 @@ export function parseDateKeyStrict(value){
   const d = new Date(parts[0], parts[1] - 1, parts[2]);
   if(d.getFullYear() !== parts[0] || d.getMonth() !== parts[1] - 1 || d.getDate() !== parts[2]) return null;
   return key;
+}
+
+/* The name as the user wrote it, with a trailing part number/ordinal removed:
+   «Миколаївка 1» → «Миколаївка», «Миколаївка перша» → «Миколаївка». Only a
+   display helper for the report note — never used for matching. */
+function nameWithoutPart(value){
+  const raw = String(value || '').trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  while(tokens.length){
+    const last = tokens[tokens.length - 1];
+    if(/^\d+$/.test(last) || ordinalToDigit(last)){ tokens.pop(); continue; }
+    break;
+  }
+  return tokens.length ? tokens.join(' ') : raw;
 }
 
 /* v91.48: ticket-side (not user-input) date key. Historical rows may carry
@@ -435,9 +449,9 @@ export function runSmartQuery(ctx, params){
      city in those tickets. Only the count travels; no raw data. */
   const wantedCityTokens = wantedCity ? placeTokens(wantedCity) : null;
   const wantedCityLetters = wantedCityTokens ? wantedCityTokens.letters.join(' ') : '';
-  const incompleteCityDisplay = (wantedCityTokens && wantedCityTokens.digits.length)
-    ? incompleteStemDisplay(catalog, wantedCityLetters) : '';
+  const wantsNumberedPart = !!(wantedCityTokens && wantedCityTokens.digits.length);
   let incompleteCityCount = 0;
+  let incompleteCitySample = '';
 
   /* payment aliases (deterministic, both languages) */
   let paymentTarget = wantedPayment;
@@ -512,11 +526,12 @@ export function runSmartQuery(ctx, params){
     const addr = resolveCanonicalAddress(t, legacyText, catalog);
     const tAddr = {city: addr.city, street: addr.street, house: addr.house};
 
-    /* count rows of the SAME name whose own part number is missing (they stay
-       out of a numbered answer, but never silently) */
-    if(incompleteCityDisplay){
-      const rTokens = placeTokens(addr.city);
-      if(!rTokens.digits.length && rTokens.letters.join(' ') === wantedCityLetters) incompleteCityCount++;
+    /* count rows whose own city/text names the SAME settlement WITHOUT a part
+       number (structured or legacy) — they stay out of a numbered answer, but
+       never silently */
+    if(wantsNumberedPart && addr.canonical !== true && addr.stemLetters === wantedCityLetters){
+      incompleteCityCount++;
+      if(!incompleteCitySample && addr.city) incompleteCitySample = String(addr.city).trim();
     }
 
     const cityOk = cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity);
@@ -664,7 +679,11 @@ export function runSmartQuery(ctx, params){
   /* Rows whose own city is this name WITHOUT its part number are reported
      (never merged, never hidden): the master can complete them in the app. */
   let unresolvedIncompleteCity = null;
-  if(incompleteCityCount && incompleteCityDisplay){
+  if(incompleteCityCount){
+    /* the name as the master himself writes it: the catalogue's digitless
+       spelling, else a row's own spelling, else the query without its number */
+    const incompleteCityDisplay = incompleteStemDisplay(catalog, wantedCityLetters) || incompleteCitySample ||
+      nameWithoutPart(params.city);
     unresolvedIncompleteCity = {city: incompleteCityDisplay, count: incompleteCityCount};
     notes.push('Поза відповіддю: ' + incompleteCityCount + ' заяв. — місто «' + incompleteCityDisplay +
       '» без номера частини. За їхніми даними неможливо довести, до якої частини вони належать.' +
