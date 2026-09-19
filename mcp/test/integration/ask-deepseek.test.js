@@ -86,7 +86,7 @@ test('happy path DeepSeek: tool-call list_tickets executed locally, final answer
       'Authorization': 'Bearer ' + MCP_TOKEN
     },
     body: JSON.stringify({
-      question: 'Які заявки сьогодні?',
+      question: 'Покажи картки заявок сьогодні',
       provider: 'deepseek',
       model: 'deepseek-flash'
     })

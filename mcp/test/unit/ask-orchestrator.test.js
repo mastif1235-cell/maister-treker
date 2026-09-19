@@ -224,7 +224,7 @@ test('tool results with tickets -> outcome.tickets sanitized projection', async 
   ], total_matched:2}};
   };
   const orch = createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS});
-  const outcome = await orch.handle('покажи заявки');
+  const outcome = await orch.handle('покажи картки заявок');
   assert.equal(outcome.ok, true);
   assert.ok(Array.isArray(outcome.tickets), 'tickets projection returned');
   assert.equal(outcome.tickets.length, 2, 'only valid ids projected');
@@ -302,12 +302,51 @@ test('production-like search_tickets result -> /ask tickets[] with signal/sum/ti
   ], total_matched:2}};
   };
   const orch = createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS});
-  const outcome = await orch.handle('Какие заявки были в Таромском за прошлый месяц?', {now:new Date(2026, 8, 17)});
+  const outcome = await orch.handle('Покажи карточки заявок в Таромском за прошлый месяц', {now:new Date(2026, 8, 17)});
   assert.equal(outcome.ok, true);
   assert.equal(outcome.tickets.length, 2, 'deterministic from tool result, not model text');
   const card = outcome.tickets[0];
   assert.deepEqual(card, {id:'871', date:'17.08.2026', time:'10:19',
     address:'Таромское, Академика Павлова 3/14, кв. 12', type:'Ремонт', sum:'800', signal:'-27.4 dBm', note:'заміна ONU, слабкий сигнал'});
+});
+
+test('total is independent from the 8-card presentation cap and ordinary search returns no cards', async () => {
+  const rows = Array.from({length:25}, function(_, i){ return {id:'t-'+i, date:'01.08.2026', address:'Вул Тестова '+i, signal:'-27'}; });
+  const groq = scriptedGroq([
+    toolResponse('list_tickets', '{"signal_worse_than":-25}'),
+    finalResponse('Всього знайдено 25 заявок.')
+  ]);
+  const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:rows.slice(0,8), total_matched:25, returned:8, limit:8}}; };
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Скільки всього заявок із сигналом нижче -25?', {history:[]});
+  assert.equal(outcome.meta.total,25); assert.equal(outcome.total,25); assert.deepEqual(outcome.tickets,[]);
+});
+
+test('authoritative total survives a truncated oversized tool result and ordinary query returns no cards', async () => {
+  let secondRequest = null;
+  const rows = Array.from({length:25}, function(_, i){ return {id:'t-'+i, date:'01.08.2026', address:'Адрес '+i, note:'x'.repeat(900)}; });
+  const groq = {calls:0, chat:async function(messages){
+    this.calls++;
+    if(this.calls === 2) secondRequest = messages;
+    return this.calls === 1
+      ? toolResponse('list_tickets', '{"signal_worse_than":-25}')
+      : finalResponse('Всього знайдено 25 заявок.');
+  }};
+  const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:rows, total_matched:25, returned:25, limit:50}}; };
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS, limits:{maxToolResultChars:12000}}).handle('Скільки всього заявок із сигналом нижче -25?', {history:[]});
+  const toolMessage = secondRequest.find(function(message){ return message.role === 'tool'; });
+  assert.ok(toolMessage.content.length <= 12000);
+  assert.match(toolMessage.content, /total_matched/);
+  assert.match(toolMessage.content, /25/);
+  assert.equal(outcome.answer, 'Всього знайдено 25 заявок.');
+  assert.equal(outcome.total, 25);
+  assert.deepEqual(outcome.tickets, []);
+});
+
+test('explicit card request returns only the structured card projection', async () => {
+  const groq = scriptedGroq([toolResponse('list_tickets', '{}'), finalResponse('Показую картку заявки.')]);
+  const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки', {history:[]});
+  assert.equal(outcome.total,1); assert.equal(outcome.tickets.length,1); assert.equal(outcome.tickets[0].id,'t-1');
 });
 
 test('date hints: «за прошлый месяц» resolved to concrete range in system message', async () => {
