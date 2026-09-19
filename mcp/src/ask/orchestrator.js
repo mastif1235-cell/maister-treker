@@ -45,11 +45,11 @@ export const ASK_SYSTEM_PROMPT = [
   'Головні правила формування відповідей (Intent-First):',
   '8) ТЕКСТОВА ВІДПОВІДЬ ПЕРЕДУСІМ: картки в додатку — це лише додатковий UI; твоя відповідь текстом ОБОВʼЯЗКОВА і має точно відповідати на суть запитання:',
   '   - На запитання про кількість або суми («Скільки заявок...», «Скільки заробив...», «Скільки підключень/ремонтів...», «Скільки годин...»): ОБОВʼЯЗКОВО явно напиши число і суму текстом у першому ж реченні (наприклад: «Вчора було 4 заявки на загальну суму 2650 грн (3 підключення, 1 ремонт)» або «За серпень відпрацьовано 160 годин (20 змін)»).',
-  '   - На запитання про конкретний факт або поле («А який там сигнал?», «Коли я там був?», «Яка там була сума?», «Хто абонент?», «Який там номер договору?», «Що там робили?»): дай ПРЯМУ коротку текстову відповідь (наприклад: «Оптичний сигнал на Лісній 74 становив -24 dBm.» або «Ви були за цією адресою 16.09.2026 о 18:26 (підключення №t-101, сума 750 грн).»). Ніколи не відповідай порожньо або просто «Ось заявка».',
-  '   - На запитання про екстремум («Яка остання/перша заявка?», «Де був найслабший сигнал?», «Який найдовший робочий день?»): визнач одну конкретну заявку чи зміну за датою/часом/значенням і опиши саме її (наприклад: «Останньою заявкою вчора була №104 о 19:15 на вул. Мостова 25 (ремонт, сигнал -23 dBm).»). НЕ повторюй весь список за день, якщо запитали саме про останню/першу.',
+  '   - На запитання про конкретний факт або поле («А який там сигнал?», «Коли я там був?», «Яка там була сума?», «Хто абонент?», «Який там номер договору?», «Що там робили?»): дай ПРЯМУ коротку текстову відповідь (наприклад: «Оптичний сигнал на Лісній 74 становив -24 dBm.» або «Ви були за цією адресою 16.09.2026 о 18:26 (підключення, сума 750 грн).»). Ніколи не відповідай порожньо або просто «Ось заявка».',
+  '   - На запитання про екстремум («Яка остання/перша заявка?», «Де був найслабший сигнал?», «Який найдовший робочий день?»): визнач одну конкретну заявку чи зміну за датою/часом/значенням і опиши саме її (наприклад: «Останньою заявкою вчора була заявка о 19:15 на вул. Мостова 25 (ремонт, сигнал -23 dBm).»). НЕ повторюй весь список за день, якщо запитали саме про останню/першу.',
   '   - На запитання про всі заявки на вулиці/в місті («Які були всі заявки на Мостовій?»): напиши підсумок із кількістю та переліком будинків (наприклад: «На вул. Мостова знайдено 3 заявки: буд. 22, 25 та 84.») і коротко опиши кожну.',
   '9) Якщо даних за період немає — пиши конкретно: «За <період> заявок не знайдено» або «За адресою <адреса> за <період> заявок не знайдено», і запропонуй корисне продовження (наприклад: «Шукати по всій вулиці?» або «Спробувати ширший період?»). Не пиши загальних «уточніть запит».',
-  '10) ЖОДНИХ markdown-таблиць. Використовуй короткі абзаци та списки «- …». Якщо результатів багато — скажи скільки знайдено й перелічи їх коротко: «№<id> — <дата> — <адреса>».',
+  '10) ЖОДНИХ markdown-таблиць. Використовуй короткі абзаци та списки «- …». Якщо результатів багато — скажи скільки знайдено й перелічи їх коротко З ПОРЯДКОВОЮ НУМЕРАЦІЄЮ: «1. <дата> — <адреса>», «2. <дата> — <адреса>» (технічні id у списках НІКОЛИ не друкуй).',
   'Пошук заявок та адрес:',
   '11) Структурований пошук/кількості/групи/суми — ПЕРШОЮ ЧЕРГОЮ query_tickets: фільтри (дати, місто/вулиця/будинок, тип, оплата, сума, сигнал, матеріали й роботи з ціною самої позиції, телефон/договір/MAC, напарник) та режими exists|count|list|group|stats; якщо період відомий — звужуй date_from/date_to. Числа, суми, унікальні вулиці/будинки/міста бери ЛИШЕ з його метаданих (matched, item_totals, groups, stats, analytics) — ніколи не рахуй по видимих рядках; ліміт сторінки не є загальною кількістю. Знайти заявку за адресою (частине слово достатньо: «мостова», без «вул./ул.») → також find_tickets_by_address (розуміє UA/RU, відмінки, будинки; при ambiguous=true запитай уточнення). Реальні назви матеріалів/робіт — list_catalog. Вільний текст/телефон — search_tickets. Список міст і вулиць — list_places.',
   '12) Рівень оптичного сигналу (dBm): «нижче -25» і «гірше -25» означають строго signal_worse_than=-25: -25 НЕ входить, -25.1/-26/-32 входять. «-25 або гірше» та «-25 і хуже» означають signal_worse_or_equal=-25: -25 входить. Якщо signal порожній — скажи «Рівень сигналу не вказано». НЕ вигадуй значень.',
@@ -116,11 +116,16 @@ export function cardIntentFor(question){
   /* map first: «покажи эту заявку на карте» is a map action even though it
      also mentions the ticket. */
   if(/(?:покажи|показати|відкрий|открой|де вона|де він)[^.!?;]{0,40}?(?:на карті|на карте|на мапі)\b|на карті\??$|на карте\??$/i.test(q)) return 'map';
-  /* Open intent needs an ANAPHORIC marker (эту/цю/неё…): a bare
-     «покажи заявку Садова 19» is a SEARCH with its own address target, not a
-     reference to a previous result — it must stay an ordinary search. */
-  if(/(?:відкрий|открой|дай|скинь|покажи)[^.!?;]{0,40}?(?:эту|цю|этой|цієї|останн[юа]|последн[юа]|неё|нее|нього|ту\s)[^.!?;]{0,20}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
-  if(/відкрити профіль|відкрий профіль|открыть профиль|перейти в заявку|перейдіть в заявку|перейти в неї|перейти в нього|мені потрібно.*перейт|хочу.*перейти в неї|в неё перешёл|в неї перешл|(?:відкрити|открыть)[^.!?;]{0,40}?(?:эту|цю|этой|цієї|останн[юа]|последн[юа]|неё|нее|нього|ту\s)[^.!?;]{0,20}?заявку/i.test(q)) return 'open';
+  /* Display verbs (покажи/дай/скинь) need an ANAPHORIC marker (эту/цю/неё…)
+     for an open intent: a bare «покажи заявку Садова 19» is a SEARCH with its
+     own address target and must stay an ordinary search. */
+  if(/(?:дай|скинь|покажи|показати)[^.!?;]{0,40}?(?:эту|цю|этой|цієї|останн[юа]|последн[юа]|неё|нее|нього|ту\s)[^.!?;]{0,20}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
+  /* Navigation verbs (відкрий/открой/відкрити/открыть/перейти) are an EXPLICIT
+     open/navigation intent even with a concrete target and no anaphora:
+     «Открой заявку Садовая 19» runs a fresh READ search and opens the found
+     ticket; «Открой эту заявку» resolves through the previous referent. */
+  if(/(?:відкрий|открой|відкрити|открыть)[^.!?;]{0,40}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
+  if(/відкрити профіль|відкрий профіль|открыть профиль|перейти в заявку|перейдіть в заявку|перейти в неї|перейти в нього|мені потрібно.*перейт|хочу.*перейти в неї|в неё перешёл|в неї перешл/i.test(q)) return 'open';
   return null;
 }
 
@@ -200,8 +205,33 @@ export function projectTicketsForClient(rawTickets){
   return out;
 }
 
-/* Обмежена історія діалогу від PWA: лише user/assistant, обрізані рядки,
-   максимум 12 повідомлень (бонус до поточного питання). */
+/* Явна MINIMAL safe-проєкція для прихованого referent-контексту наступного
+   turn: ЛИШЕ поля, потрібні для розв'язання посилання та відкриття заявки
+   (id/date/time/address/type/sum/signal). НІКОЛИ не розширювати її разом із
+   UI-card проєкцією: без note/abonentNote/otherNote/phone/clientName/MAC/
+   contract/geo/координат/позицій/приватних нотаток. */
+export function projectReferentForClient(rawTickets){
+  if(!Array.isArray(rawTickets)) return [];
+  const seen = Object.create(null);
+  const out = [];
+  for(const raw of rawTickets){
+    if(!raw || typeof raw !== 'object') continue;
+    const id = clipStr(raw.id, TICKET_PROJECTION_LIMITS.id);
+    if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id) || seen[id]) continue;
+    seen[id] = true;
+    out.push({
+      id: id,
+      date: clipStr(raw.date, TICKET_PROJECTION_LIMITS.date),
+      time: clipStr(raw.time, TICKET_PROJECTION_LIMITS.time),
+      address: ticketAddress(raw),
+      type: clipStr(raw.type != null ? raw.type : (Array.isArray(raw.tags) ? raw.tags.slice(0, 3).join(', ') : ''), TICKET_PROJECTION_LIMITS.type),
+      sum: (typeof raw.sum === 'number' && isFinite(raw.sum)) ? String(Math.round(raw.sum * 100) / 100) : clipStr(raw.sum, 16),
+      signal: clipStr(raw.signal, TICKET_PROJECTION_LIMITS.signal)
+    });
+    if(out.length >= TICKET_PROJECTION_LIMITS.count) break;
+  }
+  return out;
+}
 function sanitizeHistory(raw){
   if(!Array.isArray(raw)) return [];
   const out = [];
@@ -382,11 +412,12 @@ export function createAskOrchestrator(options){
       /* Visible cards ONLY for explicit card/open/map intent — an ordinary
          search stays text-only (UX rule preserved). */
       const cards = intent ? projectTicketsForClient(activeSource) : [];
-      /* Hidden referent for the NEXT turn: the same safe compact projection of
-         the active result. The client stores it for «відкрий цю заявку» but
-         never renders it as cards for an ordinary search. No private fields:
-         projectTicketsForClient strips notes/phones/coordinates/URLs. */
-      const referentTickets = projectTicketsForClient(activeSource);
+      /* Hidden referent for the NEXT turn: the MINIMAL safe projection of the
+         active result (id/date/time/address/type/sum/signal only — no notes,
+         phones, client names, MAC/contract, geo or coordinates). The client
+         stores it for «відкрий цю заявку» but never renders it as cards for
+         an ordinary search. */
+      const referentTickets = projectReferentForClient(activeSource);
       const result = {ok:true, answer, meta:{rounds, toolCallsMade, total, intent:intent || undefined}, total, tickets:cards, referentTickets};
       /* Network points (FOB/splice/node) live ONLY on the device. Attach a
          deterministic local-search request; the PWA executes it against its

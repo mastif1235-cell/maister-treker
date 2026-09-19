@@ -20,7 +20,7 @@ MTAI.createChatController = function(deps){
       const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
       if(!Array.isArray(raw)) return [];
       return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
-        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeTickets(m.referentTickets)};
+        return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeReferent(m.referentTickets)};
       });
     }catch(_e){ return []; }
   }
@@ -32,6 +32,17 @@ MTAI.createChatController = function(deps){
       const id=String(t.id == null ? '' : t.id).trim().slice(0,64);
       if(!id || !/^[0-9a-zA-Z_-]{1,64}$/.test(id)) return null;
       return {id:id,date:String(t.date||'').slice(0,32),time:String(t.time||'').slice(0,16),address:String(t.address||'').slice(0,200),type:String(t.type||'').slice(0,100),sum:String(t.sum||'').slice(0,16),signal:String(t.signal||'').slice(0,32),note:String(t.note||'').slice(0,120)};
+    }).filter(Boolean);
+  }
+  /* Прихований referent: МИНІМАЛЬНИЙ безпечний набір БЕЗ note/phone/geo —
+     лише для розв'язання посилання наступного turn і відкриття заявки. */
+  function safeReferent(raw){
+    if(!Array.isArray(raw)) return [];
+    return raw.slice(0,8).map(function(t){
+      if(!t || typeof t !== 'object') return null;
+      const id=String(t.id == null ? '' : t.id).trim().slice(0,64);
+      if(!id || !/^[0-9a-zA-Z_-]{1,64}$/.test(id)) return null;
+      return {id:id,date:String(t.date||'').slice(0,32),time:String(t.time||'').slice(0,16),address:String(t.address||'').slice(0,200),type:String(t.type||'').slice(0,100),sum:String(t.sum||'').slice(0,16),signal:String(t.signal||'').slice(0,32)};
     }).filter(Boolean);
   }
   function persist(){
@@ -105,7 +116,7 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
-      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeTickets(outcome.referentTickets) });
+      messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets) });
       persist();
       emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null });
       return { ok:true };

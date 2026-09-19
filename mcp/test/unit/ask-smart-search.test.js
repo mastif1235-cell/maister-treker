@@ -295,3 +295,71 @@ test('open intent requires anaphora: address-targeted «покажи заявк�
   assert.equal(cardIntentFor('открой последнюю заявку'), 'open');
   assert.equal(cardIntentFor('Покажи заявку Садовая 19. Дай карточку'), 'cards', 'explicit card word still wins');
 });
+
+/* ---------- privacy referent regression ---------- */
+
+test('privacy referent: hidden referentTickets carries ONLY the minimal safe set', async () => {
+  const ROW_PRIV = {ord:1, id:'t-priv1', date:'14.09.2026', time:'12:00', city:'Дніпро', street:'Лісна', house:'74',
+    address:'Дніпро, Лісна 74', type:'Ремонт', sum:750, payment:'Готівка', signal:'-24', has_geo:true,
+    note:'секретна нотатка', abonentNote:'абонент пароль', phone:'0671234567', extraPhones:['0991112233'],
+    clientName:'Іван Петренко', macAddress:'AA:BB:CC:DD:EE:FF', contractNumber:'контракт-77',
+    geoLink:'https://maps.google.com/?q=48.4,35.0', geoLat:48.4, geoLng:35.0,
+    equipment:[{label:'Роутер', price:1500, qty:1, total:1500}], match_reasons:[]};
+  const groq = scriptedGroq([toolResponse('query_tickets', '{"mode":"list"}'), finalResponse('Знайдено 1 заявку: №1.')]);
+  const orch = createAskOrchestrator({groq, tools:queryToolsStub([ROW_PRIV]), toolDefs:TOOL_DEFINITIONS});
+  const out = await orch.handle('Покажи мне заявку Лісна 74', {});
+  assert.equal(out.tickets.length, 0, 'ordinary search: no visible cards');
+  assert.equal(out.referentTickets.length, 1);
+  const ref = out.referentTickets[0];
+  assert.deepEqual(Object.keys(ref).sort(), ['address','date','id','signal','sum','time','type'],
+    'referent is the explicit minimal projection (no note/phone/geo/client)');
+  const s = JSON.stringify(out.referentTickets);
+  for(const bad of ['секретна','пароль','0671234567','AA:BB','контракт-77','maps.google','48.4','Петренко','Роутер']){
+    assert.ok(!s.includes(bad), 'referent carries no ' + bad);
+  }
+});
+
+/* ---------- open vs search intent regressions ---------- */
+
+test('intent trio: show=search, navigation verb=open with fresh READ, anaphora=open via referent', async () => {
+  /* 1) «Покажи заявку Садовая 19» — ordinary search, visible cards = 0. */
+  const g1 = scriptedGroq([toolResponse('query_tickets', '{"mode":"list","street":"Садова"}'), finalResponse('Знайдено 1 заявку.')]);
+  const o1 = await createAskOrchestrator({groq:g1, tools:queryToolsStub([ROW_SAD]), toolDefs:TOOL_DEFINITIONS}).handle('Покажи заявку Садовая 19', {});
+  assert.equal(o1.meta.intent, undefined, 'show-verb with own target stays a search');
+  assert.equal(o1.tickets.length, 0);
+  assert.equal(o1.referentTickets.length, 1);
+
+  /* 2) «Открой заявку Садовая 19» — explicit navigation intent WITHOUT anaphora:
+        a fresh READ search runs and the found ticket card is returned. */
+  const g2 = scriptedGroq([toolResponse('query_tickets', '{"mode":"list","street":"Садова","house":"19"}'), finalResponse('Відкриваю знайдену заявку.')]);
+  const o2 = await createAskOrchestrator({groq:g2, tools:queryToolsStub([ROW_SAD]), toolDefs:TOOL_DEFINITIONS}).handle('Открой заявку Садовая 19', {});
+  assert.equal(o2.meta.intent, 'open');
+  assert.equal(o2.tickets.length, 1, 'card for the freshly found ticket');
+  assert.equal(o2.tickets[0].id, 't-sad19', 'real id reaches the open action');
+
+  /* 3) «Открой эту заявку» — open through the previous referent. */
+  const g3 = scriptedGroq([finalResponse('Відкриваю.')]);
+  const o3 = await createAskOrchestrator({groq:g3, tools:queryToolsStub([]), toolDefs:TOOL_DEFINITIONS}).handle('Открой эту заявку', {contextTickets:o1.referentTickets});
+  assert.equal(o3.meta.intent, 'open');
+  assert.equal(o3.tickets.length, 1);
+  assert.equal(o3.tickets[0].id, 't-sad19');
+});
+
+test('navigation verbs are open intents even with a concrete target', () => {
+  assert.equal(cardIntentFor('Открой заявку Садовая 19'), 'open');
+  assert.equal(cardIntentFor('Открыть заявку Садовая 19'), 'open');
+  assert.equal(cardIntentFor('Перейти в заявку Садовая 19'), 'open');
+  assert.equal(cardIntentFor('Открой профиль заявки Садовая 19'), 'open');
+  assert.equal(cardIntentFor('Відкрий заявку Садова 19'), 'open');
+  assert.equal(cardIntentFor('Покажи заявку Садовая 19'), null, 'display verb without anaphora stays search');
+  assert.equal(cardIntentFor('Покажи мне заявку Садовая 19'), null);
+  assert.equal(cardIntentFor('Дай заявку Садовая 19'), null, 'display verb without anaphora stays search');
+});
+
+test('system prompt: no №<id> list format, technical-id hiding rule intact', () => {
+  assert.ok(!/№<id>/.test(ASK_SYSTEM_PROMPT), 'model is never told to print №<id>');
+  assert.ok(!/№t-101|№104\b/.test(ASK_SYSTEM_PROMPT), 'no technical ids inside prompt examples');
+  assert.match(ASK_SYSTEM_PROMPT, /ТЕХНІЧНІ ІДЕНТИФІКАТОРИ/, 'hiding rule stays');
+  assert.match(ASK_SYSTEM_PROMPT, /ПОРЯДКОВОЮ НУМЕРАЦІЄЮ/, 'ordinal-only lists');
+  assert.match(ASK_SYSTEM_PROMPT, /У списках нумерація 1, 2, 3/, 'numbered lists rule stays');
+});

@@ -123,3 +123,50 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     console.log('PASS referent e2e: client referent projection is strict/safe');
   })().catch(function(e){ console.error(e); process.exit(1); });
 }
+
+// ── privacy: старий persisted referent із note/phone НЕ їде у context ──
+{
+  const sb=load(...CHAT_MODULES); const M=sb.MTAI;
+  sb.settings=JSON.parse(JSON.stringify(SETTINGS));
+  const store=memStorage();
+  /* Симулюємо СТАРУ збережену сесію, де referent ще містив приватні поля. */
+  store.setItem('mtAiChatHistoryV1', JSON.stringify([
+    {role:'user', text:'Покажи мне заявку Лісна 74', ts:1},
+    {role:'assistant', text:'Знайдено 1 заявку.', ts:2, tickets:[],
+     referentTickets:[{id:'t-priv1', date:'14.09.2026', time:'12:00', address:'Дніпро, Лісна 74', type:'Ремонт', sum:'750', signal:'-24', note:'секретна нотатка', phone:'0671234567'}]}
+  ]));
+  const requests=[];
+  const fetchImpl=async function(url,init){
+    const body=JSON.parse(init.body); requests.push(body);
+    return new Response(JSON.stringify({ok:true,answer:'ok',meta:{}}),{status:200});
+  };
+  const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  const chat=M.createChatController({client:client,hooks:{},storage:store});
+  (async function(){
+    await chat.send('Який там був сигнал?');
+    assert.equal(requests.length,1);
+    const ctx=requests[0].context;
+    assert.ok(ctx && ctx.tickets[0].id==='t-priv1','old referent still resolves');
+    const ctxJson=JSON.stringify(ctx);
+    assert.ok(!ctxJson.includes('note') && !ctxJson.includes('секретна') && !ctxJson.includes('0671234567'),
+      'client whitelist strips note/phone from the outgoing context even from old history');
+    assert.deepEqual(Object.keys(ctx.tickets[0]).sort(), ['address','date','id','signal','sum','time','type'],
+      'outgoing context is the minimal safe set');
+    console.log('PASS referent privacy: old persisted referent never leaks note/phone into /ask context');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}
+
+// ── privacy: клієнт приймає referentTickets БЕЗ note навіть від старого Worker ──
+{
+  const sb=load('js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'); const M=sb.MTAI;
+  sb.settings=JSON.parse(JSON.stringify(SETTINGS));
+  const client=M.createClient({fetchImpl:async function(){ return new Response(JSON.stringify({ok:true,answer:'a',meta:{},tickets:[],referentTickets:[{id:'t-priv1',date:'14.09.2026',address:'Дніпро, Лісна 74',note:'секретна',phone:'0671234567',clientName:'Іван',macAddress:'AA:BB'}]}),{status:200}); },getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  (async function(){
+    const out=await client.ask('q');
+    assert.equal(out.referentTickets[0].id,'t-priv1');
+    const s=JSON.stringify(out.referentTickets);
+    assert.ok(!s.includes('секретна') && !s.includes('0671234567') && !s.includes('Іван') && !s.includes('AA:BB'), 'client-side referent projection drops private fields');
+    assert.ok(!('note' in out.referentTickets[0]), 'no note key at all');
+    console.log('PASS referent privacy: client normalizer enforces the minimal set');
+  })().catch(function(e){ console.error(e); process.exit(1); });
+}
