@@ -36,6 +36,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 import {createReadTools} from '../../src/tools/read.js';
 import {runSmartQuery} from '../../src/ask/smart-query.js';
@@ -48,7 +52,7 @@ import {TOOL_DEFINITIONS} from '../../src/tools/definitions.js';
 /* ---------- СИНТЕТИЧНА семантична фікстура (не production-перелік) ---------- */
 function row(id, o){
   return {
-    id, date:o.date || '01.09.2026', time:'10:00', content:o.content || '', sum:o.sum || 0, tags:[],
+    id, date:o.date || '01.09.2026', time:o.time || '10:00', content:o.content || '', sum:o.sum || 0, tags:[],
     backupNote:o.backupNote || '',
     fullDataJson:o.full ? JSON.stringify(o.full) : ''
   };
@@ -553,4 +557,74 @@ test('v91.48: runSmartQuery не тягне недоведений рядок у
   assert.equal(result.ok, true);
   assert.equal(result.data.matched, PROVEN1.length);
   assert.deepEqual(result.data.unresolved_incomplete_city, {city:'Миколаївка', count:3});
+});
+
+/* ---------- 20. порядок: одна семантика в усіх READ tools ---------- */
+
+/* Реальні модулі застосунку (як у parity-тестах): ticketSortKey — це та сама
+   функція, якою застосунок сортує свої списки заявок. */
+function loadAppTicketSortKey(){
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const sandbox = {console};
+  vm.createContext(sandbox);
+  for(const rel of ['js/core-utils.js', 'js/data-utils.js']){
+    vm.runInContext(readFileSync(path.join(repoRoot, rel), 'utf8'), sandbox, {filename:rel});
+  }
+  return sandbox.ticketSortKey;
+}
+
+const ORDER_ROWS = [
+  row('o1', {date:'04.07.2026', full:{city:'Миколаївка 1', street:'Вул Садова', house:'1'}}),
+  row('o2', {date:'5.7.2026',   full:{city:'Миколаївка 1', street:'Вул Садова', house:'2'}}),   /* legacy-дата */
+  row('o3', {date:'06.07.2026', time:'10:00', full:{city:'Миколаївка 1', street:'Вул Садова', house:'3'}}),
+  row('o4', {date:'06.07.2026', time:'08:30', full:{city:'Миколаївка 1', street:'Вул Садова', house:'4'}}),
+  row('o5', {date:'06.07.2026', time:'17:05', full:{city:'Миколаївка 1', street:'Вул Садова', house:'5'}}),
+  row('o6', {date:'06.07.2026', time:'10:00', full:{city:'Миколаївка 1', street:'Вул Садова', house:'6'}})
+];
+const ORDER_BASE = makeBase(ORDER_ROWS);
+/* новіший день першим, у межах дня — новіший час першим, однаковий час — за id
+   (та сама семантика, що ticketSortKey(b) - ticketSortKey(a) у застосунку) */
+const ORDER_EXPECTED = ['o5','o3','o6','o4','o2','o1'];
+
+function orderOf(result){
+  return (result.data.tickets || []).map(function(t){ return String(t.id); });
+}
+
+test('v91.48: legacy-дата сортується хронологічно і всі READ tools дають ОДИН порядок', async () => {
+  const tools = makeTools(ORDER_BASE);
+  const viaQuery = await tools.query_tickets({mode:'list', city:'Миколаївка 1', limit:50});
+  const viaList = await tools.list_tickets({city:'Миколаївка 1', limit:50});
+  const viaSearch = await tools.search_tickets({query:'Николаевка первый', limit:50});
+  const viaAddress = await tools.find_tickets_by_address({address:'Миколаївка 1', limit:50});
+
+  assert.deepEqual(orderOf(viaQuery), ORDER_EXPECTED, 'query_tickets mode=list');
+  assert.deepEqual(orderOf(viaList), ORDER_EXPECTED, 'list_tickets');
+  assert.deepEqual(orderOf(viaSearch), ORDER_EXPECTED, 'search_tickets');
+  assert.deepEqual(orderOf(viaAddress), ORDER_EXPECTED, 'find_tickets_by_address');
+  for(const [name, res] of [['list', viaList], ['search', viaSearch], ['address', viaAddress]]){
+    assert.deepEqual(orderOf(res), orderOf(viaQuery), `${name}: той самий порядок, що в query_tickets`);
+  }
+
+  /* legacy-рядок стоїть на СВОЄМУ хронологічному місці, а не в кінці списку */
+  const idx = ORDER_EXPECTED.indexOf('o2');
+  assert.equal(idx, 4, '«5.7.2026» — між 06.07 і 04.07');
+  assert.equal(orderOf(viaQuery)[idx], 'o2');
+
+  /* і з фільтром дат порядок і склад ті самі (усі рядки — липень) */
+  const ranged = await tools.query_tickets({mode:'list', city:'Миколаївка 1', date_from:'01.07.2026', date_to:'31.07.2026', limit:50});
+  assert.deepEqual(orderOf(ranged), ORDER_EXPECTED, 'фільтр дат не змінює порядок');
+
+  /* паритет із власною сортувальною функцією застосунку */
+  const ticketSortKey = loadAppTicketSortKey();
+  const appOrder = ORDER_BASE.tickets.slice()
+    .sort(function(a, b){ return ticketSortKey(b) - ticketSortKey(a); })
+    .map(function(t){ return String(t.id); });
+  assert.deepEqual(orderOf(viaQuery), appOrder, 'порядок збігається з ticketSortKey застосунку');
+});
+
+test('v91.48: поденний список (get_tickets_by_date) лишається за часом ЗРОСТАННЯМ — як ticketsForDate', async () => {
+  const tools = makeTools(ORDER_BASE);
+  const day = await tools.get_tickets_by_date({date:'06.07.2026'});
+  assert.deepEqual(day.data.tickets.map(function(t){ return t.id; }), ['o4','o3','o6','o5'],
+    'у межах одного дня — час за зростанням (семантика ticketsForDate), а не «новіші першими»');
 });

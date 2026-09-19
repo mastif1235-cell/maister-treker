@@ -92,7 +92,10 @@ test('list_tickets: pagination, date range, tag, type and dBm signal filters', a
   const page1 = toolData((await toolCall(app, 'list_tickets', {limit:2, offset:0})).result);
   assert.equal(page1.total_matched, 5);
   assert.equal(page1.returned, 2);
-  assert.deepEqual(page1.tickets.map(function(t){ return t.id; }), ['t-003', 't-004']);
+  /* v91.48: «найновіші першими» = семантика власного списку застосунку
+     (js/data-utils.js ticketSortKey(b) - ticketSortKey(a)): у межах одного дня
+     пізніший час іде першим, тому 16.09 14:00 (t-004) перед 16.09 10:30 (t-003). */
+  assert.deepEqual(page1.tickets.map(function(t){ return t.id; }), ['t-004', 't-003']);
 
   const ranged = toolData((await toolCall(app, 'list_tickets', {date_from:'15.09.2026', date_to:'15.09.2026'})).result);
   assert.deepEqual(ranged.tickets.map(function(t){ return t.id; }).sort(), ['t-001', 't-002']);

@@ -398,12 +398,31 @@ function compactAddress(t){
   return parts.join(', ').slice(0, 200);
 }
 
-function sortNewestFirst(list){
+/* Newest first: DATE desc, then TIME desc — exactly the ordering the app's own
+   ticket lists use (js/data-utils.js ticketSortKey = date + minutes, applied as
+   ticketSortKey(b) - ticketSortKey(a) in js/tickets-domain.js,
+   js/address-render.js and js/tickets-bindings.js). The per-DAY view
+   (js/tickets-domain.js ticketsForDate, time ascending) is a different,
+   intentional order and is mirrored separately by get_tickets_by_date.
+
+   Ticket-side dates go through ticketDateKey, so a legacy «5.7.2026» sorts on
+   its real calendar position instead of landing at the end of the list, and
+   rows with the same date and time fall back to the id so the answer is
+   deterministic. This ONE function serves every READ tool — no copies. */
+export function timeSortKey(value){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value == null ? '' : value));
+  return m ? (Number(m[1]) * 60 + Number(m[2])) : -1;   /* no/unknown time sorts last */
+}
+export function sortNewestFirst(list){
   return list.slice().sort(function(a, b){
-    const ka = parseDateKey(a.date) || '';
-    const kb = parseDateKey(b.date) || '';
+    const ka = ticketDateKey(a.date) || '';
+    const kb = ticketDateKey(b.date) || '';
     if(ka !== kb) return ka < kb ? 1 : -1;
-    return String(b.time || '').localeCompare(String(a.time || ''));
+    const ta = timeSortKey(a.time), tb = timeSortKey(b.time);
+    if(ta !== tb) return tb - ta;
+    const ra = String(a.time || ''), rb = String(b.time || '');
+    if(ra !== rb) return ra < rb ? 1 : -1;
+    return String(a.id).localeCompare(String(b.id));
   });
 }
 

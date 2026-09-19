@@ -14,7 +14,7 @@ import {
   buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts,
   streetFilterAccepts, resolveCityFromText, distinctCanonicalCities
 } from '../ask/canonical.js';
-import {runSmartQuery, buildCatalogData, itemAttributesMatch, ticketDateKey} from '../ask/smart-query.js';
+import {runSmartQuery, buildCatalogData, itemAttributesMatch, ticketDateKey, sortNewestFirst} from '../ask/smart-query.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -51,16 +51,12 @@ export function calculateReportTotals(list){
   return {count: tickets.length, total, cashTotal, cardTotal};
 }
 
-/* v91.48: sorting uses the same legacy-tolerant ticket key as filtering, so a
-   «5.7.2026» row is ordered by its real date instead of falling to the end. */
-function sortNewestFirst(list){
-  return list.slice().sort(function(a, b){
-    const ka = ticketDateKey(a.date) || '';
-    const kb = ticketDateKey(b.date) || '';
-    if(ka !== kb) return ka < kb ? 1 : -1;
-    return String(a.time || '').localeCompare(String(b.time || ''));
-  });
-}
+/* v91.48: ONE shared ordering for every READ tool: the smart-query engine's
+   sortNewestFirst (date desc, then time desc, legacy-tolerant ticket date,
+   deterministic id tie-break). It used to be duplicated here with an ascending
+   time inside the day, which ordered the same list differently from
+   query_tickets — now there is a single implementation to drift from. */
+
 
 function round1(value){ return Math.round(value * 10) / 10; }
 
