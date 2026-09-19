@@ -154,6 +154,19 @@ export function createReadTools(options){
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
     const terms = Array.isArray(params.terms) ? params.terms.map(function(v){return String(v).trim();}).filter(Boolean) : [];
+    const itemConditions = Array.isArray(params.item_conditions) ? params.item_conditions : [];
+    const itemMatch = function(ticket, condition){
+      const needle = cleanStr(condition.text);
+      const pools = [{kind:'equipment',items:ticket.equipment||[]},{kind:'cable',items:ticket.cables||[]},{kind:'preset_work',items:ticket.presetWorks||[]},{kind:'additional_work',items:ticket.additionalWork||[]}];
+      return pools.filter(function(pool){return !condition.kind || condition.kind === pool.kind;}).some(function(pool){ return pool.items.some(function(item){
+        const label = cleanStr(item.label || item.desc);
+        if(!label.includes(needle)) return false;
+        if(condition.unit_price != null && Number(item.price || item.pricePerMeter || item.sum) !== Number(condition.unit_price)) return false;
+        if(condition.quantity != null && Number(item.qty || item.meters || 0) !== Number(condition.quantity)) return false;
+        if(condition.total != null && Number(item.total || item.sum || (Number(item.price||0)*Number(item.qty||1))) !== Number(condition.total)) return false;
+        return true;
+      }); });
+    };
     const extendedTermMatch = function(ticket, term){
       const q = cleanStr(term);
       const values = [].concat(ticket.note, ticket.abonentNote, ticket.otherNote, ticket.payment, ticket.street, ticket.house,
@@ -170,6 +183,7 @@ export function createReadTools(options){
       if(params.payment && cleanStr(t.payment) !== cleanStr(params.payment)) return false;
       if(params.query && !ticketMatchesQuery(t, params.query)) return false;
       if(terms.length && !terms.every(function(term){ return extendedTermMatch(t, term); })) return false;
+      if(itemConditions.length && !itemConditions.every(function(condition){ return itemMatch(t, condition); })) return false;
       return true;
     });
     list = sortNewestFirst(list);

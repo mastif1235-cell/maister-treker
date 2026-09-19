@@ -213,6 +213,12 @@ test('universal search intersects equipment terms and price without leaking priv
   const result = await createReadTools({data:pipeline}).search_tickets({terms:['роутер','1500'],date_from:'01.08.2026',date_to:'31.08.2026'});
   assert.equal(result.data.total_matched,1); assert.equal(result.data.tickets[0].id,'router-1500');
   assert.equal(result.data.tickets[0].equipment[0].total,1500);
+  const exact = await createReadTools({data:pipeline}).search_tickets({query:'Таромське',item_conditions:[{text:'роутер',unit_price:1500}]});
+  assert.equal(exact.data.total_matched,1);
+  const intersection = await createReadTools({data:pipeline}).search_tickets({query:'Таромське',item_conditions:[{text:'роутер',unit_price:1500},{text:'пайка',unit_price:100}]});
+  assert.equal(intersection.data.total_matched,1);
+  const negative = await createReadTools({data:pipeline}).search_tickets({query:'Таромське',item_conditions:[{text:'роутер',unit_price:1200}]});
+  assert.equal(negative.data.total_matched,0);
   assert.ok(!JSON.stringify(result).includes('PRIVATE_MASTER_NOTE_SECRET'));
 });
 
@@ -260,7 +266,7 @@ test('list cache: repeated reads within TTL hit GAS once', async () => {
   const fetchImpl = mockGasFetch('ok');
   const app = await makeApp(null, fetchImpl);
   await toolCall(app, 'list_tickets', {});
-  await toolCall(app, 'search_tickets', {query:'x'});
+  await toolCall(app, 'search_tickets', {query:'Таромське'});
   await toolCall(app, 'get_reports', {date_from:'15.09.2026', date_to:'16.09.2026'});
   const listCalls = fetchImpl.calls.filter(function(call){ return call.action === 'list'; }).length;
   assert.equal(listCalls, 1);
@@ -268,7 +274,7 @@ test('list cache: repeated reads within TTL hit GAS once', async () => {
 
 test('GAS network failure: tool reports an error result and fabricates nothing', async () => {
   const app = await makeApp(null, mockGasFetch('network'));
-  for(const [name, args] of [['list_tickets',{}], ['search_tickets',{query:'x'}], ['list_places',{}], ['find_tickets_by_address',{address:'вул. Шевченка'}], ['get_tickets_by_date',{date:'16.09.2026'}], ['get_shifts',{}], ['get_reports',{date_from:'15.09.2026',date_to:'16.09.2026'}], ['get_statistics',{period:'all'}]]){
+  for(const [name, args] of [['list_tickets',{}], ['search_tickets',{query:'Таромське'}], ['list_places',{}], ['find_tickets_by_address',{address:'вул. Шевченка'}], ['get_tickets_by_date',{date:'16.09.2026'}], ['get_shifts',{}], ['get_reports',{date_from:'15.09.2026',date_to:'16.09.2026'}], ['get_statistics',{period:'all'}]]){
     const call = await toolCall(app, name, args);
     assert.equal(call.result.isError, true, name);
     assert.match(call.text, /MCP_TOOL_ERROR: NETWORK/);

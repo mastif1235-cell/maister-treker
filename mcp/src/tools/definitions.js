@@ -48,6 +48,7 @@ export const TOOL_DEFINITIONS = [
       properties:{
         query: {type:'string', minLength:1, maxLength:200, description:'Рядок пошуку; шукає по тексту заявки, адресі, телефону, обладнанню та виконаним роботам.'},
         terms: {type:'array', items:{type:'string', minLength:1, maxLength:80}, minItems:1, maxItems:12, description:'Усі перелічені слова/ознаки мають збігтися (логічне AND) для складеного пошуку.'},
+        item_conditions: {type:'array', minItems:1, maxItems:8, items:{type:'object', additionalProperties:false, properties:{text:{type:'string',minLength:1,maxLength:80}, kind:{type:'string',maxLength:30}, unit_price:{type:'number'}, quantity:{type:'number'}, total:{type:'number'}}, required:['text']}, description:'Структуровані умови item/work; кожна умова має збігтися в одному ticket, а text+price — в одній item.'},
         sum_min: {type:'number', description:'Мінімальна загальна сума заявки.'},
         sum_max: {type:'number', description:'Максимальна загальна сума заявки.'},
         payment: {type:'string', maxLength:80, description:'Спосіб оплати.'},
