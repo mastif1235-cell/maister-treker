@@ -312,10 +312,10 @@ test('old snapshot without any directory keeps working; a later push does not in
 });
 
 test('/ask: the prompt separates DIRECTORY from TICKETS and teaches UUID-first follow-ups; both tools answer their own source', async () => {
-  assert.match(ASK_SYSTEM_PROMPT, /11в\) ДОВІДНИК ≠ ЗАЯВКИ/);
-  assert.match(ASK_SYSTEM_PROMPT, /list_directory/);
-  assert.match(ASK_SYSTEM_PROMPT, /available=false[^\n]*вулиці із заявок, а не довідник/);
-  assert.match(ASK_SYSTEM_PROMPT, /11г\) UUID-first/);
+  assert.match(ASK_SYSTEM_PROMPT, /11в\) Вулиці населеного пункту/);
+  assert.match(ASK_SYSTEM_PROMPT, /ОДРАЗУ list_directory/);
+  assert.match(ASK_SYSTEM_PROMPT, /available=false[^\n]*вулиці, де були заявки/);
+  assert.match(ASK_SYSTEM_PROMPT, /11г\) Ідентичність адреси/);
   assert.match(ASK_SYSTEM_PROMPT, /aliases — старі або інші написання/);
   const f = fixture();
   const {SHEV} = f;
