@@ -768,6 +768,10 @@ async function saveTicketFromForm(e){
       }
     }
   }
+  /* Stage 2B: аддитивна прив'язка заявки до довідника — лише cityId/streetId і
+     лише за однозначного збігу. Історичні city/street/house/apartment та id
+     заявки не змінюються; неоднозначний чи невідомий адрес лишається без ID. */
+  if(typeof mtTicketAddressApply==='function') mtTicketAddressApply(calcState);
   if(!calcState.type){ showToast('Оберіть тип роботи'); return; }
   const isOther = calcState.type === 'Інше';
   const isRaw = !!calcState.cloudImported; // NEW

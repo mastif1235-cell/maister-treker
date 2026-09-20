@@ -199,6 +199,7 @@ function ticketToSyncPayload(t){
   // скрипт), а при завантаженні з хмари відновлюємо їх назад.
   const fullData = {
     type:t.type, city:t.city, street:t.street, house:t.house, apartment:t.apartment,
+    cityId:t.cityId, streetId:t.streetId,
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
     payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, baseCallFee:t.baseCallFee, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,

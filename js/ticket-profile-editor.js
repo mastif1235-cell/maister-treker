@@ -89,6 +89,7 @@ function showEditAbonentProfile(profileJson){
       // скільки заявок "переїде" на нову адресу, щоб не зробити це випадково
       const addressChanged = vals.city!==(data.city||'') || vals.street!==(data.street||'') || vals.house!==(data.house||'') || vals.apartment!==(data.apartment||'');
       if(addressChanged&&!await openConfirmModal({title:'Оновити адресу профілю?',message:`Нова адреса буде застосована до ${ids.length} заявок(и) цього профілю. Якщо це інший абонент, скасуйте дію та створіть нову заявку.`,confirmLabel:'Оновити адресу',danger:true}))return;
+      if(vals.city&&typeof mtAddressBookRemember==='function') mtAddressBookRemember(vals.city,vals.street);
       ids.forEach(id=>{
         const t = tickets.find(x=>String(x.id)===String(id));
         if(t){
@@ -96,6 +97,9 @@ function showEditAbonentProfile(profileJson){
           t.address = [[vals.street, vals.house].filter(Boolean).join(' '), vals.apartment ? `кв. ${vals.apartment}` : ''].filter(Boolean).join(', ');
           t.clientName = vals.clientName; t.phone = vals.phone; t.extraPhones = vals.extraPhones; t.abonentNote = vals.note;
           t.login = vals.login; t.password = vals.password; t.contractNumber = vals.contractNumber;
+          /* Stage 2B: нова адреса профілю — перераховуємо аддитивну прив'язку
+             (лише cityId/streetId; за неоднозначності зв'язок знімається). */
+          if(typeof mtTicketAddressApply==='function') mtTicketAddressApply(t);
           // NEW: раніше після масової правки профілю текст заявки (t.content)
           // залишався СТАРИМ — диспетчеру при пересиланні/копіюванні летіло
           // старе ім'я/адреса/телефон, хоча в самій заявці все вже виправлено.
