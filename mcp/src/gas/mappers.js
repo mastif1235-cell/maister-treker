@@ -145,7 +145,7 @@ export function ticketFromGasRow(row){
 
 export const REDACTED_TICKET_FIELDS = [
   'id', 'date', 'time', 'type', 'city', 'street', 'house', 'apartment',
-  'address', 'clientName', 'phone', 'extraPhones', 'macAddress', 'signal',
+  'address', 'cityId', 'streetId', 'clientName', 'phone', 'extraPhones', 'macAddress', 'signal',
   'payment', 'sum', 'cashAmount', 'cardAmount', 'callFee', 'tariff',
   'tags', 'contractNumber', 'note', 'abonentNote', 'otherNote', 'geoLink',
   'equipment', 'cables', 'presetWorks', 'additionalWork', 'cloudImported',
@@ -193,6 +193,13 @@ function geoLinkOnly(value){
 
 /* A coordinate counts as present only when it is a real, non-empty number
    (null/''/'null'/'undefined' must never become has_geo:true). */
+/* A directory id must be a UUID; anything else is dropped instead of being
+   passed on as a half-trusted identity. */
+function ident(value){
+  const text = str(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : '';
+}
+
 function coordPresent(value){
   if(value == null) return false;
   const s = String(value).trim();
@@ -214,6 +221,11 @@ export function redactTicket(t){
     house: str(f.house),
     apartment: str(f.apartment),
     address: str(f.address),
+    /* Stage 2B directory link (additive): a UUID only, never derived from the
+       address text. Rows saved before Stage 2B stay '' — exactly like the other
+       legacy fields, so old and new rows share one shape. */
+    cityId: ident(f.cityId),
+    streetId: ident(f.streetId),
     clientName: str(f.clientName),
     phone: str(f.phone),
     extraPhones: strArray(f.extraPhones),
