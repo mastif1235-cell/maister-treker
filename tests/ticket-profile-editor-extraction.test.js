@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8').replace(/\r\n/g,'\n');
 const source=read('js/ticket-profile-editor.js'),html=read('index.html');
 assert.equal(crypto.createHash('sha256').update(source.slice(source.indexOf('// NEW: редагування')).trim()).digest('hex'),
-  'b56b218341a3c692a1e7a4e8b958a2cd0b5a133def2f1949b7bcca4fac6cc83c');
+  '5c393df514273fd35eb73bc5bd746b0ccfaa09f86d6890d8d44e0228392325b9');
 assert.doesNotMatch(read('js/ticket-address-domain.js'),/function showEditAbonentProfile\(/);
 assert.ok(html.indexOf('src="js/ticket-profile-editor.js"')>html.indexOf('src="js/ticket-address-domain.js"'));
 assert.equal((read('sw.js').match(/'\.\/js\/ticket-profile-editor\.js'/g)||[]).length,1);

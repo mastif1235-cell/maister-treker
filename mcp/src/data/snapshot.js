@@ -28,9 +28,14 @@
    structured fields live in the backupNote «ПовніДаніJSON:» payload now
    carry city/street/house. Cached v2 projections built by the old mapper
    would keep hiding those addresses until they expire, so they are ignored
-   exactly like v1 (old KV key left untouched, never deleted manually). */
+   exactly like v1 (old KV key left untouched, never deleted manually).
 
-export const SNAPSHOT_VERSION = 3;
+   v4 (v91.55): the projection gained the optional directory link (cityId /
+   streetId, Stage 2B). Cached v3 projections would keep hiding those ids until
+   they expire, so they are ignored exactly like v1/v2 — the old KV key is left
+   untouched and the next GAS read re-fills the cache. */
+
+export const SNAPSHOT_VERSION = 4;
 
 export function snapshotKey(){
   return 'mt:snapshot:v' + SNAPSHOT_VERSION;

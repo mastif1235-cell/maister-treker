@@ -23,6 +23,14 @@ import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityS
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
 
+const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/* A directory id is passed on only in its canonical UUID shape; anything else
+   is dropped, so a stale or hand-edited value can never act as an identity. */
+function directoryId(value){
+  const text = String(value == null ? '' : value);
+  return DIRECTORY_ID_RE.test(text) ? text : '';
+}
+
 /* ---------- normalization ---------- */
 
 /* Item/label normalization: case-insensitive, UA/RU letter bridges,
@@ -851,6 +859,11 @@ export function runSmartQuery(ctx, params){
         street:String(addr.street || '').slice(0, 100),
         house:String(addr.house || '').slice(0, 16),
         address:compactAddress(Object.assign({}, t, {city:addr.city, street:addr.street, house:addr.house})),
+        /* Stage 2B (additive): the directory identity travels next to the text,
+           so the model can see that two spellings are ONE street. Rows saved
+           before Stage 2B keep '' — never a value derived from the text. */
+        cityId:directoryId(t.cityId),
+        streetId:directoryId(t.streetId),
         type:String(t.type || '').slice(0, 80),
         sum:Number(t.sum) || 0,
         payment:String(t.payment || '').slice(0, 40),

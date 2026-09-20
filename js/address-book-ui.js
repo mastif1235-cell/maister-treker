@@ -7,6 +7,7 @@ function mtAddressBookChange(change){
     change(book);
     settings={...settings,addressBook:book,...MTAddressBook.projection(book)};
     if(saveSettings()===false)throw new Error('Інша вкладка керує записом');
+    if(typeof mtAddressLinkInvalidate==='function')mtAddressLinkInvalidate();
     return true;
   }catch(error){
     settings=previous;
@@ -36,6 +37,7 @@ function mtAddressBookRenderCities(){
     wrap.innerHTML='<p style="font-size:12px">Локальний довідник. Архівування та перейменування не змінюють історичні заявки. Для другого телефону використовуйте резервну копію.</p>'+mtAddressBookRows('cities',book.cities);
     if(MTAddressBook.duplicateCandidates(book).length)wrap.insertAdjacentHTML('beforeend','<p role="status">Є збіги назв або aliases. UUID збережено окремо; автоматичного об’єднання немає.</p>');
   }catch(_error){wrap.textContent='Довідник UUID недоступний. Старі адреси та заявки збережено; перевірте резервну копію або активну вкладку.';}
+  mtAddressBookRenderLinkCheck();
 }
 function mtAddressBookRenderSelect(){
   const sel=document.getElementById('streetMgmtCitySelect');if(!sel)return;
@@ -60,6 +62,76 @@ function mtAddressBookEdit(kind,id){
         if(mtAddressBookChange(book=>MTAddressBook.update(book,kind,id,patch))){closeModal();renderCityMgmtList();}
       };
     }});
+}
+/* Stage 2B: the ONE place where a ticket gets its directory link. The card is
+   saved through saveTickets() afterwards; a link is written only for a unique
+   directory match, so an ambiguous or unknown address stays unlinked. */
+function mtTicketAddressApply(ticket){
+  try{
+    if(typeof MTTicketAddressLink==='undefined')return false;
+    const book=settings&&settings.addressBook;
+    if(!book)return false;
+    return MTTicketAddressLink.applyToTicket(ticket,book);
+  }catch(_error){return false;}
+}
+/* Stage 2C: read-only plan + explicit confirmation. Nothing is linked until the
+   master presses the button, and only EXACT/ALIAS_EXACT rows are ever proposed. */
+let mtAddressLinkPlanCache=null;
+function mtAddressLinkInvalidate(){mtAddressLinkPlanCache=null;}
+function mtAddressBookLinkCounts(){
+  if(typeof MTTicketAddressLinker==='undefined')return null;
+  if(!mtAddressLinkPlanCache)return null;
+  return mtAddressLinkPlanCache.counts;
+}
+function mtAddressBookRenderLinkCheck(){
+  const wrap=document.getElementById('addressLinkCheck');if(!wrap)return;
+  const rows=[
+    ['Вже пов’язані з довідником','already_linked'],
+    ['Точний збіг (можна пов’язати)','exact'],
+    ['Збіг за псевдонімом (можна пов’язати)','alias_exact'],
+    ['Неоднозначні — потрібне рішення майстра','ambiguous'],
+    ['Немає в довіднику','no_match'],
+    ['Помилковий або неповний адрес','malformed'],
+    ['Зв’язок застарів — текст заявки вже інший','stale'],
+    ['Пов’язані в іншому довіднику (не чіпаємо)','foreign']
+  ];
+  const counts=mtAddressBookLinkCounts();
+  const list=counts?'<div style="font-size:12px;line-height:1.6;margin-top:6px;">'+rows.map(([label,key])=>`<div><span style="color:var(--text-dim)">${escapeHtml(label)}:</span> <strong>${Number(counts[key])||0}</strong></div>`).join('')+`<div style="color:var(--text-faint)">Перевірено заявок: ${Number(counts.total)||0}</div></div>`:'';
+  const review=counts&&mtAddressLinkPlanCache.review.ambiguous.length?`<div style="font-size:12px;margin-top:8px;color:var(--text-dim)">Неоднозначні (перші ${mtAddressLinkPlanCache.review.ambiguous.length}): ${escapeHtml(mtAddressLinkPlanCache.review.ambiguous.map(r=>`${r.city||'—'} / ${r.street||'—'}`).join('; '))}</div>`:'';
+  wrap.innerHTML=`<div style="font-size:12px;color:var(--text-dim)">Прив’язка заявок до довідника. Історичний текст заявок не змінюється, ticket.id не змінюється, неоднозначні адреси не вгадуються.</div>
+    <button type="button" class="btn btn-sm btn-ghost btn-block" id="addressLinkCheckBtn" style="margin-top:8px;">🔎 Перевірити адреси заявок</button>
+    ${list}${review}
+    <button type="button" class="btn btn-sm btn-block${counts&&counts.actionable?' btn-accent':''}" id="addressLinkApplyBtn" style="margin-top:8px;"${counts&&counts.actionable?'':' disabled'}>Прив’язати ${counts?Number(counts.actionable)||0:0} заявок</button>`;
+  document.getElementById('addressLinkCheckBtn').onclick=mtAddressBookCheckLinks;
+  document.getElementById('addressLinkApplyBtn').onclick=mtAddressBookApplyLinks;
+}
+function mtAddressBookCheckLinks(){
+  if(typeof MTTicketAddressLinker==='undefined'){showToast('Модуль прив’язки недоступний');return;}
+  try{
+    mtAddressLinkPlanCache=MTTicketAddressLinker.plan(tickets,settings.addressBook);
+    mtAddressBookRenderLinkCheck();
+    showToast(mtAddressLinkPlanCache.counts.actionable?`Можна пов’язати: ${mtAddressLinkPlanCache.counts.actionable}`:'Немає заявок для прив’язки');
+  }catch(_error){
+    mtAddressLinkPlanCache=null;mtAddressBookRenderLinkCheck();
+    showToast('Не вдалося перевірити адреси');
+  }
+}
+async function mtAddressBookApplyLinks(){
+  if(typeof MTTicketAddressLinker==='undefined'||!mtAddressLinkPlanCache)return;
+  const actionable=Number(mtAddressLinkPlanCache.counts.actionable)||0;
+  if(!actionable){showToast('Немає заявок для прив’язки');return;}
+  if(!await openConfirmModal({title:'Пов’язати заявки з довідником?',message:`Буде додано лише cityId/streetId до ${actionable} заявок із однозначною адресою. Текст, будинок, квартира та id заявок не змінюються. Неоднозначні адреси пропускаються. Кожна з цих заявок оновиться в Google Sheets звичайною синхронізацією.`,confirmLabel:'Прив’язати'}))return;
+  const applied=MTTicketAddressLinker.apply(tickets,settings.addressBook,mtAddressLinkPlanCache);
+  let saved=false;
+  try{saved=(await saveTickets())!==false;}catch(_error){saved=false;}
+  if(!saved){
+    MTTicketAddressLinker.rollback(applied.applied);
+    mtAddressLinkPlanCache=null;mtAddressBookRenderLinkCheck();
+    showToast('Не вдалося зберегти — прив’язку скасовано');
+    return;
+  }
+  mtAddressLinkPlanCache=null;mtAddressBookRenderLinkCheck();
+  showToast(`Пов’язано заявок: ${applied.applied.length}`);
 }
 function bindAddressBookControls(){
   mtAddressBookInitialize();

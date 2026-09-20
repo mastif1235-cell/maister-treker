@@ -60,6 +60,25 @@ export function calculateReportTotals(list){
 
 function round1(value){ return Math.round(value * 10) / 10; }
 
+/* Stage 2B: a directory identity is echoed next to the resolved TEXT only when
+   every matched row agrees on it. Nothing is derived from the address string,
+   nothing is guessed: one legacy row without ids (or two different ids) simply
+   means "no identity claim" and the field stays absent, exactly as before. */
+function sharedDirectoryIds(list){
+  let cityId = null, streetId = null;
+  for(const ticket of (list || [])){
+    const rowCityId = String((ticket && ticket.cityId) || '');
+    const rowStreetId = String((ticket && ticket.streetId) || '');
+    if(!rowCityId && !rowStreetId) return null;
+    if(cityId === null) cityId = rowCityId; else if(cityId !== rowCityId) cityId = false;
+    if(streetId === null) streetId = rowStreetId; else if(streetId !== rowStreetId) streetId = false;
+  }
+  const shared = {};
+  if(typeof cityId === 'string' && cityId) shared.city_id = cityId;
+  if(typeof streetId === 'string' && streetId) shared.street_id = streetId;
+  return Object.keys(shared).length ? shared : null;
+}
+
 /* v91.48: places built from the CANONICAL effective address of every ticket
    (same resolver as query_tickets/list_tickets). Output shape is identical
    to address.js extractPlaces, so callers do not change — only now one real
@@ -381,7 +400,7 @@ export function createReadTools(options){
       const bareParts = placeTokens(cityName).digits.length ? [] : bareStemParts(cityList, legacyTextById, catalog);
       const bareAmbiguous = bareParts.length > 0;
       const bareCandidates = bareParts.map(function(city){ return {city}; });
-      return {ok:true, data:Object.assign({query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, sourceMeta(data))};
+      return {ok:true, data:Object.assign({query:params.address, resolved:Object.assign({city:cityName, street:null, house:null, confidence:1}, sharedDirectoryIds(cityList) || {}), candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, sourceMeta(data))};
     }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
@@ -434,7 +453,7 @@ export function createReadTools(options){
       ok:true,
       data:Object.assign({
         query: params.address,
-        resolved: r,
+        resolved: Object.assign({}, r, sharedDirectoryIds(list) || {}),
         candidates: resolution.candidates || [],
         ambiguous: false,
         houses: resolution.houses || [],

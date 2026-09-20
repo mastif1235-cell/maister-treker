@@ -39,11 +39,11 @@ function gasStub(){
 
 test('snapshotKey is versioned', () => {
   assert.equal(snapshotKey(), 'mt:snapshot:v' + SNAPSHOT_VERSION);
-  assert.equal(SNAPSHOT_VERSION, 3, 'v91.45 legacy fullData parity invalidates v1+v2 projections');
-  assert.equal(snapshotKey(), 'mt:snapshot:v3');
+  assert.equal(SNAPSHOT_VERSION, 4, 'Stage 2B directory link fields invalidate the v3 projection');
+  assert.equal(snapshotKey(), 'mt:snapshot:v4');
 });
 
-test('old-version envelopes are NOT accepted as the current v3 snapshot (v91.44 v1 bump, v91.45 v2 bump)', async () => {
+test('old-version envelopes are NOT accepted as the current snapshot (v91.44 v1, v91.45 v2, Stage 2B v3 bumps)', async () => {
   /* Leftover v2 shape at the current key — a projection built by the
      pre-v91.45 mapper that hid legacy ПовніДаніJSON addresses: treated as a
      miss, never served (same for a v1 leftover). */
@@ -55,20 +55,23 @@ test('old-version envelopes are NOT accepted as the current v3 snapshot (v91.44 
   assert.equal(calls, 1, 'v2 envelope forces a fresh read instead of serving the stale pre-v91.45 projection');
   assert.deepEqual(result.data, projection(42), 'fresh data served, not the old projection');
 
-  /* The old production keys mt:snapshot:v1 and mt:snapshot:v2 are neither
-     read nor deleted: the new code only ever touches the v3 key. */
+  /* The old production keys mt:snapshot:v1..v3 are neither read nor deleted:
+     the new code only ever touches the CURRENT key. A v3 leftover (Stage 2A
+     projection without the directory link) is a miss, exactly like v1/v2. */
   const kv2 = fakeKv();
   kv2.map.set('mt:snapshot:v1', JSON.stringify({v:1, savedAt:1, data:projection(7)}));
   kv2.map.set('mt:snapshot:v2', JSON.stringify({v:2, savedAt:1, data:projection(8)}));
+  kv2.map.set('mt:snapshot:v3', JSON.stringify({v:3, savedAt:1, data:projection(9)}));
   let calls2 = 0;
   const provider2 = createSnapshotProvider({fetchFn:async function(){ calls2++; return {ok:true, data:projection(2)}; }, kv:kv2, ttlMs:300000, staleMs:86400000, waitUntil:function(p){ return Promise.resolve(p).catch(function(){}); }});
   await provider2.getList();
   await new Promise(function(r){ setTimeout(r, 0); });
-  assert.equal(calls2, 1, 'old keys are not used by v3 code (cold miss)');
+  assert.equal(calls2, 1, 'old keys are not used by the current code (cold miss)');
   assert.equal(kv2.map.get('mt:snapshot:v1'), JSON.stringify({v:1, savedAt:1, data:projection(7)}), 'old v1 KV value left untouched');
   assert.equal(kv2.map.get('mt:snapshot:v2'), JSON.stringify({v:2, savedAt:1, data:projection(8)}), 'old v2 KV value left untouched');
-  const written = JSON.parse(kv2.map.get('mt:snapshot:v3'));
-  assert.equal(written.v, 3, 'new writes go to the v3 envelope');
+  assert.equal(kv2.map.get('mt:snapshot:v3'), JSON.stringify({v:3, savedAt:1, data:projection(9)}), 'old v3 KV value left untouched');
+  const written = JSON.parse(kv2.map.get(snapshotKey()));
+  assert.equal(written.v, SNAPSHOT_VERSION, 'new writes go to the current envelope');
 });
 
 test('cold miss -> GAS -> cache write; fresh hit -> no GAS call', async () => {
