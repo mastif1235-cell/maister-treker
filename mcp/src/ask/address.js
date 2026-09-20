@@ -82,6 +82,18 @@ export function ordinalToDigit(word){
 const NOISE_TOKENS = new Set(['в','у','во','на','с','из','до','от','із','та','и','й']);
 const STREET_PREFIX_TOKENS = new Set(['вул','вулиця','улица','ул','просп','проспект','пр','пров','переулок','пер','бул','бульвар','наб','набережна','набережная','шосе','шоссе','спуск','узвіз','тракт','алея','площа','площадь','майдан']);
 
+/* Stage 2D: EXACT surface key of a place name — the spelling as written,
+   lower-cased, service words («вул», «ул.», «в/у») dropped, no stemming and no
+   UA↔RU bridging. Two values share this key only when they are the same
+   spelling; it is the first (strict) tier of directory name/alias resolution. */
+export function placeExactKey(value){
+  const cleaned = cleanStr(value).normalize('NFC');
+  if(!cleaned) return '';
+  return cleaned.split(/[^\p{L}\p{N}]+/u).filter(function(tok){
+    return tok && !NOISE_TOKENS.has(tok) && !STREET_PREFIX_TOKENS.has(tok);
+  }).join(' ');
+}
+
 export function placeTokens(value){
   const letters = [];
   const digits = [];

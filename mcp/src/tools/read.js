@@ -15,6 +15,13 @@ import {
   streetFilterAccepts, resolveCityFromText, distinctCanonicalCities
 } from '../ask/canonical.js';
 import {runSmartQuery, buildCatalogData, itemAttributesMatch, ticketDateKey, sortNewestFirst} from '../ask/smart-query.js';
+import {
+  buildDirectoryIndex, isDirectoryIndex, resolveDirectoryCity, resolveDirectoryStreet, resolveDirectoryPlace,
+  isResolvedStatus, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames,
+  directoryCities, directoryStreets
+} from '../ask/directory-index.js';
+import {directoryId} from '../data/directory.js';
+import {parseAddressQuery} from '../ask/address.js';
 
 /* Redaction pipeline: raw GAS rows -> whitelisted projections. This is the
    ONLY shape that travels to clients and (in the KV stage) into the cache. */
@@ -83,41 +90,83 @@ function sharedDirectoryIds(list){
    (same resolver as query_tickets/list_tickets). Output shape is identical
    to address.js extractPlaces, so callers do not change — only now one real
    place never splits into «Миколаївка» + «Миколаївка 1» + «Миколаївка1». */
-function buildCanonicalPlaces(tickets, searchIndex){
+/* Stage 2D: with the phone's directory available, a row whose ids the
+   directory knows — or a legacy row whose own text resolves uniquely — is
+   grouped by street UUID and labelled with the CURRENT directory name, so a
+   renamed or alias-spelled street is ONE place. Rows the directory cannot
+   place keep the Stage 1 text identity below. The source stays TICKETS: an
+   entry exists only where tickets exist. */
+function buildCanonicalPlaces(tickets, searchIndex, directory){
   const catalog = buildCanonicalCatalog(tickets);
+  const index = isDirectoryIndex(directory) ? directory : null;
   const legacyTextById = new Map((searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
   const byCity = new Map();
+  const cityIds = new Map();   /* city label -> directory city id */
+  const streetIds = new Map(); /* street entry -> directory street id */
   for(const t of (tickets || [])){
     const legacyText = legacyTextById.get(String(t.id)) || '';
     const addr = resolveCanonicalAddress(t, legacyText, catalog);
-    const city = String(addr.city || '').trim();
-    const street = String(addr.street || '').trim();
+    let city = String(addr.city || '').trim();
+    let street = String(addr.street || '').trim();
     if(!city && !street) continue;
+    let streetIdKey = null, cityIdKey = null;
+    if(index){
+      const known = knownTicketIds(index, t);
+      let streetId = known.streetId, cityId = known.cityId;
+      if(!streetId){
+        const attributed = attributeLegacyRow(index, city, street);
+        if(attributed){ streetId = attributed.streetId; cityId = cityId || attributed.cityId; }
+      }
+      if(streetId){
+        const entity = index.streets.get(streetId);
+        cityId = entity.cityId;
+        streetIdKey = streetId;
+      }
+      if(cityId){
+        cityIdKey = cityId;
+        city = directoryCityName(index, cityId) || city;
+      }
+      if(streetIdKey) street = directoryStreetName(index, streetIdKey) || street;
+    }
     /* One real place may appear under several spellings («Миколаївка 1» /
        «Миколаївка1»); they merge into ONE entry only when the spellings are
        provably the same name (identity + surface compatibility). Two really
        different places that merely share a stem stay separate entries. */
     let cityLabel = null;
-    for(const existing of byCity.keys()){
-      if(existing === '(не вказано)') continue;
-      if(placeIdentity(existing) === placeIdentity(city) && placeCompatible(existing, city)){ cityLabel = existing; break; }
+    if(cityIdKey){
+      for(const [label, id] of cityIds){ if(id === cityIdKey){ cityLabel = label; break; } }
+    }
+    if(!cityLabel){
+      for(const existing of byCity.keys()){
+        if(existing === '(не вказано)') continue;
+        if(placeIdentity(existing) === placeIdentity(city) && placeCompatible(existing, city)){ cityLabel = existing; break; }
+      }
     }
     if(!cityLabel) cityLabel = city || '(не вказано)';
+    if(cityIdKey && !cityIds.has(cityLabel)) cityIds.set(cityLabel, cityIdKey);
     if(!byCity.has(cityLabel)) byCity.set(cityLabel, new Map());
     const streets = byCity.get(cityLabel);
     if(street){
       let streetKey = null;
-      for(const existing of streets.keys()){
-        if(placeIdentity(existing) === placeIdentity(street) && placeCompatible(existing, street)){ streetKey = existing; break; }
+      if(streetIdKey) streetKey = 'id:' + streetIdKey;
+      else {
+        for(const existing of streets.keys()){
+          if(existing.indexOf('id:') === 0) continue;
+          if(placeIdentity(existing) === placeIdentity(street) && placeCompatible(existing, street)){ streetKey = existing; break; }
+        }
       }
       if(!streetKey) streetKey = street;
-      if(!streets.has(streetKey)) streets.set(streetKey, {street: street, houses: new Set(), count: 0, variants: new Set()});
+      if(!streets.has(streetKey)){
+        const created = {street: street, houses: new Set(), count: 0, variants: new Set()};
+        streets.set(streetKey, created);
+        if(streetIdKey) streetIds.set(created, streetIdKey);
+      }
       const entry = streets.get(streetKey);
       /* ticket_count counts TICKETS; `houses` is the set of distinct house
          values of the street. One house may hold several tickets, so the
          navigator's house list is never a ticket count. */
       entry.count++;
-      entry.variants.add(street);
+      entry.variants.add(String(addr.street || '').trim() || street);
       if(addr.house) entry.houses.add(String(addr.house).trim());
     }
   }
@@ -132,13 +181,17 @@ function buildCanonicalPlaces(tickets, searchIndex){
         return a.localeCompare(b, 'uk');
       });
       cityCount += entry.count;
-      list.push({street: entry.street, ticket_count: entry.count, houses, raw_variants: Array.from(entry.variants)});
+      const row = {street: entry.street, ticket_count: entry.count, houses, raw_variants: Array.from(entry.variants)};
+      if(streetIds.has(entry)) row.street_id = streetIds.get(entry);
+      list.push(row);
     }
-    result.push({
+    const cityRow = {
       city: city === '(не вказано)' ? '' : city,
       ticket_count: cityCount,
       streets: list.sort(function(a, b){ return b.ticket_count - a.ticket_count || a.street.localeCompare(b.street, 'uk'); })
-    });
+    };
+    if(cityIds.has(city)) cityRow.city_id = cityIds.get(city);
+    result.push(cityRow);
   }
   return result.sort(function(a, b){ return b.ticket_count - a.ticket_count || a.city.localeCompare(b.city, 'uk'); });
 }
@@ -149,14 +202,88 @@ export function createReadTools(options){
      snapshot provider is supplied (KV stage) it always returns the redacted
      projection too, so both paths are identical for the tools. */
   const data = options.data || createDataPipeline(gas);
+  /* Stage 2D: the phone's AddressBook projection (data/directory.js). Absent
+     store, absent KV or a phone that never pushed → `directory` is null and
+     every tool behaves exactly as before (ticket-derived places). */
+  const directoryStore = options.directory || null;
+  const indexCache = new WeakMap();
+
+  async function loadDirectory(){
+    if(!directoryStore) return {index:null, savedAt:null};
+    let loaded = null;
+    try{ loaded = await directoryStore.get(); }
+    catch(_err){ loaded = null; }
+    if(!loaded || !loaded.available || !loaded.data) return {index:null, savedAt:null};
+    let index = indexCache.get(loaded.data);
+    if(!index){ index = buildDirectoryIndex(loaded.data); indexCache.set(loaded.data, index); }
+    return {index, savedAt: typeof loaded.savedAt === 'number' ? loaded.savedAt : null};
+  }
 
   async function loadRedacted(){
-    const result = await data.getList();
+    const [result, directory] = await Promise.all([data.getList(), loadDirectory()]);
     if(!result.ok) return result;
     return {ok:true, tickets: result.data.tickets, shifts: result.data.shifts, searchIndex: Array.isArray(result.data.searchIndex) ? result.data.searchIndex : [],
       /* snapshot freshness (only when the KV snapshot stage is active) */
       savedAt: typeof result.savedAt === 'number' ? result.savedAt : null,
-      snapshotCache: result.cache || null};
+      snapshotCache: result.cache || null,
+      directory: directory.index,
+      directorySavedAt: directory.savedAt};
+  }
+
+  function directoryMeta(loaded){
+    const meta = {directory_available: !!(loaded && loaded.directory)};
+    if(loaded && loaded.directorySavedAt) meta.directory_as_of = new Date(loaded.directorySavedAt).toISOString();
+    return meta;
+  }
+
+  /* Stage 2D UUID-first ticket predicate shared by the address tools: a row
+     whose ids this directory knows is judged by identity; a legacy/foreign row
+     by the Stage 1 text rules against every spelling the directory knows for
+     the resolved place (current name + aliases). */
+  function directoryRowMatches(index, t, addr, legacyText, cityId, streetId){
+    const known = knownTicketIds(index, t);
+    if(streetId){
+      if(known.streetId) return known.streetId === streetId;
+      const streetNames = directoryNames(index, 'street', streetId);
+      if(!streetNames.some(function(name){ return streetFilterAccepts(addr.street, name); })) return false;
+      if(cityId && addr.city){
+        if(known.cityId) return known.cityId === cityId;
+        const cityNames = directoryNames(index, 'city', cityId);
+        return cityNames.some(function(name){ return cityFilterAccepts(addr.city, name, legacyText); });
+      }
+      return true;
+    }
+    if(cityId){
+      if(known.cityId) return known.cityId === cityId;
+      const cityNames = directoryNames(index, 'city', cityId);
+      return cityNames.some(function(name){ return cityFilterAccepts(addr.city, name, legacyText) || cityStemAccepts(addr.city, name); });
+    }
+    return true;
+  }
+
+  /* Deterministic directory reading of a free-form address («Кобзаря 10»,
+     «Таромське Привокзальна 3б»): one token may be the city, the rest the
+     street; whole text as a street across all cities; whole text as a city.
+     Only UNIQUE resolutions count; an ambiguous street (same name in several
+     cities, no city named) is reported, never chosen. */
+  function directoryReadAddress(index, text){
+    const tokens = String(text || '').split(/[\s,;\/]+/).filter(Boolean);
+    if(!tokens.length) return null;
+    for(let i = 0; i < tokens.length && tokens.length > 1; i++){
+      const cityText = tokens[i];
+      const streetText = tokens.filter(function(_, idx){ return idx !== i; }).join(' ');
+      const city = resolveDirectoryCity(index, cityText);
+      if(!isResolvedStatus(city.status)) continue;
+      const street = resolveDirectoryStreet(index, city.cityId, streetText);
+      if(isResolvedStatus(street.status)) return {cityId:city.cityId, streetId:street.streetId, via:'city+street'};
+    }
+    const whole = tokens.join(' ');
+    const street = resolveDirectoryStreet(index, null, whole);
+    if(isResolvedStatus(street.status)) return {cityId:street.cityId, streetId:street.streetId, via:'street'};
+    if(street.status === 'AMBIGUOUS') return {ambiguous:true, candidates:street.candidates};
+    const city = resolveDirectoryCity(index, whole);
+    if(isResolvedStatus(city.status)) return {cityId:city.cityId, streetId:null, via:'city'};
+    return null;
   }
 
   /* v91.48: a question about a name WITHOUT its part number spans every
@@ -349,12 +476,77 @@ export function createReadTools(options){
   async function list_places(params){
     const data = await loadRedacted();
     if(!data.ok) return data;
-    let places = buildCanonicalPlaces(data.tickets, data.searchIndex);
+    let places = buildCanonicalPlaces(data.tickets, data.searchIndex, data.directory);
     if(params && params.city){
       const qCity = cleanStr(params.city);
-      places = places.filter(function(p){ return cleanStr(p.city).includes(qCity); });
+      /* Stage 2D: a directory city (name or alias) filters by identity first */
+      const dirCity = data.directory ? resolveDirectoryCity(data.directory, params.city) : null;
+      if(dirCity && isResolvedStatus(dirCity.status) && places.some(function(p){ return p.city_id === dirCity.cityId; })){
+        places = places.filter(function(p){ return p.city_id === dirCity.cityId; });
+      }else{
+        places = places.filter(function(p){ return cleanStr(p.city).includes(qCity); });
+      }
     }
-    return {ok:true, data:Object.assign({places}, sourceMeta(data))};
+    return {ok:true, data:Object.assign({source:'tickets', places}, directoryMeta(data), sourceMeta(data))};
+  }
+
+  /* Stage 2D DIRECTORY source: the phone's AddressBook itself (cities and
+     streets with UUID, current name, aliases, active), independent of where
+     tickets exist. Without a pushed directory the tool says so explicitly, so
+     the model falls back to list_places and calls it what it is. */
+  async function list_directory(params){
+    const data = await loadRedacted();
+    if(!data.ok) return data;
+    params = params || {};
+    const index = data.directory;
+    const meta = Object.assign(directoryMeta(data), sourceMeta(data));
+    if(!index){
+      return {ok:true, data:Object.assign({available:false, source:'none', fallback:'list_places',
+        note:'Довідник адрес ще не переданий з телефону (Налаштування → Адреси) або сховище недоступне. Перелік вулиць можливий лише із заявок (list_places) — це вулиці, де були заявки, а не повний довідник.'}, meta)};
+    }
+    const includeArchived = params.include_archived === true;
+    const base = Object.assign({available:true, source:'directory', counts:{cities:index.counts.cities, streets:index.counts.streets}}, meta);
+    const publicCity = function(city){ return {city_id:city.id, name:city.name, aliases:city.aliases, active:city.active}; };
+    if(params.city_id || params.city){
+      let cityId = directoryId(params.city_id);
+      if(cityId && !index.cities.has(cityId)) cityId = null;
+      let status = cityId ? 'ID' : null;
+      if(!cityId && params.city){
+        const hit = resolveDirectoryCity(index, params.city);
+        status = hit.status;
+        if(hit.status === 'AMBIGUOUS'){
+          return {ok:true, data:Object.assign({}, base, {query:params.city, ambiguous:true, candidates:hit.candidates.map(publicCity), streets:[],
+            note:'Назва «' + String(params.city).slice(0, 60) + '» відповідає кільком населеним пунктам довідника. Уточніть, який саме.'})};
+        }
+        if(!isResolvedStatus(hit.status)){
+          return {ok:true, data:Object.assign({}, base, {query:params.city, city:null, city_status:hit.status, streets:[],
+            note:'Населеного пункту «' + String(params.city).slice(0, 60) + '» немає в довіднику адрес (ні як назви, ні як alias).'})};
+        }
+        cityId = hit.cityId;
+      }
+      if(!cityId){
+        return {ok:true, data:Object.assign({}, base, {query:String(params.city_id || ''), city:null, city_status:'NO_MATCH', streets:[], note:'Такого city_id немає в довіднику.'})};
+      }
+      const city = index.cities.get(cityId);
+      const streets = directoryStreets(index, cityId, includeArchived).map(function(street){
+        return {street_id:street.id, name:street.name, aliases:street.aliases, active:street.active};
+      });
+      const all = index.streetsByCity.get(cityId) || [];
+      return {ok:true, data:Object.assign({}, base, {
+        query: params.city || null, city_status: status,
+        city: publicCity(city),
+        streets,
+        street_count: all.filter(function(s){ return s.active !== false; }).length,
+        archived_street_count: all.filter(function(s){ return s.active === false; }).length,
+        include_archived: includeArchived
+      })};
+    }
+    return {ok:true, data:Object.assign({}, base, {
+      cities: directoryCities(index, includeArchived).map(function(city){
+        return {city_id:city.id, name:city.name, aliases:city.aliases, active:city.active, street_count:city.street_count, archived_street_count:city.archived_street_count};
+      }),
+      include_archived: includeArchived
+    })};
   }
 
   async function find_tickets_by_address(params){
@@ -364,10 +556,57 @@ export function createReadTools(options){
     const to = params.date_to ? parseDateKey(params.date_to) : null;
     if((params.date_from && !from) || (params.date_to && !to)) return {ok:false, code:'INVALID_INPUT', message:'Некоректна дата (потрібен формат ДД.ММ.РРРР)'};
 
-    const places = buildCanonicalPlaces(data.tickets, data.searchIndex);
+    const places = buildCanonicalPlaces(data.tickets, data.searchIndex, data.directory);
     const catalog = buildCanonicalCatalog(data.tickets);
     const legacyTextById = new Map((data.searchIndex || []).map(function(item){ return [String(item.id), String(item.text || '')]; }));
     const cityQuery = cleanStr(params.address).replace(/^(?:в|у|во)\s+/, '');
+
+    /* Stage 2D UUID-first: read the address against the phone's directory
+       first. A unique street (optionally with its city) resolves to UUIDs and
+       the tickets are selected by identity (legacy rows by the directory's own
+       spellings). Anything the directory cannot resolve uniquely falls through
+       to the Stage 1 ticket-derived resolution below, unchanged. */
+    const parsedAddress = parseAddressQuery(params.address);
+    const dirRead = data.directory ? directoryReadAddress(data.directory, parsedAddress.text) : null;
+    let directoryNote = null;
+    if(dirRead && dirRead.ambiguous){
+      directoryNote = {ambiguous:true, candidates:dirRead.candidates.map(function(c){ return {city:c.city, street:c.name, city_id:c.cityId, street_id:c.id}; })};
+    }
+    if(dirRead && dirRead.streetId){
+      const index = data.directory;
+      const cityName = directoryCityName(index, dirRead.cityId);
+      const streetName = directoryStreetName(index, dirRead.streetId);
+      const streetRows = data.tickets.filter(function(t){
+        if(!inRange(t.date, from, to)) return false;
+        const legacyText = legacyTextById.get(String(t.id)) || '';
+        const addr = resolveCanonicalAddress(t, legacyText, catalog);
+        return directoryRowMatches(index, t, addr, legacyText, dirRead.cityId, dirRead.streetId);
+      });
+      const houseSet = new Set();
+      for(const t of streetRows){
+        const addr = resolveCanonicalAddress(t, legacyTextById.get(String(t.id)) || '', catalog);
+        if(addr.house) houseSet.add(String(addr.house).trim());
+      }
+      const wantedHouse = parsedAddress.house ? normalizeHouse(parsedAddress.house) : null;
+      let list = wantedHouse ? streetRows.filter(function(t){
+        const addr = resolveCanonicalAddress(t, legacyTextById.get(String(t.id)) || '', catalog);
+        return normalizeHouse(addr.house) === wantedHouse;
+      }) : streetRows;
+      list = sortNewestFirst(list);
+      const meta = page(list, params);
+      const houses = Array.from(houseSet).sort(function(a, b){
+        const na = parseInt(a, 10), nb = parseInt(b, 10);
+        if(!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+        return a.localeCompare(b, 'uk');
+      });
+      return {ok:true, data:Object.assign({
+        query: params.address,
+        resolved: {city:cityName, street:streetName, house:parsedAddress.house || null, confidence:1, city_id:dirRead.cityId, street_id:dirRead.streetId, source:'directory'},
+        candidates: [], ambiguous: false, houses,
+        tickets: list.slice(meta.offset, meta.offset + meta.limit),
+        total_matched: meta.total_matched, returned: meta.returned, offset: meta.offset, limit: meta.limit
+      }, directoryMeta(data), sourceMeta(data))};
+    }
     /* v91.48: identity match first («Николаевка первый» → «Миколаївка 1»),
        historical score as the fallback. */
     const queryCityIdentity = placeIdentity(params.address);
@@ -400,7 +639,26 @@ export function createReadTools(options){
       const bareParts = placeTokens(cityName).digits.length ? [] : bareStemParts(cityList, legacyTextById, catalog);
       const bareAmbiguous = bareParts.length > 0;
       const bareCandidates = bareParts.map(function(city){ return {city}; });
-      return {ok:true, data:Object.assign({query:params.address, resolved:Object.assign({city:cityName, street:null, house:null, confidence:1}, sharedDirectoryIds(cityList) || {}), candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, sourceMeta(data))};
+      const dirCityIds = {};
+      if(data.directory && !bareAmbiguous){
+        const dirCity = resolveDirectoryCity(data.directory, cityName);
+        if(isResolvedStatus(dirCity.status)) dirCityIds.city_id = dirCity.cityId;
+      }
+      return {ok:true, data:Object.assign({query:params.address, resolved:Object.assign({city:cityName, street:null, house:null, confidence:1}, sharedDirectoryIds(cityList) || {}, dirCityIds), candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, directoryMeta(data), sourceMeta(data))};
+    }
+    /* Stage 2D: a directory city with no tickets yet is still a real place */
+    if(dirRead && dirRead.via === 'city' && !parsedAddress.house){
+      const index = data.directory;
+      const cityName = directoryCityName(index, dirRead.cityId);
+      let cityList = data.tickets.filter(function(t){
+        if(!inRange(t.date, from, to)) return false;
+        const legacyText = legacyTextById.get(String(t.id)) || '';
+        const addr = resolveCanonicalAddress(t, legacyText, catalog);
+        return directoryRowMatches(index, t, addr, legacyText, dirRead.cityId, null);
+      });
+      cityList = sortNewestFirst(cityList);
+      const cityMeta = page(cityList, params);
+      return {ok:true, data:Object.assign({query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1, city_id:dirRead.cityId, source:'directory'}, candidates:[], ambiguous:false, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, directoryMeta(data), sourceMeta(data))};
     }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
@@ -416,22 +674,25 @@ export function createReadTools(options){
       if(legacyIds.size){
         const legacyList = data.tickets.filter(function(t){ return legacyIds.has(String(t.id)) && inRange(t.date, from, to); });
         const meta = page(legacyList, params);
-        return {ok:true, data:Object.assign({query:params.address, resolved:null, candidates:[], ambiguous:false, houses:[], tickets:legacyList.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}, sourceMeta(data))};
+        return {ok:true, data:Object.assign({query:params.address, resolved:null, candidates:[], ambiguous:false, houses:[], tickets:legacyList.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}, directoryNote ? {directory:directoryNote} : {}, sourceMeta(data))};
       }
+      /* Stage 2D: the directory knows this street in several cities and no city
+         was named — report the candidates instead of guessing */
+      const candidates = directoryNote ? directoryNote.candidates.map(function(c){ return {city:c.city, street:c.street}; }) : (resolution.candidates || []);
       return {
         ok:true,
         data:Object.assign({
           query: params.address,
           resolved: null,
-          candidates: resolution.candidates || [],
-          ambiguous: !!resolution.ambiguous,
+          candidates: candidates,
+          ambiguous: !!resolution.ambiguous || !!directoryNote,
           houses: [],
           tickets: [],
           total_matched: 0,
           returned: 0,
           offset: 0,
           limit: params.limit || 50
-        }, sourceMeta(data))
+        }, directoryNote ? {directory:directoryNote} : {}, directoryMeta(data), sourceMeta(data))
       };
     }
 
@@ -449,11 +710,20 @@ export function createReadTools(options){
 
     list = sortNewestFirst(list);
     const meta = page(list, params);
+    /* Stage 2D: the Stage 1 labels mapped to the directory identity when the
+       directory resolves them uniquely (the rows' own shared ids stay the
+       fallback) */
+    const dirIds = {};
+    if(data.directory){
+      const place = resolveDirectoryPlace(data.directory, r.city || '', r.street || '');
+      if(place.cityId) dirIds.city_id = place.cityId;
+      if(place.streetId) dirIds.street_id = place.streetId;
+    }
     return {
       ok:true,
       data:Object.assign({
         query: params.address,
-        resolved: Object.assign({}, r, sharedDirectoryIds(list) || {}),
+        resolved: Object.assign({}, r, sharedDirectoryIds(list) || {}, dirIds),
         candidates: resolution.candidates || [],
         ambiguous: false,
         houses: resolution.houses || [],
@@ -462,7 +732,7 @@ export function createReadTools(options){
         returned: meta.returned,
         offset: meta.offset,
         limit: meta.limit
-      }, sourceMeta(data))
+      }, directoryNote ? {directory:directoryNote} : {}, directoryMeta(data), sourceMeta(data))
     };
   }
 
@@ -615,7 +885,8 @@ export function createReadTools(options){
       shifts: data.shifts,
       searchIndex: data.searchIndex,
       data_as_of: data.savedAt ? new Date(data.savedAt).toISOString() : null,
-      snapshot_cache: data.snapshotCache
+      snapshot_cache: data.snapshotCache,
+      directory: data.directory
     };
     return runSmartQuery(ctx, params);
   }
@@ -628,5 +899,5 @@ export function createReadTools(options){
     return {ok:true, data:Object.assign(buildCatalogData(data.tickets, data.shifts), sourceMeta(data))};
   }
 
-  return {list_tickets, search_tickets, query_tickets, list_catalog, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
+  return {list_tickets, search_tickets, query_tickets, list_catalog, list_places, list_directory, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};
 }

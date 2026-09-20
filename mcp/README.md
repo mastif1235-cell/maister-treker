@@ -162,6 +162,14 @@ vault PWA + `wrangler secret put`.
   rate limit. Auth: `ASK_BEARER_TOKENS` (тот же формат токенов) или, при
   отсутствии, обычные MCP-токены.
 - Ни один из существующих эндпоинтов/токенов/инструментов не менялся.
+- **Stage 2D (v91.57) — POST /directory:** PWA присылает проекцию своего
+  AddressBook (города/улицы: `id, cityId, name, aliases, active, updatedAt`;
+  без заявок и клиентов) с тем же Bearer, что и `/ask`. Хранится в том же KV
+  под отдельным ключом `mt:directory:v1` (UNION по UUID, новее `updatedAt`
+  побеждает, ничего не удаляется); снапшот заявок не трогается. Инструменты
+  читают его рядом со снапшотом: `list_directory` (DIRECTORY), UUID-first
+  фильтры `query_tickets`/`find_tickets_by_address` (`city_id`/`street_id`),
+  `list_places` группирует по `street_id`. Нет KV — 503 и прежнее поведение.
 
 ## Дорожная карта следующих этапов
 

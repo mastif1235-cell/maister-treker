@@ -266,10 +266,10 @@ test('R5: «Открой заявку Кобзаря 15» — address path first
 /* ---------- R6: public /mcp contract untouched ---------- */
 
 test('R6: the routing fix stays inside /ask — the public /mcp toolset is unchanged', () => {
-  assert.equal(TOOL_DEFINITIONS.length, 11);
+  assert.equal(TOOL_DEFINITIONS.length, 12);
   assert.deepEqual(TOOL_DEFINITIONS.map(function(def){ return def.name; }), [
     'list_tickets', 'get_ticket', 'search_tickets', 'query_tickets', 'list_catalog',
-    'find_tickets_by_address', 'list_places', 'get_tickets_by_date', 'get_shifts',
+    'find_tickets_by_address', 'list_places', 'list_directory', 'get_tickets_by_date', 'get_shifts',
     'get_reports', 'get_statistics'
   ]);
   const search = TOOL_DEFINITIONS.find(function(def){ return def.name === 'search_tickets'; });

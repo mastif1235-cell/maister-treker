@@ -31,13 +31,14 @@ export const DEEPSEEK_COMPACT_DESCRIPTIONS = {
   get_ticket: 'Заявка за ID/№ результату',
   search_tickets: 'Текстовий пошук: адреса, телефон, сигнал, теги',
   query_tickets: 'Структурований пошук: дати, адреса, сигнал, позиції з ціною, телефон, договір, MAC, напарник; exists/count/list/group/stats',
-  list_catalog: 'Реальні назви використаних матеріалів, робіт, міст і напарників',
+  list_catalog: 'Реальні назви матеріалів, робіт, міст, напарників',
   find_tickets_by_address: 'Пошук за адресою (варіанти написання)',
-  list_places: 'Міста, вулиці, будинки з заявок',
+  list_places: 'Вулиці/будинки, де є заявки',
+  list_directory: 'Довідник адрес: вулиці міста, aliases',
   get_tickets_by_date: 'Заявки за дату',
   get_shifts: 'Зміни, години, напарники',
   get_reports: 'Денні звіти: кількість, суми',
-  get_statistics: 'Статистика за день/тиждень/місяць/весь час'
+  get_statistics: 'Статистика: день/тиждень/місяць/весь час'
 };
 
 export function formatDeepSeekTools(tools){

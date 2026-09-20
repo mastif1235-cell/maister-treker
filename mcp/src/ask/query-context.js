@@ -15,11 +15,16 @@
 /* Filter keys that are safe to carry between turns (mirror of
    buildResolvedFilters output, minus value-less presence flags). */
 const INHERITABLE_KEYS = [
-  'date_from', 'date_to', 'city', 'street', 'house', 'apartment',
+  'date_from', 'date_to', 'city', 'street', 'city_id', 'street_id', 'house', 'apartment',
   'type', 'tags', 'payment', 'sum_min', 'sum_max',
   'signal_worse_than', 'signal_worse_or_equal', 'signal_better_than',
   'has_signal', 'coworker', 'items'
 ];
+
+/* Stage 2D: directory identity of a resolved place — carried between turns
+   so a follow-up filters by UUID, never by a second text resolution. Only the
+   canonical UUID shape passes (the same rule every other id path uses). */
+const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* Keys that, when present in the INCOMING call, make it a NEW independent
    question — inheritance is refused (strict signal semantics preserved). */
@@ -81,6 +86,10 @@ export function projectQueryFilters(filters){
       }
       case 'city': out.city = clip(v, 100); break;
       case 'street': out.street = clip(v, 100); break;
+      case 'city_id':
+      case 'street_id':
+        if(typeof v === 'string' && DIRECTORY_ID_RE.test(v)) out[key] = v.toLowerCase();
+        break;
       case 'house': out.house = clip(v, 16); break;
       case 'apartment': out.apartment = clip(v, 16); break;
       case 'type': out.type = clip(v, 80); break;

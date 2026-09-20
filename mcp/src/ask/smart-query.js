@@ -22,6 +22,7 @@ import {cleanStr, normalizeStem, matchScore, normalizeHouse, normalizeApartment,
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
+import {isDirectoryIndex, resolveDirectoryPlace, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
 
 const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /* A directory id is passed on only in its canonical UUID shape; anything else
@@ -432,12 +433,16 @@ export function sortNewestFirst(list){
   });
 }
 
-/* ctx: {tickets, shifts, searchIndex, data_as_of}. Returns
-   {ok:false, code, message} or {ok:true, data:{...envelope}}. */
+/* ctx: {tickets, shifts, searchIndex, data_as_of, directory?}. Returns
+   {ok:false, code, message} or {ok:true, data:{...envelope}}.
+   `directory` (Stage 2D) is the phone's AddressBook index; when present the
+   city/street filters are UUID-first (see below), otherwise every path is the
+   Stage 1 text path unchanged. */
 export function runSmartQuery(ctx, params){
   params = params || {};
   const tickets = Array.isArray(ctx.tickets) ? ctx.tickets : [];
   const shifts = Array.isArray(ctx.shifts) ? ctx.shifts : [];
+  const directory = isDirectoryIndex(ctx.directory) ? ctx.directory : null;
   const searchIndex = Array.isArray(ctx.searchIndex) ? ctx.searchIndex : [];
   const legacyTextById = new Map(searchIndex.map(function(item){ return [String(item.id), String(item.text || '')]; }));
   /* v91.48: canonical catalog built from the user's OWN structured values,
@@ -461,6 +466,58 @@ export function runSmartQuery(ctx, params){
   const wantedCity = params.city ? cleanStr(params.city).replace(/^(?:в|у|во)\s+/, '') : null;
   const wantedStreet = params.street ? cleanStr(params.street).replace(/^(?:вул|ул|улица|вулиця)\.?\s*/i, '') : null;
   const wantedHouse = params.house != null ? normalizeHouse(params.house) : null;
+
+  /* Stage 2D UUID-first resolution: user text → directory name/alias → UUID.
+     Only a UNIQUE match resolves (EXACT / ALIAS_EXACT / the Stage 1 identity
+     key); AMBIGUOUS and NO_MATCH leave the text path exactly as before. An
+     explicit city_id/street_id (follow-up of a resolved query) is used as-is
+     when this directory knows it, otherwise ignored in favour of the text. */
+  let dirCityId = null, dirStreetId = null, dirPlace = null;
+  let explicitCityId = false, explicitStreetId = false;
+  if(directory){
+    const paramCityId = directoryId(params.city_id), paramStreetId = directoryId(params.street_id);
+    if(paramCityId && directory.cities.has(paramCityId)){ dirCityId = paramCityId; explicitCityId = true; }
+    if(paramStreetId && directory.streets.has(paramStreetId)){
+      dirStreetId = paramStreetId; explicitStreetId = true;
+      if(!dirCityId) dirCityId = directory.streets.get(paramStreetId).cityId;
+    }
+    if((wantedCity && !dirCityId) || (wantedStreet && !dirStreetId)){
+      dirPlace = resolveDirectoryPlace(directory, dirCityId ? '' : (wantedCity || ''), dirStreetId ? '' : (wantedStreet || ''));
+      if(dirPlace.cityId && !dirCityId && (wantedCity || dirPlace.streetId)) dirCityId = dirPlace.cityId;
+      if(dirPlace.streetId && !dirStreetId) dirStreetId = dirPlace.streetId;
+      /* a street resolved inside an explicitly given city must belong to it */
+      if(dirStreetId && dirCityId && directory.streets.get(dirStreetId).cityId !== dirCityId) dirStreetId = null;
+    }
+  }
+  /* every spelling the directory knows for the resolved place — legacy rows
+     (no ids) that carry an alias or the pre-rename name still belong to it */
+  const dirCityNames = dirCityId ? directoryNames(directory, 'city', dirCityId) : [];
+  const dirStreetNames = dirStreetId ? directoryNames(directory, 'street', dirStreetId) : [];
+  const legacyNameAccepts = function(value, names, accepts){
+    for(const name of names){ if(accepts(value, name)) return true; }
+    return false;
+  };
+  /* a legacy row (no usable ids) is checked against the city only when the
+     city was asked for explicitly (text or city_id) — a city derived from a
+     unique street must not drop legacy rows that never had a city text */
+  const cityAskedExplicitly = !!(wantedCity || explicitCityId);
+  const streetAskedExplicitly = !!(wantedStreet || explicitStreetId);
+  /* display labels: a row whose ids this directory knows (or a legacy row
+     whose own text resolves uniquely) is labelled with the CURRENT directory
+     name, so renamed/aliased spellings group as one place */
+  const placeLabels = function(t, addr){
+    const base = {city: addr.city, street: addr.street};
+    if(!directory) return base;
+    const known = knownTicketIds(directory, t);
+    let cityId = known.cityId, streetId = known.streetId;
+    if(!streetId){
+      const attributed = attributeLegacyRow(directory, addr.city, addr.street);
+      if(attributed){ streetId = attributed.streetId; if(!cityId) cityId = attributed.cityId; }
+    }
+    if(cityId) base.city = directoryCityName(directory, cityId) || base.city;
+    if(streetId) base.street = directoryStreetName(directory, streetId) || base.street;
+    return base;
+  };
   const wantedType = params.type ? cleanStr(params.type) : null;
   const wantedPayment = params.payment ? cleanStr(params.payment) : null;
   const wantedTags = Array.isArray(params.tags) ? params.tags.slice() : null;
@@ -559,19 +616,42 @@ export function runSmartQuery(ctx, params){
       if(!incompleteCitySample && addr.city) incompleteCitySample = String(addr.city).trim();
     }
 
-    const cityOk = cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity);
+    /* Stage 2D: a row whose ids THIS directory knows is judged by identity
+       alone (11б: two spellings with one id are one place, different ids are
+       different places); a legacy/foreign row keeps the Stage 1 text rules,
+       widened only by the resolved entity's own directory spellings. */
+    const known = directory ? knownTicketIds(directory, t) : {cityId:null, streetId:null};
+    const wantsCity = !!(wantedCity || dirCityId);
+    let cityOk = true, cityVia = null;
+    if(wantsCity){
+      if(dirCityId && known.cityId){
+        cityOk = known.cityId === dirCityId;
+        cityVia = 'довідник (id)';
+      }else if(cityAskedExplicitly){
+        const byText = wantedCity ? (cityFilterAccepts(addr.city, wantedCity, legacyText) || cityStemAccepts(addr.city, wantedCity)) : false;
+        cityOk = byText || legacyNameAccepts(addr.city, dirCityNames, function(value, name){ return cityFilterAccepts(value, name, legacyText); });
+      }
+    }
     if(!cityOk) continue;
-    if(wantedCity){
-      const via = addr.via.city === 'legacy' ? 'legacy адреса'
+    if(wantsCity){
+      const via = cityVia ? cityVia
+        : addr.via.city === 'legacy' ? 'legacy адреса'
         : addr.via.city === 'canonical-legacy' ? 'legacy текст (канонічне місто)'
         : addr.via.city === 'canonical-completed' ? 'структурне (доповнено до канонічного)'
         : 'структурне';
       reasons.push('місто:' + via);
     }
 
-    if(wantedStreet){
-      if(!streetFilterAccepts(addr.street, wantedStreet)) continue;
-      reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
+    if(streetAskedExplicitly){
+      if(dirStreetId && known.streetId){
+        if(known.streetId !== dirStreetId) continue;
+        reasons.push('вулиця:довідник (id)');
+      }else{
+        const byText = wantedStreet ? streetFilterAccepts(addr.street, wantedStreet) : false;
+        const streetOk = byText || legacyNameAccepts(addr.street, dirStreetNames, function(value, name){ return streetFilterAccepts(value, name); });
+        if(!streetOk) continue;
+        reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
+      }
     }
     if(wantedHouse && normalizeHouse(addr.house) !== wantedHouse) continue;
     /* v91.51: apartment numbers compare canonically («1», «кв. 1», «квартира 1»
@@ -730,6 +810,10 @@ export function runSmartQuery(ctx, params){
     if(to) rf.date_to = params.date_to;
     if(wantedCity) rf.city = params.city;
     if(wantedStreet) rf.street = params.street;
+    /* Stage 2D: the resolved identity travels with the filters, so a follow-up
+       («покажи їх») re-runs by UUID instead of a second text resolution */
+    if(dirCityId) rf.city_id = dirCityId;
+    if(dirStreetId) rf.street_id = dirStreetId;
     if(wantedHouse) rf.house = String(params.house);
     if(params.apartment != null) rf.apartment = String(params.apartment);
     if(wantedTags && wantedTags.length) rf.tags = wantedTags.slice(0, 20).map(function(tag){ return String(tag).slice(0, 60); });
@@ -782,6 +866,18 @@ export function runSmartQuery(ctx, params){
     if(ctx.data_as_of) base.data_as_of = ctx.data_as_of;
     if(ctx.snapshot_cache) base.snapshot_cache = ctx.snapshot_cache;
     if(args.candidates) base.candidates = args.candidates;
+    /* Stage 2D: what the directory resolved (current names for display; ids
+       are for the tools, never for the user) and whether it was available */
+    if(directory){
+      const dir = {available:true};
+      if(dirCityId){ dir.city_id = dirCityId; dir.city = directoryCityName(directory, dirCityId); }
+      if(dirStreetId){ dir.street_id = dirStreetId; dir.street = directoryStreetName(directory, dirStreetId); }
+      if(dirPlace && dirPlace.cityStatus) dir.city_status = dirPlace.cityStatus;
+      if(dirPlace && dirPlace.streetStatus) dir.street_status = dirPlace.streetStatus;
+      if(dirPlace && dirPlace.cityCandidates) dir.city_candidates = dirPlace.cityCandidates.map(function(c){ return c.name; });
+      if(dirPlace && dirPlace.streetCandidates) dir.street_candidates = dirPlace.streetCandidates.map(function(c){ return (c.city ? c.city + ' — ' : '') + c.name; });
+      base.directory = dir;
+    }
     /* machine-readable companion of the note above (count only, no raw rows) */
     if(args.unresolvedIncompleteCity) base.unresolved_incomplete_city = args.unresolvedIncompleteCity;
     return fillByMode(base, args);
@@ -877,7 +973,7 @@ export function runSmartQuery(ctx, params){
     const cities = Object.create(null), streets = Object.create(null);
     const cityAnalyticsVariants = new Map();
     for(const t of list){
-      const a = (args.reasonsFor.get(t.id) || {}).addr || effectiveAddressParts(t, '');
+      const a = placeLabels(t, (args.reasonsFor.get(t.id) || {}).addr || effectiveAddressParts(t, ''));
       const street = a.street || '(без вулиці)';
       streets[street] = (streets[street] || 0) + 1;
       if(!a.city){ cities['(без міста)'] = (cities['(без міста)'] || 0) + 1; continue; }
@@ -925,8 +1021,10 @@ export function runSmartQuery(ctx, params){
              differently-spelled variants of ONE real city form ONE group.
              The displayed group name stays a real human variant from the
              data (the most frequent spelling); the origin stays in
-             match_reasons, never in the identity dimension. */
-          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+             match_reasons, never in the identity dimension.
+             Stage 2D: a row the directory knows is labelled with the current
+             directory name first (rename/alias → one group). */
+          const a = placeLabels(t, info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || ''));
           let display = a.city;
           if(!display && wantedCity && cityMatches(t, wantedCity, legacyTextById.get(String(t.id)) || '').via === 'legacy'){
             display = wantedCity;
@@ -940,7 +1038,7 @@ export function runSmartQuery(ctx, params){
           break;
         }
         case 'street': {
-          const a = info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || '');
+          const a = placeLabels(t, info.addr || effectiveAddressParts(t, legacyTextById.get(String(t.id)) || ''));
           add(a.street || '(без структурованої вулиці)', t);
           break;
         }
