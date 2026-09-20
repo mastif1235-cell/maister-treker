@@ -22,6 +22,8 @@ npm run test:e2e
 
 ## Межі runtime
 
+- Адресний довідник Stage 2A: локальні UUID міст/вулиць, явні aliases та архів; заявки ще legacy. Модель, безпечна міграція та межі: [`docs/STAGE2_ADDRESSBOOK.md`](docs/STAGE2_ADDRESSBOOK.md).
+
 - QR runtime і важкі map assets завантажуються **окремо й лише за потреби**. MapLibre — основна карта; Leaflet збережено як compatibility fallback.
 - Offline-мапи — PMTiles в OPFS. Не змінюйте порядок скриптів або перелік `CORE_ASSETS` у `sw.js` окремо від відповідного тесту.
 - Дані заявок, фото, бекапи та журнал синхронізації мають окремих owners у IndexedDB; невеликі UI-стани зареєстровані у localStorage. Деталі: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/STORAGE.md`](docs/STORAGE.md).
