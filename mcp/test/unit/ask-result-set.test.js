@@ -289,7 +289,7 @@ test('Q: a count in the same turn never replaces the authoritative list or its f
 test('the result set carries the structured-filters key the PWA compares', async () => {
   const tools = {query_tickets:async function(){ return {ok:true, data:{mode:'list', resolved_filters:{city:'X', house:'1'}, total_matched:1, tickets:[{id:'A:1'}]}}; }};
   const out = await createAskOrchestrator({groq:groq([call('query_tickets',{mode:'list',city:'X',house:'1'}), done()]), tools, toolDefs:TOOL_DEFINITIONS})
-    .handle('list', {chatSessionId:'chat-session-1'});
+    .handle('list', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:01Z')});
   assert.equal(out.resultSet.filtersKey, out.resultSetStatus.filtersKey);
   assert.ok(out.resultSet.filtersKey.includes('X'));
   assert.equal(sanitizeIncomingResultSet(out.resultSet, 'chat-session-1', NOW_ORD).value.filtersKey, out.resultSet.filtersKey);
