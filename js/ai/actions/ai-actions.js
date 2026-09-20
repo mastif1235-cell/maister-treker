@@ -14,6 +14,7 @@
 (function(){
 'use strict';
 const MTAI = (typeof globalThis !== 'undefined' ? globalThis : window).MTAI;
+const validateTicketId = MTAI.ticketIds ? MTAI.ticketIds.validate : function(value){ const id=String(value==null?'':value).trim(); return /^[A-Za-z0-9._:-]{1,128}$/.test(id)?id:null; };
 MTAI.actions = (function(){
   const registry = Object.create(null); // id -> {id,label,kind,enabled,confirmText,run}
 
@@ -49,10 +50,7 @@ MTAI.actions = (function(){
   function sameId(a, b){
     const A = String(a == null ? '' : a).trim();
     const B = String(b == null ? '' : b).trim();
-    if(A === B) return true;
-    const na = A.replace(/^0+(?=[0-9])/, '');
-    const nb = B.replace(/^0+(?=[0-9])/, '');
-    return /^[0-9]+$/.test(na) && /^[0-9]+$/.test(nb) && na === nb;
+    return A === B;
   }
   function findTicketIn(list, id){
     if(!Array.isArray(list)) return null;
@@ -67,7 +65,7 @@ MTAI.actions = (function(){
      Критично: якщо структурованої адреси немає — НЕ скидати в калькулятор,
      а чесно повідомити користувача й залишити картку в AI. */
   async function openTicket(id){
-    const clean = String(id || '').replace(/[^0-9a-zа-яіїєг_-]/gi, '');
+    const clean = validateTicketId(id);
     if(!clean) return false;
     let ticket = findTicketIn(typeof tickets !== 'undefined' ? tickets : null, clean);
     if(!ticket && typeof ticketsDbRead === 'function'){
@@ -130,7 +128,7 @@ MTAI.actions = (function(){
 
   /* READ-ONLY навігація на карту застосунку */
   async function showOnMap(id){
-    const clean = String(id || '').replace(/[^0-9a-zа-яіїєг_-]/gi, '');
+    const clean = validateTicketId(id);
     if(!clean) return false;
     let ticket = findTicketIn(typeof tickets !== 'undefined' ? tickets : null, clean);
     if(!ticket && typeof ticketsDbRead === 'function'){

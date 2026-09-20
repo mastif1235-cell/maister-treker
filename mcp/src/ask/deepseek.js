@@ -28,7 +28,7 @@ const DEEPSEEK_CHAT_URL = 'https://api.deepseek.com/chat/completions';
    heavy payloads contributed to past DeepSeek HTTP 400 incidents. */
 export const DEEPSEEK_COMPACT_DESCRIPTIONS = {
   list_tickets: 'Заявки з фільтрами: дати, тип, сигнал, теги',
-  get_ticket: 'Заявка за ID',
+  get_ticket: 'Заявка за ID/№ результату',
   search_tickets: 'Текстовий пошук: адреса, телефон, сигнал, теги',
   query_tickets: 'Структурований пошук: дати, адреса, сигнал, позиції з ціною, телефон, договір, MAC, напарник; exists/count/list/group/stats',
   list_catalog: 'Реальні назви використаних матеріалів, робіт, міст і напарників',

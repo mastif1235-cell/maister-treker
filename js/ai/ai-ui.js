@@ -176,6 +176,11 @@ function build(){
     .ai-card-note{font-size:11.5px;color:var(--text-dim,#555);margin-top:2px;font-style:italic;word-break:break-word;}
     .ai-card .ai-card-open{margin-top:5px;}
     .ai-cards-more{margin-top:4px;}
+    .ai-result-list{margin:6px 0 0;font-size:12.5px;}
+    .ai-result-list ol{margin:2px 0 0;padding-left:20px;}
+    .ai-result-list-meta{font-size:11px;color:var(--text-faint);}
+    .ai-card-actions{display:flex;gap:6px;margin-top:5px;}
+    .ai-state-warning{font-size:11.5px;color:#b45309;margin-top:4px;}
   `;
   doc.head.appendChild(style);
 
@@ -308,6 +313,9 @@ function build(){
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
+        if(out.resultItems && out.resultItems.length && MTAI.cards){
+          MTAI.cards.renderResultList(b, out.resultItems, out.total, out.shown);
+        }
         /* Структуровані заявки з /ask -> картки з кнопками «Відкрити профіль»
            та «На карті» (READ-ONLY навігація через MTAI.actions). Якщо бекенд
            ще без контракту — inline-кнопки з тексту додає renderAnswer. */
@@ -318,6 +326,19 @@ function build(){
             function(id){ MTAI.actions.openTicket(id); },
             function(id){ MTAI.actions.showOnMap(id); }
           );
+        }
+        if(out.presentation && out.presentation.kind === 'single_ticket' && MTAI.cards){
+          /* Exactly one ticket, exact id: the module looks it up in the loaded
+             list and, if it is not there yet (degraded read / fresh boot), in the
+             read-only IndexedDB store through the same helper the app's own open
+             action uses. onMissing fires once when nothing can be found. */
+          MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.showOnMap(id); }, function(){
+            if(chat && typeof chat.invalidateSelection === 'function') chat.invalidateSelection();
+            const missing = b.ownerDocument.createElement('div');
+            missing.className = 'ai-state-warning';
+            missing.textContent = 'Заявка больше недоступна на этом устройстве.';
+            b.appendChild(missing);
+          });
         }
         /* Локальний запит від /ask (мережеві точки ФОБ/муфта/вузол): точки
            живуть лише на пристрої — виконуємо пошук локально і показуємо
@@ -330,6 +351,10 @@ function build(){
         if(out.meta && MTAI.storage.get().debug === true){
           const m = doc.createElement('div'); m.className = 'ai-meta'; m.textContent = 'rounds: ' + (out.meta.rounds != null ? out.meta.rounds : '?') + ' · tool_calls: ' + (out.meta.tool_calls != null ? out.meta.tool_calls : 0); messages.appendChild(m);
         }
+      },
+      state_degraded: function(){
+        const el = $('aiVoiceStatus');
+        if(el) el.textContent = '⚠️ Не удалось сохранить активный список; выбор по номеру отключён.';
       },
       error: function(err){
         const b = msgBubble('error');

@@ -74,17 +74,20 @@ test('context tickets normalization is a strict safe projection', () => {
 
 /* ---------- referent persistence: «Открой эту заявку» ---------- */
 
-test('explicit open request after a previous result: referent retained, real open action returned', async () => {
-  /* The model makes NO tool call this turn; the previous answer's tickets
-     arrive as structured context and become the card projection. */
+test('explicit open request after a previous result opens THAT ticket deterministically', async () => {
+  /* Exactly ONE referent ticket arrived from the previous answer: the turn is
+     resolved from it without the model and without a new search. This is the
+     «пошук → відкрий її» scenario that must never turn into a refusal. */
   const groq = scriptedGroq([finalResponse('Відкриваю картку заявки за 28.08.2026 (Таромське, Футбольна 39).')]);
   const orch = createAskOrchestrator({groq, tools:queryToolsStub([]), toolDefs:TOOL_DEFINITIONS});
   const outcome = await orch.handle('Открой мне эту заявку', {contextTickets:[ROW_A]});
   assert.equal(outcome.ok, true);
   assert.equal(outcome.meta.intent, 'open');
-  assert.equal(outcome.tickets.length, 1);
-  assert.equal(outcome.tickets[0].id, 't-101', 'structured ticket id reaches the PWA for its validated open action');
-  assert.ok(outcome.tickets[0].address.includes('Футбольна'));
+  assert.equal(groq.calls, 0, 'one unambiguous candidate: the model is not asked at all');
+  assert.equal(outcome.selectedTicketId, 't-101', 'exact ticket id reaches the PWA');
+  assert.deepEqual(outcome.presentation, {kind:'single_ticket', ticket_id:'t-101'});
+  assert.equal(outcome.resultSetStatus.reason, 'selected_ticket');
+  assert.equal(outcome.tickets.length, 0, 'the card comes from the deterministic presentation');
 });
 
 test('explicit card request after tool search returns structured card metadata', async () => {
@@ -267,10 +270,10 @@ test('referent chain: ordinary search stores hidden referent, next open turn res
   const turn2 = await orch2.handle('Открой мне эту заявку', {contextTickets:turn1.referentTickets});
   assert.equal(turn2.ok, true);
   assert.equal(turn2.meta.intent, 'open');
-  assert.equal(turn2.tickets.length, 1, 'visible card on the explicit open turn');
-  assert.equal(turn2.tickets[0].id, 't-sad19', 'card carries the real id for the PWA open action');
-  assert.equal(turn2.tickets[0].address, 'Миколаївка 1, Вул Садова 19');
-  assert.equal(turn2.referentTickets[0].id, 't-sad19');
+  assert.equal(groq2.calls, 0, 'single referent ticket → deterministic open, no model round-trip');
+  assert.deepEqual(turn2.presentation, {kind:'single_ticket', ticket_id:'t-sad19'}, 'EXACTLY the search result opens');
+  assert.equal(turn2.selectedTicketId, 't-sad19');
+  assert.equal(turn2.resultSetStatus.reason, 'selected_ticket');
 });
 
 test('explicit card turn with a NEW query: fresh result wins over the old referent', async () => {
@@ -337,12 +340,14 @@ test('intent trio: show=search, navigation verb=open with fresh READ, anaphora=o
   assert.equal(o2.tickets.length, 1, 'card for the freshly found ticket');
   assert.equal(o2.tickets[0].id, 't-sad19', 'real id reaches the open action');
 
-  /* 3) «Открой эту заявку» — open through the previous referent. */
+  /* 3) «Открой эту заявку» right after a one-result search: the single referent
+        ticket is opened deterministically (no model, no guessing). */
   const g3 = scriptedGroq([finalResponse('Відкриваю.')]);
   const o3 = await createAskOrchestrator({groq:g3, tools:queryToolsStub([]), toolDefs:TOOL_DEFINITIONS}).handle('Открой эту заявку', {contextTickets:o1.referentTickets});
   assert.equal(o3.meta.intent, 'open');
-  assert.equal(o3.tickets.length, 1);
-  assert.equal(o3.tickets[0].id, 't-sad19');
+  assert.equal(g3.calls, 0, 'deterministic: the model is bypassed');
+  assert.deepEqual(o3.presentation, {kind:'single_ticket', ticket_id:'t-sad19'});
+  assert.equal(o3.selectedTicketId, 't-sad19');
 });
 
 test('navigation verbs are open intents even with a concrete target', () => {

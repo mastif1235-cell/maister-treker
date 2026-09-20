@@ -53,6 +53,15 @@ async function makeAskApp(env, groqHandler){
   return {app, fetchImpl};
 }
 
+test('an oversized /ask body is rejected with 413 payload_too_large before any upstream call', async () => {
+  const {app, fetchImpl} = await makeAskApp();
+  const oversized = JSON.stringify({question:'x'.repeat(32769)});
+  const res = await postAsk(app, oversized);
+  assert.equal(res.status, 413);
+  assert.deepEqual(await res.json(), {error:'payload_too_large'});
+  assert.equal(fetchImpl.calls.length, 0, 'no Groq/GAS call for a body above the 32768-character limit');
+});
+
 async function postAsk(app, bodyText, headers){
   return app.fetch(new Request('https://mcp.example.test/ask', {
     method:'POST',

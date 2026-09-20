@@ -239,8 +239,11 @@ export function createApp(env, deps){
        turn's authoritative query_tickets) — echoed back by the PWA so
        «покажи их» re-runs the SAME structured filters on a fresh READ. */
     const queryContext = body && body.context && body.context.queryContext ? body.context.queryContext : null;
+    const chatSessionId = body && body.context ? body.context.chatSessionId : null;
+    const resultSet = body && body.context ? body.context.resultSet : null;
+    const selectedTicketId = body && body.context ? body.context.selectedTicketId : null;
     let outcome;
-    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets, queryContext}); }
+    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets, queryContext, chatSessionId, resultSet, selectedTicketId}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
@@ -267,6 +270,7 @@ export function createApp(env, deps){
       return jsonResponse(upstream ? 502 : 500, payload);
     }
     const okPayload = {ok:true, answer:outcome.answer, meta:{rounds:outcome.meta.rounds, tool_calls:outcome.meta.toolCallsMade}};
+    if(Number.isFinite(Number(outcome.total))) okPayload.total = Number(outcome.total);
     /* Структурований контракт: знайдені заявки для кнопок «Відкрити заявку»
        (безпечна проєкція без URL; фронтенд відкриває лише свій локальний
        список через власну навігацію). Відсутні, якщо заявок не знайдено. */
@@ -279,6 +283,12 @@ export function createApp(env, deps){
        filters of this turn — the PWA echoes it back so follow-ups («покажи
        их») inherit the SAME structured filters on a fresh READ. */
     if(outcome.queryContext && typeof outcome.queryContext === 'object') okPayload.queryContext = outcome.queryContext;
+    if(outcome.resultSet && typeof outcome.resultSet === 'object') okPayload.resultSet = outcome.resultSet;
+    if(Array.isArray(outcome.resultItems)) okPayload.resultItems = outcome.resultItems;
+    if(outcome.selectedTicketId) okPayload.selectedTicketId = outcome.selectedTicketId;
+    if(outcome.presentation && typeof outcome.presentation === 'object') okPayload.presentation = outcome.presentation;
+    if(Number.isFinite(Number(outcome.shown))) okPayload.shown = Number(outcome.shown);
+    if(outcome.resultSetStatus && typeof outcome.resultSetStatus === 'object') okPayload.resultSetStatus = outcome.resultSetStatus;
     /* Локальний пошук мережевих точок (ФОБ/муфта/вузол): точки живуть ЛИШЕ
        на пристрої, тож Worker повертає структурований запит, а PWA виконує
        його по власних локальних даних і показує дію «На карті». */

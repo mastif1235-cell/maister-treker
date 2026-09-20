@@ -3,6 +3,7 @@
 (function(){
 'use strict';
 const MTAI = (typeof globalThis !== 'undefined' ? globalThis : window).MTAI;
+const validateTicketId = MTAI.ticketIds ? MTAI.ticketIds.validate : function(value){ const id=String(value==null?'':value).trim(); return /^[A-Za-z0-9._:-]{1,128}$/.test(id)?id:null; };
 MTAI.createChatController = function(deps){
   const client = deps.client;
   const hooks = deps.hooks || {};
@@ -15,22 +16,34 @@ MTAI.createChatController = function(deps){
     return String(value == null ? '' : value).replace(/(?:Bearer\s+|sk-|api[_-]?key\s*[:=]\s*)[A-Za-z0-9._-]{12,}/gi, '[redacted]').slice(0, 1500);
   }
   function loadPersisted(){
-    if(!historyStorage) return [];
+    if(!historyStorage) return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null};
     try{
       const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
-      if(!Array.isArray(raw)) return [];
-      return raw.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
+      const list = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.messages) ? raw.messages : []);
+      const messages = list.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
         return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeReferent(m.referentTickets), queryContext:(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) ? m.queryContext : null};
       });
-    }catch(_e){ return []; }
+      const sid = raw && !Array.isArray(raw) && /^[A-Za-z0-9._:-]{8,128}$/.test(String(raw.chatSessionId||'')) ? String(raw.chatSessionId) : newSessionId();
+      const resultSet = raw && !Array.isArray(raw) && client.sanitizeResultSet ? client.sanitizeResultSet(raw.activeResultSet) : null;
+      const selected = validateTicketId(raw && !Array.isArray(raw) ? raw.selectedTicketId : null);
+      return {messages:messages,chatSessionId:sid,activeResultSet:resultSet,selectedTicketId:selected};
+    }catch(_e){ return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null}; }
   }
-  let messages = loadPersisted();       // {role:'user'|'assistant'|'error', text, ts, tickets?}
+  function newSessionId(){
+    try{ if(globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') return globalThis.crypto.randomUUID(); }catch(_e){}
+    return 'chat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,14);
+  }
+  const loaded = loadPersisted();
+  let messages = loaded.messages;
+  let chatSessionId = loaded.chatSessionId;
+  let activeResultSet = loaded.activeResultSet;
+  let selectedTicketId = loaded.selectedTicketId;
   function safeTickets(raw){
     if(!Array.isArray(raw)) return [];
     return raw.slice(0,8).map(function(t){
       if(!t || typeof t !== 'object') return null;
-      const id=String(t.id == null ? '' : t.id).trim().slice(0,64);
-      if(!id || !/^[0-9a-zA-Z_-]{1,64}$/.test(id)) return null;
+      const id=validateTicketId(t.id);
+      if(!id) return null;
       return {id:id,date:String(t.date||'').slice(0,32),time:String(t.time||'').slice(0,16),address:String(t.address||'').slice(0,200),type:String(t.type||'').slice(0,100),sum:String(t.sum||'').slice(0,16),signal:String(t.signal||'').slice(0,32),note:String(t.note||'').slice(0,120)};
     }).filter(Boolean);
   }
@@ -40,14 +53,17 @@ MTAI.createChatController = function(deps){
     if(!Array.isArray(raw)) return [];
     return raw.slice(0,8).map(function(t){
       if(!t || typeof t !== 'object') return null;
-      const id=String(t.id == null ? '' : t.id).trim().slice(0,64);
-      if(!id || !/^[0-9a-zA-Z_-]{1,64}$/.test(id)) return null;
+      const id=validateTicketId(t.id);
+      if(!id) return null;
       return {id:id,date:String(t.date||'').slice(0,32),time:String(t.time||'').slice(0,16),address:String(t.address||'').slice(0,200),type:String(t.type||'').slice(0,100),sum:String(t.sum||'').slice(0,16),signal:String(t.signal||'').slice(0,32)};
     }).filter(Boolean);
   }
   function persist(){
-    if(!historyStorage) return;
-    try{ historyStorage.setItem(HISTORY_KEY, JSON.stringify(messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40))); }catch(_e){}
+    if(!historyStorage) return true;
+    try{
+      historyStorage.setItem(HISTORY_KEY, JSON.stringify({messages:messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40),chatSessionId:chatSessionId,activeResultSet:activeResultSet,selectedTicketId:selectedTicketId}));
+      return true;
+    }catch(_e){ return false; }
   }
   let busy = false;
   let lastFailed = null;   // останнє питання, яке впало (для «Повторити»)
@@ -99,13 +115,23 @@ MTAI.createChatController = function(deps){
        повторного пошуку. Пріоритет — прихований referentTickets (зберігається
        навіть коли картки при звичайному пошуку НЕ рендерились); fallback —
        видимі tickets зі старих збережених сесій. */
+    /* Набір з минулим expiresAt — не стан, на який можна спиратися: він не
+       надсилається на сервер і НЕ блокує referent-шлях (інакше протухлий список
+       назавжди глушив би «відкрий її» після звичайного пошуку). */
+    if(activeResultSet && !(Number(activeResultSet.expiresAt) > Date.now())){
+      activeResultSet = null;
+      selectedTicketId = null;
+      persist();
+    }
     let referent = [];
-    for(let i = messages.length - 1; i >= 0; i--){
-      const m = messages[i];
-      if(m.role !== 'assistant') continue;
-      const ref = (Array.isArray(m.referentTickets) && m.referentTickets.length) ? m.referentTickets
-        : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
-      if(ref.length){ referent = ref; break; }
+    if(!activeResultSet && !selectedTicketId){
+      for(let i = messages.length - 1; i >= 0; i--){
+        const m = messages[i];
+        if(m.role !== 'assistant') continue;
+        const ref = (Array.isArray(m.referentTickets) && m.referentTickets.length) ? m.referentTickets
+          : (Array.isArray(m.tickets) && m.tickets.length ? m.tickets : []);
+        if(ref.length){ referent = ref; break; }
+      }
     }
     /* v91.46: структурований follow-up контекст — ТІЛЬКИ з безпосередньо
        попередньої assistant-відповіді (активний контекст розмови). Жодного
@@ -118,11 +144,18 @@ MTAI.createChatController = function(deps){
       if(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) followUpQueryContext = m.queryContext;
       break;
     }
-    if(!isRetry){ messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() }); persist(); }
+    if(!isRetry){
+      messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() });
+      if(!persist()){
+        activeResultSet = null;
+        selectedTicketId = null;
+        emit('state_degraded');
+      }
+    }
     /* v91.46: структурований follow-up контекст (авторитетні фільтри
        попереднього query_tickets) — «покажи їх» успадковує ТІ САМІ фільтри
        на свіжому READ; повторно валідується клієнтом і сервером. */
-    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext });
+    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId });
     busy = false;
     emit('busy', false);
     if(outcome.ok){
@@ -130,9 +163,37 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
+      const resultStatus = outcome.resultSetStatus && typeof outcome.resultSetStatus === 'object' ? outcome.resultSetStatus : null;
+      if(outcome.resultSet){
+        activeResultSet = outcome.resultSet;
+        selectedTicketId = null;
+      }else{
+        if(outcome.selectedTicketId){
+          selectedTicketId = validateTicketId(outcome.selectedTicketId);
+        }else if(resultStatus && resultStatus.created === false && resultStatus.reason !== 'selected_ticket'){
+          selectedTicketId = null;
+        }
+        /* A turn whose ticket context differs from the stored list (other
+           filters, another search, no structured filters at all) invalidates
+           that list: «покажи 11-ю» must never silently resolve against a list
+           the conversation already left. Turns that select FROM the stored state
+           (reason 'selected_ticket') keep it. */
+        if(activeResultSet && resultStatus && resultStatus.subjectChanged === true && resultStatus.reason !== 'selected_ticket'
+           && (resultStatus.filtersKey == null || resultStatus.filtersKey !== activeResultSet.filtersKey)){
+          activeResultSet = null;
+        }
+      }
       messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets), queryContext:(outcome.queryContext && typeof outcome.queryContext === 'object' && !Array.isArray(outcome.queryContext)) ? outcome.queryContext : null });
-      persist();
-      emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null });
+      let emittedResultItems = outcome.resultItems || [];
+      let emittedPresentation = outcome.presentation || null;
+      if(!persist()){
+        activeResultSet = null;
+        selectedTicketId = null;
+        emittedResultItems = [];
+        emittedPresentation = null;
+        emit('state_degraded');
+      }
+      emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, shown:outcome.shown, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null, resultItems:emittedResultItems, presentation:emittedPresentation });
       return { ok:true };
     }
     lastFailed = question;
@@ -158,13 +219,14 @@ MTAI.createChatController = function(deps){
   }
   async function retry(){ return lastFailed ? send(lastFailed, { isRetry:true }) : { ok:false, skipped:true }; }
   function clear(){
-    messages = []; lastFailed = null; cooldownUntil = 0;
+    messages = []; lastFailed = null; cooldownUntil = 0; activeResultSet = null; selectedTicketId = null; chatSessionId = newSessionId();
     if(historyStorage){ try{ historyStorage.removeItem(HISTORY_KEY); }catch(_e){} }
     emit('cleared');
   }
   function history(){ return messages.slice(); }
   function isBusy(){ return busy; }
   function canRetry(){ return !!lastFailed; }
-  return { send: send, retry: retry, clear: clear, history: history, isBusy: isBusy, canRetry: canRetry, cooldownRemainingSec: cooldownRemainingSec };
+  function invalidateSelection(){ selectedTicketId = null; persist(); }
+  return { send: send, retry: retry, clear: clear, history: history, isBusy: isBusy, canRetry: canRetry, cooldownRemainingSec: cooldownRemainingSec, invalidateSelection:invalidateSelection };
 };
 })();

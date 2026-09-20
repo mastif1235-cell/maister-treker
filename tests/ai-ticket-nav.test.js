@@ -66,7 +66,7 @@ function bootActions(tickets){
     ]);
     assert.equal(out.length,8,'capped at 8 items');
     assert.equal(out[0].id,'123');
-    assert.equal(out[1].id,'a'.repeat(64),'id clipped at 64');
+    assert.equal(out[1].id,'a'.repeat(100),'valid id preserved exactly');
     assert.equal(out[1].address.length,200,'address clipped at 200');
     assert.equal(out[1].type.length,100,'type clipped at 100');
     console.log('PASS cards normalize: safe id filter, cap 8, field clipping');
@@ -96,6 +96,26 @@ function bootActions(tickets){
     const src=read('js/ai/ai-result-cards.js');
     assert.ok(!/\.href\s*=|insertAdjacentHTML|innerHTML\s*=/.test(src),'cards source: no href/HTML injection');
     console.log('PASS cards render: 1->1, 3->3 separate buttons, zero href/anchors');
+  }
+
+  /* 2b) deterministic list and selected-ticket presentation are code-owned. */
+  {
+    const doc=makeDoc();
+    const sandbox={console,document:doc,tickets:[{id:'A:1',date:'20.09.2026',city:'Dnipro',street:'Main',house:'1'}]};
+    sandbox.globalThis=sandbox; sandbox.window=sandbox;
+    vm.runInContext(read('js/ai/ai-config.js'),vm.createContext(sandbox),{filename:'js/ai/ai-config.js'});
+    vm.runInContext(read('js/ai/ai-result-cards.js'),vm.createContext(sandbox),{filename:'js/ai/ai-result-cards.js'});
+    const listBox=doc.createElement('div');
+    assert.equal(sandbox.MTAI.cards.renderResultList(listBox,[{ticket_id:'A:1',date:'20.09.2026',address:'Main 1'}],3,1),1);
+    assert.equal(listBox.children[0].children[0].textContent,'Знайдено 3 · показано 1');
+    const singleBox=doc.createElement('div');
+    assert.equal(sandbox.MTAI.cards.renderSingleLocal(singleBox,'A:1',function(){}),true);
+    const buttons=[];
+    (function walk(el){if(el.tagName==='BUTTON')buttons.push(el);(el.children||[]).forEach(walk);})(singleBox);
+    assert.equal(singleBox.children.length,1,'exactly one local card');
+    assert.equal(buttons.length,2,'single card exposes close and map only');
+    assert.ok(buttons.every(function(btn){return !/edit|delete|profile|редак|видал|профіл/i.test(btn.textContent);}));
+    console.log('PASS deterministic result list + exact one-card local presentation');
   }
 
   /* 3) openTicket (async): валідний id зі структурованою адресою -> goToTicketProfile + ai-return nav frame;
@@ -136,13 +156,28 @@ function bootActions(tickets){
     console.log('PASS unstructured ticket: zero editor fallback, stays in AI chat');
   }
 
-  /* 3c) числова нормалізація id (MCP '0871' vs локальний 871) */
+  /* 3c) ticket identity is exact: leading zeroes are significant. */
   {
     const {sandbox,doc}=bootActions([{id:871, city:'Таромське', street:'вул. Лісова'}]);
     const M=sandbox.MTAI;
-    assert.equal(await M.actions.openTicket('0871'),true,'string-with-zero matches numeric local id');
-    assert.deepEqual(sandbox.navCalls,['871'],'profile receives the REAL local id');
-    console.log('PASS openTicket id normalization: 0871 -> 871, profile gets local id');
+    assert.equal(await M.actions.openTicket('0871'),false,'0871 never aliases numeric local id 871');
+    assert.deepEqual(sandbox.navCalls,[],'no navigation for a different exact id');
+    console.log('PASS openTicket exact identity: 0871 does not alias 871');
+  }
+
+  /* 3c2) «12.3» is never rewritten into «123» (and vice versa). */
+  {
+    const {sandbox}=bootActions([
+      {id:'12.3', city:'Таромське', street:'вул. Лісова'},
+      {id:'123', city:'Таромське', street:'вул. Польова'}
+    ]);
+    const M=sandbox.MTAI;
+    assert.equal(await M.actions.openTicket('12.3'),true,'dotted id opens');
+    assert.deepEqual(sandbox.navCalls,['12.3'],'profile receives «12.3», never «123»');
+    sandbox.navCalls.length=0;
+    assert.equal(await M.actions.openTicket('123'),true);
+    assert.deepEqual(sandbox.navCalls,['123'],'the numeric id stays its own ticket');
+    console.log('PASS openTicket: «12.3» and «123» are different tickets');
   }
 
   /* 3d) IDB fallback: пустий масив у памʼяті, але заявка в IndexedDB */
@@ -179,6 +214,49 @@ function bootActions(tickets){
     assert.equal(res.ok,false);
     assert.equal(res.reason,'write_disabled');
     console.log('PASS actions security: create/update/delete strictly disabled (READ-ONLY)');
+  }
+
+  /* 2c) deterministic list meta + single-ticket card with the read-only IDB fallback. */
+  {
+    const doc=makeDoc();
+    const sandbox={ console, document:doc, tickets:[{id:'A:1',date:'20.09.2026',city:'Dnipro',street:'Main',house:'1'}],
+      ticketsDbRead:function(){ return Promise.resolve({status:'ok', value:[{id:'t-IDB',date:'21.09.2026',city:'Dnipro',street:'Second',house:'7'}]}); } };
+    sandbox.globalThis=sandbox; sandbox.window=sandbox;
+    vm.runInContext(read('js/ai/ai-config.js'),vm.createContext(sandbox),{filename:'js/ai/ai-config.js'});
+    vm.runInContext(read('js/ai/ai-result-cards.js'),vm.createContext(sandbox),{filename:'js/ai/ai-result-cards.js'});
+    const M=sandbox.MTAI;
+    /* «Знайдено 19 · показано 8» comes from authoritative numbers, never from the model */
+    const listBox=doc.createElement('div');
+    const items=[]; for(let i=0;i<8;i++) items.push({ticket_id:'t-'+i,date:'01.09.2026',address:'Main '+i});
+    assert.equal(M.cards.renderResultList(listBox,items,19,8),8);
+    assert.equal(listBox.children[0].children[0].textContent,'Знайдено 19 · показано 8');
+    /* exact id from the loaded list */
+    const cardBox=doc.createElement('div');
+    assert.equal(M.cards.renderSingleLocal(cardBox,'A:1',function(){}),true);
+    assert.equal(cardBox.children.length,1,'exactly one ticket card');
+    /* not in memory → read-only IDB lookup, exact id only */
+    const idbBox=doc.createElement('div');
+    let missing=0;
+    assert.equal(M.cards.renderSingleLocal(idbBox,'t-IDB',function(){},function(){ missing++; }),'pending');
+    assert.equal(idbBox.children.length,0,'card is drawn asynchronously');
+    await new Promise(function(r){ setTimeout(r,0); });
+    assert.equal(idbBox.children.length,1,'IDB fallback drew exactly one card');
+    assert.ok(idbBox.children[0].children[1].textContent.includes('Second'),'the exact IDB ticket is shown');
+    assert.equal(missing,0,'no false «unavailable» warning');
+    /* an invalid id never reaches the fallback */
+    const badBox=doc.createElement('div');
+    let badMissing=0;
+    assert.equal(M.cards.renderSingleLocal(badBox,'t IDB',function(){},function(){ badMissing++; }),false);
+    assert.equal(badMissing,1);
+    assert.equal(badBox.children.length,0);
+    /* nothing found anywhere → onMissing fires exactly once */
+    const goneBox=doc.createElement('div');
+    let goneMissing=0;
+    assert.equal(M.cards.renderSingleLocal(goneBox,'t-NOPE',function(){},function(){ goneMissing++; }),'pending');
+    await new Promise(function(r){ setTimeout(r,0); });
+    assert.equal(goneMissing,1);
+    assert.equal(goneBox.children.length,0);
+    console.log('PASS deterministic meta + single card with exact-id IDB fallback');
   }
 
   console.log('ALL ai-ticket-nav TESTS PASSED');

@@ -4,10 +4,14 @@
 (function(){
 'use strict';
 const MTAI = (typeof globalThis !== 'undefined' ? globalThis : window).MTAI;
+const validateTicketId = MTAI.ticketIds ? MTAI.ticketIds.validate : function(value){ const id=String(value==null?'':value).trim(); return /^[A-Za-z0-9._:-]{1,128}$/.test(id)?id:null; };
 MTAI.createClient = function(options){
   const fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch : null);
   const getConfig = options.getConfig; // () => ({backendUrl, bearer, model, provider})
   const timeoutMs = (options.timeoutMs || MTAI.config.LIMITS.timeoutMs);
+  /* Leaves headroom below /ask's 32768-character limit. Overridable so tests can
+     exercise the boundary and the honest context_too_large error. */
+  const maxRequestChars = Number(options.maxRequestChars) > 0 ? Math.floor(Number(options.maxRequestChars)) : 30000;
 
   /* Запасний парсер часу з ТЕКСТУ помилки (основне джерело — число від
      Worker'а). Розуміє і словесні форми, і Groq-формат тривалості
@@ -94,8 +98,8 @@ MTAI.createClient = function(options){
     const out = [];
     for(const item of raw){
       if(!item || typeof item !== 'object') continue;
-      const id = String(item.id == null ? '' : item.id).trim().slice(0, 64);
-      if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id)) continue;
+      const id = validateTicketId(item.id);
+      if(!id) continue;
       const sum = (typeof item.sum === 'number' && isFinite(item.sum)) ? String(Math.round(item.sum * 100) / 100) : String(item.sum == null ? '' : item.sum).trim().slice(0, 16);
       out.push({
         id: id,
@@ -121,8 +125,8 @@ MTAI.createClient = function(options){
     const out = [];
     for(const item of raw){
       if(!item || typeof item !== 'object') continue;
-      const id = String(item.id == null ? '' : item.id).trim().slice(0, 64);
-      if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id)) continue;
+      const id = validateTicketId(item.id);
+      if(!id) continue;
       out.push({
         id: id,
         date: String(item.date == null ? '' : item.date).trim().slice(0, 32),
@@ -214,6 +218,42 @@ MTAI.createClient = function(options){
     };
   }
 
+  function sanitizeResultSet(raw){
+    if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const chatSessionId = String(raw.chatSessionId == null ? '' : raw.chatSessionId).trim();
+    if(!/^[A-Za-z0-9._:-]{8,128}$/.test(chatSessionId) || Number(raw.version) !== 1) return null;
+    if(!Array.isArray(raw.ticketIds) || !raw.ticketIds.length || raw.ticketIds.length > 100) return null;
+    const ticketIds = [];
+    for(const value of raw.ticketIds){
+      const id = validateTicketId(value);
+      if(!id) return null;
+      ticketIds.push(id);
+    }
+    const createdAt = Number(raw.createdAt), expiresAt = Number(raw.expiresAt);
+    if(!isFinite(createdAt) || !isFinite(expiresAt) || expiresAt <= createdAt) return null;
+    /* An expired set is dropped HERE (and therefore also after a reload): a stale
+       list must never keep the ordinal selector alive or block the ordinary
+       referent path («пошук → відкрий її»). */
+    if(expiresAt <= Date.now()) return null;
+    return {version:1,id:String(raw.id == null ? '' : raw.id).slice(0,128),chatSessionId:chatSessionId,createdAt:createdAt,expiresAt:expiresAt,total:Math.max(0,Number(raw.total)||0),filtersKey:(typeof raw.filtersKey === 'string' && raw.filtersKey) ? raw.filtersKey.slice(0,300) : null,ticketIds:ticketIds};
+  }
+
+  function sanitizeResultItems(raw){
+    if(!Array.isArray(raw)) return [];
+    return raw.slice(0,100).map(function(item, idx){
+      if(!item || typeof item !== 'object') return null;
+      const id = validateTicketId(item.ticket_id);
+      if(!id) return null;
+      return {index:idx+1,ticket_id:id,date:String(item.date||'').slice(0,32),time:String(item.time||'').slice(0,16),address:String(item.address||'').slice(0,200),type:String(item.type||'').slice(0,100),sum:String(item.sum||'').slice(0,16),signal:String(item.signal||'').slice(0,32)};
+    }).filter(Boolean);
+  }
+
+  function sanitizePresentation(raw){
+    if(!raw || raw.kind !== 'single_ticket') return null;
+    const id = validateTicketId(raw.ticket_id);
+    return id ? {kind:'single_ticket',ticket_id:id} : null;
+  }
+
   async function ask(question, history, context){
     const cfg = getConfig();
     const ctrl = new AbortController();
@@ -234,6 +274,26 @@ MTAI.createClient = function(options){
       body.context = body.context || {};
       body.context.queryContext = ctxQuery;
     }
+    const session = String(context && context.chatSessionId || '').trim();
+    if(/^[A-Za-z0-9._:-]{8,128}$/.test(session)){
+      body.context = body.context || {};
+      body.context.chatSessionId = session;
+    }
+    const ctxResultSet = sanitizeResultSet(context && context.resultSet);
+    if(ctxResultSet){
+      body.context = body.context || {};
+      body.context.resultSet = ctxResultSet;
+    }
+    const ctxSelected = validateTicketId(context && context.selectedTicketId);
+    if(ctxSelected){
+      body.context = body.context || {};
+      body.context.selectedTicketId = ctxSelected;
+    }
+    while(body.history.length && JSON.stringify(body).length > maxRequestChars) body.history.shift();
+    if(JSON.stringify(body).length > maxRequestChars){
+      clearTimeout(timer);
+      return {ok:false,error:{kind:'context_too_large',message:'Контекст чата слишком велик. Очистите чат и повторите запрос.',detail:''}};
+    }
     try{
       const res = await fetchImpl(cfg.backendUrl + '/ask', {
         method:'POST',
@@ -243,7 +303,7 @@ MTAI.createClient = function(options){
       });
       const payload = await res.json().catch(function(){ return null; });
       if(res.ok && payload && payload.ok){
-        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery) };
+        return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), shown:Number.isFinite(Number(payload.shown))?Number(payload.shown):0, tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery), resultSet:sanitizeResultSet(payload.resultSet), resultItems:sanitizeResultItems(payload.resultItems), selectedTicketId:validateTicketId(payload.selectedTicketId), presentation:sanitizePresentation(payload.presentation), resultSetStatus:(payload.resultSetStatus&&typeof payload.resultSetStatus==='object')?payload.resultSetStatus:null };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };
     }catch(err){
@@ -281,7 +341,7 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, normalizeReferentTickets: normalizeReferentTickets, sanitizeHistory: sanitizeHistory, sanitizeLocalQuery: sanitizeLocalQuery };
+  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, normalizeReferentTickets: normalizeReferentTickets, sanitizeHistory: sanitizeHistory, sanitizeLocalQuery: sanitizeLocalQuery, sanitizeResultSet:sanitizeResultSet, sanitizeResultItems:sanitizeResultItems };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут
