@@ -155,9 +155,10 @@ assert.ok(uuidRe(linkSource),'the shape is a real pattern, not a missing match')
 const ui=fs.readFileSync(path.join(root,'js','address-book-ui.js'),'utf8');
 assert.ok(ui.includes('function mtTicketAddressApply'),'the UI exposes one link entry point');
 const editor=fs.readFileSync(path.join(root,'js','ticket-editor-domain.js'),'utf8');
-assert.ok(editor.includes('mtTicketAddressApply(calcState)'),'the ticket editor links the saved ticket');
+assert.ok(editor.includes('mtTicketAddressApply(calcState,previousTicket)'),'the ticket editor links the saved ticket against its stored version');
+assert.match(editor,/const previousTicket=editingTicketId\?tickets\.find\(t=>String\(t\.id\)===String\(editingTicketId\)\)\|\|null:null/,'the baseline is the stored ticket, not the form copy');
 const profile=fs.readFileSync(path.join(root,'js','ticket-profile-editor.js'),'utf8');
-assert.ok(profile.includes('mtTicketAddressApply(t)'),'the profile editor re-links every touched ticket');
+assert.ok(profile.includes('mtTicketAddressApply(t,previousAddress)'),'the profile editor re-links every touched ticket against its previous address');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 assert.ok(html.includes('js/address-book-link.js'),'the 2B module is registered in index.html');
 assert.ok(fs.readFileSync(path.join(root,'sw.js'),'utf8').includes('./js/address-book-link.js'),'the new modules are precached for offline boot');

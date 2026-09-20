@@ -86,5 +86,27 @@ test('Stage 2B/2C: зв\'язок заявки з довідником і без
     return {id:t.id,cityId:t.cityId,streetId:t.streetId,text:JSON.stringify(t)};
   });
   expect(after).toEqual(linkedBack);
+
+  /* 5) перейменування вулиці в довіднику БЕЗ alias + правка лише телефону через
+        калькулятор: пара id лишається (ідентичність), історичний текст не змінюється */
+  expect(await page.evaluate(id=>mtAddressBookChange(book=>MTAddressBook.update(book,'streets',id,{name:'Вулиця Привокзальна'})),directory.streetId)).toBe(true);
+  await page.evaluate(id=>editTicket(id),linkedBack.id);
+  await expect(page.locator('#screen-calculator')).toBeVisible();
+  await page.fill('#f_phone','(050)555-55-55');
+  await page.click('#saveTicketBtn');
+  await expect(page.locator('#toastRoot .toast',{hasText:'Заявку оновлено'}).first()).toBeVisible({timeout:20_000});
+  const afterRename=await page.evaluate(id=>{const t=tickets.find(x=>String(x.id)===String(id));return {id:t.id,cityId:t.cityId,streetId:t.streetId,street:t.street,phone:t.phone,count:tickets.length};},linkedBack.id);
+  expect(afterRename).toEqual({id:linkedBack.id,cityId:directory.cityId,streetId:directory.streetId,street:'Вул Привокзальна',phone:'(050)555-55-55',count:1});
+
+  /* 6) зміна вулиці: зв'язок іде за адресою — нова вулиця запам'ятовується
+        довідником і отримує ВЛАСНИЙ UUID, старий streetId не переноситься */
+  await page.evaluate(id=>editTicket(id),linkedBack.id);
+  await page.fill('#f_street','Вул Нова');
+  await page.click('#saveTicketBtn');
+  await expect(page.locator('#toastRoot .toast',{hasText:'Заявку оновлено'}).first()).toBeVisible({timeout:20_000});
+  const moved=await page.evaluate(id=>{const t=tickets.find(x=>String(x.id)===String(id));const entry=settings.addressBook.streets.find(s=>s.name==='Вул Нова');return {cityId:t.cityId,streetId:t.streetId,entryId:entry&&entry.id,entryCity:entry&&entry.cityId,street:t.street};},linkedBack.id);
+  expect(moved.entryId).toBeTruthy();
+  expect(moved).toEqual({cityId:directory.cityId,streetId:moved.entryId,entryId:moved.entryId,entryCity:directory.cityId,street:'Вул Нова'});
+  expect(moved.streetId).not.toBe(directory.streetId);
   expect(errors).toEqual([]);
 });

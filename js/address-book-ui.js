@@ -66,12 +66,12 @@ function mtAddressBookEdit(kind,id){
 /* Stage 2B: the ONE place where a ticket gets its directory link. The card is
    saved through saveTickets() afterwards; a link is written only for a unique
    directory match, so an ambiguous or unknown address stays unlinked. */
-function mtTicketAddressApply(ticket){
+function mtTicketAddressApply(ticket,previous){
   try{
     if(typeof MTTicketAddressLink==='undefined')return false;
     const book=settings&&settings.addressBook;
     if(!book)return false;
-    return MTTicketAddressLink.applyToTicket(ticket,book);
+    return MTTicketAddressLink.applyToTicket(ticket,book,previous||null);
   }catch(_error){return false;}
 }
 /* Stage 2C: read-only plan + explicit confirmation. Nothing is linked until the
@@ -92,7 +92,7 @@ function mtAddressBookRenderLinkCheck(){
     ['Неоднозначні — потрібне рішення майстра','ambiguous'],
     ['Немає в довіднику','no_match'],
     ['Помилковий або неповний адрес','malformed'],
-    ['Зв’язок застарів — текст заявки вже інший','stale'],
+    ['Зв’язок не підтверджується текстом (перейменування без alias або змінена адреса)','stale'],
     ['Пов’язані в іншому довіднику (не чіпаємо)','foreign']
   ];
   const counts=mtAddressBookLinkCounts();

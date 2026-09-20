@@ -98,7 +98,13 @@ function ticketFromConflictServer(serverTicket, current){
   }
   const extra = parseBackupNote(serverTicket && serverTicket.backupNote);
   if(!fullData && extra.fullData) fullData=extra.fullData;
-  if(fullData) Object.assign(next, fullData);
+  if(fullData){
+    Object.assign(next, fullData);
+    // Stage 2B: структуровані дані сервера повністю описують адресу — якщо в
+    // них немає пари cityId/streetId, локальна пара не має пережити чужий текст.
+    if(!Object.prototype.hasOwnProperty.call(fullData,'cityId')) delete next.cityId;
+    if(!Object.prototype.hasOwnProperty.call(fullData,'streetId')) delete next.streetId;
+  }
   const structuredMasterNote=fullData&&Object.prototype.hasOwnProperty.call(fullData,'masterNote');
   Object.assign(next, {
     id:String(serverTicket.id), date:serverTicket.date, time:serverTicket.time,
