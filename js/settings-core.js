@@ -162,6 +162,7 @@ function loadSettings(){
     // керується браузером/ОС, у нас лежить лише посилання на нього)
     appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:'', mapMarkerPreset:'classic',mapMarkerPreferences:null};
   const merged = migrateSyncSettingsV66(s, s ? Object.assign(base, s) : base);
+  if(!Object.prototype.hasOwnProperty.call(merged,'addressBook'))merged.addressBook=null;
   if(!['classic','large','compact','contrast'].includes(merged.mapMarkerPreset))merged.mapMarkerPreset='classic';
   merged.mapMarkerPreferences=normalizeMapMarkerPreferences(merged.mapMarkerPreferences,merged.mapMarkerPreset);
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —
@@ -186,6 +187,11 @@ function loadSettings(){
 
 function saveSettings(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
+  if(settings.addressBook&&typeof MTAddressBook!=='undefined'){
+    // Corrupt identity data must not prevent boot or unrelated settings writes.
+    // Preserve it verbatim for recovery; AddressBook mutations validate/fail closed.
+    try{Object.assign(settings,MTAddressBook.projection(settings.addressBook));}catch(_addressBookError){}
+  }
   settings = migrateSyncSettingsV66(settings, settings);
   /* Пункт 16 (аудит v91.27): tgBotToken і syncHmacSecret не потрапляють у
      localStorage plaintext. Поки vault синхронізований — записується копія

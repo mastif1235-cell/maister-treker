@@ -66,14 +66,25 @@ function startStaticServer(dir){
             return;
           }
           const ext = path.extname(filePath).toLowerCase();
-          res.writeHead(200, {
-            'Content-Type': MIME[ext] || 'application/octet-stream',
-            // no-store: оновлення sw.js/ресурсів у тестах має бути реальним,
-            // а кешуванням керує сам Service Worker (як у production).
-            'Cache-Control': 'no-store',
-            'Content-Length': stats.size
+          const stream = fs.createReadStream(filePath);
+          // SW failure tests remove files; teardown also removes the temporary
+          // tree. A successful stat does not guarantee a later open succeeds.
+          stream.once('error', () => {
+            if(res.destroyed) return;
+            if(res.headersSent) res.destroy();
+            else res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
           });
-          fs.createReadStream(filePath).pipe(res);
+          res.once('close', () => stream.destroy());
+          stream.once('open', () => {
+            if(res.destroyed){ stream.destroy(); return; }
+            res.writeHead(200, {
+              'Content-Type': MIME[ext] || 'application/octet-stream',
+              // Only SW owns caching in the fixture.
+              'Cache-Control': 'no-store',
+              'Content-Length': stats.size
+            });
+            stream.pipe(res);
+          });
         });
       }catch(_error){
         try{ res.writeHead(500).end('Server error'); }catch(_e){}
