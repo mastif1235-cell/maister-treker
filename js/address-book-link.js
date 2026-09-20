@@ -13,7 +13,10 @@
   'use strict';
   const LINKABLE={EXACT:true,ALIAS_EXACT:true};
   const str=value=>typeof value==='string'?value:'';
-  const shape=value=>typeof value==='string'&&/^[0-9a-fA-F-]{36}$/.test(value)?value:null;
+  /* The SAME shape the Worker's projection accepts (mcp/src/gas/mappers.js ident):
+   a directory id is a UUID or it is not an identity at all. */
+  const ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const shape=value=>typeof value==='string'&&ID_RE.test(value)?value:null;
   function has(book,kind,id){return !!(id&&book&&Array.isArray(book[kind])&&book[kind].some(item=>item&&item.id===id));}
   /* Resolution used for linking. Any non-unique outcome gives null ids. */
   function linkResolution(book,city,street){

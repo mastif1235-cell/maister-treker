@@ -191,8 +191,6 @@ function geoLinkOnly(value){
   return typeof value === 'string' && /^https:\/\//i.test(value) ? value : '';
 }
 
-/* A coordinate counts as present only when it is a real, non-empty number
-   (null/''/'null'/'undefined' must never become has_geo:true). */
 /* A directory id must be a UUID; anything else is dropped instead of being
    passed on as a half-trusted identity. */
 function ident(value){
@@ -200,6 +198,8 @@ function ident(value){
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text) ? text : '';
 }
 
+/* A coordinate counts as present only when it is a real, non-empty number
+   (null/''/'null'/'undefined' must never become has_geo:true). */
 function coordPresent(value){
   if(value == null) return false;
   const s = String(value).trim();

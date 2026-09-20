@@ -74,12 +74,6 @@ function mtTicketAddressApply(ticket){
     return MTTicketAddressLink.applyToTicket(ticket,book);
   }catch(_error){return false;}
 }
-function mtTicketAddressLabel(ticket){
-  try{
-    if(typeof MTTicketAddressLink==='undefined'||!settings||!settings.addressBook)return null;
-    return MTTicketAddressLink.labelFor(settings.addressBook,ticket);
-  }catch(_error){return null;}
-}
 /* Stage 2C: read-only plan + explicit confirmation. Nothing is linked until the
    master presses the button, and only EXACT/ALIAS_EXACT rows are ever proposed. */
 let mtAddressLinkPlanCache=null;

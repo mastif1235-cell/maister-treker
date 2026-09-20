@@ -142,6 +142,15 @@ assert.equal(LINK.linkState(book,hostile),'partial','a malformed id pair is part
 LINK.applyToTicket(hostile,{cityId:cityId('Таромське'),streetId:streetId('Таромське','Вул Привокзальна')});
 assert.equal(JSON.stringify(hostile),beforeHostile,'a partial/foreign-linked row is left byte-identical');
 
+/* ---------- G) id-shape parity with the Worker ---------- */
+/* The app and the MCP projection must accept exactly the same directory-id
+   shape, otherwise a row linked offline would look unlinked in /ask. */
+const linkSource=fs.readFileSync(path.join(root,'js','address-book-link.js'),'utf8');
+const workerSource=fs.readFileSync(path.join(root,'mcp','src','gas','mappers.js'),'utf8');
+const uuidRe=source=>(source.match(/\/\^\[0-9a-f\]\{8\}[^/]*\/i/g)||[])[0];
+assert.equal(uuidRe(linkSource),uuidRe(workerSource),'one UUID shape in the app and in the Worker projection');
+assert.ok(uuidRe(linkSource),'the shape is a real pattern, not a missing match');
+
 /* ---------- G) wiring ---------- */
 const ui=fs.readFileSync(path.join(root,'js','address-book-ui.js'),'utf8');
 assert.ok(ui.includes('function mtTicketAddressApply'),'the UI exposes one link entry point');
