@@ -210,6 +210,14 @@ test('UUID-first: alias city + linked rows by id, legacy rows by text; follow-up
   assert.equal(unscoped.directory.street_status, 'AMBIGUOUS');
   assert.deepEqual(unscoped.directory.street_candidates.sort(), ['Таромське — Вул Кобзаря', 'Шевченко — Вул Кобзаря']);
   assert.equal(unscoped.matched, 2, 'ambiguous in the directory → the Stage 1 text path decides (rows exist only in Таромське)');
+  const scopedById = await call(app, 'query_tickets', {mode:'count', city_id:TAROM.id, street:'Кобзаря'});
+  assert.equal(scopedById.matched, 2, 'an explicit city_id scopes a street name that exists in two cities');
+  assert.equal(scopedById.directory.street_id, KOBZ.id);
+  /* a city text the directory does not know never lets the street pick its own city */
+  const unknownCity = await call(app, 'query_tickets', {mode:'count', city:'Невідоме', street:'Привокзальная'});
+  assert.equal(unknownCity.matched, 0);
+  assert.equal(unknownCity.directory.city_status, 'NO_MATCH');
+  assert.equal(unknownCity.directory.street_id, undefined);
   /* rename + alias: old spelling → alias → same streetId; the user sees the new name */
   AB.update(book, 'streets', PRYV.id, {name:'Вулиця Залізнична', aliases:['Вул Привокзальна', 'Привокзальная']});
   assert.equal((await phonePush(app)).status, 200);

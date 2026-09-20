@@ -22,7 +22,7 @@ import {cleanStr, normalizeStem, matchScore, normalizeHouse, normalizeApartment,
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
-import {isDirectoryIndex, resolveDirectoryPlace, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
+import {isDirectoryIndex, resolveDirectoryCity, resolveDirectoryStreet, isResolvedStatus, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
 
 const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /* A directory id is passed on only in its canonical UUID shape; anything else
@@ -481,12 +481,23 @@ export function runSmartQuery(ctx, params){
       dirStreetId = paramStreetId; explicitStreetId = true;
       if(!dirCityId) dirCityId = directory.streets.get(paramStreetId).cityId;
     }
-    if((wantedCity && !dirCityId) || (wantedStreet && !dirStreetId)){
-      dirPlace = resolveDirectoryPlace(directory, dirCityId ? '' : (wantedCity || ''), dirStreetId ? '' : (wantedStreet || ''));
-      if(dirPlace.cityId && !dirCityId && (wantedCity || dirPlace.streetId)) dirCityId = dirPlace.cityId;
-      if(dirPlace.streetId && !dirStreetId) dirStreetId = dirPlace.streetId;
-      /* a street resolved inside an explicitly given city must belong to it */
-      if(dirStreetId && dirCityId && directory.streets.get(dirStreetId).cityId !== dirCityId) dirStreetId = null;
+    dirPlace = {cityStatus:null, streetStatus:null};
+    if(wantedCity && !dirCityId){
+      const cityHit = resolveDirectoryCity(directory, wantedCity);
+      dirPlace.cityStatus = cityHit.status;
+      if(isResolvedStatus(cityHit.status)) dirCityId = cityHit.cityId;
+      else if(cityHit.status === 'AMBIGUOUS') dirPlace.cityCandidates = cityHit.candidates;
+    }
+    /* the street is read from the directory only when its city is settled
+       (resolved, given as an id, or not asked at all): a city the directory
+       does not know must not be silently replaced by the street's own city */
+    if(wantedStreet && !dirStreetId && (!wantedCity || dirCityId)){
+      const streetHit = resolveDirectoryStreet(directory, dirCityId, wantedStreet);
+      dirPlace.streetStatus = streetHit.status;
+      if(isResolvedStatus(streetHit.status)){
+        dirStreetId = streetHit.streetId;
+        if(!dirCityId){ dirCityId = streetHit.cityId; dirPlace.cityStatus = dirPlace.cityStatus || 'FROM_STREET'; }
+      } else if(streetHit.status === 'AMBIGUOUS') dirPlace.streetCandidates = streetHit.candidates;
     }
   }
   /* every spelling the directory knows for the resolved place — legacy rows
