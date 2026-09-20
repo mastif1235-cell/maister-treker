@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createAskOrchestrator, isCardRequestWithoutTarget, detectExplicitOrdinal} from '../../src/ask/orchestrator.js';
+import {createAskOrchestrator, isCardRequestWithoutTarget, detectExplicitOrdinal, exactAddressCandidateId} from '../../src/ask/orchestrator.js';
 import {createResultSet, sanitizeIncomingResultSet} from '../../src/ask/result-set.js';
 import {TOOL_DEFINITIONS} from '../../src/tools/definitions.js';
 
@@ -428,6 +428,110 @@ test('F2: «Покажи карточку 5» is the 5th element of the set, nev
   /* a quantity is not an ordinal */
   assert.equal(detectExplicitOrdinal('Покажи 5 карточек'), null);
   assert.equal(detectExplicitOrdinal('Покажи карточку 5 грн'), null);
+});
+
+/* ---------- F4 (v91.51): exact street+house wins a card/open turn ---------- */
+
+const SAD_EXACT = {id:'t-sad19', date:'01.09.2026', time:'10:00', city:'Миколаївка 1', street:'Вул Садова', house:'19', address:'Миколаївка 1, Вул Садова 19', type:'Ремонт', sum:750};
+const SAD_SIMILAR = {id:'t-sad2a', date:'02.09.2026', time:'09:00', city:'Шевченко', street:'Вул Садова', house:'2а', address:'Шевченко, Вул Садова 2а', type:'Підключення', sum:900};
+const SAD_OTHER_CITY = {id:'t-sad19b', date:'03.09.2026', time:'08:00', city:'Миколаївка 2', street:'Вул Садова', house:'19', address:'Миколаївка 2, Вул Садова 19', type:'Ремонт', sum:800};
+
+function searchRows(rows){
+  return {search_tickets:async()=>({ok:true, data:{total_matched:rows.length, tickets:rows}})};
+}
+
+test('F4/T1+T2: an open or card turn opens exactly the named street+house, whatever the row order', async () => {
+  for(const [phrase, rows] of [
+    ['Открой заявку Садовая 19', [SAD_EXACT, SAD_SIMILAR]],
+    ['Открой карточку Садовая 19', [SAD_SIMILAR, SAD_EXACT]],   /* similar first on purpose */
+    ['Открой заявку на садовій 19', [SAD_EXACT, SAD_SIMILAR]]    /* inflected street form */
+  ]){
+    const g = groq([call('search_tickets',{query:'Садовая 19'}), done('Карточку показано нижче.')]);
+    const out = await createAskOrchestrator({groq:g, tools:searchRows(rows), toolDefs:TOOL_DEFINITIONS})
+      .handle(phrase, {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+    assert.deepEqual(out.presentation, {kind:'single_ticket', ticket_id:'t-sad19'}, phrase);
+    assert.equal(out.selectedTicketId, 't-sad19', phrase);
+    assert.deepEqual(out.tickets, [], phrase + ' renders no «similar» cards');
+    assert.equal(out.total, 1, phrase);
+  }
+});
+
+test('F4/T3: the same street+house in two cities is ambiguous unless the city is named', async () => {
+  /* T3 — no city in the question → nothing is guessed */
+  const g = groq([call('search_tickets',{query:'Садовая 19'}), done('Дві схожі.')]);
+  const out = await createAskOrchestrator({groq:g, tools:searchRows([SAD_EXACT, SAD_OTHER_CITY]), toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой заявку Садовая 19', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+  assert.equal(out.presentation, null, 'two exact rows → no deterministic open');
+  assert.equal(out.selectedTicketId, null);
+  /* T4b — the named city resolves it, using the same city filter as the tools */
+  const g2 = groq([call('search_tickets',{query:'Садовая 19'}), done('ok')]);
+  const out2 = await createAskOrchestrator({groq:g2, tools:searchRows([SAD_EXACT, SAD_OTHER_CITY]), toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой заявку Садовая 19 в Миколаївка 2', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+  assert.deepEqual(out2.presentation, {kind:'single_ticket', ticket_id:'t-sad19b'});
+  assert.deepEqual(out2.tickets, []);
+});
+
+test('F4/T4: a single exact row opens even when the city is named too', async () => {
+  const g = groq([call('search_tickets',{query:'Садовая 19'}), done('ok')]);
+  const out = await createAskOrchestrator({groq:g, tools:searchRows([SAD_EXACT, SAD_SIMILAR]), toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой заявку Садовая 19 в Миколаївка 1', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+  assert.deepEqual(out.presentation, {kind:'single_ticket', ticket_id:'t-sad19'});
+  assert.deepEqual(out.tickets, []);
+});
+
+test('F4/T5: an ordinary search intent never auto-opens a card', async () => {
+  const g = groq([call('search_tickets',{query:'Садовая 19'}), done('Знайшов дві заявки.')]);
+  const out = await createAskOrchestrator({groq:g, tools:searchRows([SAD_EXACT, SAD_SIMILAR]), toolDefs:TOOL_DEFINITIONS})
+    .handle('Покажи заявку Садовая 19', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+  assert.equal(out.presentation, null, '«покажи заявку X» stays a search');
+  assert.equal(out.selectedTicketId, null);
+  assert.deepEqual(out.tickets, [], 'an ordinary search renders no visible cards');
+  assert.equal(out.total, 2);
+});
+
+test('F4/T6+T7: numbers that are not an address are never a house', async () => {
+  /* T6 — «за 1500» is a sum, «-20» is a signal, «5 заявок» is a quantity */
+  assert.equal(exactAddressCandidateId('Сколько роутеров за 1500', [
+    {id:'t-a', street:'Вул Лісна', house:'1500'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  assert.equal(exactAddressCandidateId('Открой заявку с сигналом -20', [
+    {id:'t-a', street:'Вул Лісна', house:'20'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  assert.equal(exactAddressCandidateId('Дай 5 заявок', [
+    {id:'t-a', street:'Вул Лісна', house:'5'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  /* an address number followed by a date/currency word is not a house either */
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 12 сентября', [
+    {id:'t-a', street:'Вул Садова', house:'12'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19 грн', [
+    {id:'t-a', street:'Вул Садова', house:'19'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  /* a street that no received row has is not an address target */
+  assert.equal(exactAddressCandidateId('Открой заявку Мостова 19', [
+    {id:'t-a', street:'Вул Садова', house:'19'}, {id:'t-b', street:'Вул Садова', house:'3'}]), null);
+  /* T7 — «Покажи карточку 5» stays the F2 ordinal, never house=5 */
+  let modelCalls = 0;
+  const noSet = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Покажи карточку 5', {chatSessionId:'chat-session-1'});
+  assert.equal(modelCalls, 0);
+  assert.equal(noSet.presentation, null);
+  assert.equal(noSet.resultSetStatus.reason, 'ordinal_without_result_set');
+  const seen = [];
+  const withSet = await createAskOrchestrator({groq:groq([call('get_ticket',{ticket_id:'5'}), done('ok')]), tools:ordinalTools(seen), toolDefs:TOOL_DEFINITIONS})
+    .handle('Покажи карточку 5', {chatSessionId:'chat-session-1', resultSet:nineteenSet(), now:new Date('2026-09-20T12:00:01Z')});
+  assert.deepEqual(seen, ['t-05'], 'the ordinal still resolves through the set, not through a house');
+  assert.deepEqual(withSet.presentation, {kind:'single_ticket', ticket_id:'t-05'});
+});
+
+test('F4: nothing is opened when there is no exact row, and a single row needs no F4', async () => {
+  /* zero exact matches → the safe current behaviour is kept */
+  const g = groq([call('search_tickets',{query:'Садовая 19'}), done('Точного збігу немає.')]);
+  const out = await createAskOrchestrator({groq:g, tools:searchRows([SAD_SIMILAR, {id:'t-sad24', date:'04.09.2026', city:'Миколаївка 1', street:'Вул Садова', house:'24'}]), toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой заявку Садовая 19', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
+  assert.equal(out.presentation, null);
+  assert.equal(out.selectedTicketId, null);
+  /* the helper itself never invents a candidate from a single row */
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [SAD_EXACT]), null);
+  /* and a target-less phrase produces no address target at all */
+  assert.equal(exactAddressCandidateId('Дай карточку', [SAD_EXACT, SAD_SIMILAR]), null);
+  /* rows without structured street/house cannot be matched at all */
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [{id:'a', address:'Миколаївка 1, Вул Садова 19'}, {id:'b'}]), null);
 });
 
 /* ---------- public /mcp contract + LLM-visible toolset ---------- */

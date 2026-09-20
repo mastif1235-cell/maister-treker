@@ -23,6 +23,10 @@ import {renumberSequentialLists} from './format.js';
 import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters, isAnaphoricListFollowUp} from './query-context.js';
 import {validateTicketId} from './ticket-id.js';
 import {createResultSet, sanitizeIncomingResultSet, validChatSessionId} from './result-set.js';
+/* F4 reuses the address normalization the READ tools themselves use — the same
+   street identity, the same house normalization. No new fuzzy system. */
+import {normalizeHouse, matchScore, placeIdentity, cleanStr} from './address.js';
+import {cityFilterAccepts} from './canonical.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -323,6 +327,103 @@ export function isCardRequestWithoutTarget(question){
     return false;                       /* meaningful word = a new target */
   }
   return verbs > 0 && nouns > 0;
+}
+
+/* F4: exact address target of a card/open turn. The phone shows a list of
+   «similar» rows («Садовая 19» + «Садовая 2а») and the user then asks to open
+   the exact one; the code must pick it from the STRUCTURED fields of the rows
+   the turn already received — never from the model's text, never by date, never
+   «the first row».
+
+   Safety rules:
+   - a house number counts only right after a street candidate (the number is
+     never taken on its own: «роутер за 1500», «сигнал -20», «5 заявок» and
+     «покажи карточку 5» cannot produce a house);
+   - a street candidate must match the street of a received row through the
+     existing normalization (placeIdentity / street matching), so a random word
+     before a number is discarded;
+   - exactly ONE row must match street+house. Zero, several, or an
+     unextractable target → the caller keeps its safe behaviour (no guessing);
+   - a city named in the question may only NARROW several candidates, using the
+     same city filter as the tools. */
+const HOUSE_TOKEN_RE = /^\d{1,4}[а-яіїєґa-z]?$/u;
+const HOUSE_STOP_AFTER = /^(?:грн|грив|uah|₴|шт|штук|заявок|заявки|заявка|карточок|карток|раз|разів|січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня|января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)$/u;
+
+function questionWords(question){
+  return String(question == null ? '' : question).toLowerCase()
+    .replace(/[!?.,;:"'«»()]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/* The house token is kept verbatim (normalizeHouse only strips корпус/кв). */
+function sameHouse(rowHouse, wantedHouse){
+  const a = normalizeHouse(rowHouse), b = normalizeHouse(wantedHouse);
+  return !!a && !!b && a === b;
+}
+
+/* Same street semantics as the READ tools (identity first, then a strict
+   spelling variant of the same name) — deliberately NOT the 0.75 fallback, so
+   an exact target can never be satisfied by a merely similar street. */
+function sameStreet(rowStreet, wantedStreet){
+  const a = placeIdentity(rowStreet), b = placeIdentity(wantedStreet);
+  if(a && b && a === b) return true;
+  return matchScore(rowStreet, wantedStreet) >= 0.92;
+}
+
+function structuredRow(row){
+  if(!row || typeof row !== 'object') return null;
+  const street = cleanStr(row.street), house = cleanStr(row.house);
+  if(!street || !house) return null;
+  const id = validateTicketId(row.id);
+  if(!id) return null;
+  return {id:id, street:row.street, house:row.house, city:cleanStr(row.city)};
+}
+
+export function exactAddressCandidateId(question, rows){
+  const list = Array.isArray(rows) ? rows.map(structuredRow).filter(Boolean) : [];
+  if(list.length < 2) return null;
+  const words = questionWords(question);
+  if(!words.length) return null;
+  /* Street + house pairs: the number must follow a street candidate. */
+  const matched = new Map();
+  const rest = [];
+  for(let i = 0; i < words.length; i++){
+    if(i + 1 < words.length && HOUSE_TOKEN_RE.test(words[i + 1]) && !HOUSE_STOP_AFTER.test(words[i + 2] || '')){
+      const candidates = [];
+      for(let len = 3; len >= 1; len--){
+        if(i - len + 1 < 0) continue;
+        candidates.push(words.slice(i - len + 1, i + 1).join(' '));
+      }
+      let usedPair = false;
+      for(const streetCand of candidates){
+        const hits = list.filter(function(row){ return sameStreet(row.street, streetCand) && sameHouse(row.house, words[i + 1]); });
+        if(hits.length){
+          for(const row of hits) matched.set(row.id, row);
+          usedPair = true;
+          break;
+        }
+      }
+      if(usedPair){ i += 1; continue; }               /* the house token is consumed */
+    }
+    rest.push(words[i]);
+  }
+  if(matched.size === 1) return Array.from(matched.keys())[0];
+  if(matched.size < 2) return null;
+  /* Several rows share the same street+house: only an explicitly named city may
+     narrow them. Anything else stays ambiguous (no guessing). */
+  const namedCity = function(row){
+    if(!row.city) return false;
+    for(let i = 0; i < rest.length; i++){
+      for(let len = 1; len <= 3 && i + len <= rest.length; len++){
+        if(cityFilterAccepts(row.city, rest.slice(i, i + len).join(' '), '')) return true;
+      }
+    }
+    return false;
+  };
+  const narrowed = [];
+  for(const row of matched.values()) if(namedCity(row)) narrowed.push(row.id);
+  return narrowed.length === 1 ? narrowed[0] : null;
 }
 
 /* Explicit ordinal selection INSIDE the active chat result set («покажи 11-ю»,
@@ -896,10 +997,19 @@ export function createAskOrchestrator(options){
         else if(toolTotals.length) resultSetStatus = {created:false, reason:'legacy_tool', subjectChanged:true, filtersKey:null};
         else resultSetStatus = {created:false, reason:'no_list_result', subjectChanged:false, filtersKey:null};
       }
+      /* F4: an open/card turn whose rows contain exactly one row matching the
+         street+house the user named opens THAT row — the «similar» ones never
+         reach the UI. Applied only when the turn brought several rows of its
+         own (a fresh tool result), never on a single-row or list-authoritative
+         turn, and only when the model itself did not select a single ticket. */
+      let exactAddressId = null;
+      if(!authoritative && !ordinalLock && selectedIds.size !== 1 && (intent === 'open' || intent === 'cards')){
+        if(collectedTickets.length > 1) exactAddressId = exactAddressCandidateId(questionText, collectedTickets);
+      }
       let selectedTicketId = null;
       let presentation = null;
-      if(!authoritative && selectedIds.size === 1){
-        selectedTicketId = Array.from(selectedIds)[0];
+      if(!authoritative && (selectedIds.size === 1 || exactAddressId)){
+        selectedTicketId = exactAddressId || Array.from(selectedIds)[0];
         presentation = {kind:'single_ticket', ticket_id:selectedTicketId};
         cards = [];
         referentTickets = [];
