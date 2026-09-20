@@ -66,8 +66,8 @@ export const ASK_SYSTEM_PROMPT = [
   '11) Структурований пошук/кількості/групи/суми — ПЕРШОЮ ЧЕРГОЮ query_tickets: фільтри (дати, місто/вулиця/будинок, тип, оплата, сума, сигнал, матеріали й роботи з ціною самої позиції, телефон/договір/MAC, напарник) та режими exists|count|list|group|stats; якщо період відомий — звужуй date_from/date_to. Числа, суми, унікальні вулиці/будинки/міста бери ЛИШЕ з його метаданих (matched, item_totals, groups, stats, analytics) — ніколи не рахуй по видимих рядках; ліміт сторінки не є загальною кількістю. Знайти заявку за адресою (частине слово достатньо: «мостова», без «вул./ул.») → також find_tickets_by_address (розуміє UA/RU, відмінки, будинки; при ambiguous=true запитай уточнення). Реальні назви матеріалів/робіт — list_catalog. Вільний текст/телефон — search_tickets. Вулиці/міста, де Є заявки — list_places; довідник адрес майстра (усі відомі вулиці міста, з aliases) — list_directory.',
   '11а) Адресні питання (названо вулицю, вулицю+будинок, населений пункт+вулицю, квартиру, «у якому місті ця адреса», «знайди/відкрий заявку за адресою») шукай ТІЛЬКИ через query_tickets (окремі поля city/street/house/apartment) або find_tickets_by_address (адреса одним рядком; місто/вулицю/будинок бери з його resolved). НЕ роби search_tickets основним шляхом для адресних питань і не передавай у нього вулицю/будинок/адресу, якщо адресу можна розібрати структурно: search_tickets — це лише вільний текст заявки, телефон, теги, нотатки, абонент та інші неструктуровані поля.',
   '11б) Ідентичність адрес (довідник): у рядках заявок можуть бути службові поля cityId/streetId — це ідентифікатори довідника, а місто/вулиця текстом — це історія та показ. Якщо результати інструмента містять resolved.city_id/resolved.street_id (або поля cityId/streetId у заявці) — вважай їх авторитетними для ідентичності: два різні написання з однаковим id це ОДНА вулиця, різні id — РІЗНІ вулиці. Заявки без id (старі) порівнюй текстом, як і раніше; ніколи не вигадуй id і ніколи не друкуй id/UUID користувачу — відповідай назвами.',
-  '11в) ДОВІДНИК ≠ ЗАЯВКИ. Питання про ДОВІДНИК («які вулиці є/існують у Шевченко», «чи є така вулиця», «які міста в довіднику») → list_directory (city=назва або alias): це особистий накопичувальний довідник адрес майстра з телефону (UUID, поточна назва, aliases, active), незалежно від того, чи були там заявки; за замовчуванням лише активні записи (архівних лише згадай кількість). Питання про ЗАЯВКИ («на яких вулицях Шевченко були заявки», «де є заявки», «скільки заявок на цій вулиці») → query_tickets (mode=group, group_by=street, city=…) або list_places — це вулиці, ДЕ Є ЗАЯВКИ. Обидва списки можуть збігатися, але це РІЗНІ джерела: перелік із заявок ніколи не називай «повним довідником». Якщо list_directory повернув available=false — довідник ще не переданий з телефону: відповідай із list_places і прямо скажи, що це вулиці із заявок, а не довідник. Якщо вулиці немає серед заявок — кажи «заявок за цією вулицею не знайдено», не стверджуй, що вулиці не існує.',
-  '11г) UUID-first: довідник — джерело ідентичності адреси. Показуй користувачу ПОТОЧНУ назву (name); aliases — старі або інші написання тієї самої вулиці/міста (перейменування, UA/RU) і НЕ роблять її іншою. Якщо у відповіді інструмента є directory.city_id/street_id, resolved.city_id/street_id або resolved_filters.city_id/street_id — у наступних уточненнях («а скільки з них…», «покажи їх», «а за серпень?») передавай ці city_id/street_id у query_tickets замість повторного підбору назви; невідомий id сервер сам проігнорує на користь тексту. Якщо directory.street_candidates/city_candidates не порожні — вулиця/місто є у кількох місцях довідника: запитай уточнення, не обирай сам.',
+  '11в) Вулиці населеного пункту. Звичайне питання без згадки заявок («які вулиці є в Шевченко», «які вулиці у мене є в Шевченко», «покажи вулиці Шевченко», «список вулиць у Шевченко», «чи є така вулиця») → ОДРАЗУ list_directory (city=назва як у питанні): це власний довідник адрес майстра, куди вулиці потрапляють автоматично з його заявок; відповідай простим списком («У Шевченко у тебе 7 вулиць: …», кожна вулиця з нового рядка), за замовчуванням лише активні (архівних лише згадай кількість). Питання саме про ЗАЯВКИ («на яких вулицях Шевченко були/є заявки», «де були ремонти/підключення», «на яких вулицях були заявки в серпні/сьогодні») → query_tickets (mode=group, group_by=street, city=…, дати) або list_places — там лише вулиці, де були заявки. Інструмент обирай САМ за формулюванням: НІКОЛИ не питай користувача, який список йому потрібен («довідник чи заявки?»), і не протиставляй йому ці списки — для нього це один довідник його адрес. Якщо list_directory повернув available=false — відповідай списком із list_places і лише коротко зазнач, що це вулиці, де були заявки. Якщо вулиці немає серед заявок — кажи «заявок за цією вулицею не знайдено», не стверджуй, що вулиці не існує.',
+  '11г) Ідентичність адреси: показуй користувачу ПОТОЧНУ назву (name); aliases — старі або інші написання тієї самої вулиці/міста (перейменування, UA/RU) і НЕ роблять її іншою. Якщо у відповіді інструмента є directory.city_id/street_id, resolved.city_id/street_id або resolved_filters.city_id/street_id — у наступних уточненнях («а скільки з них…», «покажи їх», «а за серпень?») передавай ці city_id/street_id у query_tickets замість повторного підбору назви; невідомий id сервер сам проігнорує на користь тексту. Якщо directory.street_candidates/city_candidates не порожні — вулиця/місто є у кількох місцях довідника: запитай, який саме, не обирай сам.',
   '12) Рівень оптичного сигналу (dBm): «нижче -25» і «гірше -25» означають строго signal_worse_than=-25: -25 НЕ входить, -25.1/-26/-32 входять. «-25 або гірше» та «-25 і хуже» означають signal_worse_or_equal=-25: -25 входить. Якщо signal порожній — скажи «Рівень сигналу не вказано». НЕ вигадуй значень.',
   '13) Статистика/заробіток → get_statistics, get_reports або query_tickets mode=stats; зміни/години/напарники → get_shifts (підтримує coworker і повертає by_coworker); заявки за дату → get_tickets_by_date.',
   'Контекст діалогу (Referent Resolution):',
@@ -84,7 +84,8 @@ export const ASK_SYSTEM_PROMPT = [
   '20) ТЕХНІЧНІ ІДЕНТИФІКАТОРИ (UUID, №754b…): НІКОЛИ не показуй у тексті звичайної відповіді — вони служать лише для внутрішніх кнопок застосунку. Посилайся на порядковий номер (№1, №2) або адресу й дату.',
   '21) Напарник: якщо він записаний у самій заявці — кажи прямо; якщо відомий лише зі зміни того ж дня — так і кажи: «збігається зі зміною цього дня», НЕ стверджуй, що саме цю заявку зроблено разом. Години з напарником за період — через get_shifts.',
   '22) Геолокація: відповідай лише «є/нема» за фактом даних; координати не вигадуй і не друкуй. «Покажи на карті» — картка з кнопкою «На карті», яку відкриває застосунок.',
-  '23) Мережеві точки (ФОБ/муфта/вузол) зберігаються ЛИШЕ на пристрої: на такі питання відповідай, що локальний пошук виконав застосунок і результати показано під повідомленням; адреси, координати чи карти точок не вигадуй.'
+  '23) Мережеві точки (ФОБ/муфта/вузол) зберігаються ЛИШЕ на пристрої: на такі питання відповідай, що локальний пошук виконав застосунок і результати показано під повідомленням; адреси, координати чи карти точок не вигадуй.',
+  '24) Внутрішній устрій — не для користувача. У звичайній відповіді НЕ згадуй назви інструментів, слова DIRECTORY/TICKETS, «джерело даних», aliases, UUID, cityId/streetId, id, Worker, KV, «довідник vs заявки» і не пояснюй, звідки взято список — просто відповідай по суті («У Шевченко у тебе 7 вулиць: …»). Технічні деталі доречні лише тоді, коли користувач сам прямо питає про устрій застосунку чи його дані.'
 ].join('\n');
 
 /* Рядок контексту дати: модель не має власного «сьогодні» — без нього
@@ -560,6 +561,85 @@ export function ordinalOnlyRequest(question, ordinal){
   return rest.trim() === '';
 }
 
+/* Stage 2D follow-up: the plain «which streets are there in <city>» question.
+   For the master this is ONE question about his own address book, so it is
+   answered from list_directory deterministically — no model round trip, no
+   «directory or tickets?» clarification, no internals in the text. Any word
+   that makes it a question about TICKETS (заявки, ремонти, підключення, були,
+   periods, dates) keeps the ordinary model flow with the ticket tools. */
+const STREET_LIST_TICKET_WORDS = /заявк|заяв\b|ремонт|підключ|подключ|встанов|установ|виклик|вызов|роб[іо]т|обслуг|абонент|клієнт|клиент|сигнал|сум[аи]\b|грн|оплат|бул[аиов]?\b|был[аио]?\b|были|є заявк|есть заявк|де я\b|где я\b|коли\b|когда\b|сьогодні|сегодня|вчора|вчера|тижд|недел|місяц|месяц|рік\b|року\b|год[ау]?\b|\d{2}\.\d{2}|січ|лют|берез|квіт|трав|черв|лип|серп|верес|жовт|листоп|груд|январ|феврал|март|апрел|ма[йя]\b|июн|июл|август|сентябр|октябр|ноябр|декабр|скільки|сколько|найчаст|чаще|більше|больше|менше|меньше|нов[іиы]\b|остан|последн/i;
+const STREET_LIST_W = '(?![\\p{L}\\p{N}])';   /* Cyrillic-safe word end (\b is ASCII-only) */
+const STREET_LIST_RE = new RegExp('^(?:(?:а|и|і|ну|то|скажи|скажіть|подскажи|підкажи|підкажіть)[,\\s]+)?' +
+  '(?:' +
+    '(?:які|яки|какие|какіе|котрі)\\s+(?:саме\\s+|именно\\s+)?(?:вулиці|вулиц|улицы|улиц)' + STREET_LIST_W +
+      '(?:\\s+(?:у\\s+мене|у\\s+меня|є|есть|існують|существуют|имеются|наявні|записані|записаны)' + STREET_LIST_W + ')*' +
+    '|(?:покажи|покажіть|покажите|показать|показати|виведи|выведи|дай|дайте|перелічи|перечисли|перерахуй)\\s+(?:мені\\s+|мне\\s+)?(?:всі\\s+|все\\s+|усі\\s+)?' +
+      '(?:список\\s+вулиць|список\\s+улиц|перелік\\s+вулиць|вулиці|вулиц|улицы|улиц)' + STREET_LIST_W +
+    '|(?:список|перелік)\\s+(?:вулиць|улиц|вулиці|улицы)' + STREET_LIST_W +
+  ')' +
+  '(?:\\s+(?:в|у|во|по|для)' + STREET_LIST_W + ')?\\s*[-—:]?\\s*(\\p{L}[\\p{L}\\p{N}\'’ .\\-]*)$', 'iu');
+const STREET_LIST_STOP = new Set(['є', 'есть', 'існують', 'существуют', 'имеются', 'наявні', 'записані', 'записаны', 'у', 'в', 'во', 'по', 'для', 'мене', 'меня', 'мені', 'мне', 'всі', 'все', 'усі', 'саме', 'именно']);
+const STREET_LIST_PLACE_PREFIX_RE = /^(?:населеному\s+пункті|населенном\s+пункте|населеного\s+пункту|селищі|селище|селі|село|місті|місто|поселке|посёлке|поселок|посёлок|пгт|смт|городе|город|деревне|деревня|с\.|м\.|г\.|п\.)\s+/i;
+
+export function streetListQuestion(question){
+  const text = String(question == null ? '' : question).trim().replace(/\s+/g, ' ').replace(/[\s?!.…,;:]+$/, '');
+  if(!text || text.length > 120) return null;
+  if(STREET_LIST_TICKET_WORDS.test(text)) return null;
+  const m = STREET_LIST_RE.exec(text);
+  if(!m) return null;
+  let city = String(m[1] || '').replace(/^(?:у\s+мене|у\s+меня)\s+(?:є|есть)?\s*(?:в|у|во)?\s*/i, '').replace(STREET_LIST_PLACE_PREFIX_RE, '').replace(/[«»"']/g, '').trim();
+  if(!city || city.length > 60 || /\d{3,}/.test(city) || !/\p{L}/u.test(city)) return null;
+  if(STREET_LIST_STOP.has(city.split(' ')[0].toLowerCase())) return null;
+  /* the city is a short place name, not a sentence */
+  if(city.split(' ').length > 3) return null;
+  const lang = /вулиц/i.test(text) ? 'uk' : (/улиц/i.test(text) ? 'ru' : 'uk');
+  return {city, lang};
+}
+
+function streetListWord(count, lang){
+  const n = Math.abs(count) % 100, n1 = n % 10;
+  if(lang === 'ru'){
+    if(n > 10 && n < 20) return 'улиц';
+    if(n1 === 1) return 'улица';
+    if(n1 >= 2 && n1 <= 4) return 'улицы';
+    return 'улиц';
+  }
+  if(n > 10 && n < 20) return 'вулиць';
+  if(n1 === 1) return 'вулиця';
+  if(n1 >= 2 && n1 <= 4) return 'вулиці';
+  return 'вулиць';
+}
+
+/* Deterministic text for a list_directory result; null when the model should
+   continue (directory not pushed, city unknown to the directory, malformed). */
+export function directoryStreetListAnswer(intent, toolText){
+  let parsed = null;
+  try{ parsed = JSON.parse(toolText); }
+  catch(_err){ return null; }
+  const result = parsed && parsed.result;
+  if(!result || result.available !== true) return null;
+  const ru = intent.lang === 'ru';
+  if(result.ambiguous && Array.isArray(result.candidates) && result.candidates.length){
+    const names = result.candidates.map(function(c){ return c.name; }).filter(Boolean);
+    return (ru ? 'Уточни, какой именно населённый пункт: ' : 'Уточни, який саме населений пункт: ') + names.join(ru ? ' или ' : ' чи ') + '?';
+  }
+  if(!result.city || !Array.isArray(result.streets)) return null;
+  const cityName = String(result.city.name || intent.city);
+  const streets = result.streets.map(function(street){ return String(street && street.name || '').trim(); }).filter(Boolean);
+  const archived = Number(result.archived_street_count) || 0;
+  if(!streets.length){
+    return (ru
+      ? 'В ' + cityName + ' у тебя пока нет ни одной улицы — они добавляются автоматически с первой заявкой в этом населённом пункте.'
+      : 'У ' + cityName + ' у тебе поки немає жодної вулиці — вони додаються автоматично з першою заявкою в цьому населеному пункті.') +
+      (archived ? (ru ? ' В архиве: ' + archived + '.' : ' В архіві: ' + archived + '.') : '');
+  }
+  const head = ru
+    ? 'В ' + cityName + ' у тебя ' + streets.length + ' ' + streetListWord(streets.length, 'ru') + ':'
+    : 'У ' + cityName + ' у тебе ' + streets.length + ' ' + streetListWord(streets.length, 'uk') + ':';
+  const tail = archived ? (ru ? '\nЕщё ' + archived + ' в архиве.' : '\nЩе ' + archived + ' в архіві.') : '';
+  return head + '\n' + streets.map(function(name){ return '- ' + name; }).join('\n') + tail;
+}
+
 export function createAskOrchestrator(options){
   const groq = options.groq;
   const tools = options.tools;
@@ -875,6 +955,20 @@ export function createAskOrchestrator(options){
        id), and the model may neither re-order nor replace it with a guessed
        ticket_id. Out-of-range numbers get a deterministic honest answer. */
     let ordinalLock = null;
+    const lockOrdinal = async function(ordinal, ordinalId){
+      const lockCapture = {
+        setQueryEnvelope:function(){},
+        queryContext:null,
+        authoritativeFollowUp:false,
+        authoritativeText:null,
+        activeResultSet:activeResultSet,
+        listCandidates:[],
+        selectedIds:selectedIds,
+        selectedErrors:selectedErrors
+      };
+      const lockText = await executeTool({name:'get_ticket', argsRaw:JSON.stringify({ticket_id:ordinalId})}, collectedTickets, toolTotals, lockCapture);
+      ordinalLock = {index:ordinal.index, ticketId:ordinalId, text:lockText};
+    };
     if(activeResultSet.ok){
       const ordinal = detectExplicitOrdinal(questionText);
       if(ordinal){
@@ -895,19 +989,22 @@ export function createAskOrchestrator(options){
             resultSetStatus:{created:false, reason:'result_index_out_of_range'}
           };
         }
-        const ordinalId = ordinalIds[ordinal.index - 1];
-        const lockCapture = {
-          setQueryEnvelope:function(){},
-          queryContext:null,
-          authoritativeFollowUp:false,
-          authoritativeText:null,
-          activeResultSet:activeResultSet,
-          listCandidates:[],
-          selectedIds:selectedIds,
-          selectedErrors:selectedErrors
-        };
-        const lockText = await executeTool({name:'get_ticket', argsRaw:JSON.stringify({ticket_id:ordinalId})}, collectedTickets, toolTotals, lockCapture);
-        ordinalLock = {index:ordinal.index, ticketId:ordinalId, text:lockText};
+        await lockOrdinal(ordinal, ordinalIds[ordinal.index - 1]);
+      }
+    }
+    /* No chat result set, but the previous answer brought referent tickets in
+       the very order the model was shown («1) … 2) …»): an explicit ordinal
+       («открой вторую карточку») is resolved HERE from that order, exactly like
+       the result-set lock above, so the selection is recorded deterministically
+       even when the model re-runs a search instead of get_ticket. The follow-up
+       «покажи её» then opens THIS ticket without a second clarification. */
+    if(!activeResultSet.ok && contextTickets.length){
+      const ordinal = detectExplicitOrdinal(questionText);
+      if(ordinal && ordinal.index <= contextTickets.length){
+        const intent = cardIntentFor(questionText);
+        if(intent === 'open' || intent === 'cards' || ordinalOnlyRequest(questionText, ordinal)){
+          await lockOrdinal(ordinal, contextTickets[ordinal.index - 1].id);
+        }
       }
     }
     /* No usable list at all: an explicit ordinal cannot be resolved, so the
@@ -990,6 +1087,47 @@ export function createAskOrchestrator(options){
         resultSetStatus:{created:false, reason:'no_selected_ticket', subjectChanged:false, filtersKey:null}
       };
     }
+    /* Stage 2D follow-up: «які вулиці є в <місті>» is answered from the
+       master's own address book right here — no «directory or tickets?»
+       question, no internals. When the directory cannot answer (not pushed,
+       unknown city) the tool result is handed to the model with the same rule. */
+    let streetListLine = '';
+    const streetList = ordinalLock ? null : streetListQuestion(questionText);
+    if(streetList){
+      const directoryText = await executeTool({name:'list_directory', argsRaw:JSON.stringify({city:streetList.city})}, collectedTickets, toolTotals, null);
+      const deterministic = directoryStreetListAnswer(streetList, directoryText);
+      if(deterministic){
+        return {
+          ok:true,
+          answer:deterministic,
+          meta:{rounds:0, toolCallsMade:1, total:0, intent:undefined},
+          total:0,
+          shown:0,
+          tickets:[],
+          referentTickets:[],
+          resultSet:null,
+          resultItems:[],
+          selectedTicketId:incomingSelectedTicketId || null,
+          presentation:null,
+          resultSetStatus:{created:false, reason:'no_list_result', subjectChanged:false, filtersKey:null}
+        };
+      }
+      /* the city as written (a case form, another spelling) is unknown to the
+         directory: hand the model the directory's own city names so it can
+         re-ask list_directory with the right one instead of giving up */
+      let cityListLine = '';
+      if(/"city_status":"NO_MATCH"/.test(directoryText)){
+        const citiesText = await executeTool({name:'list_directory', argsRaw:'{}'}, collectedTickets, toolTotals, null);
+        try{
+          const parsed = JSON.parse(citiesText);
+          const cities = parsed && parsed.result && Array.isArray(parsed.result.cities) ? parsed.result.cities : [];
+          if(cities.length) cityListLine = ' Населені пункти довідника: ' + cities.map(function(c){ return c.name + ' [city_id:' + c.city_id + ']'; }).join('; ') + '. Якщо «' + streetList.city + '» — це відмінок або інше написання одного з них, виклич list_directory з його city_id і відповідай списком вулиць.';
+        }catch(_err){ cityListLine = ''; }
+      }
+      streetListLine = '\nДовідник адрес для цього питання (виконано детерміновано, list_directory city=«' + streetList.city + '»): ' + directoryText +
+        '\nВідповідай простим списком вулиць («У <місто> у тебе N вулиць: …», кожна з нового рядка). Якщо available=false — візьми вулиці із list_places (city=«' + streetList.city + '») і лише коротко зазнач, що це вулиці, де були заявки. Якщо населеного пункту немає (city_status NO_MATCH) — так і скажи та запропонуй перевірити назву.' + cityListLine +
+        ' Не питай користувача, який список йому потрібен, і не пояснюй джерела чи устрій.';
+    }
     /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
        an explicit card turn must win over the previous referent (otherwise the
        8-card cap could show old tickets instead of the freshly found one). */
@@ -1004,7 +1142,7 @@ export function createAskOrchestrator(options){
         ' заявок. Для явного порядкового номера вызови get_ticket только с result_index; не угадывай ticket_id.';
     }
     const messages = [
-      {role:'system', content:ASK_SYSTEM_PROMPT + '\n' + contextLine + (hints ? '\n' + hints : '') + referentLine + queryContextLine + resultSetLine}
+      {role:'system', content:ASK_SYSTEM_PROMPT + '\n' + contextLine + (hints ? '\n' + hints : '') + referentLine + queryContextLine + resultSetLine + streetListLine}
     ];
     for(const h of history) messages.push(h);
     messages.push({role:'user', content:questionText});
@@ -1138,6 +1276,17 @@ export function createAskOrchestrator(options){
           reason:selectedErrors[selectedErrors.length - 1],
           subjectChanged: ordinalLock ? false : !!(lastQueryEnvelope || collectedTickets.length),
           filtersKey: ordinalLock ? null : (lastQueryEnvelope ? stableFiltersKey(lastQueryEnvelope.resolved_filters || {}) : null)};
+      }
+      /* The chat held a selected ticket, and this turn's READ brought OTHER
+         tickets only (the master moved on to another address): the stale
+         selection must not be what a later «покажи її» opens. The PWA drops it
+         and the next turn resolves through the new referents. A turn whose rows
+         still include the selected ticket (a field question about it) keeps it. */
+      if(incomingSelectedTicketId && !selectedTicketId){
+        const turnRowIds = new Set(collectedTickets.map(function(row){ return row && validateTicketId(row.id); }).filter(Boolean));
+        if(turnRowIds.size && !turnRowIds.has(incomingSelectedTicketId)){
+          resultSetStatus = Object.assign({}, resultSetStatus, {selectionChanged:true});
+        }
       }
       const shown = resultItems.length;
       const result = {

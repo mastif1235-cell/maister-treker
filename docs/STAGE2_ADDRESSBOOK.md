@@ -201,6 +201,22 @@ only match so history stays findable.
 directory does not know (another phone) → text path; no directory in KV → every tool
 exactly as in v91.56; ambiguous names are never guessed anywhere.
 
+**Conversation polish (v91.58).** For the master the address book is ONE list of his
+own streets, so the plain question «які вулиці є / у мене є / покажи вулиці / список
+вулиць <місто>» (no ticket words) is answered by the Worker itself from
+`list_directory` — deterministic text («У Шевченко у тебе 7 вулиць: …», archived as a
+count), no «довідник чи заявки?» clarification, no model round trip, no internals
+(prompt rule 24 forbids DIRECTORY/TICKETS/UUID/cityId/streetId/KV/Worker/aliases in
+ordinary answers). A city spelled in a case form the Stage 1 stemmer does not equate
+is handed to the model together with the directory's city list; a directory that was
+never pushed falls back to `list_places` with an honest «вулиці, де були заявки».
+Questions about TICKETS («на яких вулицях були заявки/ремонти/підключення», periods,
+dates) stay with the ticket tools. Follow-ups: an explicit ordinal over the previous
+answer's referents («відкрий другу картку» after a `find_tickets_by_address` list) is
+locked deterministically like the result-set ordinal, so «покажи її» opens exactly that
+ticket; a later READ that brings other tickets only sets
+`resultSetStatus.selectionChanged` and the PWA drops the stale selection.
+
 ## Next stages
 
 Duplicate review/merge design for two phones' semantic duplicates (both UUIDs stay in
