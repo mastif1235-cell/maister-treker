@@ -155,6 +155,10 @@ MTAI.createChatController = function(deps){
     /* v91.46: структурований follow-up контекст (авторитетні фільтри
        попереднього query_tickets) — «покажи їх» успадковує ТІ САМІ фільтри
        на свіжому READ; повторно валідується клієнтом і сервером. */
+    /* Stage 2D: a pending AddressBook push is flushed first (bounded wait,
+       failures ignored) so the answer never uses a directory older than the
+       phone's. Optional hook — the controller works without it. */
+    if(typeof deps.beforeAsk === 'function'){ try{ await deps.beforeAsk(); }catch(_e){} }
     let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId });
     busy = false;
     emit('busy', false);

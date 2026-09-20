@@ -72,6 +72,8 @@ export const TOOL_DEFINITIONS = [
         date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону (включно).'}),
         city: {type:'string', maxLength:100, description:'Населений пункт (розуміє UA/RU, відмінки, «в/у»).'},
         street: {type:'string', maxLength:100, description:'Вулиця без префікса «вул./ул.».'},
+        city_id: {type:'string', maxLength:36, description:'UUID населеного пункту з довідника (city_id попередньої відповіді): фільтр за ідентичністю; невідомий id ігнорується на користь тексту.'},
+        street_id: {type:'string', maxLength:36, description:'UUID вулиці з довідника (street_id попередньої відповіді): фільтр за ідентичністю, не за написанням.'},
         house: {type:'string', maxLength:16, description:'Номер будинку.'},
         apartment: {type:'string', maxLength:16, description:'Номер квартири.'},
         type: {type:'string', maxLength:80, description:'Тип робіт (точно як у даних).'},
@@ -117,11 +119,24 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'list_places',
-    description: 'Довідник реальних населених пунктів, вулиць та номерів будинків із наявних заявок майстра. Використовуй для перевірки списку відомих вулиць чи адрес на вулиці.',
+    description: 'ЗАЯВКИ (TICKETS): міста, вулиці та будинки, де Є заявки майстра (з кількістю). Не повний довідник — для «які вулиці існують» використовуй list_directory. За наявності довідника вулиці згруповано за street_id і підписано поточною назвою.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{
         city: {type:'string', description:'Опційний фільтр за містом/селом.'}
+      }
+    },
+    annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}
+  },
+  {
+    name: 'list_directory',
+    description: 'ДОВІДНИК (DIRECTORY): особистий довідник адрес майстра з телефону — міста й вулиці з UUID, поточною назвою, aliases та active. Джерело для «які вулиці є/існують у місті», незалежно від заявок. Без city — міста; з city — вулиці міста (за замовчуванням лише активні). available=false — довідник ще не переданий: тоді list_places і чесно кажи, що це вулиці із заявок.',
+    inputSchema: {
+      type:'object', additionalProperties:false,
+      properties:{
+        city: {type:'string', maxLength:100, description:'Назва або alias населеного пункту (UA/RU).'},
+        city_id: {type:'string', maxLength:36, description:'UUID населеного пункту (точніше за назву).'},
+        include_archived: {type:'boolean', description:'true = разом з архівними записами.'}
       }
     },
     annotations: {readOnlyHint:true, destructiveHint:false, idempotentHint:true, openWorldHint:false}

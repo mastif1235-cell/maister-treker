@@ -291,6 +291,8 @@ function build(){
   chat = MTAI.createChatController({
     client: MTAI.client,
     attachments: attachments,
+    /* Stage 2D: push a changed AddressBook to the backend before asking */
+    beforeAsk: function(){ return typeof mtDirectorySyncBeforeAsk === 'function' ? mtDirectorySyncBeforeAsk() : null; },
     capabilities: function(){ return MTAI.provider.capabilities(MTAI.storage); },
     hooks: {
       user: function(text){

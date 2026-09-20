@@ -105,9 +105,9 @@ test('happy path DeepSeek: tool-call list_tickets executed locally, final answer
   assert.equal(calls.deepseek.length, 2);
   assert.equal(calls.deepseek[0].body.model, 'deepseek-flash');
   assert.deepEqual(calls.deepseek[0].body.thinking, { type: 'disabled' });
-  assert.equal(calls.deepseek[0].body.tools.length, 11);
+  assert.equal(calls.deepseek[0].body.tools.length, 12);
   assert.equal(calls.deepseek[0].body.tools[0].function.description, 'Заявки з фільтрами: дати, тип, сигнал, теги');
-  assert.equal(calls.deepseek[1].body.tools.length, 11);
+  assert.equal(calls.deepseek[1].body.tools.length, 12);
   assert.equal(calls.deepseek[1].body.tools[0].function.description, 'Заявки з фільтрами: дати, тип, сигнал, теги');
   assert.ok(!JSON.stringify(calls.deepseek[0].body).includes('deepseek-chat'));
 });

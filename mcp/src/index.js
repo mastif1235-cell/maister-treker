@@ -9,6 +9,13 @@
                      returns the final natural-language answer. Requires
                      Bearer auth (ASK_BEARER_TOKENS when configured, otherwise
                      the MCP tokens). Requires the GROQ_API_KEY secret.
+     POST /directory — Stage 2D: the PWA pushes its AddressBook projection
+                     (cities/streets: id, name, aliases, active). Same Bearer
+                     auth and rate limit as /ask. Stored in KV
+                     (mt:directory:v1, UNION by UUID) next to the ticket
+                     snapshot; never touches Google Sheets. Without the KV
+                     binding the endpoint answers 503 and every tool keeps its
+                     ticket-derived behaviour.
      Anything else — 404.
 
    Data path: every answer is produced from a signed read against the existing
@@ -25,6 +32,7 @@ import {loadConfig} from './config.js';
 import {createGasClient} from './gas/client.js';
 import {createDataPipeline} from './tools/read.js';
 import {createSnapshotProvider} from './data/snapshot.js';
+import {createDirectoryStore, DIRECTORY_LIMITS} from './data/directory.js';
 import {createReadTools} from './tools/read.js';
 import {createMcpServer} from './mcp/server.js';
 import {authenticate} from './auth/bearer.js';
@@ -132,7 +140,13 @@ export function createApp(env, deps){
       },
       log: function(message){ console.error('[mcp] ' + message); }
     });
-    const tools = createReadTools({gas, data: provider});
+    /* Stage 2D: the phone's directory (own KV key, own version) — read by the
+       tools next to the ticket snapshot, written only by POST /directory. */
+    const directory = createDirectoryStore({
+      kv: (env && env.MT_SNAPSHOT_KV) || null,
+      log: function(message){ console.error('[mcp] ' + message); }
+    });
+    const tools = createReadTools({gas, data: provider, directory});
     const server = createMcpServer({tools});
     const limiter = deps.limiter || createRateLimiter({limitPerMin: config.rateLimitPerMin});
 
@@ -169,8 +183,38 @@ export function createApp(env, deps){
     const askDisabledReason = (config.askTokensError ? 'ASK_BEARER_TOKENS is invalid' : (!defaultAsk ? 'No AI provider (DEEPSEEK_API_KEY or GROQ_API_KEY) configured' : null));
     const askAuthTokens = (config.askTokens && config.askTokens.length) ? config.askTokens : config.tokens;
 
-    return {ok:true, config, server, limiter, provider, tools, ask, deepseekAsk, groqAsk, deepseekDisabledReason, groqDisabledReason, askDisabledReason, askAuthTokens};
+    return {ok:true, config, server, limiter, provider, directory, tools, ask, deepseekAsk, groqAsk, deepseekDisabledReason, groqDisabledReason, askDisabledReason, askAuthTokens};
   });
+
+  /* Stage 2D: POST /directory — the PWA's AddressBook projection into KV.
+     Fail-closed order: method → config → auth → rate limit → size → shape.
+     The response carries counts only (never the stored names). */
+  async function directoryHandler(request){
+    if(request.method !== 'POST'){
+      return jsonResponse(405, {error:'method_not_allowed', hint:'POST {"v":1,"cities":[...],"streets":[...]} to /directory'}, {Allow:'POST'});
+    }
+    const app = await appPromise;
+    if(!app.ok){
+      console.error('[mcp] config rejected:', app.reason);
+      return jsonResponse(503, {error:'server_configuration'});
+    }
+    const auth = await authenticate(request.headers.get('Authorization'), app.askAuthTokens);
+    if(!auth.ok) return jsonResponse(401, {error:'unauthorized'}, {'WWW-Authenticate':'Bearer realm="maister-tracker-mcp", scope="ask"'});
+    const rate = app.limiter.check('directory:' + auth.client.name);
+    if(!rate.allowed) return jsonResponse(429, {error:'rate_limited', retry_after_sec:rate.retryAfterSec}, {'Retry-After':String(rate.retryAfterSec)});
+    const bodyText = await request.text();
+    if(bodyText.length > DIRECTORY_LIMITS.maxBodyBytes) return jsonResponse(413, {error:'payload_too_large'});
+    let body;
+    try{ body = JSON.parse(bodyText); }
+    catch(_err){ return jsonResponse(400, {error:'invalid_json'}); }
+    const outcome = await app.directory.put(body);
+    if(!outcome.ok){
+      const code = String(outcome.code || 'INVALID_DIRECTORY');
+      if(code === 'KV_UNAVAILABLE' || code === 'KV_WRITE_FAILED') return jsonResponse(503, {error:'directory_unavailable', code});
+      return jsonResponse(400, {error:'invalid_directory', code});
+    }
+    return jsonResponse(200, {ok:true, cities:outcome.cities, streets:outcome.streets, dropped:outcome.dropped, saved_at:new Date(outcome.savedAt).toISOString()});
+  }
 
   async function askHandler(request){
     if(request.method !== 'POST'){
@@ -300,7 +344,7 @@ export function createApp(env, deps){
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    if(request.method === 'OPTIONS' && (path === '/ask' || path === '/ai/config' || path === '/healthz')){
+    if(request.method === 'OPTIONS' && (path === '/ask' || path === '/ai/config' || path === '/healthz' || path === '/directory')){
       return new Response(null, {status:204, headers:Object.assign({}, CORS_HEADERS)});
     }
 
@@ -317,6 +361,8 @@ export function createApp(env, deps){
     }
 
     if(path === '/ask') return withCors(await askHandler(request));
+
+    if(path === '/directory') return withCors(await directoryHandler(request));
 
     if(path !== '/mcp') return jsonResponse(404, {error:'not_found'});
 

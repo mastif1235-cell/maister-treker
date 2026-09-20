@@ -547,11 +547,11 @@ test('public /mcp get_ticket schema is structurally identical to main (no result
   assert.equal(JSON.stringify(publicDef).includes('result_index'), false);
 });
 
-test('the LLM-visible toolset stays at 11 tools with a bounded serialized payload', async () => {
+test('the LLM-visible toolset stays at 12 tools with a bounded serialized payload', async () => {
   let seen = null;
   const groqStub = {chat:async function(_messages, tools){ seen = tools; return done('ok'); }};
   await createAskOrchestrator({groq:groqStub, tools:{}, toolDefs:TOOL_DEFINITIONS}).handle('привіт', {chatSessionId:'chat-session-1'});
-  assert.equal(seen.length, 11);
+  assert.equal(seen.length, 12);
   const size = JSON.stringify(seen).length;
   assert.ok(size < 13000, 'serialized ask tool payload must stay small, got ' + size);
   const getTicket = seen.find(function(tool){ return tool.function.name === 'get_ticket'; });
