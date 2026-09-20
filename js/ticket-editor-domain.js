@@ -771,7 +771,12 @@ async function saveTicketFromForm(e){
   /* Stage 2B: аддитивна прив'язка заявки до довідника — лише cityId/streetId і
      лише за однозначного збігу. Історичні city/street/house/apartment та id
      заявки не змінюються; неоднозначний чи невідомий адрес лишається без ID. */
-  if(typeof mtTicketAddressApply==='function') mtTicketAddressApply(calcState);
+  if(typeof mtTicketAddressApply==='function'){
+    // Збережена версія заявки — базова лінія: незмінна адреса зберігає пару id,
+    // змінена — переобчислюється (чужі/неповні id при цьому знімаються).
+    const previousTicket=editingTicketId?tickets.find(t=>String(t.id)===String(editingTicketId))||null:null;
+    mtTicketAddressApply(calcState,previousTicket);
+  }
   if(!calcState.type){ showToast('Оберіть тип роботи'); return; }
   const isOther = calcState.type === 'Інше';
   const isRaw = !!calcState.cloudImported; // NEW

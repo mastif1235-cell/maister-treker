@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8').replace(/\r\n/g,'\n');
 const source=read('js/ticket-profile-editor.js'),html=read('index.html');
 assert.equal(crypto.createHash('sha256').update(source.slice(source.indexOf('// NEW: редагування')).trim()).digest('hex'),
-  '5c393df514273fd35eb73bc5bd746b0ccfaa09f86d6890d8d44e0228392325b9');
+  'd369a62fe145b76ac6b32426803f734648a2d91803973ed16834e87369f743f2');
 assert.doesNotMatch(read('js/ticket-address-domain.js'),/function showEditAbonentProfile\(/);
 assert.ok(html.indexOf('src="js/ticket-profile-editor.js"')>html.indexOf('src="js/ticket-address-domain.js"'));
 assert.equal((read('sw.js').match(/'\.\/js\/ticket-profile-editor\.js'/g)||[]).length,1);
@@ -36,5 +36,35 @@ assert.equal(context.tickets[1].clientName,undefined);assert.equal(vm.runInConte
 context.showEditAbonentProfile(JSON.stringify(data));
 assert.equal(opens,2,'reopen creates new modal-scoped listeners, no script-level binding');
 assert.equal(renders,1);
-console.log('PASS profile extraction: exact body, global API, modal lifecycle, lookups, cancel, matched-only save');
+// Stage 2B: the same modal keeps or re-resolves the directory link per ticket,
+// using the address BEFORE the edit as the baseline (rename-safe, foreign-safe).
+const AB=require('../js/address-book'),LINK=require('../js/address-book-link');
+if(!globalThis.crypto)globalThis.crypto=require('node:crypto').webcrypto;
+const book=AB.fromLegacy({cities:['City'],streets:{City:['Street','Second']}});
+const [cityId]=book.cities.map(c=>c.id),[streetId,secondId]=book.streets.map(s=>s.id);
+context.mtTicketAddressApply=(ticket,previous)=>LINK.applyToTicket(ticket,book,previous);
+const foreignPair={cityId:'0f9ae2f2-1111-4222-8333-444455556666',streetId:'0f9ae2f2-7777-4888-8999-aaaabbbbcccc'};
+context.tickets=[{id:'a',city:'City',street:'Street',cityId,streetId,sum:10},{id:'c',city:'City',street:'Street',sum:5},{id:'f',city:'City',street:'Street',...foreignPair,sum:1},{id:'b',city:'Other',sum:20}];
+const linkedData={...data,ids:['a','c','f']};
+AB.update(book,'streets',streetId,{name:'Renamed Street'}); // rename without alias: text «Street» no longer resolves
+context.showEditAbonentProfile(JSON.stringify(linkedData));
+elements.abonentEditName.value='Renamed only';
+await elements.abonentEditSaveBtn.events.click();
+assert.deepEqual([context.tickets[0].cityId,context.tickets[0].streetId],[cityId,streetId],'unrelated profile edit keeps the pair even after a directory rename without alias');
+assert.equal(context.tickets[1].cityId,undefined,'legacy ticket whose text no longer resolves is not guessed');
+assert.deepEqual([context.tickets[2].cityId,context.tickets[2].streetId],[foreignPair.cityId,foreignPair.streetId],'foreign pair survives an unrelated edit');
+assert.equal(context.tickets[0].street,'Street','historical text untouched');
+context.showEditAbonentProfile(JSON.stringify(linkedData));
+elements.abonentEditStreet.value='Second';confirmed=true;
+await elements.abonentEditSaveBtn.events.click();
+assert.deepEqual([context.tickets[0].cityId,context.tickets[0].streetId],[cityId,secondId],'address change re-resolves the street');
+assert.deepEqual([context.tickets[1].cityId,context.tickets[1].streetId],[cityId,secondId],'legacy ticket gets the unique link of its new address');
+assert.deepEqual([context.tickets[2].cityId,context.tickets[2].streetId],[cityId,secondId],'foreign pair is replaced when the address changes — it no longer describes this ticket');
+assert.equal(context.tickets[3].cityId,undefined,'tickets outside the profile are untouched');
+context.showEditAbonentProfile(JSON.stringify({...linkedData,street:'Second'}));
+elements.abonentEditStreet.value='Nowhere';
+await elements.abonentEditSaveBtn.events.click();
+for(const index of [0,1,2])assert.deepEqual(['cityId' in context.tickets[index],'streetId' in context.tickets[index]],[false,false],`ticket ${index}: unknown street leaves no stale or invented UUID`);
+assert.equal(context.tickets[0].street,'Nowhere');
+console.log('PASS profile extraction: exact body, global API, modal lifecycle, lookups, cancel, matched-only save, Stage 2B links follow the address');
 })().catch(error=>{console.error(error);process.exitCode=1;});

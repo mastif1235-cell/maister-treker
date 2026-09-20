@@ -42,23 +42,48 @@
     const resolved=linkResolution(book,t.city,t.street);
     return (resolved.cityId===cityId&&resolved.streetId===streetId)?'linked':'stale';
   }
+  /* Same normalization as the resolver: an address is "unchanged" when only
+     case, whitespace or Unicode form differs. */
+  const textKey=value=>str(value).normalize('NFC').replace(/\s+/g,' ').trim().toLowerCase();
+  function sameAddressText(ticket,previous){
+    return textKey(ticket.city)===textKey(previous.city)&&textKey(ticket.street)===textKey(previous.street);
+  }
+  /* Writes the unique resolution of the ticket text, if any. */
+  function resolveInto(ticket,book){
+    const resolved=linkResolution(book,ticket.city,ticket.street);
+    if(!resolved.cityId||!resolved.streetId)return false;
+    if(ticket.cityId===resolved.cityId&&ticket.streetId===resolved.streetId)return false;
+    ticket.cityId=resolved.cityId;
+    ticket.streetId=resolved.streetId;
+    return true;
+  }
   /* Sets or clears the link of ONE ticket. Returns true when the ticket changed.
      Never touches another field, never rewrites text, never links an ambiguous
-     or unknown address. */
-  function applyToTicket(ticket,book){
+     or unknown address.
+     `previous` (optional) is the stored version of the same ticket before this
+     edit. With it the link follows the ADDRESS, not the directory of the day:
+       • city/street text unchanged → the stored pair stays, even after a rename
+         without alias, an archive, or when the ids belong to another phone's
+         directory (an unrelated edit must never lose identity);
+       • city/street text changed → the old pair no longer describes this ticket;
+         ids this directory cannot re-validate (foreign/partial) are dropped and
+         the new text is resolved like a new ticket. */
+  function applyToTicket(ticket,book,previous){
     if(!ticket||typeof ticket!=='object'||Array.isArray(ticket))return false;
     const state=linkState(book,ticket);
+    const hasPrevious=!!(previous&&typeof previous==='object'&&!Array.isArray(previous));
+    if(hasPrevious&&sameAddressText(ticket,previous))return state==='none'?resolveInto(ticket,book):false;
+    if(hasPrevious&&(state==='foreign'||state==='partial')){
+      delete ticket.cityId;
+      delete ticket.streetId;
+      resolveInto(ticket,book);
+      return true;
+    }
     /* linked — already consistent; foreign — another directory's ids;
        partial — a half-written/garbage pair (imported file): all three are left
        exactly as they are, the master sees them on the check screen instead. */
     if(state==='linked'||state==='foreign'||state==='partial')return false;
-    const resolved=linkResolution(book,ticket.city,ticket.street);
-    if(resolved.cityId&&resolved.streetId){
-      if(ticket.cityId===resolved.cityId&&ticket.streetId===resolved.streetId)return false;
-      ticket.cityId=resolved.cityId;
-      ticket.streetId=resolved.streetId;
-      return true;
-    }
+    if(resolveInto(ticket,book))return true;
     /* Text no longer matches the stored link: keeping a wrong id would be worse
        than keeping none. Only ids this directory OWNS are dropped. */
     if(state==='stale'){
@@ -83,5 +108,5 @@
     const resolved=linkResolution(book,(ticket||{}).city,(ticket||{}).street);
     return {state:linkState(book,ticket),status:resolved.status,cityId:resolved.cityId,streetId:resolved.streetId};
   }
-  return {LINKABLE,linkResolution,linkState,applyToTicket,labelFor,describe};
+  return {LINKABLE,linkResolution,linkState,sameAddressText,applyToTicket,labelFor,describe};
 });
