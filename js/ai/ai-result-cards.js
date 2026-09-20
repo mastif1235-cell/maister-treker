@@ -33,6 +33,91 @@ MTAI.cards = (function(){
 
   const FIRST_PAGE = 5;
 
+  /* THE standard ticket card of the chat: date/time, address, facts and the
+     «👤 Відкрити профіль» action (existing READ-ONLY navigation through
+     MTAI.actions.openTicket by the existing ticket.id); «🗺️ На карті» only when
+     the ticket has saved coordinates. Used by the card list AND by the
+     single-ticket presentation («відкрий другу картку», «покажи її»), so an
+     opened ticket always shows the same card the app always showed. */
+  function buildCard(doc, item, onOpen, onMap){
+    const card = doc.createElement('div');
+    card.className = 'ai-card';
+    card.setAttribute('data-ai-ticket-card', item.id);
+    const title = doc.createElement('div');
+    title.className = 'ai-card-title';
+    title.textContent = (item.date ? item.date : '') + (item.time ? ' ' + item.time : '');
+    card.appendChild(title);
+    if(item.address){
+      const addr = doc.createElement('div');
+      addr.className = 'ai-card-addr';
+      addr.textContent = item.address;
+      card.appendChild(addr);
+    }
+    const facts = [item.type, item.sum ? item.sum + ' грн' : '', item.signal ? '📶 ' + item.signal : '']
+      .filter(Boolean).join(' · ');
+    if(facts){
+      const f = doc.createElement('div');
+      f.className = 'ai-card-facts';
+      f.textContent = facts;
+      card.appendChild(f);
+    }
+    if(item.note){
+      const n = doc.createElement('div');
+      n.className = 'ai-card-note';
+      n.textContent = item.note;
+      card.appendChild(n);
+    }
+
+    const actionsRow = doc.createElement('div');
+    actionsRow.className = 'ai-card-actions';
+    actionsRow.style.display = 'flex';
+    actionsRow.style.gap = '6px';
+    actionsRow.style.marginTop = '6px';
+
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-sm ai-card-open';
+    btn.setAttribute('data-ai-ticket-id', item.id);
+    btn.textContent = '👤 Відкрити профіль';
+    btn.addEventListener('click', function(){
+      if(typeof onOpen === 'function') onOpen(item.id);
+    });
+    actionsRow.appendChild(btn);
+
+    // Check whether this specific ticket has saved map coordinates in local database
+    let hasCoords = false;
+    const globalTickets = (typeof window !== 'undefined' && Array.isArray(window.tickets))
+      ? window.tickets
+      : (typeof tickets !== 'undefined' && Array.isArray(tickets) ? tickets : []);
+    const localTicket = globalTickets.find(function(t){ return t && String(t.id) === String(item.id); }) || item;
+    if(typeof MTToolsCore !== 'undefined' && typeof MTToolsCore.explicitCoordinates === 'function'){
+      hasCoords = Boolean(MTToolsCore.explicitCoordinates(localTicket) || (MTToolsCore.parseCoordinates && MTToolsCore.parseCoordinates(localTicket && localTicket.geoLink)));
+    } else if(localTicket){
+      const lat = Number(localTicket.geoLat != null ? localTicket.geoLat : localTicket.lat);
+      const lng = Number(localTicket.geoLng != null ? localTicket.geoLng : localTicket.lng);
+      if(Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180){
+        hasCoords = true;
+      } else if(localTicket.geoLink && String(localTicket.geoLink).trim().length > 0){
+        hasCoords = true;
+      }
+    }
+
+    if(typeof onMap === 'function' && hasCoords){
+      const mapBtn = doc.createElement('button');
+      mapBtn.type = 'button';
+      mapBtn.className = 'btn btn-sm ai-card-map';
+      mapBtn.setAttribute('data-ai-ticket-map-id', item.id);
+      mapBtn.textContent = '🗺️ На карті';
+      mapBtn.addEventListener('click', function(){
+        onMap(item.id);
+      });
+      actionsRow.appendChild(mapBtn);
+    }
+
+    card.appendChild(actionsRow);
+    return card;
+  }
+
   function render(container, tickets, onOpen, onMap){
     while(container.firstChild) container.removeChild(container.firstChild);
     const items = normalize(tickets);
@@ -40,85 +125,7 @@ MTAI.cards = (function(){
     const doc = container.ownerDocument;
     const box = doc.createElement('div');
     box.className = 'ai-cards';
-
-    const makeCard = function(item){
-      const card = doc.createElement('div');
-      card.className = 'ai-card';
-      card.setAttribute('data-ai-ticket-card', item.id);
-      const title = doc.createElement('div');
-      title.className = 'ai-card-title';
-      title.textContent = (item.date ? item.date : '') + (item.time ? ' ' + item.time : '');
-      card.appendChild(title);
-      if(item.address){
-        const addr = doc.createElement('div');
-        addr.className = 'ai-card-addr';
-        addr.textContent = item.address;
-        card.appendChild(addr);
-      }
-      const facts = [item.type, item.sum ? item.sum + ' грн' : '', item.signal ? '📶 ' + item.signal : '']
-        .filter(Boolean).join(' · ');
-      if(facts){
-        const f = doc.createElement('div');
-        f.className = 'ai-card-facts';
-        f.textContent = facts;
-        card.appendChild(f);
-      }
-      if(item.note){
-        const n = doc.createElement('div');
-        n.className = 'ai-card-note';
-        n.textContent = item.note;
-        card.appendChild(n);
-      }
-
-      const actionsRow = doc.createElement('div');
-      actionsRow.className = 'ai-card-actions';
-      actionsRow.style.display = 'flex';
-      actionsRow.style.gap = '6px';
-      actionsRow.style.marginTop = '6px';
-
-      const btn = doc.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn btn-sm ai-card-open';
-      btn.setAttribute('data-ai-ticket-id', item.id);
-      btn.textContent = '👤 Відкрити профіль';
-      btn.addEventListener('click', function(){
-        if(typeof onOpen === 'function') onOpen(item.id);
-      });
-      actionsRow.appendChild(btn);
-
-      // Check whether this specific ticket has saved map coordinates in local database
-      let hasCoords = false;
-      const globalTickets = (typeof window !== 'undefined' && Array.isArray(window.tickets))
-        ? window.tickets
-        : (typeof tickets !== 'undefined' && Array.isArray(tickets) ? tickets : []);
-      const localTicket = globalTickets.find(function(t){ return t && String(t.id) === String(item.id); }) || item;
-      if(typeof MTToolsCore !== 'undefined' && typeof MTToolsCore.explicitCoordinates === 'function'){
-        hasCoords = Boolean(MTToolsCore.explicitCoordinates(localTicket) || (MTToolsCore.parseCoordinates && MTToolsCore.parseCoordinates(localTicket && localTicket.geoLink)));
-      } else if(localTicket){
-        const lat = Number(localTicket.geoLat != null ? localTicket.geoLat : localTicket.lat);
-        const lng = Number(localTicket.geoLng != null ? localTicket.geoLng : localTicket.lng);
-        if(Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180){
-          hasCoords = true;
-        } else if(localTicket.geoLink && String(localTicket.geoLink).trim().length > 0){
-          hasCoords = true;
-        }
-      }
-
-      if(typeof onMap === 'function' && hasCoords){
-        const mapBtn = doc.createElement('button');
-        mapBtn.type = 'button';
-        mapBtn.className = 'btn btn-sm ai-card-map';
-        mapBtn.setAttribute('data-ai-ticket-map-id', item.id);
-        mapBtn.textContent = '🗺️ На карті';
-        mapBtn.addEventListener('click', function(){
-          onMap(item.id);
-        });
-        actionsRow.appendChild(mapBtn);
-      }
-
-      card.appendChild(actionsRow);
-      return card;
-    };
+    const makeCard = function(item){ return buildCard(doc, item, onOpen, onMap); };
 
     items.slice(0, FIRST_PAGE).forEach(function(item){ box.appendChild(makeCard(item)); });
 
@@ -172,51 +179,43 @@ MTAI.cards = (function(){
     }
     return null;
   }
-  function drawSingleLocal(container, ticket, id, onMap){
+  /* The selected ticket as the SAME card contract the list uses, built from
+     the local ticket (exact id; text fields only). */
+  function localCardItem(ticket, id){
+    const sum = ticket.sum == null || ticket.sum === '' ? '' : String(ticket.sum);
+    return normalize([{
+      id: id,
+      date: ticket.date, time: ticket.time,
+      address: [ticket.city, ticket.street, ticket.house].filter(Boolean).join(', '),
+      type: ticket.type, sum: sum, signal: ticket.signal
+    }])[0] || null;
+  }
+  function drawSingleLocal(container, ticket, id, onOpen, onMap){
     const doc = container.ownerDocument;
-    const card = doc.createElement('div');
-    card.className = 'ai-card ai-single-ticket';
-    card.setAttribute('data-ai-ticket-card', id);
-    const title = doc.createElement('div');
-    title.className = 'ai-card-title';
-    title.textContent = [ticket.date, ticket.time].filter(Boolean).join(' ');
-    card.appendChild(title);
-    const address = doc.createElement('div');
-    address.className = 'ai-card-addr';
-    address.textContent = [ticket.city, ticket.street, ticket.house].filter(Boolean).join(', ');
-    card.appendChild(address);
-    const actions = doc.createElement('div');
-    actions.className = 'ai-card-actions';
-    const close = doc.createElement('button');
-    close.type = 'button';
-    close.className = 'btn btn-sm ai-card-close';
-    close.textContent = 'Закрити';
-    close.addEventListener('click', function(){ card.remove(); });
-    actions.appendChild(close);
-    if(typeof onMap === 'function'){
-      const map = doc.createElement('button');
-      map.type = 'button';
-      map.className = 'btn btn-sm ai-card-map';
-      map.textContent = 'На карті';
-      map.addEventListener('click', function(){ onMap(id); });
-      actions.appendChild(map);
-    }
-    card.appendChild(actions);
-    container.appendChild(card);
+    const item = localCardItem(ticket, id);
+    if(!item) return false;
+    const box = doc.createElement('div');
+    box.className = 'ai-cards';
+    const card = buildCard(doc, item, onOpen, onMap);
+    card.className += ' ai-single-ticket';
+    box.appendChild(card);
+    container.appendChild(box);
     return true;
   }
 
-  /* Single-ticket presentation. Returns true when the card is drawn from the
-     in-memory list, 'pending' when the read-only IndexedDB fallback (the same
-     helper MTAI.actions.openTicket uses) is looking the exact id up, false when
-     nothing could be found. `onMissing` fires exactly once in the false/pending
-     failure cases so the caller can invalidate the stale selection. */
-  function renderSingleLocal(container, rawId, onMap, onMissing){
+  /* Single-ticket presentation («відкрий другу картку», «покажи її»): the
+     standard card with «Відкрити профіль» for exactly this ticket.id. Returns
+     true when the card is drawn from the in-memory list, 'pending' when the
+     read-only IndexedDB fallback (the same helper MTAI.actions.openTicket uses)
+     is looking the exact id up, false when nothing could be found. `onMissing`
+     fires exactly once in the false/pending failure cases so the caller can
+     invalidate the stale selection. */
+  function renderSingleLocal(container, rawId, onOpen, onMap, onMissing){
     const id = validateTicketId(rawId);
     const missing = function(){ if(typeof onMissing === 'function') onMissing(); };
     if(!id){ missing(); return false; }
     const ticket = findLocalTicket(localTickets(), id);
-    if(ticket) return drawSingleLocal(container, ticket, id, onMap);
+    if(ticket) return drawSingleLocal(container, ticket, id, onOpen, onMap);
     if(typeof ticketsDbRead === 'function'){
       let settled = false;
       Promise.resolve().then(function(){ return ticketsDbRead(); }).then(function(read){
@@ -224,7 +223,7 @@ MTAI.cards = (function(){
         const found = findLocalTicket(stored, id);
         if(found){
           settled = true;
-          drawSingleLocal(container, found, id, onMap);
+          drawSingleLocal(container, found, id, onOpen, onMap);
         }
         if(!settled) missing();
       }).catch(function(){ missing(); });

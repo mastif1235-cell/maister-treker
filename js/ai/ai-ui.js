@@ -330,11 +330,13 @@ function build(){
           );
         }
         if(out.presentation && out.presentation.kind === 'single_ticket' && MTAI.cards){
-          /* Exactly one ticket, exact id: the module looks it up in the loaded
+          /* Exactly one ticket, exact id: the STANDARD card («👤 Відкрити
+             профіль» through the existing openTicket action; «На карті» only
+             with saved coordinates). The module looks the id up in the loaded
              list and, if it is not there yet (degraded read / fresh boot), in the
              read-only IndexedDB store through the same helper the app's own open
              action uses. onMissing fires once when nothing can be found. */
-          MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.showOnMap(id); }, function(){
+          MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.openTicket(id); }, function(id){ MTAI.actions.showOnMap(id); }, function(){
             if(chat && typeof chat.invalidateSelection === 'function') chat.invalidateSelection();
             const missing = b.ownerDocument.createElement('div');
             missing.className = 'ai-state-warning';
