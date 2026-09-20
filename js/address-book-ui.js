@@ -7,6 +7,7 @@ function mtAddressBookChange(change){
     change(book);
     settings={...settings,addressBook:book,...MTAddressBook.projection(book)};
     if(saveSettings()===false)throw new Error('Інша вкладка керує записом');
+    if(typeof mtAddressLinkInvalidate==='function')mtAddressLinkInvalidate();
     return true;
   }catch(error){
     settings=previous;
@@ -82,6 +83,7 @@ function mtTicketAddressLabel(ticket){
 /* Stage 2C: read-only plan + explicit confirmation. Nothing is linked until the
    master presses the button, and only EXACT/ALIAS_EXACT rows are ever proposed. */
 let mtAddressLinkPlanCache=null;
+function mtAddressLinkInvalidate(){mtAddressLinkPlanCache=null;}
 function mtAddressBookLinkCounts(){
   if(typeof MTTicketAddressLinker==='undefined')return null;
   if(!mtAddressLinkPlanCache)return null;
@@ -96,6 +98,7 @@ function mtAddressBookRenderLinkCheck(){
     ['Неоднозначні — потрібне рішення майстра','ambiguous'],
     ['Немає в довіднику','no_match'],
     ['Помилковий або неповний адрес','malformed'],
+    ['Зв’язок застарів — текст заявки вже інший','stale'],
     ['Пов’язані в іншому довіднику (не чіпаємо)','foreign']
   ];
   const counts=mtAddressBookLinkCounts();
@@ -123,7 +126,7 @@ async function mtAddressBookApplyLinks(){
   if(typeof MTTicketAddressLinker==='undefined'||!mtAddressLinkPlanCache)return;
   const actionable=Number(mtAddressLinkPlanCache.counts.actionable)||0;
   if(!actionable){showToast('Немає заявок для прив’язки');return;}
-  if(!await openConfirmModal({title:'Пов’язати заявки з довідником?',message:`Буде додано лише cityId/streetId до ${actionable} заявок із однозначною адресою. Текст, будинок, квартира та id заявок не змінюються. Неоднозначні адреси пропускаються.`,confirmLabel:'Прив’язати'}))return;
+  if(!await openConfirmModal({title:'Пов’язати заявки з довідником?',message:`Буде додано лише cityId/streetId до ${actionable} заявок із однозначною адресою. Текст, будинок, квартира та id заявок не змінюються. Неоднозначні адреси пропускаються. Кожна з цих заявок оновиться в Google Sheets звичайною синхронізацією.`,confirmLabel:'Прив’язати'}))return;
   const applied=MTTicketAddressLinker.apply(tickets,settings.addressBook,mtAddressLinkPlanCache);
   let saved=false;
   try{saved=(await saveTickets())!==false;}catch(_error){saved=false;}
