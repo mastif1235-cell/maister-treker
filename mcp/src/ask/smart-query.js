@@ -18,7 +18,7 @@
    - nothing here ever returns raw private notes, phones or coordinates to
      the caller: rows are compact projections only. */
 
-import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens, ordinalToDigit} from './address.js';
+import {cleanStr, normalizeStem, matchScore, normalizeHouse, normalizeApartment, effectiveAddressParts, canonicalCityKey, placeTokens, ordinalToDigit, buildAddressLine} from './address.js';
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
@@ -388,15 +388,12 @@ function fmtKeyToDate(key){
 
 function round1(value){ return Math.round(value * 10) / 10; }
 
+/* v91.51: ОДНА сборка адреса — та же address.js:buildAddressLine, что и в
+   /ask-проекции и в result-set. Структурные поля всегда главнее свободного
+   текста: если city/street/house заполнены, строка адреса не может быть пустой
+   (именно это расхождение и видела модель). */
 function compactAddress(t){
-  const parts = [];
-  const push = function(v){ const s = String(v == null ? '' : v).trim(); if(s && parts.indexOf(s) === -1) parts.push(s); };
-  push(t.city);
-  const street = [String(t.street || '').trim(), String(t.house || '').trim()].filter(Boolean).join(' ');
-  push(street);
-  if(t.apartment) push('кв. ' + String(t.apartment).trim());
-  if(!parts.length) push(t.address);
-  return parts.join(', ').slice(0, 200);
+  return buildAddressLine(t);
 }
 
 /* Newest first: DATE desc, then TIME desc — exactly the ordering the app's own
@@ -569,7 +566,10 @@ export function runSmartQuery(ctx, params){
       reasons.push('вулиця:' + (addr.via.street === 'legacy' ? 'legacy адреса' : 'структурна'));
     }
     if(wantedHouse && normalizeHouse(addr.house) !== wantedHouse) continue;
-    if(params.apartment != null && cleanStr(t.apartment) !== cleanStr(params.apartment)) continue;
+    /* v91.51: apartment numbers compare canonically («1», «кв. 1», «квартира 1»
+       are one value) instead of a literal string compare that silently dropped
+       every pre-formatted shape the model produced. */
+    if(params.apartment != null && normalizeApartment(t.apartment) !== normalizeApartment(params.apartment)) continue;
     if(wantedType && cleanStr(t.type) !== wantedType) continue;
     if(paymentTarget && cleanStr(t.payment) !== paymentTarget) continue;
     if(wantedTags && !wantedTags.some(function(tag){ return (t.tags || []).includes(tag); })) continue;
@@ -839,15 +839,18 @@ export function runSmartQuery(ctx, params){
     base.limit = limit;
     base.tickets = list.slice(offset, offset + limit).map(function(t, idx){
       const info = args.reasonsFor.get(t.id) || {reasons:[]};
+      /* same canonical view the filters used — the row's city/street/house and
+         its one-line address are now built from ONE source (v91.51) */
+      const addr = info.addr || {city:t.city, street:t.street, house:t.house};
       const sigNum = ticketSignalNumber(t);
       return {
         ord:offset + idx + 1,
         id:validateTicketId(t.id) || '',
         date:t.date, time:t.time,
-        city:String(info.addr ? info.addr.city : (t.city || '')).slice(0, 80),
-        street:String(info.addr ? info.addr.street : (t.street || '')).slice(0, 100),
-        house:String(info.addr ? info.addr.house : (t.house || '')).slice(0, 16),
-        address:compactAddress(t),
+        city:String(addr.city || '').slice(0, 80),
+        street:String(addr.street || '').slice(0, 100),
+        house:String(addr.house || '').slice(0, 16),
+        address:compactAddress(Object.assign({}, t, {city:addr.city, street:addr.street, house:addr.house})),
         type:String(t.type || '').slice(0, 80),
         sum:Number(t.sum) || 0,
         payment:String(t.payment || '').slice(0, 40),
@@ -980,7 +983,10 @@ export function runSmartQuery(ctx, params){
       byPayment.set(pKey, {count:(byPayment.get(pKey) || {count:0}).count + 1, sum:round1((byPayment.get(pKey) || {sum:0}).sum + sum)});
       const tKey = String(t.type || '').trim() || '(без типу)';
       byType.set(tKey, {count:(byType.get(tKey) || {count:0}).count + 1, sum:round1((byType.get(tKey) || {sum:0}).sum + sum)});
-      if(sum > best.sum) best = {date:t.date, address:compactAddress(t), sum, type:String(t.type || '')};
+      if(sum > best.sum){
+        const bestAddr = (args.reasonsFor.get(t.id) || {}).addr || {city:t.city, street:t.street, house:t.house};
+        best = {date:t.date, address:compactAddress(Object.assign({}, t, {city:bestAddr.city, street:bestAddr.street, house:bestAddr.house})), sum, type:String(t.type || '')};
+      }
     }
     const signals = list.map(ticketSignalNumber).filter(function(n){ return n != null; });
     const signalStats = signals.length ? {

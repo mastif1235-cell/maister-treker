@@ -25,8 +25,12 @@ import {validateTicketId} from './ticket-id.js';
 import {createResultSet, sanitizeIncomingResultSet, validChatSessionId} from './result-set.js';
 /* F4 reuses the address normalization the READ tools themselves use — the same
    street identity, the same house normalization. No new fuzzy system. */
-import {normalizeHouse, matchScore, placeIdentity, cleanStr} from './address.js';
+import {normalizeHouse, matchScore, placeIdentity, cleanStr, buildAddressLine, ordinalToDigit} from './address.js';
 import {cityFilterAccepts} from './canonical.js';
+/* v91.51 hygiene: the model fills structured arguments in "human" shape
+   («Привокзальная 3Б», «кв. 1», «посёлок Шевченко»). Normalised here, on the
+   /ask path only — the public /mcp tools keep their own semantics. */
+import {hygieneArgs} from './arg-hygiene.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -101,19 +105,12 @@ function clipStr(value, max){
   return s.slice(0, max);
 }
 
-/* Адреса одним рядком: місто + вулиця + будинок + квартира (без дубів). */
+/* Адреса одним рядком: місто + вулиця + будинок + квартира (без дубів).
+   v91.51: ОДНА сборка адреса на весь Worker — та же функция, что формирует
+   строки в query_tickets и в resultItems (address.js:buildAddressLine), чтобы
+   модель больше не видела «city/street заполнены, а address пустой». */
 function ticketAddress(row){
-  const parts = [];
-  const push = function(v){ const s = clipStr(v, 80); if(s && parts.indexOf(s) === -1) parts.push(s); };
-  push(row.city);
-  const street = [clipStr(row.street, 80), clipStr(row.house, 16)].filter(Boolean).join(' ');
-  push(street);
-  push(row.apartment ? 'кв. ' + clipStr(row.apartment, 12) : '');
-  /* No duplicates: when the structured pieces already form the address, the
-     combined `address` field is added only if it carries extra information. */
-  const addr = clipStr(row.address, 80);
-  if(addr && !(street && addr.includes(street)) && parts.indexOf(addr) === -1) parts.push(addr);
-  return parts.join(', ').slice(0, TICKET_PROJECTION_LIMITS.address);
+  return buildAddressLine(row).slice(0, TICKET_PROJECTION_LIMITS.address);
 }
 
 /* Explicit presentation/navigation intents. Opening or mapping an EXISTING
@@ -431,6 +428,91 @@ export function exactAddressCandidateId(question, rows){
    ordinal (it may be a house), address words right after the number veto it,
    and a display/navigation verb (or «№»/«номер») must be present. */
 const ORDINAL_SUFFIX_RE = /(\d{1,3})\s*[-‑–]\s*(?:ю|у|я|й|а|е|ий|ый|ая|та|те|тий|ій|ої|му|го)(?![а-яіїєґa-z0-9])/;
+/* v91.51: «карточку номер два», «покажи вторую», «открой вторую заявку»,
+   «дай карточку второй», «картку номер два», «покажи другу заявку».
+   The digit patterns above stay untouched; word numerals are resolved by a
+   closed dictionary (1..10, UA+RU, ordinal + cardinal forms) through
+   ordinalToDigit() first — the same table the address resolver already uses. */
+const WORD_ORDINAL_CARDINALS = {
+  1: ['один','одна','одну','одного','одній'],
+  2: ['два','дві','двох','двом'],
+  3: ['три','трьох','трьом'],
+  4: ['чотири','чотирьох','четыре','четырех'],
+  5: ["пʼять","п'ять","пять","пʼяти","п'яти"],
+  6: ['шість','шесть','шести'],
+  7: ['сім','семь','семи'],
+  8: ['вісім','восемь','восьми'],
+  9: ["девʼять","дев'ять","девять","девʼяти","дев'яти"],
+  10: ['десять','десяти']
+};
+const WORD_ORDINAL_EXTRA = {
+  2: ['вторую','второю','второму','второй','второї','другої','другій'],
+  3: ['третє','третього','третьому','третьою','третьої','третий'],
+  4: ['четвертої','четвертою','четвертому','четвертое','четвертий','четвертую'],
+  5: ['пʼята','пʼятої','пʼяту','пʼятий','пятое','пятого','пятую'],
+  6: ['шостої','шостого','шостому','шостою','шестое','шестого'],
+  7: ['сьомої','сьомого','сьомому','сьомою','седьмую','седьмою'],
+  8: ['восьмої','восьмого','восьмому','восьмою','восьмую'],
+  9: ['девʼятої','девʼятого','девʼятий','девʼяту','девятого','девятое','девятую'],
+  10: ['десятого','десятому','десятою','десятої','десятую']
+};
+const WORD_ORDINAL_MAP = Object.create(null);
+(function(){
+  const add = function(map){
+    for(const digit of Object.keys(map)){
+      for(const raw of map[digit]){
+        const key = String(raw).toLowerCase().replace(/[\u02BC\u2019'`]/g, '');
+        if(!(key in WORD_ORDINAL_MAP)) WORD_ORDINAL_MAP[key] = Number(digit);
+      }
+    }
+  };
+  add(WORD_ORDINAL_CARDINALS);
+  add(WORD_ORDINAL_EXTRA);
+})();
+
+export function wordOrdinalNumber(word){
+  const raw = String(word == null ? '' : word).toLowerCase().replace(/[!?.,;:…"'«»()]+/g, '').trim();
+  if(!raw) return null;
+  const direct = WORD_ORDINAL_MAP[raw.replace(/[\u02BC\u2019'`]/g, '')];
+  if(direct) return direct;
+  /* reuse the shared table (перша/друга/вторая/…) before the local one */
+  const shared = ordinalToDigit(raw);
+  return shared ? Number(shared) : null;
+}
+
+/* Nouns that make a word numeral an ordinal («вторую ЗАЯВКУ»), and the verbs
+   that open such a request. Any other neighbour means the numeral is content
+   («два роутера», «два часа назад», «пять заявок», «дом два»). */
+const WORD_ORDINAL_NOUNS = ['карточку','карточка','карточки','карточкой','картку','картка','картки','карткою','заявку','заявка','заявки','замовлення','замовленню','профіль','профиль','абонента','абонент','тикет','ticket'];
+const WORD_ORDINAL_VERBS = ['покажи','покажі','покажите','показати','открой','откройте','открыть','відкрий','відкрийте','відкрити','дай','дайте','скинь','скиньте'];
+const WORD_ORDINAL_FILLER = ['мне','мені','пожалуйста','будь','ласка','please','а','и','і','ну','же','таки','ещё','ще','из','з','із','этих','цих','списка','списку','этого','цього'];
+const WORD_ORDINAL_STOP_NEXT = new Set(['заявок','замовлень','карточок','карток','грн','грив','гривен','гривень','uah','₴','шт','штук','штуки','раз','разів','часа','часов','годин','години','годину','днів','дней','дня','роутер','роутера','роутерів','роутеров','метрів','метров','кабеля','кабелю','хвилин','місяць','місяця','доби','сутки','суток']);
+const WORD_ORDINAL_ADDRESS_PREV = ["дом","дома","буд","будинку","будинок","кв","квартир","квартира","корпус","під'їзд","подъезд","офіс","офис"];
+
+export function detectWordOrdinal(question){
+  const words = questionWords(question);
+  for(let i = 0; i < words.length; i++){
+    const num = wordOrdinalNumber(words[i]);
+    if(!num) continue;
+    const prev = words[i - 1] || '';
+    const prev2 = words[i - 2] || '';
+    const next = words[i + 1] || '';
+    /* «дом два», «квартира два» — адресный контекст, не номер списка */
+    if(WORD_ORDINAL_ADDRESS_PREV.indexOf(prev) !== -1) continue;
+    /* «два часа назад», «пять заявок», «два роутера» — количество/время */
+    if(next && WORD_ORDINAL_STOP_NEXT.has(next)) continue;
+    const prevIsNoun = WORD_ORDINAL_NOUNS.indexOf(prev) !== -1;
+    const prevIsVerb = WORD_ORDINAL_VERBS.indexOf(prev) !== -1 || prev === 'номер' || prev === '№' || prev === 'номера';
+    const prevIsPolite = WORD_ORDINAL_FILLER.indexOf(prev) !== -1 && (prevIsNoun || WORD_ORDINAL_VERBS.indexOf(prev2) !== -1);
+    const nextIsNoun = next ? WORD_ORDINAL_NOUNS.indexOf(next) !== -1 : false;
+    if(!(prevIsNoun || prevIsVerb || prevIsPolite || nextIsNoun)) continue;
+    /* если после числительного идёт что-то, кроме существительного/филлера —
+       это содержание, а не порядковый номер («покажи два роутера») */
+    if(next && !nextIsNoun && WORD_ORDINAL_FILLER.indexOf(next) === -1) continue;
+    return {index: num, match: words[i], kind: 'word'};
+  }
+  return null;
+}
 const ORDINAL_HINT_RE = /(покажи|покажі|покажите|показати|открой|откройте|открыть|відкрий|відкрийте|відкрити|дай|скинь|номер|карточк|картк|№)/;
 const ORDINAL_VETO_RE = /^\s*(?:дом|дома|буд|будинку|будинок|кв|квартир|корпус|під'їзд|подъезд|улиц|вулиц|вул|ул)(?![а-яіїєґa-z0-9])/;
 
@@ -452,9 +534,12 @@ export function detectExplicitOrdinal(question){
     if(!m) continue;
     if(ORDINAL_VETO_RE.test(q.slice(m.index + m[0].length))) continue;
     const index = Number(m[1]);
-    if(Number.isInteger(index) && index >= 1 && index <= 999) return {index:index, match:m[0]};
+    if(Number.isInteger(index) && index >= 1 && index <= 999) return {index:index, match:m[0], kind:'digit'};
   }
-  return null;
+  /* v91.51: словесные числительные («карточку номер два», «покажи вторую») —
+     закрытый словарь 1..10 и обязательный контекст (глагол/существительное
+     карточки-списка), поэтому «два часа назад» ordinal не становится. */
+  return detectWordOrdinal(q);
 }
 
 /* Words that carry no searchable content in an ordinal request. Everything
@@ -560,6 +645,15 @@ export function createAskOrchestrator(options){
       delete stripped.inherit_previous_filters;
       args = stripped;
     }
+    /* v91.51 argument hygiene (this layer ONLY — the public /mcp contract keeps
+       the tool schemas untouched). The model fills structured arguments the way
+       the phrase sounded: a house glued to the street («Привокзальная 3Б»), a
+       pre-formatted apartment («кв. 1»), a settlement with its service prefix
+       («посёлок Шевченко»). All three used to fall through the tools' canonical
+       comparisons and return zero rows. Normalisation reuses the existing
+       helpers (address.js) and never guesses: an ambiguous value is passed on
+       exactly as the model sent it. */
+    args = hygieneArgs(def.name, args);
     let outcome;
     try{ outcome = await tools[def.name](args); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
@@ -818,7 +912,13 @@ export function createAskOrchestrator(options){
        names an address/term keeps the ordinary search flow. */
     if(!activeResultSet.ok){
       const looseOrdinal = detectExplicitOrdinal(questionText);
-      if(ordinalOnlyRequest(questionText, looseOrdinal)){
+      /* A WORD numeral («дай картку другої») cannot be mistaken for a ticket id,
+         and when the previous answer brought referent tickets the model already
+         resolves it from those numbered hints — that path is part of the
+         released behaviour and is kept. Digits and any phrase without hints
+         stay fully deterministic. */
+      const wordOrdinalWithHints = !!(looseOrdinal && looseOrdinal.kind === 'word' && contextTickets.length);
+      if(ordinalOnlyRequest(questionText, looseOrdinal) && !wordOrdinalWithHints){
         return {
           ok:true,
           answer:'Не вижу активного списка заявок — номер ' + looseOrdinal.index + ' не к чему привязать. Сначала выполните поиск, а затем назовите номер, или укажите адрес либо id заявки.',
@@ -999,20 +1099,30 @@ export function createAskOrchestrator(options){
       }
       /* F4: an open/card turn whose rows contain exactly one row matching the
          street+house the user named opens THAT row — the «similar» ones never
-         reach the UI. Applied only when the turn brought several rows of its
-         own (a fresh tool result), never on a single-row or list-authoritative
-         turn, and only when the model itself did not select a single ticket. */
+         reach the UI. Applied when the turn brought several rows of its own,
+         INCLUDING the case where those rows came from the turn's own list
+         result (v91.51: the audit case «Открой заявку Кобзаря 15» after a
+         search had returned several rows of that street). An ordinary LIST
+         request («Покажи заявки Кобзаря 15») is untouched: the gate below
+         still requires intent ∈ {open, cards}, and the model never picks the
+         ticket. */
+      const f4Rows = authoritative ? authoritative.rows : collectedTickets;
       let exactAddressId = null;
-      if(!authoritative && !ordinalLock && selectedIds.size !== 1 && (intent === 'open' || intent === 'cards')){
-        if(collectedTickets.length > 1) exactAddressId = exactAddressCandidateId(questionText, collectedTickets);
+      if(!ordinalLock && selectedIds.size !== 1 && (intent === 'open' || intent === 'cards')){
+        if(f4Rows.length > 1) exactAddressId = exactAddressCandidateId(questionText, f4Rows);
       }
       let selectedTicketId = null;
       let presentation = null;
-      if(!authoritative && (selectedIds.size === 1 || exactAddressId)){
+      if((!authoritative && selectedIds.size === 1) || exactAddressId){
         selectedTicketId = exactAddressId || Array.from(selectedIds)[0];
         presentation = {kind:'single_ticket', ticket_id:selectedTicketId};
         cards = [];
         referentTickets = [];
+        /* the single card replaces the list for THIS turn: the client renders
+           one card, and the chat keeps the list it already had (the same
+           «selected_ticket» semantics the non-authoritative F4 path uses) */
+        resultItems = [];
+        nextResultSet = null;
         total = 1;
         /* Selecting from the chat's own state is not a new ticket context: the
            active result set must survive (otherwise a later «покажи 11-ю» would
