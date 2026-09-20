@@ -1,7 +1,7 @@
 # Stage 2 — local AddressBook identity and ticket links
 
-Stage 2A (directory UUIDs, v91.54) and Stage 2B/2C (optional ticket links, v91.55;
-hardened in v91.56) are shipped. The existing ticket.id, display address, photos,
+Stage 2A (directory UUIDs, v91.54), Stage 2B/2C (optional ticket links, v91.55;
+hardened in v91.56) and Stage 2D (AddressBook → Worker/KV → AI, v91.57) are shipped. The existing ticket.id, display address, photos,
 authorization, Sheets columns and Telegram payloads remain unchanged; every addition
 is optional and backward compatible. Stage 2A sections come first, 2B/2C follow.
 
@@ -133,23 +133,78 @@ invalidates the cached plan. Semantic duplicates created offline on two phones s
 separate UUIDs — the duplicate diagnostics point them out; a merge UI is not part of
 this stage.
 
-## Worker / AI (v91.55, additive)
+## Worker / AI — ticket links (v91.55, additive)
 
 `mcp/src/gas/mappers.js` projects `cityId`/`streetId` (UUID shape only, else empty) —
-snapshot v4, old v3 KV key left untouched. `find_tickets_by_address` echoes
-`resolved.city_id/street_id` only when every matched row agrees; `query_tickets`
-rows carry the ids next to the text. Prompt rules 11б/11в: ids are authoritative for
-identity, never printed to the user; DIRECTORY questions («які вулиці існують») are
-distinguished from TICKET questions — `list_places` lists places **with tickets**, not
-the directory. The directory itself (aliases) still lives only on the phone, so alias
-resolution in the Worker remains the Stage 1 text resolver.
+snapshot v4, old v3 KV key left untouched. `find_tickets_by_address` echoes the ids
+shared by every matched row; `query_tickets` rows carry the ids next to the text.
+Prompt rule 11б: ids are authoritative for identity and never printed to the user.
+
+## Stage 2D — AddressBook → Worker/KV → AI (v91.57)
+
+**What leaves the phone.** `js/address-book-sync.js` builds a projection of
+`settings.addressBook`: `{v:1, cities:[{id,name,aliases,active,updatedAt}],
+streets:[{id,cityId,name,aliases,active,updatedAt}]}`. Places only — no tickets,
+clients, phones or notes; archived entities are included with `active:false`. It is
+POSTed to the AI backend the PWA already uses (`settings.ai.backendUrl`, the same
+bearer as `/ask`) at `POST /directory`. No new backend, no Code.gs/Sheets change, no
+call to DeepSeek per street.
+
+**When.** After every persisted directory change (`mtAddressBookChange`: a street
+typed into the calculator that the directory remembers, add/rename/alias/archive in
+Settings), debounced 2.5 s so a burst is one request; at app start and on `online`
+when a push is still pending; and right before an AI question (`beforeAsk`, bounded
+6 s, failures never block the chat). A fingerprint of the projection is kept in
+localStorage (`mt_directory_sync_v1`, device-local) so an unchanged directory is never
+re-sent. Settings → Адреси shows the status and a «☁️ Надіслати довідник для AI
+зараз» button. Without AI configured nothing is sent.
+
+**Where it lives on the Worker.** `mcp/src/data/directory.js`: ONE KV key
+`mt:directory:v1` = `{v:1, savedAt, data:{cities, streets}}` in the same
+`MT_SNAPSHOT_KV` namespace as the ticket snapshot (`mt:snapshot:v4`), never inside it —
+old snapshots and deployments without a pushed directory keep working unchanged.
+The Worker validates (UUID shape, bounded names/aliases, size limits, prototype keys)
+and stores the **UNION by UUID** of every push: a second phone can never erase the
+first phone's identities; for one UUID the newer `updatedAt` wins (rename, alias,
+archive); nothing is ever deleted. Without the KV binding `/directory` answers 503 and
+the tools stay ticket-derived. The Worker still never writes to Google Sheets.
+
+**How AI uses it (`mcp/src/ask/directory-index.js`).** user text → name/alias → UUID,
+then UUID → tickets. Resolution is deterministic: EXACT / ALIAS_EXACT (same spelling of
+the current name or an explicit alias), then the Stage 1 identity key (cases, UA/RU,
+«вул./ул.» — never stricter than today); several matches are AMBIGUOUS (candidates
+reported, nothing chosen); active wins over archived, archived resolves when it is the
+only match so history stays findable.
+- `query_tickets`: a row whose ids this directory knows is filtered by
+  `cityId`/`streetId` alone («вулиця:довідник (id)»); a legacy or foreign row keeps the
+  Stage 1 text rules, widened by the resolved entity's own spellings (aliases, pre-rename
+  name). Accepts `city_id`/`street_id`; `resolved_filters` carries them, so a follow-up
+  («покажи їх») inherits the identity and re-runs by UUID; an unknown id is ignored in
+  favour of the text. Groups/analytics label rows with the CURRENT directory name.
+  The envelope gains `directory:{available, city_id, city, street_id, street,
+  *_status, *_candidates}`.
+- `find_tickets_by_address`: the directory is read first (city token + street, street
+  across cities, city alone); a unique street answers by identity with
+  `resolved.source:'directory'` even when it has no tickets yet; an ambiguous street
+  (same name in two cities, no city named) is reported as `directory.candidates` while
+  the Stage 1 answer stands.
+- `list_places` = TICKETS: streets **with tickets**, grouped by `street_id` and labelled
+  with the current name (`source:'tickets'`, `directory_available`).
+- `list_directory` = DIRECTORY (new tool): cities, or the streets of one city by name /
+  alias / `city_id`, active by default (`include_archived:true` for all), with
+  `street_id`, `aliases`, `active`. `available:false` when nothing was pushed — the model
+  then uses `list_places` and must say those are streets from tickets, not a directory.
+- Prompt rules 11в (DIRECTORY ≠ TICKETS, honest fallback) and 11г (UUID-first
+  follow-ups, aliases = same place, show the current name, never print ids).
+
+**Legacy fallbacks kept.** Tickets without ids → Stage 1 text path; rows whose ids the
+directory does not know (another phone) → text path; no directory in KV → every tool
+exactly as in v91.56; ambiguous names are never guessed anywhere.
 
 ## Next stages
 
-Shared directory transport (so alias resolution and DIRECTORY-vs-TICKETS questions can
-be answered from the directory in the Worker), duplicate review/merge design, then a
-separately versioned Worker directory projection with explicit source=directory vs
-source=tickets.
+Duplicate review/merge design for two phones' semantic duplicates (both UUIDs stay in
+KV today), directory-aware house lists, and an optional `GET /directory` diagnostic.
 
 ## Phone acceptance
 
@@ -165,4 +220,8 @@ street in the directory without an alias and edit the phone again: still linked.
 the street to another directory street: the link follows the address. Run the check
 twice: the second run offers 0 tickets. Confirm an old ticket without a link still
 opens, searches, and shows in the address navigator, calendar and map.
-AI alias behaviour changes only after the Worker deploy of v91.55+ (snapshot v4).
+Stage 2D: with AI configured, Settings → Адреси shows «Довідник для AI передано …»;
+type a new street into a ticket, wait a few seconds — the status stays «передано» and
+the AI answers «які вулиці є в <місті>» with the new street (DIRECTORY) while «на яких
+вулицях були заявки» still lists only streets with tickets (TICKETS). Requires the
+Worker deploy of v91.57.
