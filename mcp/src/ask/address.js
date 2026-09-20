@@ -293,6 +293,40 @@ export function normalizeHouse(h){
     .trim();
 }
 
+/* v91.51-arg-hygiene: apartment numbers arrive from the LLM in several shapes
+   («1», «кв. 1», «кв.1», «квартира 1», «КВ 1»). The filter must compare ONE
+   canonical value on both sides instead of a literal string. Same approach as
+   normalizeHouse (close the service word, drop spaces) but with an explicit
+   apartment-only prefix list — a house number like «3-б» keeps its letter. */
+const APARTMENT_PREFIX_RE = /^(?:квартир[аиуе]?|кварт\.?|апартаменти|апарт\.?|кв\.?)\s*/i;
+export function normalizeApartment(value){
+  if(value == null) return '';
+  let s = cleanStr(value).replace(APARTMENT_PREFIX_RE, '');
+  s = s.replace(/[\s._-]+/g, '').replace(/[№#]/g, '');
+  return s;
+}
+
+/* ONE builder for the human address line of a row, shared by every projection
+   (AI rows, result-set items, chat cards). Structured parts are authoritative;
+   the raw free-text `address` is used only as a fallback (or as an extra tail
+   when it carries information the structured parts do not). This removes the
+   «city/street filled but address empty» contradiction the model used to see. */
+export function buildAddressLine(row){
+  const r = row || {};
+  const street = String(r.street || '').trim();
+  const streetHouse = [street, String(r.house || '').trim()].filter(Boolean).join(' ');
+  const parts = [];
+  const push = function(value){ const s = String(value == null ? '' : value).trim(); if(s && parts.indexOf(s) === -1) parts.push(s); };
+  push(r.city);
+  push(streetHouse);
+  if(String(r.apartment || '').trim()) push('кв. ' + String(r.apartment).trim());
+  /* The raw free-text address is never a substitute for structured parts: it is
+     appended only when it carries something the line does not already show. */
+  const raw = String(r.address == null ? '' : r.address).trim();
+  if(raw && !(street && raw.includes(street)) && parts.indexOf(raw) === -1) push(raw);
+  return parts.join(', ').slice(0, 200);
+}
+
 export function parseAddressQuery(raw){
   let text = String(raw || '').trim();
   text = text.replace(/^(?:можешь\s+открыть\s+профиль|открой\s+профиль|покажи\s+профиль|відкрий\s+профіль|покажи\s+заявку|знайди\s+адресу|найди\s+адрес|найди\s+заявку|знайди\s+заявку|найди|знайди|по\s+адресу|за\s+адресою|а\s+по\s+адресу|а\s+за\s+адресою)\s+/i, '');

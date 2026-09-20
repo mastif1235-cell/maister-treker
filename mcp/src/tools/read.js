@@ -189,9 +189,21 @@ export function createReadTools(options){
     return {unique_cities:groups(cities), unique_streets:groups(streets)};
   }
 
-  function resultData(list, params, extra){
+  /* v91.51: аддитивная свежесть источника на ответах READ-инструментов.
+     Тот же формат и тот же источник, что у query_tickets (smart-query.js):
+     поля появляются ТОЛЬКО когда ответ действительно собран из KV-снимка
+     (у прямого чтения GAS нет savedAt), поэтому клиенты /mcp, не знающие
+     этих полей, ничего не теряют. */
+  function sourceMeta(loaded){
+    const meta = {};
+    if(loaded && loaded.savedAt) meta.data_as_of = new Date(loaded.savedAt).toISOString();
+    if(loaded && loaded.snapshotCache) meta.snapshot_cache = loaded.snapshotCache;
+    return meta;
+  }
+
+  function resultData(list, params, extra, loaded){
     const meta = page(list, params);
-    return Object.assign({tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit, analytics:analytics(list)}, extra || {});
+    return Object.assign({tickets:list.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit, analytics:analytics(list)}, extra || {}, sourceMeta(loaded));
   }
 
   async function list_tickets(params){
@@ -239,7 +251,7 @@ export function createReadTools(options){
       ambiguous: true,
       candidates: bareParts.map(function(city){ return {city}; }),
       notes: ['Запит без номера частини охоплює кілька населених пунктів: ' + bareParts.join(', ') + '. Уточніть, який саме потрібен.']
-    } : {})};
+    } : {}, data)};
   }
 
   async function search_tickets(params){
@@ -312,7 +324,7 @@ export function createReadTools(options){
     const meta = page(list, params);
     return {ok:true, data:resultData(list, params, Object.assign({query:params.query, ambiguous:bareParts.length > 0},
       bareParts.length ? {candidates: bareParts.map(function(city){ return {city}; }),
-        notes: ['Запит без номера частини охоплює кілька населених пунктів: ' + bareParts.join(', ') + '. Уточніть, який саме потрібен.']} : {}))};
+        notes: ['Запит без номера частини охоплює кілька населених пунктів: ' + bareParts.join(', ') + '. Уточніть, який саме потрібен.']} : {}), data)};
   }
 
   async function list_places(params){
@@ -323,7 +335,7 @@ export function createReadTools(options){
       const qCity = cleanStr(params.city);
       places = places.filter(function(p){ return cleanStr(p.city).includes(qCity); });
     }
-    return {ok:true, data:{places}};
+    return {ok:true, data:Object.assign({places}, sourceMeta(data))};
   }
 
   async function find_tickets_by_address(params){
@@ -369,7 +381,7 @@ export function createReadTools(options){
       const bareParts = placeTokens(cityName).digits.length ? [] : bareStemParts(cityList, legacyTextById, catalog);
       const bareAmbiguous = bareParts.length > 0;
       const bareCandidates = bareParts.map(function(city){ return {city}; });
-      return {ok:true, data:{query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}};
+      return {ok:true, data:Object.assign({query:params.address, resolved:{city:cityName, street:null, house:null, confidence:1}, candidates:bareCandidates, ambiguous:bareAmbiguous, houses:[], tickets:cityList.slice(cityMeta.offset, cityMeta.offset + cityMeta.limit), total_matched:cityMeta.total_matched, returned:cityMeta.returned, offset:cityMeta.offset, limit:cityMeta.limit}, sourceMeta(data))};
     }
     const resolution = resolveAddress(params.address, places);
     const normalizeSearch = function(value){ return cleanStr(String(value || '')).replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); };
@@ -385,11 +397,11 @@ export function createReadTools(options){
       if(legacyIds.size){
         const legacyList = data.tickets.filter(function(t){ return legacyIds.has(String(t.id)) && inRange(t.date, from, to); });
         const meta = page(legacyList, params);
-        return {ok:true, data:{query:params.address, resolved:null, candidates:[], ambiguous:false, houses:[], tickets:legacyList.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}};
+        return {ok:true, data:Object.assign({query:params.address, resolved:null, candidates:[], ambiguous:false, houses:[], tickets:legacyList.slice(meta.offset, meta.offset + meta.limit), total_matched:meta.total_matched, returned:meta.returned, offset:meta.offset, limit:meta.limit}, sourceMeta(data))};
       }
       return {
         ok:true,
-        data:{
+        data:Object.assign({
           query: params.address,
           resolved: null,
           candidates: resolution.candidates || [],
@@ -400,7 +412,7 @@ export function createReadTools(options){
           returned: 0,
           offset: 0,
           limit: params.limit || 50
-        }
+        }, sourceMeta(data))
       };
     }
 
@@ -420,7 +432,7 @@ export function createReadTools(options){
     const meta = page(list, params);
     return {
       ok:true,
-      data:{
+      data:Object.assign({
         query: params.address,
         resolved: r,
         candidates: resolution.candidates || [],
@@ -431,7 +443,7 @@ export function createReadTools(options){
         returned: meta.returned,
         offset: meta.offset,
         limit: meta.limit
-      }
+      }, sourceMeta(data))
     };
   }
 
@@ -451,7 +463,7 @@ export function createReadTools(options){
     const list = data.tickets
       .filter(function(t){ return t.date === params.date; })
       .sort(function(a, b){ return String(a.time || '').localeCompare(String(b.time || '')); });
-    return {ok:true, data:{date:params.date, count:list.length, tickets:list}};
+    return {ok:true, data:Object.assign({date:params.date, count:list.length, tickets:list}, sourceMeta(data))};
   }
 
   async function get_shifts(params){
@@ -498,7 +510,7 @@ export function createReadTools(options){
       return b.total_hours - a.total_hours || (a.coworker < b.coworker ? -1 : 1);
     });
 
-    return {ok:true, data:{count:list.length, total_hours:totalHours, shifts:list, by_coworker:byCoworker}};
+    return {ok:true, data:Object.assign({count:list.length, total_hours:totalHours, shifts:list, by_coworker:byCoworker}, sourceMeta(data))};
   }
 
   async function get_reports(params){
@@ -521,7 +533,7 @@ export function createReadTools(options){
         calculateReportTotals(dayList)
       );
     });
-    return {ok:true, data:{date_from:params.date_from, date_to:params.date_to, days, totals:calculateReportTotals(byDay.size ? [].concat.apply([], Array.from(byDay.values())) : [])}};
+    return {ok:true, data:Object.assign({date_from:params.date_from, date_to:params.date_to, days, totals:calculateReportTotals(byDay.size ? [].concat.apply([], Array.from(byDay.values())) : [])}, sourceMeta(data))};
   }
 
   /* Period windows mirror the in-app report ranges (js/report-utils.js):
@@ -538,7 +550,7 @@ export function createReadTools(options){
     let list = data.tickets.slice();
     let window = null;
     if(params.period !== 'all'){
-      if(!anchorKey) return {ok:true, data:{period:params.period, anchor_date:null, window:null, totals:{count:0, total:0, cashTotal:0, cardTotal:0}, by_type:[], by_payment:[]}};
+      if(!anchorKey) return {ok:true, data:Object.assign({period:params.period, anchor_date:null, window:null, totals:{count:0, total:0, cashTotal:0, cardTotal:0}, by_type:[], by_payment:[]}, sourceMeta(data))};
       const [y, m, d] = anchorKey.split('-').map(Number);
       const ref = new Date(y, m - 1, d);
       let start = ref, end = ref;
@@ -570,7 +582,7 @@ export function createReadTools(options){
         .sort(function(a, b){ return b.total - a.total || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
     };
     const totals = calculateReportTotals(list);
-    return {ok:true, data:{period:params.period, anchor_date:anchorKey ? anchorKey.split('-').reverse().join('.') : null, window, totals, by_type:toRows(byType), by_payment:toRows(byPayment)}};
+    return {ok:true, data:Object.assign({period:params.period, anchor_date:anchorKey ? anchorKey.split('-').reverse().join('.') : null, window, totals, by_type:toRows(byType), by_payment:toRows(byPayment)}, sourceMeta(data))};
   }
 
   /* Universal deterministic smart-search engine (v91.44). Filtering,
@@ -594,7 +606,7 @@ export function createReadTools(options){
   async function list_catalog(){
     const data = await loadRedacted();
     if(!data.ok) return data;
-    return {ok:true, data:buildCatalogData(data.tickets, data.shifts)};
+    return {ok:true, data:Object.assign(buildCatalogData(data.tickets, data.shifts), sourceMeta(data))};
   }
 
   return {list_tickets, search_tickets, query_tickets, list_catalog, list_places, find_tickets_by_address, get_ticket, get_tickets_by_date, get_shifts, get_reports, get_statistics};

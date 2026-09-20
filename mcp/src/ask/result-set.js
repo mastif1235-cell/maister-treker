@@ -1,4 +1,6 @@
 import {validateTicketId} from './ticket-id.js';
+/* v91.51: одна проекция адреса на весь Worker (см. ask/address.js). */
+import {buildAddressLine} from './address.js';
 
 export const RESULT_SET_VERSION = 1;
 export const RESULT_SET_TTL_MS = 12 * 60 * 60 * 1000;
@@ -67,8 +69,10 @@ export function sanitizeIncomingResultSet(raw, chatSessionId, nowMs){
 
 function safePreview(row, index, id){
   const text = function(value, max){ return String(value == null ? '' : value).trim().slice(0, max); };
-  const address = [text(row.city, 80), [text(row.street, 100), text(row.house, 16)].filter(Boolean).join(' ')]
-    .filter(Boolean).join(', ').slice(0, 200);
+  /* One-line address from the SAME builder the tools use: filled structured
+     parts always produce a non-empty line; the raw free-text field is only a
+     fallback. */
+  const address = buildAddressLine(row).slice(0, 200);
   return {
     index:index,
     ticket_id:id,
