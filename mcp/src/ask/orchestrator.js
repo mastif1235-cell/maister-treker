@@ -292,12 +292,45 @@ export function isSelectedTicketOpen(question){
   return i === words.length;
 }
 
+/* A card request WITHOUT a new target: «Дай карточку», «Открой карточку заявки»,
+   «Открой карточку абонента», «Відкрий картку абонента», «Открой профиль»…
+   Such a phrase names no address/date/material/number, so it can only be about
+   the ticket the conversation already holds. The predicate is a whitelist of
+   content-free words: ANY other token (street, house, date, material, sum,
+   digit, id) makes it false, and «Открой заявку Садовая 19» therefore stays an
+   ordinary targeted request. */
+export const CARD_REQUEST_VERBS = ['дай','дайте','скинь','скиньте','покажи','покажі','покажите','показати','открой','откройте','открыть','відкрий','відкрийте','відкрити','можна','можно'];
+export const CARD_REQUEST_NOUNS = ['карточку','карточка','карточки','карточкой','картку','картка','картки','карткою','профиль','профіль','заявку','заявка','заявки','замовлення','абонента','абонент','тикет','ticket'];
+export const CARD_REQUEST_PRONOUNS = ['её','ее','її','цю','эту','этот','цей','його','цієї','этой','неё','нее','ту'];
+export const CARD_REQUEST_FILLER = ['мне','мені','пожалуйста','будь','ласка','please','а','и','і','ну','же','таки','можешь','можеш','можете','може','сможешь','сможеш'];
+
+export function isCardRequestWithoutTarget(question){
+  const raw = String(question == null ? '' : question).toLowerCase();
+  if(!raw.trim()) return false;
+  /* A number is a target («карточку 5», «Садовая 19», «12 сентября») and is
+     resolved by the ordinal path or by an ordinary search — never here. */
+  if(/\d/.test(raw) || raw.indexOf('№') !== -1) return false;
+  /* Map asks stay map asks: «покажи її на карті» is not a card request. */
+  if(/на\s+(?:карт[іе]|мапі)\b/.test(raw)) return false;
+  const words = raw.replace(/[!?.,;:…"'«»()]+/g, ' ').split(/\s+/).filter(Boolean);
+  if(!words.length || words.length > 8) return false;
+  let verbs = 0, nouns = 0;
+  for(const word of words){
+    if(CARD_REQUEST_VERBS.indexOf(word) !== -1){ verbs++; continue; }
+    if(CARD_REQUEST_NOUNS.indexOf(word) !== -1){ nouns++; continue; }
+    if(CARD_REQUEST_PRONOUNS.indexOf(word) !== -1) continue;
+    if(CARD_REQUEST_FILLER.indexOf(word) !== -1) continue;
+    return false;                       /* meaningful word = a new target */
+  }
+  return verbs > 0 && nouns > 0;
+}
+
 /* Explicit ordinal selection INSIDE the active chat result set («покажи 11-ю»,
    «покажи 11-ю из этих», «открой 11 заявку», «№11»). A bare number is never an
    ordinal (it may be a house), address words right after the number veto it,
    and a display/navigation verb (or «№»/«номер») must be present. */
 const ORDINAL_SUFFIX_RE = /(\d{1,3})\s*[-‑–]\s*(?:ю|у|я|й|а|е|ий|ый|ая|та|те|тий|ій|ої|му|го)(?![а-яіїєґa-z0-9])/;
-const ORDINAL_HINT_RE = /(покажи|покажі|покажите|показати|открой|откройте|открыть|відкрий|відкрийте|відкрити|дай|скинь|номер|№)/;
+const ORDINAL_HINT_RE = /(покажи|покажі|покажите|показати|открой|откройте|открыть|відкрий|відкрийте|відкрити|дай|скинь|номер|карточк|картк|№)/;
 const ORDINAL_VETO_RE = /^\s*(?:дом|дома|буд|будинку|будинок|кв|квартир|корпус|під'їзд|подъезд|улиц|вулиц|вул|ул)(?![а-яіїєґa-z0-9])/;
 
 export function detectExplicitOrdinal(question){
@@ -308,6 +341,9 @@ export function detectExplicitOrdinal(question){
     /номер\s+(\d{1,3})\b/,
     /(\d{1,3})\s*(?:заявк(?:у|а|е|и|ой|ам|ами)|замовлення|замовлен|тикет|ticket)(?![а-яіїєґa-z0-9])/,
     /(\d{1,3})\s*(?:из этих|из них|из списка|з цих|з них|зі списку)(?![а-яіїєґa-z0-9])/,
+    /* «покажи карточку 5», «відкрий картку №5» — the card noun comes FIRST, so
+       «покажи 5 карточек» (a quantity, not an ordinal) never matches. */
+    /(?:карточк\S*|картк\S*)\s*(?:№\s*)?(\d{1,3})(?![а-яіїєґa-z0-9])(?!\s*(?:грн|грив|uah|₴|шт\b|штук))/,
     ORDINAL_SUFFIX_RE
   ];
   for(const re of patterns){
@@ -324,7 +360,7 @@ export function detectExplicitOrdinal(question){
    else («по Садовій», «за 12 сентября», «кабель») means the user asked for
    something the ordinary flow can still find, so the ordinal is not the whole
    request and the deterministic clarification must not swallow it. */
-const ORDINAL_FILLER_RE = /(?:покаж(?:и|і|іть|ите|ите)|показати|открой(?:те)?|открыть|відкрий(?:те)?|відкрити|дай(?:те)?|скинь(?:те)?|будь|ласка|пожалуйста|мне|мені|заявк\S*|замовлен\S*|тикет\S*|ticket\S*|номер|номера|из|з|із|этих|цих|этот|цей|эту|цю|её|ее|її|його|их|їх|них|списка|списку|же|таки|в|во|на|по|за|та|и|і|а|у|мне|мені)/g;
+const ORDINAL_FILLER_RE = /(?:покаж(?:и|і|іть|ите|ите)|показати|открой(?:те)?|открыть|відкрий(?:те)?|відкрити|дай(?:те)?|скинь(?:те)?|будь|ласка|пожалуйста|мне|мені|заявк\S*|замовлен\S*|тикет\S*|ticket\S*|карточк\S*|картк\S*|номер|номера|из|з|із|этих|цих|этот|цей|эту|цю|её|ее|її|його|их|їх|них|списка|списку|же|таки|в|во|на|по|за|та|и|і|а|у|мне|мені)/g;
 
 export function ordinalOnlyRequest(question, ordinal){
   if(!ordinal) return false;
@@ -697,6 +733,57 @@ export function createAskOrchestrator(options){
           resultSetStatus:{created:false, reason:'ordinal_without_result_set', subjectChanged:false, filtersKey:null}
         };
       }
+    }
+    /* F1: a card request without a new target is answered by the CODE from the
+       conversation's own state, in the same priority order as the pronoun-based
+       open above: the explicit selection, then a single unambiguous referent,
+       then a single-item active set. Several candidates or none are clarified
+       honestly — nothing is guessed, the model is never asked to pick a ticket
+       and no search is started for such a phrase. */
+    if(isCardRequestWithoutTarget(questionText)){
+      let cardTicketId = incomingSelectedTicketId || null;
+      let cardAmbiguous = false;
+      if(!cardTicketId){
+        if(contextTickets.length === 1) cardTicketId = contextTickets[0].id;
+        else if(contextTickets.length > 1) cardAmbiguous = true;
+        else if(activeResultSet.ok){
+          if(activeResultSet.value.ticketIds.length === 1) cardTicketId = activeResultSet.value.ticketIds[0];
+          else cardAmbiguous = true;
+        }
+      }
+      const cardIntent = /карточк|картк|профил|абонент/.test(questionText.toLowerCase()) ? 'cards' : 'open';
+      if(cardTicketId){
+        return {
+          ok:true,
+          answer:'Открываю карточку выбранной заявки.',
+          meta:{rounds:0, toolCallsMade:0, total:1, intent:cardIntent},
+          total:1,
+          shown:0,
+          tickets:[],
+          referentTickets:[],
+          resultSet:null,
+          resultItems:[],
+          selectedTicketId:cardTicketId,
+          presentation:{kind:'single_ticket', ticket_id:cardTicketId},
+          resultSetStatus:{created:false, reason:'selected_ticket', subjectChanged:false, filtersKey:null}
+        };
+      }
+      return {
+        ok:true,
+        answer: cardAmbiguous
+          ? 'Уточните, какую заявку открыть: назовите её номер из списка (например, «покажи 11-ю») или адрес.'
+          : 'В этом чате ещё не выбрана заявка. Назовите номер из списка (например, «покажи 11-ю») или адрес.',
+        meta:{rounds:0, toolCallsMade:0, total:0, intent:cardIntent},
+        total:0,
+        shown:0,
+        tickets:[],
+        referentTickets:[],
+        resultSet:null,
+        resultItems:[],
+        selectedTicketId:null,
+        presentation:null,
+        resultSetStatus:{created:false, reason:'no_selected_ticket', subjectChanged:false, filtersKey:null}
+      };
     }
     /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
        an explicit card turn must win over the previous referent (otherwise the

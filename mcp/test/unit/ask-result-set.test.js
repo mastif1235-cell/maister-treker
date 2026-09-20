@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createAskOrchestrator} from '../../src/ask/orchestrator.js';
+import {createAskOrchestrator, isCardRequestWithoutTarget, detectExplicitOrdinal} from '../../src/ask/orchestrator.js';
 import {createResultSet, sanitizeIncomingResultSet} from '../../src/ask/result-set.js';
 import {TOOL_DEFINITIONS} from '../../src/tools/definitions.js';
 
@@ -313,6 +313,121 @@ test('E4b: an ordinal that also names an address keeps the ordinary search flow'
     .handle('Покажи 11-ю заявку по Садовій', {chatSessionId:'chat-session-1'});
   assert.equal(modelCalls, 1, 'the address part is still searched');
   assert.equal(out.total, 0);
+});
+
+/* ---------- F1/F2 (v91.50): code-owned card follow-ups ---------- */
+
+test('F1: card verbs without a target are answered by the code, never by the model', async () => {
+  /* T3/T4/T5/T6: «Дай карточку», «Дай карточку заявки», «Открой карточку
+     абонента», «Дай картку», «Открой профиль» — the exact selected ticket. */
+  const phrases = ['Дай карточку','Дай карточку заявки','Открой карточку','Открой карточку заявки',
+    'Открой карточку абонента','Покажи карточку','Открой профиль','Дай картку','Покажи картку',
+    'Відкрий картку','Відкрий картку заявки','Відкрий картку абонента','Відкрий профіль','дай мне карточку',
+    'А профиль можешь открыть дай карточку заявки','Дай мне карточку, пожалуйста','Відкрий будь ласка картку'];
+  for(const phrase of phrases){
+    let modelCalls = 0;
+    const groqStub = {chat:async()=>{modelCalls++; return done('Карточку показано нижче.');}};
+    const out = await createAskOrchestrator({groq:groqStub, tools:{}, toolDefs:TOOL_DEFINITIONS})
+      .handle(phrase, {chatSessionId:'chat-session-1', selectedTicketId:'t-r3'});
+    assert.equal(modelCalls, 0, '«' + phrase + '» never reaches the model');
+    assert.equal(out.selectedTicketId, 't-r3', '«' + phrase + '» keeps the exact selection');
+    assert.deepEqual(out.presentation, {kind:'single_ticket', ticket_id:'t-r3'}, '«' + phrase + '» shows exactly one card');
+    assert.equal(out.tickets.length, 0, '«' + phrase + '» adds no list cards');
+    assert.equal(out.resultItems.length, 0);
+    assert.equal(out.resultSet, null);
+    assert.equal(out.resultSetStatus.reason, 'selected_ticket');
+  }
+});
+
+test('F1: a phrase that names a target is NOT a card request (T14) and an address number is not an ordinal (T13)', async () => {
+  const notCard = ['Открой заявку Садовая 19','Покажи заявку садовая 19','Открой дом 5','Покажи карточку 5',
+    'Покажи 5-ю','Покажи її на карті','Покажи її сигнал','Дай карточку по Садовій','Открой заявку за 12 сентября',
+    'Покажи 5 карточек','Сколько роутера за 1500 грн я поставил'];
+  for(const phrase of notCard) assert.equal(isCardRequestWithoutTarget(phrase), false, phrase + ' is not a target-less card request');
+  const isCard = ['Дай карточку','Дай карточку заявки','Открой карточку абонента','Відкрий картку абонента','Открой профиль','а можна картку?','дай карточку пожалуйста'];
+  for(const phrase of isCard) assert.equal(isCardRequestWithoutTarget(phrase), true, phrase + ' is a target-less card request');
+  /* «Открой заявку Садовая 19» keeps the ordinary (model) flow — F4 is a later patch */
+  let modelCalls = 0;
+  const out = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done('Шукаю Садову 19.');}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой заявку Садовая 19', {chatSessionId:'chat-session-1', selectedTicketId:'t-r3', contextTickets:[{id:'t-sad19'}]});
+  assert.equal(modelCalls, 1, 'a targeted open stays a model-driven turn');
+  assert.equal(out.presentation, null);
+  /* «Открой дом 5» is neither a card request nor an ordinal */
+  const seen = [];
+  let modelCalls13 = 0;
+  const out13 = await createAskOrchestrator({groq:{chat:async()=>{modelCalls13++;return done('Уточните адрес.');}}, tools:ordinalTools(seen), toolDefs:TOOL_DEFINITIONS})
+    .handle('Открой дом 5', {chatSessionId:'chat-session-1', resultSet:nineteenSet(), now:new Date('2026-09-20T12:00:01Z')});
+  assert.deepEqual(seen, [], 'an address number never locks an ordinal');
+  assert.equal(out13.presentation, null);
+  assert.equal(modelCalls13, 1);
+});
+
+test('F1: several candidates are clarified, a single one is opened (T7, T8, T9)', async () => {
+  /* T7: nothing at all */
+  let modelCalls = 0;
+  const none = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Дай карточку', {chatSessionId:'chat-session-1'});
+  assert.equal(none.presentation, null);
+  assert.equal(none.tickets.length, 0);
+  assert.equal(none.selectedTicketId, null);
+  assert.equal(modelCalls, 0);
+  assert.equal(none.resultSetStatus.reason, 'no_selected_ticket');
+  /* T8: three referents — nothing is guessed */
+  const many = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Дай карточку', {chatSessionId:'chat-session-1', contextTickets:[{id:'A:1'},{id:'B.2'},{id:'C.3'}]});
+  assert.equal(many.presentation, null);
+  assert.equal(many.selectedTicketId, null);
+  assert.equal(many.tickets.length, 0);
+  assert.equal(modelCalls, 0);
+  /* T9: exactly one referent */
+  const one = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Дай карточку', {chatSessionId:'chat-session-1', contextTickets:[{id:'t-sad19'}]});
+  assert.deepEqual(one.presentation, {kind:'single_ticket', ticket_id:'t-sad19'});
+  assert.equal(modelCalls, 0);
+  /* a single-item active set is an unambiguous candidate */
+  const single = createResultSet([{id:'t-only',date:'01.09.2026'}], 1, 'chat-session-1', NOW_ORD).resultSet;
+  const setOne = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Дай карточку', {chatSessionId:'chat-session-1', resultSet:single, now:new Date('2026-09-20T12:00:01Z')});
+  assert.deepEqual(setOne.presentation, {kind:'single_ticket', ticket_id:'t-only'});
+  assert.equal(modelCalls, 0);
+  /* a multi-item set is NOT a candidate: the user must name the number */
+  const setMany = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:{}, toolDefs:TOOL_DEFINITIONS})
+    .handle('Дай карточку', {chatSessionId:'chat-session-1', resultSet:nineteenSet(), now:new Date('2026-09-20T12:00:01Z')});
+  assert.equal(setMany.presentation, null);
+  assert.equal(setMany.resultSetStatus.reason, 'no_selected_ticket');
+  assert.equal(modelCalls, 0);
+});
+
+test('F2: «Покажи карточку 5» is the 5th element of the set, never the ticket with id «5» (T10, T11, T12)', async () => {
+  const phrases = ['Покажи карточку 5','Покажи картку 5','Открой карточку 5','Открой картку 5','Карточку 5','Картку 5','Покажи карточку №5','Покажи картку №5'];
+  for(const phrase of phrases){
+    const seen = [];
+    const out = await createAskOrchestrator({groq:groq([call('get_ticket',{ticket_id:'5'}), done('Карточку показано ниже.')]), tools:ordinalTools(seen), toolDefs:TOOL_DEFINITIONS})
+      .handle(phrase, {chatSessionId:'chat-session-1', resultSet:nineteenSet(), now:new Date('2026-09-20T12:00:01Z')});
+    assert.deepEqual(seen, ['t-05'], '«' + phrase + '» reads only the 5th id of the set');
+    assert.deepEqual(out.presentation, {kind:'single_ticket', ticket_id:'t-05'}, '«' + phrase + '» never opens the ticket with id «5»');
+    assert.equal(out.resultSetStatus.reason, 'selected_ticket');
+  }
+  /* the same wording without an active set is answered honestly, without guessing */
+  const seenNoSet = [];
+  let modelCalls = 0;
+  const noSet = await createAskOrchestrator({groq:{chat:async()=>{modelCalls++;return done();}}, tools:ordinalTools(seenNoSet), toolDefs:TOOL_DEFINITIONS})
+    .handle('Покажи карточку 5', {chatSessionId:'chat-session-1'});
+  assert.deepEqual(seenNoSet, [], 'without a list nothing is read for «5»');
+  assert.equal(modelCalls, 0);
+  assert.equal(noSet.presentation, null);
+  assert.equal(noSet.resultSetStatus.reason, 'ordinal_without_result_set');
+  /* existing ordinals keep working */
+  for(const [phrase, expected] of [['Покажи 5-ю','t-05'],['Открой 3 заявку','t-03'],['№7','t-07'],['номер 9','t-09']]){
+    const seen = [];
+    const out = await createAskOrchestrator({groq:groq([done()]), tools:ordinalTools(seen), toolDefs:TOOL_DEFINITIONS})
+      .handle(phrase, {chatSessionId:'chat-session-1', resultSet:nineteenSet(), now:new Date('2026-09-20T12:00:01Z')});
+    assert.deepEqual(seen, [expected], phrase);
+    assert.equal(out.presentation.ticket_id, expected);
+  }
+  /* a quantity is not an ordinal */
+  assert.equal(detectExplicitOrdinal('Покажи 5 карточек'), null);
+  assert.equal(detectExplicitOrdinal('Покажи карточку 5 грн'), null);
 });
 
 /* ---------- public /mcp contract + LLM-visible toolset ---------- */

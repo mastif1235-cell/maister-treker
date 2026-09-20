@@ -193,5 +193,63 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
     assert.equal(out10.error.kind,'context_too_large');
   }
 
+  /* 11) F3 (v91.50): a plain text turn must NOT wipe the selected ticket —
+     otherwise «список → 3 заявку → який адрес? → дай карточку» loses the exact
+     ticket the user is talking about. */
+  {
+    const store=memStorage();
+    const scripted=[
+      okResponse({answer:'Открываю выбранную заявку.',selectedTicketId:'t-r3',presentation:{kind:'single_ticket',ticket_id:'t-r3'},
+        resultSetStatus:{created:false,reason:'selected_ticket',subjectChanged:false,filtersKey:null}}),
+      okResponse({answer:'18.09.2026 — Таромское, вул. Одарівська 44.',resultSetStatus:{created:false,reason:'no_list_result',subjectChanged:false,filtersKey:null}}),
+      okResponse({answer:'Открываю карточку выбранной заявки.',selectedTicketId:'t-r3',presentation:{kind:'single_ticket',ticket_id:'t-r3'},
+        resultSetStatus:{created:false,reason:'selected_ticket',subjectChanged:false,filtersKey:null}})
+    ];
+    const reqs=[];
+    const client7=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(scripted.shift()),{status:200}); },getConfig:CFG,timeoutMs:1000});
+    const chat7=chatSb.MTAI.createChatController({client:client7,hooks:{},storage:store});
+    await chat7.send('Открой 3 заявку');
+    assert.equal(JSON.parse(store.getItem('mtAiChatHistoryV1')).selectedTicketId,'t-r3','T1: the ordinal selection is stored');
+    await chat7.send('Какой адрес был');
+    assert.equal(reqs[1].context.selectedTicketId,'t-r3','T2: a text turn keeps the selection');
+    assert.equal(JSON.parse(store.getItem('mtAiChatHistoryV1')).selectedTicketId,'t-r3','T2: still stored after the text turn');
+    await chat7.send('Дай карточку');
+    assert.equal(reqs[2].context.selectedTicketId,'t-r3','T3: the follow-up card request carries the exact ticket');
+  }
+
+  /* 11b) …and the explicit reset conditions still win. */
+  {
+    const resets=[
+      {tag:'a different structured context',status:{created:false,reason:'non_list_mode',subjectChanged:true,filtersKey:'{"city":"Z"}'}},
+      {tag:'a deleted ticket',status:{created:false,reason:'TICKET_NO_LONGER_AVAILABLE',subjectChanged:false,filtersKey:null}}
+    ];
+    for(const c of resets){
+      const store=memStorage();
+      store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
+      const scripted=[okResponse({answer:'—',resultSetStatus:c.status}), okResponse({answer:'ok'})];
+      const reqs=[];
+      const client8=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(scripted.shift()),{status:200}); },getConfig:CFG,timeoutMs:1000});
+      const chat8=chatSb.MTAI.createChatController({client:client8,hooks:{},storage:store});
+      await chat8.send('другое');
+      assert.equal(JSON.parse(store.getItem('mtAiChatHistoryV1')).selectedTicketId,null,'selection dropped for '+c.tag);
+      await chat8.send('Дай карточку');
+      assert.equal(reqs[1].context.selectedTicketId,undefined,'nothing stale is sent for '+c.tag);
+    }
+  }
+
+  /* 11c) a legacy-tool search alone does not carry a single-ticket context, so
+     the selection survives it as well (the server reports legacy_tool with
+     subjectChanged=true and no filtersKey). */
+  {
+    const store=memStorage();
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
+    const scripted=[okResponse({answer:'Знайшов 3 схожі.',resultSetStatus:{created:false,reason:'legacy_tool',subjectChanged:true,filtersKey:null}})];
+    const reqs=[];
+    const client9=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(scripted.shift()),{status:200}); },getConfig:CFG,timeoutMs:1000});
+    const chat9=chatSb.MTAI.createChatController({client:client9,hooks:{},storage:store});
+    await chat9.send('знайди щось схоже');
+    assert.equal(JSON.parse(store.getItem('mtAiChatHistoryV1')).selectedTicketId,'t-r3','a legacy-tool turn keeps the selection');
+  }
+
   console.log('PASS ai result-set: exact ids, TTL, subject change, size guard, persistence degradation');
 })().catch(function(err){console.error(err);process.exitCode=1;});

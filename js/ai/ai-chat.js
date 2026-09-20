@@ -170,8 +170,17 @@ MTAI.createChatController = function(deps){
       }else{
         if(outcome.selectedTicketId){
           selectedTicketId = validateTicketId(outcome.selectedTicketId);
-        }else if(resultStatus && resultStatus.created === false && resultStatus.reason !== 'selected_ticket'){
-          selectedTicketId = null;
+        }else if(resultStatus && resultStatus.reason !== 'selected_ticket'){
+          /* The selection is cleared only when the turn really brought a NEW
+             ticket context (a different structured filter set, an ambiguous
+             multi-list turn) or reported that the ticket is gone. A plain
+             text answer, a legacy-tool search and a «no list» turn carry no
+             new single-ticket context of their own: keeping the selection
+             alive is what makes «список → 3 заявку → який адрес? → дай
+             карточку» reach the exact ticket. */
+          const newTicketContext = resultStatus.subjectChanged === true &&
+            resultStatus.reason !== 'legacy_tool' && resultStatus.reason !== 'no_list_result';
+          if(newTicketContext || resultStatus.reason === 'TICKET_NO_LONGER_AVAILABLE') selectedTicketId = null;
         }
         /* A turn whose ticket context differs from the stored list (other
            filters, another search, no structured filters at all) invalidates
