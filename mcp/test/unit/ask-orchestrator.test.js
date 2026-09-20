@@ -344,11 +344,26 @@ test('authoritative total survives a truncated oversized tool result and ordinar
   assert.deepEqual(outcome.tickets, []);
 });
 
-test('explicit card request returns only the structured card projection', async () => {
+test('explicit card request WITH a target returns only the structured card projection', async () => {
+  /* v91.50: a target-less «Покажи картку заявки» is answered deterministically
+     by the card-request path (see the assertion below), so the structured
+     projection is covered with a phrase that names its own target. */
   const groq = scriptedGroq([toolResponse('list_tickets', '{}'), finalResponse('Показую картку заявки.')]);
   const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
-  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки', {history:[]});
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки на Садовій 21', {history:[]});
   assert.equal(outcome.total,1); assert.equal(outcome.tickets.length,1); assert.equal(outcome.tickets[0].id,'t-1');
+});
+
+test('target-less card request is code-owned: no model round-trip and no invented card', async () => {
+  let modelCalls = 0;
+  const groq = {chat:async()=>{ modelCalls++; return finalResponse('Показую картку заявки.'); }};
+  const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
+  const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки', {history:[]});
+  assert.equal(modelCalls, 0, 'the card path never asks the model to pick a ticket');
+  assert.equal(outcome.total, 0);
+  assert.deepEqual(outcome.tickets, [], 'no cards without an exact ticket');
+  assert.equal(outcome.presentation, null);
+  assert.equal(outcome.resultSetStatus.reason, 'no_selected_ticket');
 });
 
 test('multi-turn follow-up passes prior user/assistant context and executes fresh composable reads', async () => {

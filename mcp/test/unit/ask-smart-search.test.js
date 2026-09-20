@@ -276,18 +276,34 @@ test('referent chain: ordinary search stores hidden referent, next open turn res
   assert.equal(turn2.resultSetStatus.reason, 'selected_ticket');
 });
 
-test('explicit card turn with a NEW query: fresh result wins over the old referent', async () => {
-  /* Old referent A exists; the explicit card turn runs a NEW query that finds B.
-     The UI must receive B only — never A+B under the 8-cap. */
+test('explicit card turn with a NEW target: fresh result wins over the old referent', async () => {
+  /* Old referent A exists; the explicit card turn names its own target, so the
+     model runs a NEW query that finds B. The UI must receive B only — never
+     A+B under the 8-cap. (v91.50: the ANAPHORIC «дай карточку этой заявки» no
+     longer reaches the model at all — see the next test.) */
   const groq = scriptedGroq([
     toolResponse('query_tickets', '{"mode":"list","street":"Садова","house":"21"}'),
     finalResponse('Карточка знайденої заявки №1.')
   ]);
   const orch = createAskOrchestrator({groq, tools:queryToolsStub([ROW_B]), toolDefs:TOOL_DEFINITIONS});
-  const outcome = await orch.handle('Дай карточку этой заявки', {contextTickets:[ROW_A]});
+  const outcome = await orch.handle('Покажи карточку заявки на Садовій 21', {contextTickets:[ROW_A]});
   assert.equal(outcome.ok, true);
   assert.deepEqual(outcome.tickets.map(function(t){ return t.id; }), ['t-202'], 'new result B wins, old referent A dropped');
   assert.deepEqual(outcome.referentTickets.map(function(t){ return t.id; }), ['t-202'], 'next-turn referent is B too');
+});
+
+test('v91.50: an anaphoric card request is resolved from the chat state by the code', async () => {
+  /* «Дай карточку этой заявки» names no new target: the single referent of the
+     previous turn IS the ticket, so the answer is deterministic and the model
+     is never asked to choose (and can therefore never mix A with B). */
+  let modelCalls = 0;
+  const groq = {chat:async()=>{ modelCalls++; return finalResponse('Карточку показано нижче.'); }};
+  const orch = createAskOrchestrator({groq, tools:queryToolsStub([ROW_B]), toolDefs:TOOL_DEFINITIONS});
+  const outcome = await orch.handle('Дай карточку этой заявки', {contextTickets:[ROW_A]});
+  assert.equal(modelCalls, 0, 'no model round-trip for a target-less card request');
+  assert.equal(outcome.selectedTicketId, 't-101', 'exactly the referent of the previous turn');
+  assert.deepEqual(outcome.presentation, {kind:'single_ticket', ticket_id:'t-101'});
+  assert.deepEqual(outcome.tickets, [], 'no list cards at all');
 });
 
 test('open intent requires anaphora: address-targeted «покажи заявку X» stays an ordinary search', () => {
