@@ -265,9 +265,73 @@ function stableFiltersKey(value){
   return JSON.stringify(stableValue(value && typeof value === 'object' ? value : {}));
 }
 
-function isSelectedTicketOpen(question){
-  const q = String(question || '').trim();
-  return /^(?:открой|откройте|відкрий|відкрийте|покажи|покажі)\s+(?:её|ее|її|цю|эту|этот|цей)(?:\s+(?:заявку|заявки|профиль|профіль))?[.!?]*$/i.test(q);
+/* Deterministic «open the ticket we were just talking about» intent. Built from
+   short token lists (verb + optional «мне/мені» + anaphoric pronoun + optional
+   object noun + optional polite tail) instead of one brittle mega-regex, so new
+   phrasings are a one-line change. Deliberately NOT matched: field questions
+   («покажи її сигнал»), map asks («покажи її на карті») and long sentences. */
+export const CARD_OPEN_VERBS = ['открой','откройте','открыть','відкрий','відкрийте','відкрити','покажи','покажі','покажите','показати','дай','скинь'];
+export const CARD_OPEN_PRONOUNS = ['её','ее','її','цю','эту','этот','цей'];
+export const CARD_OPEN_NOUNS = ['карточку','карточка','карточки','карточкой','картку','картка','картки','заявку','заявка','заявки','замовлення','профіль','профиль','абонента','абонент','тикет','ticket'];
+export const CARD_OPEN_POLITE = ['пожалуйста','будь','ласка','please'];
+
+export function isSelectedTicketOpen(question){
+  const words = String(question == null ? '' : question).toLowerCase()
+    .replace(/[!?.,;:…"'«»()]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if(!words.length) return false;
+  let i = 0;
+  if(CARD_OPEN_VERBS.indexOf(words[i]) === -1) return false;
+  i++;
+  if(words[i] === 'мне' || words[i] === 'мені') i++;
+  if(CARD_OPEN_PRONOUNS.indexOf(words[i]) === -1) return false;
+  i++;
+  if(words[i] !== undefined && CARD_OPEN_NOUNS.indexOf(words[i]) !== -1) i++;
+  while(words[i] !== undefined && CARD_OPEN_POLITE.indexOf(words[i]) !== -1) i++;
+  return i === words.length;
+}
+
+/* Explicit ordinal selection INSIDE the active chat result set («покажи 11-ю»,
+   «покажи 11-ю из этих», «открой 11 заявку», «№11»). A bare number is never an
+   ordinal (it may be a house), address words right after the number veto it,
+   and a display/navigation verb (or «№»/«номер») must be present. */
+const ORDINAL_SUFFIX_RE = /(\d{1,3})\s*[-‑–]\s*(?:ю|у|я|й|а|е|ий|ый|ая|та|те|тий|ій|ої|му|го)(?![а-яіїєґa-z0-9])/;
+const ORDINAL_HINT_RE = /(покажи|покажі|покажите|показати|открой|откройте|открыть|відкрий|відкрийте|відкрити|дай|скинь|номер|№)/;
+const ORDINAL_VETO_RE = /^\s*(?:дом|дома|буд|будинку|будинок|кв|квартир|корпус|під'їзд|подъезд|улиц|вулиц|вул|ул)(?![а-яіїєґa-z0-9])/;
+
+export function detectExplicitOrdinal(question){
+  const q = String(question == null ? '' : question).toLowerCase().trim();
+  if(!q || !ORDINAL_HINT_RE.test(q)) return null;
+  const patterns = [
+    /№\s*(\d{1,3})\b/,
+    /номер\s+(\d{1,3})\b/,
+    /(\d{1,3})\s*(?:заявк(?:у|а|е|и|ой|ам|ами)|замовлення|замовлен|тикет|ticket)(?![а-яіїєґa-z0-9])/,
+    /(\d{1,3})\s*(?:из этих|из них|из списка|з цих|з них|зі списку)(?![а-яіїєґa-z0-9])/,
+    ORDINAL_SUFFIX_RE
+  ];
+  for(const re of patterns){
+    const m = re.exec(q);
+    if(!m) continue;
+    if(ORDINAL_VETO_RE.test(q.slice(m.index + m[0].length))) continue;
+    const index = Number(m[1]);
+    if(Number.isInteger(index) && index >= 1 && index <= 999) return {index:index, match:m[0]};
+  }
+  return null;
+}
+
+/* Words that carry no searchable content in an ordinal request. Everything
+   else («по Садовій», «за 12 сентября», «кабель») means the user asked for
+   something the ordinary flow can still find, so the ordinal is not the whole
+   request and the deterministic clarification must not swallow it. */
+const ORDINAL_FILLER_RE = /(?:покаж(?:и|і|іть|ите|ите)|показати|открой(?:те)?|открыть|відкрий(?:те)?|відкрити|дай(?:те)?|скинь(?:те)?|будь|ласка|пожалуйста|мне|мені|заявк\S*|замовлен\S*|тикет\S*|ticket\S*|номер|номера|из|з|із|этих|цих|этот|цей|эту|цю|её|ее|її|його|их|їх|них|списка|списку|же|таки|в|во|на|по|за|та|и|і|а|у|мне|мені)/g;
+
+export function ordinalOnlyRequest(question, ordinal){
+  if(!ordinal) return false;
+  let rest = String(question == null ? '' : question).toLowerCase();
+  if(ordinal.match) rest = rest.replace(String(ordinal.match).toLowerCase(), ' ');
+  rest = rest.replace(ORDINAL_FILLER_RE, ' ').replace(/[\s.,!?;:«»"'()\-]+/g, ' ');
+  return rest.trim() === '';
 }
 
 export function createAskOrchestrator(options){
@@ -323,6 +387,10 @@ export function createAskOrchestrator(options){
       const hasIndex = Object.prototype.hasOwnProperty.call(args, 'result_index');
       if(hasId === hasIndex) return JSON.stringify({isError:true, error:'INVALID_ARGUMENTS'});
       if(hasId && !validateTicketId(args.ticket_id)) return JSON.stringify({isError:true, error:'INVALID_ARGUMENTS'});
+      /* Ordinal lock: the requested number was already resolved from the active
+         chat result set. A model-supplied ticket_id («11») must NEVER replace
+         that resolution — the model only gets the resolved ticket back. */
+      if(capture && capture.ordinalLock && capture.ordinalLock.text) return capture.ordinalLock.text;
     }
     const validation = validateAgainstSchema(def.inputSchema, args);
     if(!validation.ok){
@@ -450,28 +518,55 @@ export function createAskOrchestrator(options){
     const chatSessionId = validChatSessionId(options && options.chatSessionId);
     const activeResultSet = sanitizeIncomingResultSet(options && options.resultSet, chatSessionId, nowMs);
     const incomingSelectedTicketId = validateTicketId(options && options.selectedTicketId);
+    /* Referent tickets from the PREVIOUS /ask answer, sent back by the PWA.
+       Needed both for the deterministic open below and as model context. */
+    const contextTickets = normalizeContextTickets(options && options.contextTickets);
+    /* Deterministic card-open. Exactly ONE unambiguous candidate may be opened
+       without the model: the explicit selection, a single referent ticket, or a
+       single-item active result set. Nothing is guessed — several candidates or
+       none get an honest clarification instead, so ticket identity never comes
+       from the LLM. */
     if(isSelectedTicketOpen(questionText)){
-      if(incomingSelectedTicketId){
+      let openTicketId = incomingSelectedTicketId || null;
+      let openAmbiguous = false;
+      if(!openTicketId){
+        if(contextTickets.length === 1) openTicketId = contextTickets[0].id;
+        else if(contextTickets.length > 1) openAmbiguous = true;
+        else if(activeResultSet.ok){
+          if(activeResultSet.value.ticketIds.length === 1) openTicketId = activeResultSet.value.ticketIds[0];
+          else openAmbiguous = true;
+        }
+      }
+      if(openTicketId){
         return {
           ok:true,
           answer:'Открываю выбранную заявку.',
           meta:{rounds:0, toolCallsMade:0, total:1, intent:'open'},
           total:1,
+          shown:0,
           tickets:[],
           referentTickets:[],
-          selectedTicketId:incomingSelectedTicketId,
-          presentation:{kind:'single_ticket', ticket_id:incomingSelectedTicketId},
+          resultSet:null,
+          resultItems:[],
+          selectedTicketId:openTicketId,
+          presentation:{kind:'single_ticket', ticket_id:openTicketId},
           resultSetStatus:{created:false, reason:'selected_ticket'}
         };
       }
       return {
         ok:true,
-        answer:'В этом чате ещё не выбрана заявка. Укажите её номер в списке или адрес.',
+        answer: openAmbiguous
+          ? 'Уточните, какую заявку открыть: назовите её номер из списка (например, «покажи 11-ю») или адрес.'
+          : 'В этом чате ещё не выбрана заявка. Назовите номер из списка (например, «покажи 11-ю») или адрес.',
         meta:{rounds:0, toolCallsMade:0, total:0, intent:'open'},
         total:0,
+        shown:0,
         tickets:[],
         referentTickets:[],
+        resultSet:null,
+        resultItems:[],
         selectedTicketId:null,
+        presentation:null,
         resultSetStatus:{created:false, reason:'no_selected_ticket'}
       };
     }
@@ -481,7 +576,6 @@ export function createAskOrchestrator(options){
        PWA. Seeded so «открой эту заявку» works across turns even when the
        model makes no new tool call; also surfaced to the model so ordinals
        («картку другої») resolve deterministically. */
-    const contextTickets = normalizeContextTickets(options && options.contextTickets);
     /* v91.46: structured follow-up context — the previous turn's
        authoritative resolved_filters, echoed back by the PWA. Whitelisted
        only (no notes/phones/PII); injected for the model and enforced
@@ -541,6 +635,69 @@ export function createAskOrchestrator(options){
           ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
       }
     }
+    /* Explicit ordinal («покажи 11-ю») while a chat result set is active: the
+       number is resolved HERE from the structured set (fresh READ for the exact
+       id), and the model may neither re-order nor replace it with a guessed
+       ticket_id. Out-of-range numbers get a deterministic honest answer. */
+    let ordinalLock = null;
+    if(activeResultSet.ok){
+      const ordinal = detectExplicitOrdinal(questionText);
+      if(ordinal){
+        const ordinalIds = activeResultSet.value.ticketIds;
+        if(ordinal.index > ordinalIds.length){
+          return {
+            ok:true,
+            answer:'В активном списке ' + ordinalIds.length + ' заявок — номера ' + ordinal.index + ' в нём нет. Назовите номер от 1 до ' + ordinalIds.length + ' или адрес.',
+            meta:{rounds:0, toolCallsMade:0, total:0, intent:'cards'},
+            total:0,
+            shown:0,
+            tickets:[],
+            referentTickets:[],
+            resultSet:null,
+            resultItems:[],
+            selectedTicketId:incomingSelectedTicketId || null,
+            presentation:null,
+            resultSetStatus:{created:false, reason:'result_index_out_of_range'}
+          };
+        }
+        const ordinalId = ordinalIds[ordinal.index - 1];
+        const lockCapture = {
+          setQueryEnvelope:function(){},
+          queryContext:null,
+          authoritativeFollowUp:false,
+          authoritativeText:null,
+          activeResultSet:activeResultSet,
+          listCandidates:[],
+          selectedIds:selectedIds,
+          selectedErrors:selectedErrors
+        };
+        const lockText = await executeTool({name:'get_ticket', argsRaw:JSON.stringify({ticket_id:ordinalId})}, collectedTickets, toolTotals, lockCapture);
+        ordinalLock = {index:ordinal.index, ticketId:ordinalId, text:lockText};
+      }
+    }
+    /* No usable list at all: an explicit ordinal cannot be resolved, so the
+       model must not turn «11-ю» into ticket id «11». When the ordinal is the
+       whole request the answer is deterministic and honest; a request that also
+       names an address/term keeps the ordinary search flow. */
+    if(!activeResultSet.ok){
+      const looseOrdinal = detectExplicitOrdinal(questionText);
+      if(ordinalOnlyRequest(questionText, looseOrdinal)){
+        return {
+          ok:true,
+          answer:'Не вижу активного списка заявок — номер ' + looseOrdinal.index + ' не к чему привязать. Сначала выполните поиск, а затем назовите номер, или укажите адрес либо id заявки.',
+          meta:{rounds:0, toolCallsMade:0, total:0, intent:'cards'},
+          total:0,
+          shown:0,
+          tickets:[],
+          referentTickets:[],
+          resultSet:null,
+          resultItems:[],
+          selectedTicketId:incomingSelectedTicketId || null,
+          presentation:null,
+          resultSetStatus:{created:false, reason:'ordinal_without_result_set', subjectChanged:false, filtersKey:null}
+        };
+      }
+    }
     /* NOTE: context is NOT merged into collectedTickets — a NEW tool query on
        an explicit card turn must win over the previous referent (otherwise the
        8-card cap could show old tickets instead of the freshly found one). */
@@ -587,7 +744,8 @@ export function createAskOrchestrator(options){
             activeResultSet,
             listCandidates,
             selectedIds,
-            selectedErrors
+            selectedErrors,
+            ordinalLock: ordinalLock
           });
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
@@ -611,7 +769,9 @@ export function createAskOrchestrator(options){
         candidateKeys.add(candidate.key);
         uniqueCandidates.push(candidate);
       }
-      const authoritative = uniqueCandidates.length === 1 ? uniqueCandidates[0] : null;
+      /* An ordinal-locked turn never rebuilds the active set: the number was
+         resolved against the set the user is looking at. */
+      const authoritative = (!ordinalLock && uniqueCandidates.length === 1) ? uniqueCandidates[0] : null;
       let activeSource = [];
       let total = 0;
       let cards = [];
@@ -623,27 +783,31 @@ export function createAskOrchestrator(options){
       if(authoritative){
         activeSource = authoritative.rows;
         total = Number.isFinite(authoritative.total) ? authoritative.total : activeSource.length;
-        const built = createResultSet(activeSource, total, chatSessionId, nowMs);
+        const built = createResultSet(activeSource, total, chatSessionId, nowMs, authoritative.key);
         if(built && built.resultSet){
           nextResultSet = built.resultSet;
           resultItems = built.items;
-          resultSetStatus = {created:true, skippedInvalid:built.skippedInvalid};
+          resultSetStatus = {created:true, skippedInvalid:built.skippedInvalid, subjectChanged:true, filtersKey:authoritative.key};
         }else{
-          resultSetStatus = {created:false, reason:chatSessionId ? 'no_valid_ticket_ids' : 'invalid_chat_session'};
+          resultSetStatus = {created:false, reason:chatSessionId ? 'no_valid_ticket_ids' : 'invalid_chat_session', subjectChanged:true, filtersKey:authoritative.key};
         }
         cards = intent ? projectTicketsForClient(activeSource) : [];
         referentTickets = projectReferentForClient(activeSource);
         nextQueryContext = projectQueryContext(authoritative.envelope);
       }else if(uniqueCandidates.length > 1){
-        resultSetStatus = {created:false, reason:'ambiguous_multiple_list_results'};
+        resultSetStatus = {created:false, reason:'ambiguous_multiple_list_results', subjectChanged:true, filtersKey:null};
       }else{
         activeSource = collectedTickets.length ? collectedTickets : (intent && contextTickets.length ? contextTickets : []);
         total = toolTotals.length ? toolTotals[toolTotals.length - 1].total : activeSource.length;
         cards = intent ? projectTicketsForClient(activeSource) : [];
         referentTickets = projectReferentForClient(activeSource);
         nextQueryContext = projectQueryContext(lastQueryEnvelope);
-        if(lastQueryEnvelope) resultSetStatus = {created:false, reason:'non_list_mode'};
-        else if(toolTotals.length) resultSetStatus = {created:false, reason:'legacy_tool'};
+        /* subjectChanged/filtersKey describe the TURN's own ticket context: the
+           PWA drops an old list when a new, different context arrived; a turn
+           with no ticket data at all never invalidates the active list. */
+        if(lastQueryEnvelope) resultSetStatus = {created:false, reason:'non_list_mode', subjectChanged:true, filtersKey:stableFiltersKey(lastQueryEnvelope.resolved_filters || {})};
+        else if(toolTotals.length) resultSetStatus = {created:false, reason:'legacy_tool', subjectChanged:true, filtersKey:null};
+        else resultSetStatus = {created:false, reason:'no_list_result', subjectChanged:false, filtersKey:null};
       }
       let selectedTicketId = null;
       let presentation = null;
@@ -653,9 +817,16 @@ export function createAskOrchestrator(options){
         cards = [];
         referentTickets = [];
         total = 1;
+        /* Selecting from the chat's own state is not a new ticket context: the
+           active result set must survive (otherwise a later «покажи 11-ю» would
+           silently lose the list it refers to). */
+        resultSetStatus = Object.assign({}, resultSetStatus, {created:false, reason:'selected_ticket', subjectChanged:false, filtersKey:null});
       }
-      if(selectedErrors.length && !selectedTicketId){
-        resultSetStatus = {created:false, reason:selectedErrors[selectedErrors.length - 1]};
+      if(selectedErrors.length && !selectedTicketId && !nextResultSet){
+        resultSetStatus = {created:false,
+          reason:selectedErrors[selectedErrors.length - 1],
+          subjectChanged: ordinalLock ? false : !!(lastQueryEnvelope || collectedTickets.length),
+          filtersKey: ordinalLock ? null : (lastQueryEnvelope ? stableFiltersKey(lastQueryEnvelope.resolved_filters || {}) : null)};
       }
       const shown = resultItems.length;
       const result = {

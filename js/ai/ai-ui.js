@@ -176,6 +176,11 @@ function build(){
     .ai-card-note{font-size:11.5px;color:var(--text-dim,#555);margin-top:2px;font-style:italic;word-break:break-word;}
     .ai-card .ai-card-open{margin-top:5px;}
     .ai-cards-more{margin-top:4px;}
+    .ai-result-list{margin:6px 0 0;font-size:12.5px;}
+    .ai-result-list ol{margin:2px 0 0;padding-left:20px;}
+    .ai-result-list-meta{font-size:11px;color:var(--text-faint);}
+    .ai-card-actions{display:flex;gap:6px;margin-top:5px;}
+    .ai-state-warning{font-size:11.5px;color:#b45309;margin-top:4px;}
   `;
   doc.head.appendChild(style);
 
@@ -323,14 +328,17 @@ function build(){
           );
         }
         if(out.presentation && out.presentation.kind === 'single_ticket' && MTAI.cards){
-          const rendered = MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.showOnMap(id); });
-          if(!rendered){
+          /* Exactly one ticket, exact id: the module looks it up in the loaded
+             list and, if it is not there yet (degraded read / fresh boot), in the
+             read-only IndexedDB store through the same helper the app's own open
+             action uses. onMissing fires once when nothing can be found. */
+          MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.showOnMap(id); }, function(){
             if(chat && typeof chat.invalidateSelection === 'function') chat.invalidateSelection();
             const missing = b.ownerDocument.createElement('div');
             missing.className = 'ai-state-warning';
             missing.textContent = 'Заявка больше недоступна на этом устройстве.';
             b.appendChild(missing);
-          }
+          });
         }
         /* Локальний запит від /ask (мережеві точки ФОБ/муфта/вузол): точки
            живуть лише на пристрої — виконуємо пошук локально і показуємо

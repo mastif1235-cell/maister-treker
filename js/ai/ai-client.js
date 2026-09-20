@@ -9,6 +9,9 @@ MTAI.createClient = function(options){
   const fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch : null);
   const getConfig = options.getConfig; // () => ({backendUrl, bearer, model, provider})
   const timeoutMs = (options.timeoutMs || MTAI.config.LIMITS.timeoutMs);
+  /* Leaves headroom below /ask's 32768-character limit. Overridable so tests can
+     exercise the boundary and the honest context_too_large error. */
+  const maxRequestChars = Number(options.maxRequestChars) > 0 ? Math.floor(Number(options.maxRequestChars)) : 30000;
 
   /* Запасний парсер часу з ТЕКСТУ помилки (основне джерело — число від
      Worker'а). Розуміє і словесні форми, і Groq-формат тривалості
@@ -228,7 +231,11 @@ MTAI.createClient = function(options){
     }
     const createdAt = Number(raw.createdAt), expiresAt = Number(raw.expiresAt);
     if(!isFinite(createdAt) || !isFinite(expiresAt) || expiresAt <= createdAt) return null;
-    return {version:1,id:String(raw.id == null ? '' : raw.id).slice(0,128),chatSessionId:chatSessionId,createdAt:createdAt,expiresAt:expiresAt,total:Math.max(0,Number(raw.total)||0),ticketIds:ticketIds};
+    /* An expired set is dropped HERE (and therefore also after a reload): a stale
+       list must never keep the ordinal selector alive or block the ordinary
+       referent path («пошук → відкрий її»). */
+    if(expiresAt <= Date.now()) return null;
+    return {version:1,id:String(raw.id == null ? '' : raw.id).slice(0,128),chatSessionId:chatSessionId,createdAt:createdAt,expiresAt:expiresAt,total:Math.max(0,Number(raw.total)||0),filtersKey:(typeof raw.filtersKey === 'string' && raw.filtersKey) ? raw.filtersKey.slice(0,300) : null,ticketIds:ticketIds};
   }
 
   function sanitizeResultItems(raw){
@@ -282,8 +289,8 @@ MTAI.createClient = function(options){
       body.context = body.context || {};
       body.context.selectedTicketId = ctxSelected;
     }
-    while(body.history.length && JSON.stringify(body).length > 30000) body.history.shift();
-    if(JSON.stringify(body).length > 30000){
+    while(body.history.length && JSON.stringify(body).length > maxRequestChars) body.history.shift();
+    if(JSON.stringify(body).length > maxRequestChars){
       clearTimeout(timer);
       return {ok:false,error:{kind:'context_too_large',message:'Контекст чата слишком велик. Очистите чат и повторите запрос.',detail:''}};
     }

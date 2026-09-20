@@ -115,6 +115,14 @@ MTAI.createChatController = function(deps){
        повторного пошуку. Пріоритет — прихований referentTickets (зберігається
        навіть коли картки при звичайному пошуку НЕ рендерились); fallback —
        видимі tickets зі старих збережених сесій. */
+    /* Набір з минулим expiresAt — не стан, на який можна спиратися: він не
+       надсилається на сервер і НЕ блокує referent-шлях (інакше протухлий список
+       назавжди глушив би «відкрий її» після звичайного пошуку). */
+    if(activeResultSet && !(Number(activeResultSet.expiresAt) > Date.now())){
+      activeResultSet = null;
+      selectedTicketId = null;
+      persist();
+    }
     let referent = [];
     if(!activeResultSet && !selectedTicketId){
       for(let i = messages.length - 1; i >= 0; i--){
@@ -155,13 +163,25 @@ MTAI.createChatController = function(deps){
          скидаються — інакше прострочений cooldownUntil міг би блокувати
          наступний send(), а stale lastFailed тримав би живою кнопку Retry. */
       lastFailed = null; cooldownUntil = 0;
+      const resultStatus = outcome.resultSetStatus && typeof outcome.resultSetStatus === 'object' ? outcome.resultSetStatus : null;
       if(outcome.resultSet){
         activeResultSet = outcome.resultSet;
         selectedTicketId = null;
-      }else if(outcome.selectedTicketId){
-        selectedTicketId = validateTicketId(outcome.selectedTicketId);
-      }else if(outcome.resultSetStatus && outcome.resultSetStatus.created === false && outcome.resultSetStatus.reason !== 'selected_ticket'){
-        selectedTicketId = null;
+      }else{
+        if(outcome.selectedTicketId){
+          selectedTicketId = validateTicketId(outcome.selectedTicketId);
+        }else if(resultStatus && resultStatus.created === false && resultStatus.reason !== 'selected_ticket'){
+          selectedTicketId = null;
+        }
+        /* A turn whose ticket context differs from the stored list (other
+           filters, another search, no structured filters at all) invalidates
+           that list: «покажи 11-ю» must never silently resolve against a list
+           the conversation already left. Turns that select FROM the stored state
+           (reason 'selected_ticket') keep it. */
+        if(activeResultSet && resultStatus && resultStatus.subjectChanged === true && resultStatus.reason !== 'selected_ticket'
+           && (resultStatus.filtersKey == null || resultStatus.filtersKey !== activeResultSet.filtersKey)){
+          activeResultSet = null;
+        }
       }
       messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets), queryContext:(outcome.queryContext && typeof outcome.queryContext === 'object' && !Array.isArray(outcome.queryContext)) ? outcome.queryContext : null });
       let emittedResultItems = outcome.resultItems || [];

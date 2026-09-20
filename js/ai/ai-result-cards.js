@@ -159,13 +159,20 @@ MTAI.cards = (function(){
     return list.children.length;
   }
 
-  function renderSingleLocal(container, rawId, onMap){
-    const id = validateTicketId(rawId);
-    if(!id) return false;
-    const all = typeof tickets !== 'undefined' && Array.isArray(tickets) ? tickets
-      : (typeof globalThis !== 'undefined' && Array.isArray(globalThis.tickets) ? globalThis.tickets : []);
-    const ticket = all.find(function(item){ return item && String(item.id).trim() === id; });
-    if(!ticket) return false;
+  function localTickets(){
+    if(typeof tickets !== 'undefined' && Array.isArray(tickets)) return tickets;
+    if(typeof globalThis !== 'undefined' && Array.isArray(globalThis.tickets)) return globalThis.tickets;
+    return [];
+  }
+  /* Exact match only — never fuzzy, never by name/address. */
+  function findLocalTicket(list, id){
+    if(!Array.isArray(list)) return null;
+    for(const item of list){
+      if(item && String(item.id).trim() === id) return item;
+    }
+    return null;
+  }
+  function drawSingleLocal(container, ticket, id, onMap){
     const doc = container.ownerDocument;
     const card = doc.createElement('div');
     card.className = 'ai-card ai-single-ticket';
@@ -197,6 +204,34 @@ MTAI.cards = (function(){
     card.appendChild(actions);
     container.appendChild(card);
     return true;
+  }
+
+  /* Single-ticket presentation. Returns true when the card is drawn from the
+     in-memory list, 'pending' when the read-only IndexedDB fallback (the same
+     helper MTAI.actions.openTicket uses) is looking the exact id up, false when
+     nothing could be found. `onMissing` fires exactly once in the false/pending
+     failure cases so the caller can invalidate the stale selection. */
+  function renderSingleLocal(container, rawId, onMap, onMissing){
+    const id = validateTicketId(rawId);
+    const missing = function(){ if(typeof onMissing === 'function') onMissing(); };
+    if(!id){ missing(); return false; }
+    const ticket = findLocalTicket(localTickets(), id);
+    if(ticket) return drawSingleLocal(container, ticket, id, onMap);
+    if(typeof ticketsDbRead === 'function'){
+      let settled = false;
+      Promise.resolve().then(function(){ return ticketsDbRead(); }).then(function(read){
+        const stored = read && read.status === 'ok' ? read.value : null;
+        const found = findLocalTicket(stored, id);
+        if(found){
+          settled = true;
+          drawSingleLocal(container, found, id, onMap);
+        }
+        if(!settled) missing();
+      }).catch(function(){ missing(); });
+      return 'pending';
+    }
+    missing();
+    return false;
   }
 
   return { normalize: normalize, render: render, renderResultList:renderResultList, renderSingleLocal:renderSingleLocal };

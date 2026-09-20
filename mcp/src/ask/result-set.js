@@ -6,6 +6,9 @@ export const RESULT_SET_HARD_MAX_ITEMS = 100;
 /* Leaves room below /ask's 32768-character request limit for the current
    question, eight 1500-char history messages, queryContext and envelope. */
 export const RESULT_SET_CONTEXT_CHAR_BUDGET = 13500;
+/* Stable key of the structured filters the list was built from. It lets the PWA
+   tell «same list» from «another ticket context» without re-deriving filters. */
+export const RESULT_SET_FILTERS_KEY_MAX = 300;
 
 function isObject(value){
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,6 +19,11 @@ function resultSetId(){
     if(globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') return globalThis.crypto.randomUUID();
   }catch(_err){}
   return 'rs-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 14);
+}
+
+function sanitizeFiltersKey(value){
+  const key = String(value == null ? '' : value).trim();
+  return key ? key.slice(0, RESULT_SET_FILTERS_KEY_MAX) : null;
 }
 
 export function validChatSessionId(value){
@@ -52,6 +60,7 @@ export function sanitizeIncomingResultSet(raw, chatSessionId, nowMs){
     createdAt,
     expiresAt,
     total:Math.max(0, Number(raw.total) || 0),
+    filtersKey:sanitizeFiltersKey(raw.filtersKey),
     ticketIds
   }};
 }
@@ -72,10 +81,11 @@ function safePreview(row, index, id){
   };
 }
 
-export function createResultSet(rows, total, chatSessionId, nowMs){
+export function createResultSet(rows, total, chatSessionId, nowMs, filtersKey){
   const session = validChatSessionId(chatSessionId);
   if(!session || !Array.isArray(rows)) return null;
   const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  const key = sanitizeFiltersKey(filtersKey);
   const ticketIds = [], items = [], seen = new Set();
   let skippedInvalid = 0;
   for(const row of rows){
@@ -87,7 +97,7 @@ export function createResultSet(rows, total, chatSessionId, nowMs){
     const probe = {
       version:RESULT_SET_VERSION, id:'x'.repeat(36), chatSessionId:session,
       createdAt:now, expiresAt:now + RESULT_SET_TTL_MS,
-      total:Math.max(0, Number(total) || rows.length), ticketIds:tentative
+      total:Math.max(0, Number(total) || rows.length), filtersKey:key, ticketIds:tentative
     };
     if(JSON.stringify(probe).length > RESULT_SET_CONTEXT_CHAR_BUDGET) break;
     seen.add(id);
@@ -103,6 +113,7 @@ export function createResultSet(rows, total, chatSessionId, nowMs){
       createdAt:now,
       expiresAt:now + RESULT_SET_TTL_MS,
       total:Math.max(0, Number(total) || rows.length),
+      filtersKey:key,
       ticketIds
     },
     items,
