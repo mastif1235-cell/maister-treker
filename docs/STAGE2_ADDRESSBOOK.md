@@ -215,7 +215,11 @@ dates) stay with the ticket tools. Follow-ups: an explicit ordinal over the prev
 answer's referents («відкрий другу картку» after a `find_tickets_by_address` list) is
 locked deterministically like the result-set ordinal, so «покажи її» opens exactly that
 ticket; a later READ that brings other tickets only sets
-`resultSetStatus.selectionChanged` and the PWA drops the stale selection.
+`resultSetStatus.selectionChanged` and the PWA drops the stale selection. v91.59: the
+selected ticket (`presentation.kind = single_ticket`) renders as the **standard** chat
+card — «👤 Відкрити профіль» through the existing `MTAI.actions.openTicket` by the
+existing `ticket.id`, «🗺️ На карті» only when the ticket has coordinates — the same
+card the list shows, not a bare «Закрити / На карті» card.
 
 ## Next stages
 
