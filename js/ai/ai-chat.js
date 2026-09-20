@@ -184,7 +184,10 @@ MTAI.createChatController = function(deps){
              карточку» reach the exact ticket. */
           const newTicketContext = resultStatus.subjectChanged === true &&
             resultStatus.reason !== 'legacy_tool' && resultStatus.reason !== 'no_list_result';
-          if(newTicketContext || resultStatus.reason === 'TICKET_NO_LONGER_AVAILABLE') selectedTicketId = null;
+          /* selectionChanged: the Worker saw this turn's READ bring OTHER
+             tickets only (the master moved on to another address) — the old
+             selection must not be what a later «покажи її» opens. */
+          if(newTicketContext || resultStatus.reason === 'TICKET_NO_LONGER_AVAILABLE' || resultStatus.selectionChanged === true) selectedTicketId = null;
         }
         /* A turn whose ticket context differs from the stored list (other
            filters, another search, no structured filters at all) invalidates
