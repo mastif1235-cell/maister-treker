@@ -40,6 +40,7 @@ function bindSettingsLocalListsControls(){
     if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addQuickDialBtn').click(); }
   });
 
+  if(typeof MTAddressBook!=='undefined'){bindAddressBookControls();return;}
   document.getElementById('cityMgmtList').addEventListener('click', e=>{
     const btn = e.target.closest('.remove-city-btn'); if(!btn) return;
     settings.cities = (settings.cities||[]).filter(c=>c!==btn.dataset.city);

@@ -1,6 +1,12 @@
 /* Canonical settings UI and catalog orchestration. */
 
 function backfillAddressDictionariesFromTickets(){
+  if(typeof MTAddressBook!=='undefined'){
+    if(mtAddressBookChange(book=>{
+      for(const ticket of tickets)if(typeof ticket.city==='string'&&ticket.city.trim())MTAddressBook.remember(book,ticket.city,typeof ticket.street==='string'?ticket.street:'');
+    })){renderCityMgmtList();showToast('Адреси додано. Заявки не змінено; неоднозначні міста пропущено.');}
+    return;
+  }
   if(!settings.cities) settings.cities = [];
   if(!settings.streets) settings.streets = {};
   let addedCities = 0, addedStreets = 0;

@@ -83,6 +83,9 @@ function renderQuickDialButtons(){
   ).join('');
 }
 function renderCityMgmtList(){
+  if(typeof MTAddressBook!=='undefined'){
+    mtAddressBookRenderCities();renderCityDatalist();renderStreetMgmtCitySelect();renderStreetMgmtList();return;
+  }
   document.getElementById('cityMgmtList').innerHTML = (settings.cities||[]).map(city=>
     `<span class="chip">${escapeHtml(city)} <span class="chip-x remove-city-btn" data-city="${escapeHtml(city)}">✕</span></span>`
   ).join('') || '<span style="color:var(--text-faint); font-size:13px;">Міст ще немає</span>';
@@ -110,6 +113,7 @@ function renderStreetDatalist(city){
    можна дописати вручну або видалити помилково внесене */
 let streetMgmtSelectedCity = '';
 function renderStreetMgmtCitySelect(){
+  if(typeof MTAddressBook!=='undefined'){mtAddressBookRenderSelect();return;}
   const sel = document.getElementById('streetMgmtCitySelect');
   if(!sel) return;
   const cities = (settings.cities||[]).slice().sort((a,b)=>a.localeCompare(b,'uk'));
@@ -119,6 +123,7 @@ function renderStreetMgmtCitySelect(){
     : `<option value="">— спершу додайте місто —</option>`;
 }
 function renderStreetMgmtList(){
+  if(typeof MTAddressBook!=='undefined'){mtAddressBookRenderStreets();return;}
   const wrap = document.getElementById('streetMgmtList');
   if(!wrap) return;
   const city = streetMgmtSelectedCity;

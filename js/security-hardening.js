@@ -86,6 +86,7 @@ function securityMergeImportedSettings(imported, current){
     if(SECURITY_URL_SETTING_KEYS.has(key) && !securityIsSafeHttpsUrl(value)) return;
     base[key] = value;
   });
+  if(typeof MTAddressBook!=='undefined')Object.assign(base,MTAddressBook.importSettings(imported,current));
   return base;
 }
 
@@ -135,4 +136,3 @@ if(typeof renderSettingsScreen === 'function'){
     return result;
   };
 }
-

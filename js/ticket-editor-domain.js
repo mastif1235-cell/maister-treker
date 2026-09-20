@@ -750,7 +750,9 @@ async function saveTicketFromForm(e){
   // NEW: автопрописка міста та вулиці — якщо введеного немає в довідниках,
   // додаємо автоматично (без походу в Налаштування), за зразком автопрописки
   // імен напарників у теги вище (calcMasterChips click-хендлер)
-  if(calcState.city){
+  if(calcState.city&&typeof MTAddressBook!=='undefined'){
+    mtAddressBookRemember(calcState.city,calcState.street);renderCityDatalist();
+  }else if(calcState.city){
     if(!settings.cities) settings.cities = [];
     if(!settings.cities.includes(calcState.city)){
       settings.cities.push(calcState.city);
