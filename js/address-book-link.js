@@ -45,7 +45,10 @@
   function applyToTicket(ticket,book){
     if(!ticket||typeof ticket!=='object'||Array.isArray(ticket))return false;
     const state=linkState(book,ticket);
-    if(state==='linked'||state==='foreign')return false;
+    /* linked — already consistent; foreign — another directory's ids;
+       partial — a half-written/garbage pair (imported file): all three are left
+       exactly as they are, the master sees them on the check screen instead. */
+    if(state==='linked'||state==='foreign'||state==='partial')return false;
     const resolved=linkResolution(book,ticket.city,ticket.street);
     if(resolved.cityId&&resolved.streetId){
       if(ticket.cityId===resolved.cityId&&ticket.streetId===resolved.streetId)return false;
@@ -55,7 +58,7 @@
     }
     /* Text no longer matches the stored link: keeping a wrong id would be worse
        than keeping none. Only ids this directory OWNS are dropped. */
-    if(state==='stale'||state==='partial'){
+    if(state==='stale'){
       let changed=false;
       if(ticket.cityId&&has(book,'cities',shape(str(ticket.cityId)))){delete ticket.cityId;changed=true;}
       if(ticket.streetId&&has(book,'streets',shape(str(ticket.streetId)))){delete ticket.streetId;changed=true;}

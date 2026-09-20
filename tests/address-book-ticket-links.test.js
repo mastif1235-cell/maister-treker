@@ -126,6 +126,22 @@ assert.equal(payload(linkedRow).backupNote.includes('cityId'),false,'ids never l
 const restoreSource=fs.readFileSync(path.join(root,'js','restore-from-sheets.js'),'utf8');
 assert.ok(/Object\.keys\(fullData\)\.forEach\(key=>\{ ticket\[key\] = fullData\[key\]; \}\);/.test(restoreSource),'restore copies the ids from повніДаніJSON into the local ticket');
 
+/* ---------- H) import hardening ---------- */
+/* A backup file is user input: the imported ids are bounded exactly like the
+   other short ticket fields, and an unknown/oversized value is never turned
+   into an identity claim — it stays visible as foreign and is never rewritten. */
+const securitySource=fs.readFileSync(path.join(root,'js','security-runtime-v65-9.js'),'utf8');
+const bounded=securitySource.match(/const short=\[([^\]]*)\]/);
+assert.ok(bounded,'the short-field bound list exists');
+assert.match(bounded[1],/'cityId'/,'cityId is bounded on import');
+assert.match(bounded[1],/'streetId'/,'streetId is bounded on import');
+const hostile={id:'t-hostile',date:'03.06.2026',time:'10:00',content:'',sum:0,tags:[],city:'Таромське',street:'Вул Привокзальна',house:'3б',
+  cityId:'X'.repeat(4096),streetId:'<script>alert(1)</script>'};
+const beforeHostile=JSON.stringify(hostile);
+assert.equal(LINK.linkState(book,hostile),'partial','a malformed id pair is partial — suspicious, never judged');
+LINK.applyToTicket(hostile,{cityId:cityId('Таромське'),streetId:streetId('Таромське','Вул Привокзальна')});
+assert.equal(JSON.stringify(hostile),beforeHostile,'a partial/foreign-linked row is left byte-identical');
+
 /* ---------- G) wiring ---------- */
 const ui=fs.readFileSync(path.join(root,'js','address-book-ui.js'),'utf8');
 assert.ok(ui.includes('function mtTicketAddressApply'),'the UI exposes one link entry point');
