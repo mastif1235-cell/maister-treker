@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.56 · 2026-09-20';
+const APP_VERSION = 'v91.57 · 2026-09-20';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -441,6 +441,8 @@ async function init(){
     retryPendingTelegramBackups();
   });
   window.addEventListener('offline', renderSyncQueueBanner);
+  // Stage 2D: довідник адрес для AI — надсилаємо лише якщо є непередані зміни
+  if(typeof mtDirectorySyncBoot==='function'){ try{ mtDirectorySyncBoot(); }catch(_e){} }
   // Маркер завершення init(): використовують браузерні E2E-тести (e2e/) і
   // діагностика, щоб відрізнити «застосунок ще ініціалізується» від «готовий».
   window.__mtAppInitDone = true;

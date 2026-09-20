@@ -8,6 +8,9 @@ function mtAddressBookChange(change){
     settings={...settings,addressBook:book,...MTAddressBook.projection(book)};
     if(saveSettings()===false)throw new Error('Інша вкладка керує записом');
     if(typeof mtAddressLinkInvalidate==='function')mtAddressLinkInvalidate();
+    /* Stage 2D: the AI backend learns the change through the next debounced
+       directory push (no-op when AI is not configured). */
+    if(typeof mtDirectorySyncSchedule==='function'){try{mtDirectorySyncSchedule();}catch(_error){}}
     return true;
   }catch(error){
     settings=previous;
@@ -38,6 +41,34 @@ function mtAddressBookRenderCities(){
     if(MTAddressBook.duplicateCandidates(book).length)wrap.insertAdjacentHTML('beforeend','<p role="status">Є збіги назв або aliases. UUID збережено окремо; автоматичного об’єднання немає.</p>');
   }catch(_error){wrap.textContent='Довідник UUID недоступний. Старі адреси та заявки збережено; перевірте резервну копію або активну вкладку.';}
   mtAddressBookRenderLinkCheck();
+  mtAddressBookRenderSyncStatus();
+}
+/* Stage 2D: what the AI backend knows about this directory. Read-only status
+   plus one explicit «send now» — the automatic push already runs after every
+   change, at start-up and before an AI question. */
+function mtAddressBookRenderSyncStatus(){
+  const wrap=document.getElementById('addressDirectorySync');if(!wrap)return;
+  const info=typeof mtDirectorySyncStatus==='function'?mtDirectorySyncStatus():null;
+  if(!info){wrap.innerHTML='';return;}
+  const when=info.pushedAt?new Date(info.pushedAt).toLocaleString('uk-UA'):null;
+  const counts=`${info.cities} міст, ${info.streets} вулиць`;
+  let text;
+  if(!info.configured)text='AI-асистент не налаштований — довідник адрес на AI-бекенд не передається (це потрібно лише для питань до AI).';
+  else if(info.inflight)text=`Довідник для AI: надсилається… (${counts})`;
+  else if(info.pending)text=`Довідник для AI: є зміни, ще не передані (${counts}). Передасться автоматично — після змін, при старті або перед питанням до AI.`;
+  else text=`Довідник для AI передано${when?' '+when:''} (${counts}). Нові вулиці й міста передаються автоматично.`;
+  const error=info.lastError?`<div style="color:var(--danger,#c0392b)">Остання спроба не вдалася: ${escapeHtml(info.lastError)}.</div>`:'';
+  wrap.innerHTML=`<div style="font-size:12px;color:var(--text-dim);margin-top:12px">${escapeHtml(text)}</div>${error}`+
+    (info.configured?`<button type="button" class="btn btn-sm btn-ghost btn-block" id="addressDirectorySyncBtn" style="margin-top:8px;"${info.inflight?' disabled':''}>☁️ Надіслати довідник для AI зараз</button>`:'');
+  const button=document.getElementById('addressDirectorySyncBtn');
+  if(button)button.onclick=async()=>{
+    button.disabled=true;
+    let result=null;
+    try{result=await mtDirectorySyncFlush({force:true});}catch(_error){result={ok:false,reason:'network'};}
+    if(result&&result.ok)showToast(`Довідник передано: ${result.cities} міст, ${result.streets} вулиць`);
+    else showToast(result&&result.reason==='auth'?'AI-бекенд відхилив токен — перевірте налаштування AI':result&&result.reason==='unavailable'?'AI-бекенд без сховища довідника (KV) — оновіть Worker':'Не вдалося передати довідник — спробуйте пізніше');
+    mtAddressBookRenderSyncStatus();
+  };
 }
 function mtAddressBookRenderSelect(){
   const sel=document.getElementById('streetMgmtCitySelect');if(!sel)return;

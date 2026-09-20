@@ -160,7 +160,10 @@ MTAI.createClient = function(options){
      фільтри попереднього query_tickets) — строга біла проєкція, дзеркало
      серверного mcp/src/ask/query-context.js. Ніяких нотаток/телефонів/ПІБ:
      невідомі ключі відкидаються. */
-  const QC_INHERITABLE = ['date_from','date_to','city','street','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items'];
+  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items'];
+  /* Stage 2D: directory identity of a resolved place (UUID shape only) — the
+     follow-up re-runs by UUID, mirror of the server whitelist. */
+  const QC_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   function sanitizeQueryContext(raw){
     if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const rf = raw.resolved_filters;
@@ -176,6 +179,8 @@ MTAI.createClient = function(options){
         if(isFinite(n)) out[key] = n;
       }else if(key === 'has_signal'){
         if(typeof v === 'boolean') out[key] = v;
+      }else if(key === 'city_id' || key === 'street_id'){
+        if(typeof v === 'string' && QC_ID_RE.test(v)) out[key] = v.toLowerCase();
       }else if(key === 'tags'){
         if(Array.isArray(v)) out[key] = v.slice(0,20).map(function(t){ return String(t == null ? '' : t).slice(0,60); }).filter(Boolean);
       }else if(key === 'items'){
