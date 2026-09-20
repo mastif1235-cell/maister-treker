@@ -308,6 +308,9 @@ function build(){
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
+        if(out.resultItems && out.resultItems.length && MTAI.cards){
+          MTAI.cards.renderResultList(b, out.resultItems, out.total, out.shown);
+        }
         /* Структуровані заявки з /ask -> картки з кнопками «Відкрити профіль»
            та «На карті» (READ-ONLY навігація через MTAI.actions). Якщо бекенд
            ще без контракту — inline-кнопки з тексту додає renderAnswer. */
@@ -318,6 +321,16 @@ function build(){
             function(id){ MTAI.actions.openTicket(id); },
             function(id){ MTAI.actions.showOnMap(id); }
           );
+        }
+        if(out.presentation && out.presentation.kind === 'single_ticket' && MTAI.cards){
+          const rendered = MTAI.cards.renderSingleLocal(b, out.presentation.ticket_id, function(id){ MTAI.actions.showOnMap(id); });
+          if(!rendered){
+            if(chat && typeof chat.invalidateSelection === 'function') chat.invalidateSelection();
+            const missing = b.ownerDocument.createElement('div');
+            missing.className = 'ai-state-warning';
+            missing.textContent = 'Заявка больше недоступна на этом устройстве.';
+            b.appendChild(missing);
+          }
         }
         /* Локальний запит від /ask (мережеві точки ФОБ/муфта/вузол): точки
            живуть лише на пристрої — виконуємо пошук локально і показуємо
@@ -330,6 +343,10 @@ function build(){
         if(out.meta && MTAI.storage.get().debug === true){
           const m = doc.createElement('div'); m.className = 'ai-meta'; m.textContent = 'rounds: ' + (out.meta.rounds != null ? out.meta.rounds : '?') + ' · tool_calls: ' + (out.meta.tool_calls != null ? out.meta.tool_calls : 0); messages.appendChild(m);
         }
+      },
+      state_degraded: function(){
+        const el = $('aiVoiceStatus');
+        if(el) el.textContent = '⚠️ Не удалось сохранить активный список; выбор по номеру отключён.';
       },
       error: function(err){
         const b = msgBubble('error');

@@ -21,6 +21,7 @@
 import {cleanStr, normalizeStem, matchScore, normalizeHouse, effectiveAddressParts, canonicalCityKey, placeTokens, ordinalToDigit} from './address.js';
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
+import {validateTicketId} from './ticket-id.js';
 
 /* ---------- normalization ---------- */
 
@@ -841,7 +842,7 @@ export function runSmartQuery(ctx, params){
       const sigNum = ticketSignalNumber(t);
       return {
         ord:offset + idx + 1,
-        id:String(t.id).slice(0, 64),
+        id:validateTicketId(t.id) || '',
         date:t.date, time:t.time,
         city:String(info.addr ? info.addr.city : (t.city || '')).slice(0, 80),
         street:String(info.addr ? info.addr.street : (t.street || '')).slice(0, 100),

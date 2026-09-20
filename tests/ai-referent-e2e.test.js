@@ -49,7 +49,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
   (async function(){
     await chat.send('Покажи мне заявку Садовая 19');
     assert.equal(requests.length,1);
-    assert.ok(!requests[0].context,'TURN 1: перше питання йде без контексту');
+    assert.ok(requests[0].context && requests[0].context.chatSessionId && !requests[0].context.tickets,'TURN 1: only the chat session binding is sent');
     assert.equal(assistant.length,1);
     assert.equal((assistant[0].tickets||[]).length,0,'TURN 1: visible cards = 0 (звичайний пошук)');
     assert.equal(assistant[0].referentTickets[0].id,'t-sad19','TURN 1: safe referent з реальним id збережено');
@@ -63,7 +63,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     assert.equal(assistant[1].tickets[0].id,'t-sad19','TURN 2: картка саме Садова 19');
 
     const persisted=JSON.parse(store.getItem('mtAiChatHistoryV1'));
-    const lastAssistant=persisted.slice().reverse().find(function(m){ return m.role==='assistant'; });
+    const lastAssistant=persisted.messages.slice().reverse().find(function(m){ return m.role==='assistant'; });
     assert.equal(lastAssistant.referentTickets[0].id,'t-sad19','referent переживає персист для майбутніх turn');
     console.log('PASS referent e2e: search(0 cards)+hidden referent -> open turn gets the real id');
   })().catch(function(e){ console.error(e); process.exit(1); });
@@ -192,7 +192,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
   (async function(){
     await chat.send('Скільки заявок у Миколаївці 1?');
     assert.equal(requests.length,1);
-    assert.ok(!requests[0].context,'перше питання без контексту');
+    assert.ok(requests[0].context && requests[0].context.chatSessionId && !requests[0].context.queryContext,'перше питання має лише session binding');
 
     await chat.send('Покажи их');
     assert.equal(requests.length,2);
@@ -204,7 +204,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     assert.ok(!JSON.stringify(ctx2).includes('0671234567'),'телефон не їде на сервер');
 
     const persisted=JSON.parse(store.getItem('mtAiChatHistoryV1'));
-    const lastAssistant=persisted.slice().reverse().find(function(m){ return m.role==='assistant'; });
+    const lastAssistant=persisted.messages.slice().reverse().find(function(m){ return m.role==='assistant'; });
     assert.ok(lastAssistant.queryContext && lastAssistant.queryContext.resolved_filters.city==='Миколаївка 1',
       'контекст переживає персист для наступних turn');
     console.log('PASS v91.46 follow-up context: whitelist-only round-trip through the real client chain');

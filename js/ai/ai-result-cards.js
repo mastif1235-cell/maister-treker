@@ -6,6 +6,7 @@
 (function(){
 'use strict';
 const MTAI = (typeof globalThis !== 'undefined' ? globalThis : window).MTAI;
+const validateTicketId = MTAI.ticketIds ? MTAI.ticketIds.validate : function(value){ const id=String(value==null?'':value).trim(); return /^[A-Za-z0-9._:-]{1,128}$/.test(id)?id:null; };
 
 MTAI.cards = (function(){
   function normalize(list){
@@ -13,8 +14,8 @@ MTAI.cards = (function(){
     const out = [];
     for(const item of list){
       if(!item || typeof item !== 'object') continue;
-      const id = String(item.id == null ? '' : item.id).trim().slice(0, 64);
-      if(!id || !/^[0-9a-zA-Z_\-]{1,64}$/.test(id)) continue;
+      const id = validateTicketId(item.id);
+      if(!id) continue;
       out.push({
         id: id,
         date: String(item.date == null ? '' : item.date).trim().slice(0, 32),
@@ -137,6 +138,67 @@ MTAI.cards = (function(){
     return items.length;
   }
 
-  return { normalize: normalize, render: render };
+  function renderResultList(container, raw, total, shown){
+    if(!Array.isArray(raw) || !raw.length) return 0;
+    const doc = container.ownerDocument;
+    const box = doc.createElement('div');
+    box.className = 'ai-result-list';
+    const meta = doc.createElement('div');
+    meta.className = 'ai-result-list-meta';
+    meta.textContent = 'Знайдено ' + Math.max(0, Number(total) || 0) + ' · показано ' + Math.max(0, Number(shown) || raw.length);
+    box.appendChild(meta);
+    const list = doc.createElement('ol');
+    for(const item of raw.slice(0,100)){
+      if(!item || typeof item !== 'object' || !validateTicketId(item.ticket_id)) continue;
+      const li = doc.createElement('li');
+      li.textContent = [String(item.date||'').trim(), String(item.time||'').trim(), String(item.address||'').trim(), String(item.type||'').trim()].filter(Boolean).join(' — ');
+      list.appendChild(li);
+    }
+    box.appendChild(list);
+    container.appendChild(box);
+    return list.children.length;
+  }
+
+  function renderSingleLocal(container, rawId, onMap){
+    const id = validateTicketId(rawId);
+    if(!id) return false;
+    const all = typeof tickets !== 'undefined' && Array.isArray(tickets) ? tickets
+      : (typeof globalThis !== 'undefined' && Array.isArray(globalThis.tickets) ? globalThis.tickets : []);
+    const ticket = all.find(function(item){ return item && String(item.id).trim() === id; });
+    if(!ticket) return false;
+    const doc = container.ownerDocument;
+    const card = doc.createElement('div');
+    card.className = 'ai-card ai-single-ticket';
+    card.setAttribute('data-ai-ticket-card', id);
+    const title = doc.createElement('div');
+    title.className = 'ai-card-title';
+    title.textContent = [ticket.date, ticket.time].filter(Boolean).join(' ');
+    card.appendChild(title);
+    const address = doc.createElement('div');
+    address.className = 'ai-card-addr';
+    address.textContent = [ticket.city, ticket.street, ticket.house].filter(Boolean).join(', ');
+    card.appendChild(address);
+    const actions = doc.createElement('div');
+    actions.className = 'ai-card-actions';
+    const close = doc.createElement('button');
+    close.type = 'button';
+    close.className = 'btn btn-sm ai-card-close';
+    close.textContent = 'Закрити';
+    close.addEventListener('click', function(){ card.remove(); });
+    actions.appendChild(close);
+    if(typeof onMap === 'function'){
+      const map = doc.createElement('button');
+      map.type = 'button';
+      map.className = 'btn btn-sm ai-card-map';
+      map.textContent = 'На карті';
+      map.addEventListener('click', function(){ onMap(id); });
+      actions.appendChild(map);
+    }
+    card.appendChild(actions);
+    container.appendChild(card);
+    return true;
+  }
+
+  return { normalize: normalize, render: render, renderResultList:renderResultList, renderSingleLocal:renderSingleLocal };
 })();
 })();

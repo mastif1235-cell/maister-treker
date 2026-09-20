@@ -25,7 +25,7 @@ function load(files, fetchImpl, extra){
     const out=norm([{id:'7',date:'01.08.2026',address:'A',type:'T'},{id:'bad id!'},{id:42},{},null,{id:'x'.repeat(90),address:'y'.repeat(400)}]);
     assert.equal(out.filter(t=>t).length,3,'keeps valid incl numeric-coerced');
     assert.equal(out[0].id,'7');
-    assert.equal(out[out.length-1].id.length,64,'id clipped');
+    assert.equal(out[out.length-1].id.length,90,'valid id is preserved exactly');
     assert.equal(norm('nope').length,0,'non-array -> empty');
     assert.equal(norm([{id:'a/b'},{id:'a b'}]).length,0,'ids with slashes/spaces rejected');
     console.log('PASS client.normalizeTickets: sanitization + cap');

@@ -337,12 +337,12 @@ test('intent trio: show=search, navigation verb=open with fresh READ, anaphora=o
   assert.equal(o2.tickets.length, 1, 'card for the freshly found ticket');
   assert.equal(o2.tickets[0].id, 't-sad19', 'real id reaches the open action');
 
-  /* 3) «Открой эту заявку» — open through the previous referent. */
+  /* 3) «Открой эту заявку» requires an explicit selected ticket. */
   const g3 = scriptedGroq([finalResponse('Відкриваю.')]);
   const o3 = await createAskOrchestrator({groq:g3, tools:queryToolsStub([]), toolDefs:TOOL_DEFINITIONS}).handle('Открой эту заявку', {contextTickets:o1.referentTickets});
   assert.equal(o3.meta.intent, 'open');
-  assert.equal(o3.tickets.length, 1);
-  assert.equal(o3.tickets[0].id, 't-sad19');
+  assert.equal(o3.tickets.length, 0);
+  assert.equal(o3.resultSetStatus.reason, 'no_selected_ticket');
 });
 
 test('navigation verbs are open intents even with a concrete target', () => {

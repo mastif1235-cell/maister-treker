@@ -129,7 +129,7 @@ const CORE=['js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'];
   assert.ok(indexHtml.includes('js/ai/ai-local-actions.js'),'module is loaded by index.html');
   assert.ok(indexHtml.indexOf('ai-result-cards.js') < indexHtml.indexOf('ai-local-actions.js') && indexHtml.indexOf('ai-local-actions.js') < indexHtml.indexOf('ai-ui.js'),'load order: after cards, before ui');
   assert.ok(swSource.includes('./js/ai/ai-local-actions.js'),'module is precached by the service worker');
-  assert.match(chatSource,/client\.ask\(question, history, \{ tickets: referent, queryContext: followUpQueryContext \}\)/,'chat passes referent + v91.46 structured follow-up context');
+  assert.match(chatSource,/client\.ask\(question, history, \{ tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId \}\)/,'chat passes referent, structured filters and active result-set state');
   assert.match(uiSource,/MTAI\.localActions\.renderResults\(b, out\.localQuery\)/,'UI executes local network queries');
   console.log('PASS static wiring: local actions module loaded, precached and called');
 }
