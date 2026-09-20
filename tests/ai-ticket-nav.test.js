@@ -108,13 +108,24 @@ function bootActions(tickets){
     const listBox=doc.createElement('div');
     assert.equal(sandbox.MTAI.cards.renderResultList(listBox,[{ticket_id:'A:1',date:'20.09.2026',address:'Main 1'}],3,1),1);
     assert.equal(listBox.children[0].children[0].textContent,'Знайдено 3 · показано 1');
+    /* v91.59: the selected-ticket presentation IS the standard card — the same
+       «👤 Відкрити профіль» (existing openTicket action, existing ticket.id) the
+       card list shows; «На карті» only with saved coordinates (none here); no
+       edit/delete (READ-ONLY). */
     const singleBox=doc.createElement('div');
-    assert.equal(sandbox.MTAI.cards.renderSingleLocal(singleBox,'A:1',function(){}),true);
+    const opened=[];
+    assert.equal(sandbox.MTAI.cards.renderSingleLocal(singleBox,'A:1',function(id){opened.push(id);},function(){throw new Error('map must not be offered without coordinates');}),true);
     const buttons=[];
     (function walk(el){if(el.tagName==='BUTTON')buttons.push(el);(el.children||[]).forEach(walk);})(singleBox);
-    assert.equal(singleBox.children.length,1,'exactly one local card');
-    assert.equal(buttons.length,2,'single card exposes close and map only');
-    assert.ok(buttons.every(function(btn){return !/edit|delete|profile|редак|видал|профіл/i.test(btn.textContent);}));
+    assert.equal(singleBox.children.length,1,'exactly one local card box');
+    assert.equal(singleBox.children[0].children.length,1,'exactly one card');
+    assert.equal(singleBox.children[0].children[0].getAttribute('data-ai-ticket-card'),'A:1');
+    assert.equal(buttons.length,1,'single card exposes the profile action only (no coordinates → no map)');
+    assert.equal(buttons[0].textContent,'👤 Відкрити профіль');
+    assert.equal(buttons[0].getAttribute('data-ai-ticket-id'),'A:1');
+    assert.ok(buttons.every(function(btn){return !/edit|delete|редак|видал|закри/i.test(btn.textContent);}));
+    (buttons[0]._handlers.click||[]).forEach(function(fn){ fn({type:'click'}); });
+    assert.deepEqual(opened,['A:1'],'the profile button opens exactly this ticket.id through the existing action');
     console.log('PASS deterministic result list + exact one-card local presentation');
   }
 
@@ -232,27 +243,28 @@ function bootActions(tickets){
     assert.equal(listBox.children[0].children[0].textContent,'Знайдено 19 · показано 8');
     /* exact id from the loaded list */
     const cardBox=doc.createElement('div');
-    assert.equal(M.cards.renderSingleLocal(cardBox,'A:1',function(){}),true);
-    assert.equal(cardBox.children.length,1,'exactly one ticket card');
+    assert.equal(M.cards.renderSingleLocal(cardBox,'A:1',function(){},function(){}),true);
+    assert.equal(cardBox.children.length,1,'exactly one ticket card box');
+    assert.equal(cardBox.children[0].children.length,1,'exactly one ticket card');
     /* not in memory → read-only IDB lookup, exact id only */
     const idbBox=doc.createElement('div');
     let missing=0;
-    assert.equal(M.cards.renderSingleLocal(idbBox,'t-IDB',function(){},function(){ missing++; }),'pending');
+    assert.equal(M.cards.renderSingleLocal(idbBox,'t-IDB',function(){},function(){},function(){ missing++; }),'pending');
     assert.equal(idbBox.children.length,0,'card is drawn asynchronously');
     await new Promise(function(r){ setTimeout(r,0); });
     assert.equal(idbBox.children.length,1,'IDB fallback drew exactly one card');
-    assert.ok(idbBox.children[0].children[1].textContent.includes('Second'),'the exact IDB ticket is shown');
+    assert.ok(idbBox.children[0].children[0].children[1].textContent.includes('Second'),'the exact IDB ticket is shown');
     assert.equal(missing,0,'no false «unavailable» warning');
     /* an invalid id never reaches the fallback */
     const badBox=doc.createElement('div');
     let badMissing=0;
-    assert.equal(M.cards.renderSingleLocal(badBox,'t IDB',function(){},function(){ badMissing++; }),false);
+    assert.equal(M.cards.renderSingleLocal(badBox,'t IDB',function(){},function(){},function(){ badMissing++; }),false);
     assert.equal(badMissing,1);
     assert.equal(badBox.children.length,0);
     /* nothing found anywhere → onMissing fires exactly once */
     const goneBox=doc.createElement('div');
     let goneMissing=0;
-    assert.equal(M.cards.renderSingleLocal(goneBox,'t-NOPE',function(){},function(){ goneMissing++; }),'pending');
+    assert.equal(M.cards.renderSingleLocal(goneBox,'t-NOPE',function(){},function(){},function(){ goneMissing++; }),'pending');
     await new Promise(function(r){ setTimeout(r,0); });
     assert.equal(goneMissing,1);
     assert.equal(goneBox.children.length,0);
