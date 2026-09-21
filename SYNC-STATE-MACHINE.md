@@ -40,11 +40,16 @@ The implemented IndexedDB schema is database `maisterTrackerSync` version 1, obj
 | delete after any attempt | increment revision; discard unattempted update tail; enqueue delete behind immutable head |
 | send | per-entity scheduler moves one operation to syncing; no second mutation for that ID starts |
 | readable success | compare returned entity/revision/deleted state, ack exact operation, then advance tail |
+| readable `STALE` (server revision already ahead, nothing written) | never acknowledged: park the operation as a conflict with the returned server state — same handling as `CONFLICT`, no automatic retry, user chooses accept-server or keep-local (rebase onto server revision + 1) |
 | timeout/lost readable response | bounded signed state verification; otherwise mark retryable without blocking UI |
 | retry | same requestId/body/revision, new timestamp/nonce/signature |
 | restart | load journal after storage/UI init; start one recovery loop if online, otherwise wait for online |
 
 `synced` is derived: no head/tail, no unacknowledged tombstone, and server-confirmed revision equals local revision.
+
+## Journal baseline and backups
+
+The journal (`committedRevision` per entity) is the only place the client knows the server revision. A device that lost it — restore of a file backup on a clean phone, cleared site data — would send `addTicket` revision 1 for an existing entity and receive `STALE`. Therefore every backup payload produced by the app (`exportJsonBackup`, daily IndexedDB slot, external daily file, pre-restore snapshot) includes `syncJournal` (the full journal snapshot, no secrets), and `mtBackupRestore` replaces the journal with it when present. Old backups without `syncJournal` still restore; their first edit of a pre-existing entity is then surfaced as a conflict by the `STALE` rule above instead of being lost. «Відновити з Google Sheets» seeds baselines from the signed `list` states as before.
 
 ## Delete-wins rules
 
