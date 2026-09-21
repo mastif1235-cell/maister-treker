@@ -25,6 +25,9 @@ MTAI.storage = (function(){
     ai.backendUrl = ai.backendUrl.trim().replace(/\/+$/, '');
     if(ai.backendMode !== 'shared' && ai.backendMode !== 'custom') ai.backendMode = ai.backendUrl ? 'custom' : '';
     if(typeof ai.showInTools !== 'boolean') ai.showInTools = false;
+    /* v91.60: voice extras — device-local, OFF by default (js/ai/voice/*). */
+    if(typeof ai.voiceAutoSend !== 'boolean') ai.voiceAutoSend = false;
+    if(typeof ai.voiceAutoRead !== 'boolean') ai.voiceAutoRead = false;
     if(typeof settings.aiBearerToken !== 'string') settings.aiBearerToken = '';
     return ai;
   }
@@ -38,6 +41,8 @@ MTAI.storage = (function(){
       else if(key === 'model' && typeof patch.model === 'string') ai.model = patch.model;
       else if(key === 'backendMode' && (patch.backendMode === 'shared' || patch.backendMode === 'custom' || patch.backendMode === '')) ai.backendMode = patch.backendMode;
       else if(key === 'backendUrl' && typeof patch.backendUrl === 'string') ai.backendUrl = patch.backendUrl.trim().replace(/\/+$/, '');
+      else if(key === 'voiceAutoSend') ai.voiceAutoSend = patch.voiceAutoSend === true;
+      else if(key === 'voiceAutoRead') ai.voiceAutoRead = patch.voiceAutoRead === true;
     });
     saveSettings();
     return ai;

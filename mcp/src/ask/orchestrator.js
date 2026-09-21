@@ -31,6 +31,9 @@ import {cityFilterAccepts} from './canonical.js';
    («Привокзальная 3Б», «кв. 1», «посёлок Шевченко»). Normalised here, on the
    /ask path only — the public /mcp tools keep their own semantics. */
 import {hygieneArgs} from './arg-hygiene.js';
+/* v91.60: the visible numbering of the answer IS the ordinal — referents and
+   result items are re-ordered to the list the user actually sees. */
+import {alignRowsToAnswer} from './answer-order.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -137,8 +140,16 @@ export function cardIntentFor(question){
      ticket; «Открой эту заявку» resolves through the previous referent. */
   if(/(?:відкрий|открой|відкрити|открыть)[^.!?;]{0,40}?(?:заявку|заяви|профіль|профиль|абонента)/i.test(q)) return 'open';
   if(/відкрити профіль|відкрий профіль|открыть профиль|перейти в заявку|перейдіть в заявку|перейти в неї|перейти в нього|мені потрібно.*перейт|хочу.*перейти в неї|в неё перешёл|в неї перешл/i.test(q)) return 'open';
+  /* v91.60: «А открой Днипро Матроська 22» — a navigation verb with a BARE
+     address target (street word + house number, no object noun) is an open
+     intent as well. The exact row is still picked by F4 from the structured
+     fields of the rows the turn received, never by the model. Years, sums and
+     dates are not houses: the number must follow a word of 3+ letters and must
+     not continue with digits/«.»/«:». */
+  if(NAV_VERB_ADDRESS_RE.test(q)) return 'open';
   return null;
 }
+const NAV_VERB_ADDRESS_RE = /^\s*(?:(?:а|и|і|ну|то|так|давай|давайте)[,\s]+)*(?:відкрий|відкрийте|открой|откройте|відкрити|открыть)(?![\p{L}])[^.!?;]*?\p{L}{3,}\s+\d{1,3}[а-яіїєґa-z]?(?![\d.:])(?!\s*(?:грн|грив|uah|₴|шт|штук|заявок|заявки|заявка|раз|разів|дн[яіи]|дней|днів|час|години?|годину|хвилин|минут|тижн|недел|місяц|месяц|рок|год|січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня|января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?![\p{L}]))/iu;
 
 /* Referent tickets from the PREVIOUS /ask answer (PWA sends them back as
    structured context). Same safe projection as cards: string fields only,
@@ -277,7 +288,7 @@ function stableFiltersKey(value){
    phrasings are a one-line change. Deliberately NOT matched: field questions
    («покажи її сигнал»), map asks («покажи її на карті») and long sentences. */
 export const CARD_OPEN_VERBS = ['открой','откройте','открыть','відкрий','відкрийте','відкрити','покажи','покажі','покажите','показати','дай','скинь'];
-export const CARD_OPEN_PRONOUNS = ['её','ее','її','цю','эту','этот','цей'];
+export const CARD_OPEN_PRONOUNS = ['её','ее','її','цю','эту','этот','цей','его','його'];
 export const CARD_OPEN_NOUNS = ['карточку','карточка','карточки','карточкой','картку','картка','картки','заявку','заявка','заявки','замовлення','профіль','профиль','абонента','абонент','тикет','ticket'];
 export const CARD_OPEN_POLITE = ['пожалуйста','будь','ласка','please'];
 
@@ -307,7 +318,7 @@ export function isSelectedTicketOpen(question){
    ordinary targeted request. */
 export const CARD_REQUEST_VERBS = ['дай','дайте','скинь','скиньте','покажи','покажі','покажите','показати','открой','откройте','открыть','відкрий','відкрийте','відкрити','можна','можно'];
 export const CARD_REQUEST_NOUNS = ['карточку','карточка','карточки','карточкой','картку','картка','картки','карткою','профиль','профіль','заявку','заявка','заявки','замовлення','абонента','абонент','тикет','ticket'];
-export const CARD_REQUEST_PRONOUNS = ['её','ее','її','цю','эту','этот','цей','його','цієї','этой','неё','нее','ту'];
+export const CARD_REQUEST_PRONOUNS = ['её','ее','її','цю','эту','этот','цей','його','его','него','нього','цієї','этой','неё','нее','ту'];
 export const CARD_REQUEST_FILLER = ['мне','мені','пожалуйста','будь','ласка','please','а','и','і','ну','же','таки','можешь','можеш','можете','може','сможешь','сможеш'];
 
 export function isCardRequestWithoutTarget(question){
@@ -373,13 +384,33 @@ function sameStreet(rowStreet, wantedStreet){
   return matchScore(rowStreet, wantedStreet) >= 0.92;
 }
 
+/* v91.60: referent tickets carry only the ONE address line this Worker built
+   itself (buildAddressLine: «Місто, Вулиця Будинок, кв. N»). Parsing that
+   deterministic format back gives F4 the same street/house/city fields for
+   the previous answer's tickets — so «открой Днипро Матроська 22» resolves
+   against the referents even when the model calls no tool. Free-text rows of
+   another shape yield null (no guessing). */
+export function structuredFromAddressLine(line){
+  const parts = String(line == null ? '' : line).split(',').map(function(p){ return p.trim(); }).filter(Boolean);
+  for(let i = 0; i < parts.length; i++){
+    const m = /^(.+?)\s+(\d{1,4}[а-яіїєґa-z]?(?:\/\d{1,4})?)$/iu.exec(parts[i]);
+    if(!m) continue;
+    if(/^(?:кв|квартира|кв\.)\s/i.test(parts[i])) continue;
+    return {street:m[1], house:m[2], city:i > 0 ? parts[i - 1] : ''};
+  }
+  return null;
+}
+
 function structuredRow(row){
   if(!row || typeof row !== 'object') return null;
-  const street = cleanStr(row.street), house = cleanStr(row.house);
-  if(!street || !house) return null;
   const id = validateTicketId(row.id);
   if(!id) return null;
-  return {id:id, street:row.street, house:row.house, city:cleanStr(row.city)};
+  let street = cleanStr(row.street), house = cleanStr(row.house);
+  if(street && house) return {id:id, street:row.street, house:row.house, city:cleanStr(row.city)};
+  if(street || house) return null;               /* half-structured: never guess */
+  const parsed = structuredFromAddressLine(row.address);
+  if(!parsed) return null;
+  return {id:id, street:parsed.street, house:parsed.house, city:cleanStr(parsed.city)};
 }
 
 export function exactAddressCandidateId(question, rows){
@@ -1157,6 +1188,10 @@ export function createAskOrchestrator(options){
         if(typeof response.retryAfterSeconds === 'number' && isFinite(response.retryAfterSeconds)){
           failure.retryAfterSeconds = response.retryAfterSeconds;
         }
+        /* v91.60: Groq's per-minute token budget refusal carries the two
+           numbers the provider named (limit / requested) — passed through
+           as-is for an honest rate-limit answer. */
+        if(response.tokenBudget && typeof response.tokenBudget === 'object') failure.tokenBudget = response.tokenBudget;
         return failure;
       }
       if(response.toolCalls.length){
@@ -1211,7 +1246,10 @@ export function createAskOrchestrator(options){
       let resultSetStatus = {created:false, reason:'no_list_result'};
       let nextQueryContext = null;
       if(authoritative){
-        activeSource = authoritative.rows;
+        /* v91.60: the list the user SEES defines the ordinals — the stored
+           set and the referents follow the answer's numbering, not the hidden
+           tool order. Unmatched or ambiguous lists keep the tool order. */
+        activeSource = alignRowsToAnswer(answer, authoritative.rows);
         total = Number.isFinite(authoritative.total) ? authoritative.total : activeSource.length;
         const built = createResultSet(activeSource, total, chatSessionId, nowMs, authoritative.key);
         if(built && built.resultSet){
@@ -1228,6 +1266,9 @@ export function createAskOrchestrator(options){
         resultSetStatus = {created:false, reason:'ambiguous_multiple_list_results', subjectChanged:true, filtersKey:null};
       }else{
         activeSource = collectedTickets.length ? collectedTickets : (intent && contextTickets.length ? contextTickets : []);
+        /* v91.60: same rule for referents («В каком городе есть адрес …» prints
+           the cities in its own order — «первую» must mean the first PRINTED). */
+        activeSource = alignRowsToAnswer(answer, activeSource);
         total = toolTotals.length ? toolTotals[toolTotals.length - 1].total : activeSource.length;
         cards = intent ? projectTicketsForClient(activeSource) : [];
         referentTickets = projectReferentForClient(activeSource);
@@ -1248,7 +1289,10 @@ export function createAskOrchestrator(options){
          request («Покажи заявки Кобзаря 15») is untouched: the gate below
          still requires intent ∈ {open, cards}, and the model never picks the
          ticket. */
-      const f4Rows = authoritative ? authoritative.rows : collectedTickets;
+      /* v91.60: when the turn brought no rows of its own (the model answered
+         from the conversation), the exact address is looked up in the previous
+         answer's referents — the same one-row-only rule, nothing guessed. */
+      const f4Rows = authoritative ? authoritative.rows : (collectedTickets.length ? collectedTickets : contextTickets);
       let exactAddressId = null;
       if(!ordinalLock && selectedIds.size !== 1 && (intent === 'open' || intent === 'cards')){
         if(f4Rows.length > 1) exactAddressId = exactAddressCandidateId(questionText, f4Rows);

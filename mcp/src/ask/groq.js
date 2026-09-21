@@ -12,6 +12,67 @@
 
 const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
+/* v91.60 — the Groq token budget.
+   The free tier of openai/gpt-oss-120b is 8 000 tokens per MINUTE and Groq
+   charges every request against it as (rendered prompt + DECLARED
+   max_completion_tokens) up front. A single clean-chat question («Какой
+   сегодня день») with the full canonical tool descriptions rendered to
+   ≈7 100 prompt tokens; with the former 4 096-token completion reserve the
+   declared total was ≈11 200 > 8 000 and Groq refused it with HTTP 413
+   «Request too large … on tokens per minute (TPM)» BEFORE any generation
+   (that is a budget refusal, not a conversation-size problem). Two
+   provider-specific knobs keep a normal turn inside the budget:
+     - GROQ_COMPACT_DESCRIPTIONS: short function descriptions (the same idea
+       DeepSeek already uses); schemas and parameter descriptions stay
+       canonical, so tool calls are unchanged;
+     - a 1 024-token completion reserve with reasoning_effort "low":
+       reasoning is hidden and the visible answer is a short data answer.
+   DeepSeek is untouched: it has no TPM cap and keeps its own settings. */
+export const GROQ_COMPACT_DESCRIPTIONS = {
+  list_tickets: 'Заявки з фільтрами: дати, тип, місто, сигнал, теги (сторінками).',
+  get_ticket: 'Повна заявка за ticket_id або result_index (номер з активного списку).',
+  search_tickets: 'Вільний текст заявки: телефон, теги, нотатки, абонент, обладнання. НЕ для адрес.',
+  query_tickets: 'Структурований пошук/кількості/групи/суми: дати, місто, вулиця, будинок, квартира, сигнал, позиції з ціною, телефон, договір, MAC, напарник; mode exists/count/list/group/stats.',
+  list_catalog: 'Реальні назви матеріалів, робіт, міст, напарників.',
+  find_tickets_by_address: 'Заявки за адресою у вільній формі (UA/RU написання, відмінки, одруківки).',
+  list_places: 'Вулиці/будинки, де є заявки (за містом).',
+  list_directory: 'Довідник адрес: населені пункти та вулиці з city_id/street_id, aliases.',
+  get_tickets_by_date: 'Заявки за одну дату.',
+  get_shifts: 'Зміни: дати, години, напарники.',
+  get_reports: 'Денні звіти: кількість, суми.',
+  get_statistics: 'Статистика day/week/month/all: суми, типи, оплати.'
+};
+
+/* Same shape as formatDeepSeekTools: only function.description is replaced,
+   parameters (with their own descriptions, enums, patterns) are passed
+   through untouched, and the global TOOL_DEFINITIONS are never mutated. */
+export function formatGroqTools(tools){
+  if(!Array.isArray(tools) || !tools.length) return undefined;
+  return tools.map(function(tool){
+    if(!tool || typeof tool !== 'object') return tool;
+    const fn = tool.function;
+    if(!fn || typeof fn !== 'object') return tool;
+    const compact = GROQ_COMPACT_DESCRIPTIONS[fn.name] || String(fn.description || '').slice(0, 160);
+    return {type: tool.type || 'function', function: {name: fn.name, description: compact, parameters: fn.parameters}};
+  });
+}
+
+/* Groq's TPM refusal arrives as HTTP 413 with the budget in the message:
+   «Request too large for model `openai/gpt-oss-120b` in organization
+   `org_…` service tier `on_demand` on tokens per minute (TPM): Limit 8000,
+   Requested 11176, please reduce your message size and try again.»
+   Only the two numbers are kept; the organization id is stripped. */
+export function parseTokenBudget(text){
+  const t = String(text || '');
+  if(!/tokens per minute|\bTPM\b/i.test(t)) return null;
+  const limit = /Limit\s+(\d+)/i.exec(t);
+  const requested = /Requested\s+(\d+)/i.exec(t);
+  return {
+    limit: limit ? Number(limit[1]) : null,
+    requested: requested ? Number(requested[1]) : null
+  };
+}
+
 /* Redacts anything that could be a secret from a Groq error body before it
    is logged or returned to clients: our own key value, gsk_… lookalikes and
    Bearer/sk token-like strings. Caps the length. */
@@ -20,6 +81,8 @@ function sanitizeDetail(text, apiKey){
   if(apiKey && out.indexOf(apiKey) !== -1) out = out.split(apiKey).join('[redacted]');
   out = out.replace(/gsk_[A-Za-z0-9_-]{8,}/g, '[redacted]');
   out = out.replace(/\b(sk|Bearer)[\s_-]+[A-Za-z0-9._-]{16,}/gi, '[redacted]');
+  /* the organization id is account metadata, not a diagnostic */
+  out = out.replace(/\s*in organization\s+`?org_[A-Za-z0-9_-]+`?/g, '');
   out = out.replace(/\s+/g, ' ').trim();
   return out.slice(0, 400);
 }
@@ -85,16 +148,23 @@ export function createGroqClient(options){
      reasoning_format "parsed" or "hidden" when tools are used — "hidden"
      keeps reasoning out of the assistant messages we echo back in the tool
      loop. temperature is omitted unless set explicitly, so the model's
-     documented default applies. 4096 leaves ample room for hidden reasoning
-     plus a short data answer while halving the per-call completion reserve
-     (Groq free tier is 8000 TPM for this model). */
-  const maxTokens = Number(options.maxTokens) || 4096;
+     documented default applies. The completion reserve is part of the TPM
+     budget Groq checks up front (see GROQ_COMPACT_DESCRIPTIONS above):
+     1024 tokens (Groq's documented default for gpt-oss) are ample for a
+     short data answer once reasoning effort is low, and keep a normal turn
+     under the 8000 TPM free-tier limit. reasoning_effort "low" is the
+     documented gpt-oss knob that stops hidden reasoning from eating the
+     whole completion reserve (at default effort gpt-oss may spend 1000+
+     tokens thinking and return an empty answer). */
+  const maxTokens = Number(options.maxTokens) || 1024;
   const temperature = options.temperature == null ? null : Number(options.temperature);
   const reasoningFormat = String(options.reasoningFormat || 'hidden');
+  const reasoningEffort = options.reasoningEffort === null ? null : String(options.reasoningEffort || 'low');
 
   async function chat(messages, tools){
     const controller = new AbortController();
     const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
+    const formattedTools = formatGroqTools(tools);
     let response;
     try{
       response = await fetchImpl(GROQ_CHAT_URL, {
@@ -102,7 +172,8 @@ export function createGroqClient(options){
         signal:controller.signal,
         headers:{'Content-Type':'application/json', Authorization:'Bearer ' + apiKey},
         body:JSON.stringify(Object.assign(
-          {model, messages, tools, tool_choice:'auto', reasoning_format:reasoningFormat, max_completion_tokens:maxTokens},
+          {model, messages, tools:formattedTools, tool_choice:'auto', reasoning_format:reasoningFormat, max_completion_tokens:maxTokens},
+          reasoningEffort == null ? {} : {reasoning_effort:reasoningEffort},
           temperature == null ? {} : {temperature}
         ))
       });
@@ -131,6 +202,18 @@ export function createGroqClient(options){
       if(response.status === 429){
         const wait = retryAfterFromHeaders(response.headers);
         result.retryAfterSeconds = wait != null ? wait : retryAfterFromMessage(detail);
+      }
+      /* 413 from Groq is (almost always) the per-minute token budget, not a
+         body-size problem: expose it as such so the Worker can answer with
+         an honest rate-limit instead of a generic «server error». */
+      if(response.status === 413){
+        const budget = parseTokenBudget(detail);
+        if(budget){
+          result.code = 'TOKEN_BUDGET';
+          result.tokenBudget = budget;
+          const wait = retryAfterFromHeaders(response.headers);
+          result.retryAfterSeconds = wait != null ? wait : retryAfterFromMessage(detail);
+        }
       }
       return result;
     }

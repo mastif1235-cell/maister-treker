@@ -8,7 +8,9 @@ if(typeof document === 'undefined') return; // unit-тесты в node
 const MTAI = window.MTAI;
 const doc = document;
 
-let built = false, chat = null, attachments = null, voice = null;
+let built = false, chat = null, attachments = null, voice = null, updateStatusLineRef = null;
+/* v91.60 voice extras (js/ai/voice/*): optional, OFF by default, null when the modules are absent */
+let voiceAutoSend = null, voiceTts = null;
 let quickExpanded = false; // 💡-панель подсказок: свёрнута после первого вопроса
 
 function $(id){ return doc.getElementById(id); }
@@ -181,6 +183,8 @@ function build(){
     .ai-result-list-meta{font-size:11px;color:var(--text-faint);}
     .ai-card-actions{display:flex;gap:6px;margin-top:5px;}
     .ai-state-warning{font-size:11.5px;color:#b45309;margin-top:4px;}
+    .ai-speak-btn{margin-top:6px;font-size:12px;padding:3px 9px;}
+    .ai-speak-btn.ai-speaking{background:rgba(76,125,255,.18);}
   `;
   doc.head.appendChild(style);
 
@@ -258,7 +262,11 @@ function build(){
   voice = MTAI.createVoiceInput({
     getLang: lastUserLang,
     onStatus: function(state, text){
-      const el = $('aiVoiceStatus'); if(el) el.textContent = text || '';
+      const el = $('aiVoiceStatus');
+      /* v91.60: while a voice auto-send is pending its quiet indication stays;
+         the recogniser's trailing «Розпізнаю…/Готово» must not erase it. */
+      const keepAutoSend = voiceAutoSend && voiceAutoSend.isPending() && (state === 'processing' || state === 'idle');
+      if(el && !keepAutoSend) el.textContent = text || '';
       /* Повторний тап після повернення з налаштувань: permission
          перевіряється заново, і щойно мікрофон дозволено/слухає —
          інструкція прибирається. */
@@ -277,8 +285,11 @@ function build(){
       inp.value = (inp.value ? inp.value + ' ' : '') + text;
       inp.focus();
       inp.dispatchEvent && typeof Event === 'function' && inp.dispatchEvent(new Event('input'));
+      /* v91.60: optional auto-send (OFF by default) — the module decides */
+      if(voiceAutoSend) voiceAutoSend.onFinalResult(text);
     },
     onError: function(err){
+      if(voiceAutoSend) voiceAutoSend.onError(err);
       const el = $('aiVoiceStatus');
       if(el) el.textContent = '⚠️ ' + err.message;
       /* denied/webview: користувач не знає, ДЕ вмикати мікрофон -> компактний
@@ -288,6 +299,18 @@ function build(){
       if(typeof showToast === 'function') showToast(err.message);
     }
   });
+  /* v91.60 voice extras — separate modules; nothing here when they are not loaded */
+  if(typeof MTAI.createVoiceAutoSend === 'function'){
+    voiceAutoSend = MTAI.createVoiceAutoSend({
+      isEnabled: function(){ return MTAI.storage.get().voiceAutoSend === true; },
+      getText: function(){ const inp = $('aiInput'); return inp ? inp.value : ''; },
+      send: function(){ submitQuestion(); },
+      onStatus: function(text){ const el = $('aiVoiceStatus'); if(el && (text || /Надсилаю за мить/.test(el.textContent))) el.textContent = text || ''; }
+    });
+  }
+  if(typeof MTAI.createVoiceTts === 'function'){
+    voiceTts = MTAI.createVoiceTts();
+  }
   chat = MTAI.createChatController({
     client: MTAI.client,
     attachments: attachments,
@@ -315,6 +338,10 @@ function build(){
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
+        /* v91.60: 🔊 for this answer's user text only (never metadata/cards/ids);
+           auto-read (OFF by default) reads each NEW successful answer once. */
+        if(voiceTts && voiceTts.supported()) attachSpeakButton(b, out.text);
+        if(voiceTts && voiceTts.supported() && MTAI.storage.get().voiceAutoRead === true) voiceTts.speak(out.text);
         if(out.resultItems && out.resultItems.length && MTAI.cards){
           MTAI.cards.renderResultList(b, out.resultItems, out.total, out.shown);
         }
@@ -470,9 +497,32 @@ function build(){
         const el = $('aiVoiceStatus');
         if(el) el.textContent = '⏳ Ліміт Groq: зачекайте ' + (info && info.sec ? info.sec : 1) + ' с.';
       },
-      cleared: function(){ retryButtons = []; cooldownRun++; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick(); }
+      cleared: function(){
+        if(voiceAutoSend) voiceAutoSend.onCleared();
+        if(voiceTts) voiceTts.stop();
+        retryButtons = []; cooldownRun++; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick();
+      }
     }
   });
+
+  /* v91.60: per-answer 🔊 control. Reads ONLY the answer text handed in;
+     a new read stops the previous one; the same button stops the reading. */
+  function attachSpeakButton(bubble, text){
+    const clean = MTAI.voiceTts && typeof MTAI.voiceTts.textForSpeech === 'function' ? MTAI.voiceTts.textForSpeech(text) : String(text || '');
+    if(!clean) return;
+    const btn = doc.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-sm ai-speak-btn';
+    btn.textContent = '🔊 Озвучити'; btn.setAttribute('aria-label', 'Озвучити відповідь');
+    let mine = false;
+    const paint = function(){ btn.classList.toggle('ai-speaking', mine); btn.textContent = mine ? '⏹ Стоп' : '🔊 Озвучити'; };
+    voiceTts.onChange(function(speaking){ if(!speaking) mine = false; paint(); });
+    btn.addEventListener('click', function(){
+      if(mine){ voiceTts.stop(); mine = false; paint(); return; }
+      mine = voiceTts.speak(text);
+      paint();
+    });
+    bubble.appendChild(btn);
+  }
 
   /* Быстрые подсказки: НЕ висят постоянно над composer. В новом/пустом
      чате — 4 компактных chip; после первого сообщения панель скрывается;
@@ -527,9 +577,16 @@ function build(){
     });
   }
   function updateStatusLine(){
+    const el = $('aiStatusLine');
+    if(!el) return;
     const line = MTAI.provider.statusLine(MTAI.storage, null);
-    $('aiStatusLine').textContent = 'Provider: ' + line.provider + ' · Model: ' + line.model + ' · Mode: ' + line.mode;
+    el.textContent = 'Provider: ' + line.provider + ' · Model: ' + line.model + ' · Mode: ' + line.mode;
   }
+  /* v91.60: the header must always name the provider/model the NEXT request
+     will use. build() runs once per page, but the provider can change in the
+     settings tab afterwards (MTAI.client reads it on every ask()), so the line
+     is refreshed on every open and exposed for the settings module. */
+  updateStatusLineRef = updateStatusLine;
 
   function autosizeInput(){
     const inp = $('aiInput');
@@ -537,12 +594,18 @@ function build(){
     inp.style.height = Math.min(inp.scrollHeight, 96) + 'px';
   }
   function submitQuestion(){
+    if(voiceAutoSend) voiceAutoSend.onManualSend();
     const inp = $('aiInput');
     const value = inp.value; inp.value = '';
     inp.style.height = '';
     chat.send(value);
   }
   $('aiForm').addEventListener('submit', function(e){ e.preventDefault(); submitQuestion(); });
+  /* v91.60: a real edit (user typing) cancels a pending voice auto-send;
+     the synthetic input event ai-voice's onResult dispatches is ignored. */
+  $('aiInput').addEventListener('input', function(e){
+    if(voiceAutoSend && !(e && e.isTrusted === false)) voiceAutoSend.onUserEdit();
+  });
   $('aiInput').addEventListener('keydown', function(e){
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); submitQuestion(); }
   });
@@ -562,7 +625,7 @@ function build(){
       $('aiVoiceStatus').textContent = '⚠️ SpeechRecognition не підтримується цим браузером. Відкрийте сторінку у Chrome — текстовий чат працює й так.';
       return;
     }
-    if(voice.isActive()){ voice.stop(); } else { voice.start(); }
+    if(voice.isActive()){ if(voiceAutoSend) voiceAutoSend.onStop(); voice.stop(); } else { voice.start(); }
   });
   function closePanel(){
     panel.style.display = 'none';
@@ -594,13 +657,19 @@ function open(){
   if(action === 'disabled'){ openBlocked('disabled'); return; }
   if(action === 'unconfigured'){ openBlocked('unconfigured'); return; }
   MTAI.ui.build();
+  refreshStatusLine();
   const panel = $('aiChatPanel');
   panel.style.display = 'flex';
   setTimeout(function(){ const inp = $('aiInput'); if(inp) inp.focus(); }, 60);
 }
 
+function refreshStatusLine(){
+  if(typeof updateStatusLineRef === 'function') updateStatusLineRef();
+}
+
 function restoreFromNavigation(){
   build();
+  refreshStatusLine();
   const panel = $('aiChatPanel');
   if(panel){
     panel.style.display = 'flex';
@@ -616,5 +685,5 @@ doc.addEventListener('click', function(e){
   if(btn){ e.preventDefault(); open(); }
 });
 
-window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction, restoreFromNavigation: restoreFromNavigation };
+window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction, restoreFromNavigation: restoreFromNavigation, refreshStatusLine: refreshStatusLine };
 })();
