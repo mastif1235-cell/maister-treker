@@ -287,6 +287,9 @@ function build(){
       out.textContent = res.status ? '⚠️ Бекенд відповів ' + res.status : '📴 Бекенд недоступний (мережа/адреса)';
     }
   });
+  /* v91.60: optional voice switches live in js/ai/voice/ai-voice-settings.js
+     and append their rows to this card (no-op when the module is absent). */
+  if(MTAI.voiceSettings && typeof MTAI.voiceSettings.build === 'function') MTAI.voiceSettings.build();
 }
 
 if(document.readyState === 'loading'){
