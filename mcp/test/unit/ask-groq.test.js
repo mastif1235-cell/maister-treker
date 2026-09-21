@@ -27,11 +27,16 @@ test('chat sends the documented request shape; key only in Authorization header'
   assert.equal(seen.method, 'POST');
   assert.equal(seen.headers.Authorization, 'Bearer ' + KEY);
   assert.equal(seen.body.model, 'openai/gpt-oss-120b');
-  assert.deepEqual(seen.body.tools, TOOLS);
+  /* tools keep the OpenAI shape; a tool without a compact entry keeps its
+     (capped) own description, schemas pass through untouched */
+  assert.deepEqual(seen.body.tools, [{type:'function', function:{name:'list_tickets', description:'Заявки з фільтрами: дати, тип, місто, сигнал, теги (сторінками).', parameters:{type:'object'}}}]);
   assert.equal(seen.body.tool_choice, 'auto');
   // gpt-oss on Groq: documented token param, no temperature by default,
-  // reasoning hidden while tools are attached
-  assert.equal(seen.body.max_completion_tokens, 4096);
+  // reasoning hidden while tools are attached. v91.60: the completion
+  // reserve is part of the 8K TPM budget Groq checks up front → 1024 with
+  // reasoning_effort "low" (was 4096: clean chat declared 11176 > 8000 → 413).
+  assert.equal(seen.body.max_completion_tokens, 1024);
+  assert.equal(seen.body.reasoning_effort, 'low');
   assert.equal(seen.body.max_tokens, undefined);
   assert.equal(seen.body.temperature, undefined);
   assert.equal(seen.body.reasoning_format, 'hidden');

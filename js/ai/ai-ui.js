@@ -8,7 +8,7 @@ if(typeof document === 'undefined') return; // unit-тесты в node
 const MTAI = window.MTAI;
 const doc = document;
 
-let built = false, chat = null, attachments = null, voice = null;
+let built = false, chat = null, attachments = null, voice = null, updateStatusLineRef = null;
 let quickExpanded = false; // 💡-панель подсказок: свёрнута после первого вопроса
 
 function $(id){ return doc.getElementById(id); }
@@ -527,9 +527,16 @@ function build(){
     });
   }
   function updateStatusLine(){
+    const el = $('aiStatusLine');
+    if(!el) return;
     const line = MTAI.provider.statusLine(MTAI.storage, null);
-    $('aiStatusLine').textContent = 'Provider: ' + line.provider + ' · Model: ' + line.model + ' · Mode: ' + line.mode;
+    el.textContent = 'Provider: ' + line.provider + ' · Model: ' + line.model + ' · Mode: ' + line.mode;
   }
+  /* v91.60: the header must always name the provider/model the NEXT request
+     will use. build() runs once per page, but the provider can change in the
+     settings tab afterwards (MTAI.client reads it on every ask()), so the line
+     is refreshed on every open and exposed for the settings module. */
+  updateStatusLineRef = updateStatusLine;
 
   function autosizeInput(){
     const inp = $('aiInput');
@@ -594,13 +601,19 @@ function open(){
   if(action === 'disabled'){ openBlocked('disabled'); return; }
   if(action === 'unconfigured'){ openBlocked('unconfigured'); return; }
   MTAI.ui.build();
+  refreshStatusLine();
   const panel = $('aiChatPanel');
   panel.style.display = 'flex';
   setTimeout(function(){ const inp = $('aiInput'); if(inp) inp.focus(); }, 60);
 }
 
+function refreshStatusLine(){
+  if(typeof updateStatusLineRef === 'function') updateStatusLineRef();
+}
+
 function restoreFromNavigation(){
   build();
+  refreshStatusLine();
   const panel = $('aiChatPanel');
   if(panel){
     panel.style.display = 'flex';
@@ -616,5 +629,5 @@ doc.addEventListener('click', function(e){
   if(btn){ e.preventDefault(); open(); }
 });
 
-window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction, restoreFromNavigation: restoreFromNavigation };
+window.MTAI.ui = { open: open, build: build, resolveAction: resolveAction, restoreFromNavigation: restoreFromNavigation, refreshStatusLine: refreshStatusLine };
 })();

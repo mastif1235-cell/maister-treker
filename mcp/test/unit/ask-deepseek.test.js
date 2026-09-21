@@ -10,7 +10,7 @@ import {
   parseDurationSeconds,
   retryAfterFromHeaders
 } from '../../src/ask/deepseek.js';
-import {createGroqClient} from '../../src/ask/groq.js';
+import {createGroqClient, GROQ_COMPACT_DESCRIPTIONS} from '../../src/ask/groq.js';
 import {createAskOrchestrator} from '../../src/ask/orchestrator.js';
 import {TOOL_DEFINITIONS, TOOL_NAMES} from '../../src/tools/definitions.js';
 
@@ -102,7 +102,10 @@ test('A-D, I: DeepSeek receives exactly 12 READ-only tools with compact descript
   assert.equal(seenBody.model, 'deepseek-flash');
 });
 
-test('E: Groq does NOT get DeepSeek-specific reductions (canonical descriptions preserved)', async () => {
+test('E: Groq does NOT get DeepSeek-specific reductions (its own projection, canonical schemas preserved)', async () => {
+  /* v91.60: Groq has its OWN compact projection (GROQ_COMPACT_DESCRIPTIONS —
+     the 8K TPM budget fix); it must never receive DeepSeek's descriptions and
+     the parameter schemas stay byte-identical to the canonical definitions. */
   const canonicalOpenAiTools = openaiToolsFromDefinitions(TOOL_DEFINITIONS);
   let seenBody = null;
   const fetchImpl = async function(url, init){
@@ -118,8 +121,10 @@ test('E: Groq does NOT get DeepSeek-specific reductions (canonical descriptions 
     const canonical = TOOL_DEFINITIONS[i];
     const outbound = seenBody.tools[i];
     assert.equal(outbound.function.name, canonical.name);
-    // Groq receives the full canonical description
-    assert.equal(outbound.function.description, canonical.description);
+    // Groq receives its own compact description — not DeepSeek's
+    assert.equal(outbound.function.description, GROQ_COMPACT_DESCRIPTIONS[canonical.name]);
+    assert.notEqual(outbound.function.description, DEEPSEEK_COMPACT_DESCRIPTIONS[canonical.name]);
+    assert.deepEqual(outbound.function.parameters, canonical.inputSchema, canonical.name + ': canonical schema preserved');
   }
 });
 

@@ -143,14 +143,19 @@ function build(){
     MTAI.storage.update({ enabled: e.target.checked });
     showToast && showToast(e.target.checked ? 'AI-асистент увімкнено' : 'AI-асистент вимкнено');
   });
+  /* v91.60: the chat header (if the panel already exists) follows the
+     provider/model switch immediately — the next request uses exactly that. */
+  function syncChatHeader(){
+    if(MTAI.ui && typeof MTAI.ui.refreshStatusLine === 'function') MTAI.ui.refreshStatusLine();
+  }
   $('aiProviderSelect').addEventListener('change', function(e){
     MTAI.storage.update({ provider: e.target.value, model: (MTAI.providers.get(e.target.value).models[0] || {}).id });
     cfg = MTAI.provider.ensure(MTAI.storage); // settings.ai (той самий об'єкт)
-    refreshModels(); refreshInfo();
+    refreshModels(); refreshInfo(); syncChatHeader();
   });
   $('aiModelSelect').addEventListener('change', function(e){
     MTAI.storage.update({ model: e.target.value });
-    refreshModels(); refreshInfo();
+    refreshModels(); refreshInfo(); syncChatHeader();
   });
   $('aiBackendUrlInput').addEventListener('change', function(e){
     const url = e.target.value.trim().replace(/\/+$/, '');

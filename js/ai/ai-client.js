@@ -61,6 +61,27 @@ MTAI.createClient = function(options){
     if(status === 402 || code === 'HTTP_402' || code === 'insufficient_balance' || /insufficient balance/i.test(detail)){
       return { kind:'billing', message:'Недостатній баланс на акаунті AI-провайдера (DeepSeek Insufficient Balance). Поповніть рахунок на платформі провайдера.', detail: detail };
     }
+    /* v91.60: Groq відмовляє на ХВИЛИННИЙ бюджет токенів (TPM) кодом HTTP 413
+       «Request too large … on tokens per minute (TPM): Limit N, Requested M».
+       Це не «завеликий запит» і не помилка сервера: провайдер рахує
+       prompt + зарезервовану відповідь проти ліміту за хвилину. Новий Worker
+       віддає 429 token_budget; старий — 502 HTTP_413 з тим самим текстом у
+       detail. Обидва формати показуються чесно, з числами провайдера. */
+    const tokenBudgetText = /tokens per minute|\bTPM\b/i.test(detail);
+    if(code === 'token_budget' || (code === 'HTTP_413' && tokenBudgetText)){
+      const budget = payload && payload.tokenBudget && typeof payload.tokenBudget === 'object' ? payload.tokenBudget : {};
+      let limit = Number(budget.limit), requested = Number(budget.requested);
+      if(!(limit > 0)){ const m = /Limit\s+(\d+)/i.exec(detail); limit = m ? Number(m[1]) : 0; }
+      if(!(requested > 0)){ const m = /Requested\s+(\d+)/i.exec(detail); requested = m ? Number(m[1]) : 0; }
+      const fromPayload = payload && (payload.retryAfterSeconds != null ? payload.retryAfterSeconds : payload.retry_after_sec);
+      const numeric = Number(fromPayload);
+      const retryAfterSec = (isFinite(numeric) && numeric > 0) ? Math.ceil(numeric) : (parseRetryAfter(detail) || null);
+      const numbers = (limit > 0 && requested > 0) ? ' (запит ' + requested + ' токенів при ліміті ' + limit + ' за хвилину)' : '';
+      return { kind:'rate_limit',
+        message: 'Хвилинний ліміт токенів провайдера' + numbers + '. '
+          + (retryAfterSec ? 'Повторіть через ~' + retryAfterSec + ' с' : 'Зачекайте хвилину або скоротіть запит чи очистіть чат') + '.',
+        detail: detail, retryAfterSec: retryAfterSec, tokenBudget: {limit: limit || null, requested: requested || null} };
+    }
     /* Поточний production-Worker віддає upstream-429 як 502 HTTP_429 (нова
        версія віддає чесний 429). Розпізнаємо обидва формати, щоб фікс працював
        і до оновлення Worker'а. */

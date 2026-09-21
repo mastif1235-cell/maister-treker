@@ -291,9 +291,34 @@ export function createApp(env, deps){
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');
-      const upstream = code === 'GROQ_ERROR' || code === 'DEEPSEEK_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code.indexOf('HTTP_') === 0;
+      const upstream = code === 'GROQ_ERROR' || code === 'DEEPSEEK_ERROR' || code === 'NETWORK' || code === 'MALFORMED' || code === 'TOKEN_BUDGET' || code.indexOf('HTTP_') === 0;
       const payload = {ok:false, error:'ask_failed', code};
       if(typeof outcome.detail === 'string' && outcome.detail) payload.detail = outcome.detail;
+
+      /* v91.60: Groq's HTTP 413 «Request too large … on tokens per minute
+         (TPM)» is a per-minute TOKEN BUDGET refusal (prompt + declared
+         completion reserve against the org's TPM limit) — it used to surface
+         as an opaque 502 HTTP_413 «server error». It is answered as an honest
+         429 rate-limit with the numbers Groq named (limit/requested) and the
+         wait when Groq gave one; the organization id never leaves the Worker. */
+      if(code === 'TOKEN_BUDGET'){
+        payload.error = 'rate_limited';
+        payload.code = 'token_budget';
+        payload.provider = requestedProvider;
+        if(outcome.tokenBudget && typeof outcome.tokenBudget === 'object'){
+          const budget = {};
+          if(Number.isFinite(outcome.tokenBudget.limit)) budget.limit = outcome.tokenBudget.limit;
+          if(Number.isFinite(outcome.tokenBudget.requested)) budget.requested = outcome.tokenBudget.requested;
+          payload.tokenBudget = budget;
+        }
+        const headers = {};
+        if(typeof outcome.retryAfterSeconds === 'number' && isFinite(outcome.retryAfterSeconds) && outcome.retryAfterSeconds > 0){
+          payload.retryAfterSeconds = outcome.retryAfterSeconds;
+          payload.retry_after_sec = outcome.retryAfterSeconds;
+          headers['Retry-After'] = String(outcome.retryAfterSeconds);
+        }
+        return jsonResponse(429, payload, headers);
+      }
 
       if(code === 'HTTP_402'){
         payload.error = 'insufficient_balance';

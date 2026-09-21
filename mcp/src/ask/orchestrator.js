@@ -1188,6 +1188,10 @@ export function createAskOrchestrator(options){
         if(typeof response.retryAfterSeconds === 'number' && isFinite(response.retryAfterSeconds)){
           failure.retryAfterSeconds = response.retryAfterSeconds;
         }
+        /* v91.60: Groq's per-minute token budget refusal carries the two
+           numbers the provider named (limit / requested) — passed through
+           as-is for an honest rate-limit answer. */
+        if(response.tokenBudget && typeof response.tokenBudget === 'object') failure.tokenBudget = response.tokenBudget;
         return failure;
       }
       if(response.toolCalls.length){
