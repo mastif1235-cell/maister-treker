@@ -59,6 +59,8 @@ function toolsHomeHtml(){
   return `<div class="tools-grid">
     <button type="button" class="btn" data-tools-view="map"><span class="tools-icon">🗺️</span>Карта</button>
     <button type="button" class="btn" data-tools-action="quick-diagnostics"><span class="tools-icon">🛠</span>Діагностика</button>
+    <button type="button" class="btn" data-tools-view="ping"><span class="tools-icon">📡</span>Пінг</button>
+    <button type="button" class="btn" data-tools-view="speedtest"><span class="tools-icon">⚡</span>Speedtest</button>
     ${(settings&&settings.ai&&settings.ai.enabled&&settings.ai.showInTools)?'<button type="button" class="btn" data-tools-action="ai-assistant"><span class="tools-icon">🤖</span>AI Асистент</button>':''}
   </div>
   <div class="card" style="margin-top:12px;font-size:12px;color:var(--text-dim);">Інструменти зберігають дані лише на цьому пристрої. Діагностика не створює записів без явного натискання «Зберегти».</div>`;
@@ -67,6 +69,8 @@ function toolsBackButton(){return appNavigationCanGoBack()?appBackButtonHtml(too
 function toolsNavigate(view){
   const from=toolsView;if(from===view)return renderToolsScreen(view);
   if(from==='map'&&view!=='map')MTOfflineMap?.resetViewMode?.();
+  if(from==='ping'&&view!=='ping')toolsPingLeave?.();
+  if(from==='speedtest'&&view!=='speedtest')toolsSpeedtestLeave?.();
   appNavigationPush(`tools-${view}`,()=>{if(toolsView==='map')MTOfflineMap?.resetViewMode?.();toolsView=from;switchTab('tools');renderToolsScreen(from);});toolsView=view;renderToolsScreen(view);
 }
 function toolsOpenRootFromTab(){
@@ -321,6 +325,8 @@ function renderToolsScreen(view){
   const root=document.getElementById('toolsScreenRoot');if(!root)return;
   MTToolsMap?.captureView?.();
   if(toolsView==='diagnostics')root.innerHTML=toolsDiagnosticsHtml();
+  else if(toolsView==='ping')root.innerHTML=toolsPingHtml();
+  else if(toolsView==='speedtest')root.innerHTML=toolsSpeedtestHtml();
   else if(toolsView==='map'){
     root.innerHTML=toolsMapHtml();
     requestAnimationFrame(()=>MTToolsMap.mount(document.getElementById('toolsLeafletMap'),MTToolsCore.mapObjects(tickets,toolsNetworkPoints),{
@@ -349,6 +355,11 @@ function bindToolsScreen(){
     else if(action==='save-diagnostics')toolsSaveCurrentDiagnostic();
     else if(action==='reset-diagnostic-address')toolsResetDiagnosticAddress();
     else if(action==='run-speed-test')toolsRunSpeedTest();
+    else if(action==='ping-start')toolsPingStart();
+    else if(action==='ping-stop')toolsPingStop();
+    else if(action==='ping-preset'){const preset=event.target.closest('[data-ping-preset]');const input=document.getElementById('toolsPingTarget');if(preset&&input){input.value=preset.dataset.pingPreset;input.focus();}}
+    else if(action==='speed-start')toolsSpeedtestStart();
+    else if(action==='speed-stop')toolsSpeedtestStop();
     else if(action==='cancel-speed-test')toolsCancelSpeedTest();
     else if(action==='return-to-ticket')toolsReturnToTicket();
     else if(action==='new-network-point')toolsOpenNetworkPointEditor();

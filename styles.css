@@ -452,3 +452,9 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
   border-radius:999px; font-size:13.5px; font-weight:600; z-index:80; box-shadow:0 4px 14px rgba(0,0,0,.3);
   border:1px solid var(--border);
 }
+
+/* ─── Мережеві інструменти: Пінг + Speedtest (власні екрани) ─── */
+.tools-speed-dial{width:168px;height:168px;display:block;margin:0 auto;}
+.tools-speed-dial-arc{transition:stroke-dashoffset .45s ease;}
+@media (prefers-reduced-motion: reduce){.tools-speed-dial-arc{transition:none;}}
+.tools-ping-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;text-align:center;}
