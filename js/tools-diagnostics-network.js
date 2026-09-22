@@ -1,17 +1,4 @@
 /* Browser speed diagnostics. Loaded after tools-domain.js. */
-async function toolsTimedFetch(url,timeoutMs=5000){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),started=performance.now();
-  try{
-    const response=await fetch(url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:controller.signal});
-    return{ok:response.ok,status:response.status,httpMs:Math.max(0,Math.round(performance.now()-started)),response};
-  }catch(_e){return{ok:false,status:0,httpMs:null,response:null};}
-  finally{clearTimeout(timer);}
-}
-async function toolsFetchIp(url){
-  const measured=await toolsTimedFetch(`${url}?format=json&_=${Date.now()}-${Math.random().toString(36).slice(2)}`,5000);
-  if(!measured.ok)return{...measured,ip:''};
-  try{const body=await measured.response.json();return{...measured,ip:String(body?.ip||'').slice(0,80)};}catch(_e){return{...measured,ok:false,ip:''};}
-}
 async function runToolsDiagnostics(){
   if(toolsSpeedController)return;
   const button=document.getElementById('toolsRunDiagnosticsBtn');

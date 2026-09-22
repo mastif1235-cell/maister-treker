@@ -18,10 +18,6 @@ function extractAddressTokens(text){
     .filter(tok => tok && tok.length>1 && !ADDRESS_STOPWORDS.has(tok));
 }
 
-function naturalSortStrings(arr){
-  return arr.slice().sort((a,b)=>a.localeCompare(b, 'uk', {numeric:true, sensitivity:'base'}));
-}
-
 function ticketApartmentKey(t){ return (t.apartment||'').trim() || '(без кв.)'; }
 
 function isoToDdmmyyyy(dateStr){

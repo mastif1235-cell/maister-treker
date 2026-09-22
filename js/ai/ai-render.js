@@ -27,9 +27,6 @@ MTAI.createRenderer = function(doc){
     if(text != null) el.appendChild(doc.createTextNode(text));
     return el;
   }
-  function isTicketRef(token){
-    return /^(?:№|#)?\s?\d{1,7}$/.test(token) || /^[a-z]{1,4}[-_]?\d{1,6}$/i.test(token);
-  }
   /* Текст моделі ніколи не є джерелом ticket.id. Structured result cards
      carry the only actionable id metadata; answer text remains inert.
      **жирний** рендеримо як <strong> з текстових вузлів — без HTML. */
