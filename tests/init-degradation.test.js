@@ -32,8 +32,8 @@ assert.match(initSlice,/renderTicketsScreen\(\);[\s\S]*?renderShiftsScreen\(\);[
 
 // Усі «живі» звернення до рушія поза межами init — під guard.
 const consumers=[
-  ['js/reports-domain.js',/if\(!syncEngine\)\{ showToast\([^)]*локально[^)]*\); return; \}\n\s*const ok = await syncEngine\.flush\(\);/g,2],
-  ['js/tickets-domain.js',/if\(!syncEngine\)\{ showToast\('Синхронізація тимчасово недоступна — зміни збережено локально'\); return; \}\n\s*showToast\('Повторна спроба надсилання\.\.\.'\);\n\s*const ok = await syncEngine\.flush\(\);/,1]
+  ['js/reports-domain.js',/if\(!syncEngine\)\{ showToast\([^)]*локально[^)]*\); return; \}\r?\n\s*const ok = await syncEngine\.flush\(\);/g,2],
+  ['js/tickets-domain.js',/if\(!syncEngine\)\{ showToast\('Синхронізація тимчасово недоступна — зміни збережено локально'\); return; \}\r?\n\s*showToast\('Повторна спроба надсилання\.\.\.'\);\r?\n\s*const ok = await syncEngine\.flush\(\);/,1]
 ];
 for(const [file,re,min] of consumers){
   const source=read(file);
