@@ -101,7 +101,6 @@ async function repairCorruptedTickets(){
   // теж можна витягнути.
   const looksLikeDateToString = (v) => typeof v === 'string' && /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/.test(v);
   let repaired = 0, unfixable = 0;
-  let counter = 0;
   tickets.forEach(t=>{
     const idBroken = looksLikeDateToString(t.id);
     const dateBroken = looksLikeDateToString(t.date) || !/^\d{2}\.\d{2}\.\d{4}$/.test(t.date||'');
@@ -118,8 +117,12 @@ async function repairCorruptedTickets(){
       if(!isNaN(d.getTime())) newTime = formatTime(d);
     }
     if(newDate || newTime || idBroken){
-      counter++;
-      t.id = Date.now() + counter; // новий унікальний числовий id
+      // Сучасний рядковий id — той самий підхід, що й у runBulkImport:
+      // числові id минулого варіанту змішували типи (рядок-uuid ↔ число)
+      // і залежали від годинника. Змінюємо id ЛИШЕ битих legacy-записів.
+      t.id = (typeof MTSyncEngineRuntime!=='undefined' && MTSyncEngineRuntime.uuid)
+        ? MTSyncEngineRuntime.uuid()
+        : ('repair-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));
       if(newDate) t.date = newDate;
       else if(dateBroken) t.date = formatDate(new Date()); // не змогли відновити — ставимо сьогодні
       if(newTime) t.time = newTime;
