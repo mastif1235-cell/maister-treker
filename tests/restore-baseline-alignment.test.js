@@ -92,7 +92,8 @@ function codeGsGate(server){
 }
 
 async function verifyEngineAlignment(){
-  // 2a. Доказ причини R1: старий (невирівняний) baseline гине мовчки в STALE.
+  // 2a. Причина R1: старий (невирівняний) baseline отримує STALE. Правка не
+  //     губиться мовчки — вона паркується як конфлікт (див. sync-engine-runtime).
   const staleServer = {ticket:{t1:{revision:5,tombstone:false,fingerprint:'server'}}};
   const staleOutcomes = [];
   const staleEngine = new Engine({
@@ -107,7 +108,13 @@ async function verifyEngineAlignment(){
   await staleEngine.loop;
   assert.deepEqual(staleOutcomes,['STALE'],'stale baseline is answered with STALE');
   assert.equal(staleServer.ticket.t1.revision,5,'server never applied the stale mutation');
-  assert.equal(staleEngine.pendingCount(),0,'stale response is acknowledged, the edit never reached Sheets');
+  // Readable STALE is not a success: the edit never reached Sheets, so the
+  // journal keeps it as an explicit conflict instead of acknowledging it.
+  assert.equal(staleEngine.pendingCount(),1,'stale response is NOT acknowledged — the unsent edit stays in the journal');
+  const staleConflict = staleEngine.conflictFor('ticket','t1');
+  assert.ok(staleConflict,'stale response is parked as a conflict for the user to resolve');
+  assert.equal(staleConflict.server.revision,5,'conflict carries the current server revision');
+  assert.equal(staleEngine.state.records['ticket:t1'].committedRevision,3,'baseline is not silently advanced past an unsent edit');
 
   // 2b. R1 після фіксу: baseline = серверна ревізія → наступна правка APPLIED.
   const alignedServer = {ticket:{t1:{revision:5,tombstone:false,fingerprint:'server'}}};

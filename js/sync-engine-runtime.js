@@ -63,6 +63,16 @@ flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())
               if(error&&error.code==='REVISION_GAP'){await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));failedEntities.add(key);return;}
               failed=true;failedEntities.add(key);return;
             }
+            // Читабельний STALE: сервер уже тримає новішу ревізію, ніж baseline цієї
+            // мутації (відновлення з бекапу без журналу, довго офлайн другий пристрій).
+            // Сервер НІЧОГО не записав, тож підтвердити (ack) означало б мовчки
+            // викинути локальну правку. Паркуємо як конфлікт із серверним станом —
+            // той самий шлях, що й CONFLICT: без автоповтору, рішення за користувачем.
+            const outcome=(result.result&&result.result.outcome)||result.outcome||'';
+            if(outcome==='STALE'){
+              const serverState=result.state||(result.result&&result.result.state)||{};
+              await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,serverState));failedEntities.add(key);return;
+            }
             await this.persistTransition(s=>result.state?this.core.reconcile(s,item.entity,item.id,result.state):this.core.acknowledge(s,item.entity,item.id,item.revision));
             this.resetBackoff();
           }finally{inFlight.delete(key);}

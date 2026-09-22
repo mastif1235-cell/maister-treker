@@ -102,6 +102,13 @@ const shift = (id, hours) => ({ id, date: '01.09.2026', hours: hours || 8, cowor
     assert.match(env.modals[0].html, /надіслано 1 із 2/, 'одна заявка реально надіслана');
     assert.match(env.modals[0].html, /у хмарі новіше — не перезаписано: 1/, 'STALE показано у звіті, а не проковтнуто');
     assert.match(env.modals[0].html, /свіжіша версія — вона НЕ перезаписана/, 'STALE не ховається за загальним «усе надіслано»');
+    assert.match(env.modals[0].html, /позначені ⚠️ Конфлікт/, 'звіт каже, що локальна версія чекає рішення користувача');
+    const stale = env.engine.state.records['ticket:t1'];
+    assert.ok(stale && stale.conflict, 'STALE не підтверджено як успіх: локальна версія лишається в журналі як конфлікт');
+    assert.equal(stale.conflict.server.revision, 55, 'конфлікт несе серверну ревізію для вирішення');
+    assert.equal(stale.committedRevision, 0, 'baseline не зсунуто повз невідправлену мутацію');
+    assert.equal(env.engine.pendingCount(), 1, 'лише STALE-запис лишився в черзі, решта підтверджена');
+    assert.equal(env.storage.value().records['ticket:t2'].committedRevision, 1, 'APPLIED-запис підтверджено як і раніше');
   }
 
   /* 4. Конфлікт: журнал позначає conflict, звіт показує його */
