@@ -47,14 +47,6 @@ if(typeof window!=='undefined'){
   async function mtBackupVaultSave(password){if(String(password||'').length<MT_BACKUP_MIN_PASSWORD)return false;try{const key=await mtBackupVaultCreateKey();if(!key)return false;const iv=crypto.getRandomValues(new Uint8Array(12));const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(String(password))));return backupDbPut(MT_BACKUP_VAULT_SECRET_RECORD,{version:1,iv,ciphertext});}catch(_e){return false;}}
   async function mtBackupVaultRead(){try{const [key,record]=await Promise.all([mtBackupVaultStoredKey(),backupDbGet(MT_BACKUP_VAULT_SECRET_RECORD)]);if(!key||!record||Number(record.version)!==1)return null;const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv)},key,new Uint8Array(record.ciphertext));const password=new TextDecoder().decode(plain);return password.length>=MT_BACKUP_MIN_PASSWORD?password:null;}catch(_e){return null;}}
   async function mtBackupVaultForget(){const secretDeleted=await backupDbDelete(MT_BACKUP_VAULT_SECRET_RECORD);const keyDeleted=await backupDbDelete(MT_BACKUP_VAULT_KEY_RECORD);return secretDeleted&&keyDeleted;}
-function mtBackupIosStandalone(){
-    try{
-      const standalone=(typeof matchMedia==='function'&&matchMedia('(display-mode: standalone)').matches)||(typeof navigator!=='undefined'&&navigator.standalone===true);
-      if(!standalone)return false;
-      const ua=String(typeof navigator!=='undefined'&&navigator.userAgent||'');
-      return /iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&Number(navigator.maxTouchPoints||0)>1);
-    }catch(_e){return false;}
-  }
   function mtBackupPasswordModal(confirmNew){
     return new Promise(resolve=>{
       let settled=false;

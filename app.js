@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.62 · 2026-09-22';
+const APP_VERSION = 'v91.63 · 2026-09-22';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -129,17 +129,6 @@ let coworkerSelection = new Set();
    Зміни йдуть на settings.shiftsScriptUrl, якщо він заданий (окрема таблиця/Excel-файл),
    інакше — туди ж, куди й заявки (одна спільна таблиця, як було раніше). */
 function getScriptUrl(){ return (settings.scriptUrl || DEFAULT_SCRIPT_URL || '').trim(); }
-function getShiftsScriptUrl(){ return (settings.shiftsScriptUrl || getScriptUrl()).trim(); }
-
-function setSyncState(state){
-  // state: 'idle' | 'syncing' | 'ok' | 'err'
-  const dot = document.getElementById('syncDot');
-  dot.className = 'sync-dot' + (state==='idle' ? '' : ' '+state);
-  if(state==='ok' || state==='err'){
-    setTimeout(()=>{ dot.className='sync-dot'; }, 1800);
-  }
-}
-
 async function migrateLegacySyncState(){
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return false;
   const shiftsMigrationKey='mtSyncV3ShiftsMigrated';
