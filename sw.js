@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-105';
+const CACHE_NAME = 'maister-treker-v67-runtime-106';
 const CORE_ASSETS = [
   './js/address-book.js','./js/address-book-link.js','./js/address-book-linker.js','./js/address-book-sync.js','./js/address-book-ui.js',
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',

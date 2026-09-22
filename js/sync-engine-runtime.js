@@ -47,6 +47,28 @@ flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())
         if(inFlight.has(key))return;
         await this.persistTransition(s=>this.core.markAttempted(s,item.entity,item.id));
         if(inFlight.has(key))return;
+        // Втрачена відповідь: head уже attempted — минула спроба могла дійти
+        // до сервера, але її відповідь не дійшла до клієнта (таймаут/обрив
+        // після commit, затор LockService на GAS). Перед повторним POST —
+        // дешева читана проба: GET не бере script lock на запис і пробиває
+        // раніше, а сервер на повтор тієї самої мутації відповідає
+        // ідемпотентно. Ack лише за точного збігу revision+fingerprint (це
+        // саме наша мутація, не чужа правка); розбіжність за однакової
+        // ревізії — конфлікт; «невідомо» — звичайний POST-шлях нижче.
+        if(item.attempted&&typeof this.transport.verifyStrict==='function'){
+          let probe=null;
+          try{probe=await this.transport.verifyStrict(item);}catch(_probeError){probe=null;}
+          if(probe&&probe.state&&probe.status==='applied'){
+            await this.persistTransition(s=>this.core.reconcile(s,item.entity,item.id,probe.state));
+            this.resetBackoff();
+            return;
+          }
+          if(probe&&probe.state&&probe.status==='conflict'){
+            await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,probe.state));
+            failedEntities.add(key);
+            return;
+          }
+        }
         const request=this.transport.send(item);
         const tracked=(async()=>{
           let result;try{result=await request;}catch(sendError){result={ok:false,result:sendError&&sendError.code?sendError:{code:'NETWORK',message:String(sendError)}};}

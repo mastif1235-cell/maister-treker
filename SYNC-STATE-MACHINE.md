@@ -79,6 +79,12 @@ These additions make exact replay and retry safe even after nonce cache and requ
 - Per-read timeout: 4000 ms. Real browser verification completed in 1931–2578 ms.
 - The bounded lost-response verification budget is at most 9200 ms after the POST attempt.
 - If state is not proven, leave operation retryable and continue in the single background recovery loop.
+- Between attempts (v91.62): before re-POSTing an already-attempted head, the engine runs one strict read probe
+  (`transport.verifyStrict`): same revision + same semantic fingerprint → the mutation is already applied → durable ack,
+  no POST; same revision + different fingerprint → durable conflict; different/failed/unknown revision → the ordinary
+  POST path decides (STALE/CONFLICT/REVISION_GAP stay authoritative). This heals a lost response even while the POST
+  pipe is still congested, because the read path does not take the write lock. Transports without `verifyStrict`
+  (test doubles) keep the exact previous behaviour.
 
 An isolated Apps Script Web App proved readable CORS POST stable in three browser runs. Forced preflight failed, so JSON/custom-header POST is prohibited. Opaque `no-cors` was slower (5622–7698 ms including signed verification) and is retired from the production runtime.
 

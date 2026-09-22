@@ -50,6 +50,25 @@
       }
       return {ok:false};
     }
+    // Сувора читана перевірка між спробами (втрачена відповідь): підтверджує
+    // лише ТОЧНО цю мутацію — той самий revision І той самий семантичний
+    // fingerprint. На відміну від verify() тут немає правила «revision >
+    // очікуваного → ok»: чужа правка з іншим revision не підтверджується і
+    // не відхиляється, рішення лишається звичайному POST-шляху
+    // (STALE/CONFLICT/REVISION_GAP). Один GET без ретраїв — дешево для рушія,
+    // який і так повторює flush.
+    async function verifyStrict(mutation){
+      try{
+        const url=await signedStateUrl(options.url(mutation),mutation,options.secret(),random,now);
+        const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||1000);
+        if(!response.ok) return {status:'unknown'};
+        const data=await response.json(); const state=data&&data.state;
+        if(!state||Number(state.revision)!==Number(mutation.revision)) return {status:'unknown'};
+        const expectedFingerprint=await semanticFingerprint(mutation);
+        if(String(state.fingerprint||'')===String(expectedFingerprint)) return {status:'applied',state};
+        return {status:'conflict',state};
+      }catch(_err){ return {status:'unknown'}; }
+    }
     async function send(mutation){
       const envelope=await signedEnvelope(mutation,options.secret(),random,now);
       try{
@@ -70,7 +89,7 @@
     // Повне читання таблиці (list) важче за точковий getEntityState: на базі
     // 1000+ записів Apps Script довше читає два аркуші й серіалізує JSON, тому
     // для нього окремий, довший таймаут. Решта GET-ів лишаються на 4 с.
-    return {send,verify,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:()=>get('list','system','',options.listTimeoutMs||20000)};
+    return {send,verify,verifyStrict,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:()=>get('list','system','',options.listTimeoutMs||20000)};
   }
   return {create,signedEnvelope,signedGetUrl,signedStateUrl,semanticFingerprint};
 });
