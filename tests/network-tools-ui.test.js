@@ -44,8 +44,10 @@ for(const action of ['ping-start','ping-stop','speed-start','speed-stop'])assert
 assert.ok(domain.includes("else if(toolsView==='ping')root.innerHTML=toolsPingHtml();"),'ping screen branch');
 assert.ok(domain.includes("else if(toolsView==='speedtest')root.innerHTML=toolsSpeedtestHtml();"),'speedtest screen branch');
 assert.ok(domain.includes('toolsPingLeave?.()')&&domain.includes('toolsSpeedtestLeave?.()'),'leaving the screens cleans up');
-/* data-router-ip лишається рівно один (пін v82), пресети пінга — інший атрибут */
-assert.equal((domain.match(/data-router-ip=/g)||[]).length,1);
+/* data-router-ip (пін v82) живе в екрані діагностики — лишається рівно один;
+   пресети пінга — окремий атрибут data-ping-preset, рівно три */
+assert.equal((read('js/tools-diagnostics-ui.js').match(/data-router-ip=/g)||[]).length,1,'v82 router presets pin untouched');
+assert.equal((read('js/tools-ping-ui.js').match(/data-ping-preset=/g)||[]).length,3,'three ping presets use their own attribute');
 
 /* Відкритий движок: точна версія, ліцензія, sha256-пін (supply chain) */
 const enginePath=path.join(root,'vendor/cloudflare-speedtest/speedtest.js');
@@ -62,12 +64,11 @@ assert.match(speedtestLogic,/autoStart:false/);
 assert.match(speedtestLogic,/logAimApiUrl:null/);
 assert.match(speedtestLogic,/ENGINE_MODULE_URL='\.\.\/vendor\/cloudflare-speedtest\/speedtest\.js'/,'engine loads from the pinned local file, not a CDN');
 
-/* Безпека UI: жоден рядок з API не потрапляє в innerHTML без escapeHtml */
+/* Безпека UI: жоден рядок з API не потрапляє в innerHTML без escapeHtml —
+   інтерполяція з API-полями мусить містити escapeHtml( всередині ${...} */
 const pingUi=read('js/tools-ping-ui.js');
 assert.ok((pingUi.match(/escapeHtml\(/g)||[]).length>=6,'probe-derived strings are escaped');
-for(const raw of [/\$\{[^}]*\bprobe\./,/\$\{[^}]*\bstats\./,/\$\{[^}]*entry\./,/\$\{[^}]*result\.error/,/\$\{[^}]*result\.detail/,/\$\{[^}]*\.where\}/]){
-  assert.doesNotMatch(pingUi,raw,'raw API interpolation forbidden: '+raw);
-}
+assert.doesNotMatch(pingUi,/\$\{(?![^}]*escapeHtml\()[^}]*(?:last\.target|row\.label|row\.where|result\.error|result\.detail|probe\.|stats\.)/,'raw API interpolation forbidden: wrap in escapeHtml()');
 assert.doesNotMatch(read('js/tools-speedtest-ui.js'),/innerHTML\s*=/,'speedtest screen mutates only through the shared renderer');
 
 /* Компактний UI: жодного жаргону в нових екранах (як і в старих — пін v82) */
