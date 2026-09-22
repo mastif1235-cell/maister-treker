@@ -424,7 +424,16 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
   });
   document.getElementById('photoPreviewWrap').addEventListener('click', e=>{
     const btn = e.target.closest('.photo-remove');
-    if(!btn) return;
+    if(!btn){
+      // NEW: клік по самій мініатюрі (не по ✕) відкриває наявний
+      // повнорозмірний переглядач (openTicketPhotoFullscreen із
+      // tickets-domain.js) — так само, як мініатюри в картці заявки.
+      // Окремий viewer/lightbox не створюємо — повторно використовуємо існуючий.
+      const thumb = e.target.closest('img.photo-thumb');
+      const src = thumb && thumb.getAttribute('src');
+      if(src) openTicketPhotoFullscreen(src);
+      return;
+    }
     const idx = Number(btn.dataset.idx);
     // NEW: якщо це фото ще НЕ належить збереженій заявці (додане щойно в
     // цьому сеансі) — одразу прибираємо його з IndexedDB, а не лишаємо
