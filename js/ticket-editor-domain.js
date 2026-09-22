@@ -435,6 +435,7 @@ function toggleTypeOtherField(){
   document.getElementById('importedRawWrap').classList.toggle('hidden', !raw); // NEW
   document.getElementById('fullFormFields').classList.toggle('hidden', other);
   document.getElementById('fullFormBlocks').classList.toggle('hidden', other);
+  document.getElementById('fullFormBlocksRest').classList.toggle('hidden', other);
   // NEW: обладнання/вартість/MAC для сирої заявки не мають сенсу — сума редагується вручну
   document.getElementById('calcMacCard').classList.toggle('hidden', other || raw);
   document.getElementById('calcPricingBlocks').classList.toggle('hidden', other || raw);

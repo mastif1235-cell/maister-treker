@@ -269,5 +269,44 @@ function runBlock(ctx, source, name){
     console.log('PASS wiring: photo section in the form, offline-precached modules');
   }
 
+  /* ---------- «Інше» (type=Інше): the photo section must be reachable ---------- */
+  {
+    const html = read('index.html');
+    /* real div-depth parse (same as the browser for plain divs) */
+    const lines = html.split('\n');
+    const stack = []; const spans = {};
+    for (let i = 0; i < lines.length; i++){
+      for (const m of lines[i].matchAll(/<div\b([^>]*)>/g)){
+        const attrs = m[1];
+        if (attrs.trimEnd().endsWith('/')) continue;
+        const idm = attrs.match(/id="([^"]*)"/);
+        stack.push([i + 1, idm ? idm[1] : null]);
+      }
+      for (const _m of lines[i].matchAll(/<\/div>/g)){
+        const entry = stack.pop();
+        if (entry && entry[1] && !spans[entry[1]]) spans[entry[1]] = [entry[0], i + 1];
+      }
+    }
+    assert.equal(stack.length, 0, 'index.html div balance holds');
+    const photoLine = lines.findIndex(l => l.includes('id="photoCameraBtn"')) + 1;
+    assert.ok(photoLine > 0, 'photo section exists');
+    const blocks = spans['fullFormBlocks'], rest = spans['fullFormBlocksRest'];
+    assert.ok(blocks, 'fullFormBlocks container exists');
+    assert.ok(rest, 'fullFormBlocksRest container exists (the tail of the full form)');
+    assert.ok(!(photoLine >= blocks[0] && photoLine <= blocks[1]), 'photo section is NOT inside fullFormBlocks — it stays visible for type «Інше»');
+    assert.ok(!(photoLine >= rest[0] && photoLine <= rest[1]), 'photo section is NOT inside fullFormBlocksRest');
+    assert.ok(blocks[1] < photoLine && photoLine < rest[0], 'photo section sits between the two form containers (order for other types unchanged)');
+
+    const editor = read('js/ticket-editor-domain.js');
+    assert.match(editor, /getElementById\('fullFormBlocks'\)\.classList\.toggle\('hidden', other\)/, 'calculator blocks stay hidden for «Інше»');
+    assert.match(editor, /getElementById\('fullFormBlocksRest'\)\.classList\.toggle\('hidden', other\)/, 'the form tail (prices/tags/payment/notes) stays hidden for «Інше»');
+    /* the photo-key processing on save is common code — no type gating */
+    const saveStart = editor.indexOf('const newPhotoKeys = [];');
+    const saveEnd = editor.indexOf('calcState.photos = newPhotoKeys;', saveStart);
+    assert.ok(saveStart > 0 && saveEnd > saveStart, 'photo key processing block found');
+    assert.doesNotMatch(editor.slice(saveStart, saveEnd), /isOther/, 'saving photos is type-independent (works for «Інше» too)');
+    console.log('PASS «Інше»: photo section reachable, form tail still hidden, photo save is type-independent');
+  }
+
   console.log('PASS ticket-photos-regression: all contract points green');
 })().catch(error => { console.error(error); process.exitCode = 1; });
