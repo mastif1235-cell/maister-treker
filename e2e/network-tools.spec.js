@@ -163,6 +163,36 @@ test('v91.68: нагляд переживає збої («Немає відпо�
   expect(freshStats).toMatch(/Перевірок\s*[01]\s*Успішних/);
 });
 
+test('v91.68: після нагляду разова перевірка через Globalping працює і UI не лишається в монітор-стані', async ({page, context, appEnv}) => {
+  await openTools(page, appEnv);
+  let directHits = 0, measurements = 0;
+  await context.route(/^https:\/\/1\.1\.1\.1\//, route => { directHits++; return route.fulfill({status: 200, body: 'ok'}); });
+  await context.route('**/api.globalping.org/v1/measurements**', route => {
+    const url = route.request().url();
+    if (route.request().method() === 'POST') { measurements++; return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(GP_JSON)}); }
+    return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(GP_DONE)});
+  });
+  await page.click('[data-tools-view="ping"]');
+  /* 1) нагляд 8.8.8.8: кілька проб і Stop */
+  await page.click('[data-ping-preset="8.8.8.8"]');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingLog .tools-ping-line').first()).toContainText('Відповідь від 8.8.8.8', {timeout: 5000});
+  await page.click('[data-tools-action="ping-stop"]');
+  await expect(page.locator('[data-tools-action="ping-start"]')).toContainText('Почати знову');
+  /* 2) разова перевірка example.com: стара монітор-сесія не перешкоджає */
+  await page.fill('#toolsPingTarget', 'example.com');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingResults')).toContainText('не з цього телефону', {timeout: 10000});
+  await expect(page.locator('#toolsPingResults')).toContainText('18 мс');
+  expect(measurements).toBe(1);
+  /* 3) після one-shot кнопка «Почати моніторинг», а не «Почати знову» від старого монітора */
+  await expect(page.locator('[data-tools-action="ping-start"]')).toContainText('Почати моніторинг');
+  const startText = await page.locator('[data-tools-action="ping-start"]').innerText();
+  expect(startText).not.toContain('Почати знову');
+  /* поле лишається на введеній one-shot цілі */
+  await expect(page.locator('#toolsPingTarget')).toHaveValue('example.com');
+});
+
 /* Speedtest працює напряму з speed.cloudflare.com (крос-домен: SW пропускає,
    route перехоплює). Мок віддає до 2 МБ на запит — тест завершується швидко
    і вимірює реальні байти/час у браузері. */

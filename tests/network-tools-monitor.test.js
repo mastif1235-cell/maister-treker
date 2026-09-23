@@ -211,5 +211,111 @@ async function runScripted(host,script,{attempts,extraOptions={},onEntries}={}){
     assert.ok(tracking.urls.every(url=>!url.includes('globalping')),'нуль викликів Globalping у режимі нагляду');
   }
 
+  /* 24. BUG1-регресія: завершений one-shot example.com → старт монітора 8.8.8.8:
+     поле показує 8.8.8.8, стара one-shot картка/result не відображається,
+     нова сесія журналу починається з #1 і статистики з нуля */
+  {
+    const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),root=path.join(__dirname,'..');
+    const logEl=(()=>{const children=[];return{children,appendChild(n){children.push(n);},removeChild(n){const i=children.indexOf(n);if(i>=0)children.splice(i,1);},get firstChild(){return children[0];},scrollTop:0,clientHeight:100,get scrollHeight(){return 100+children.length*10;},lines:()=>children.map(n=>n.textContent)};})();
+    const context={console:{log(){},warn(){},error(){}},toolsBackButton:()=>'',escapeHtml:v=>String(v==null?'':v),renderToolsScreen(){},showToast(){},toolsView:'ping',AbortController,setTimeout,clearTimeout,document:{createElement(){return{className:'',textContent:''};},getElementById(id){return id==='toolsPingLog'?logEl:null;}}};
+    context.globalThis=context;
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-network-utils.js'),'utf8'),context,{filename:'tools-network-utils.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping.js'),'utf8'),context,{filename:'tools-ping.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping-ui.js'),'utf8'),context,{filename:'tools-ping-ui.js'});
+    context.MTPing.MONITOR_INTERVAL_MS=1;
+    /* преквізит: успішний one-shot example.com через Globalping (як у реального користувача) */
+    const DONE={status:'done',results:[{probe:{country:'UA',city:'Kyiv',network:'Kyivstar'},result:{status:'done',stats:{min:17,avg:18,max:20,loss:0}}}]};
+    const jsonBody=obj=>({ok:true,status:200,json:async()=>obj});
+    context.fetch=(url,init)=>String(url).includes('globalping')?(init&&init.method==='POST'?Promise.resolve(jsonBody({id:'m1'})):Promise.resolve(jsonBody(DONE))):Promise.resolve({ok:true,status:200});
+    await context.toolsPingRunOnce('example.com',{ok:true,host:'example.com',local:false});
+    assert.equal(context.toolsPingOneShotState().last.result.ok,true,'передумова: one-shot завершився успішно');
+    assert.ok(context.toolsPingHtml().includes('не з цього телефону'),'передумова: one-shot картка на екрані');
+    context.toolsPingMonitorStart('8.8.8.8');
+    const html=context.toolsPingHtml();
+    assert.ok(html.includes('value="8.8.8.8"'),'поле вводу показує host монітора, а не старий one-shot target');
+    assert.ok(!html.includes('example.com'),'стара one-shot ціль не просвічується ніде');
+    assert.ok(!html.includes('не з цього телефону'),'стара one-shot картка результату не показується під новим монітором');
+    /* нова сесія: перший рядок #1, лічильники з нуля */
+    await new Promise(resolve=>{const check=setInterval(()=>{const st=context.toolsPingMonitorState();if(st&&st.stats&&st.stats.total>=2){st.controller.abort();clearInterval(check);resolve();}},5);});
+    await new Promise(resolve=>setTimeout(resolve,30));
+    assert.ok(logEl.lines()[0].startsWith('#1 '),'журнал нової сесії починається з #1: '+logEl.lines()[0]);
+    assert.ok(context.toolsPingMonitorState().stats.total<=3,'статистика нової сесії почата з нуля, а не продовжила стару');
+  }
+
+  /* 25. BUG2-регресія: монітор 8.8.8.8 → Stop → one-shot example.com → Stop one-shot:
+     Stop діє на активну разову перевірку, старий mon.host не перехоплює UI
+     (кнопка «Почати моніторинг», а не «Почати знову» від старого монітора) */
+  {
+    const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),root=path.join(__dirname,'..');
+    const logEl=(()=>{const children=[];return{children,appendChild(n){children.push(n);},removeChild(n){const i=children.indexOf(n);if(i>=0)children.splice(i,1);},get firstChild(){return children[0];},scrollTop:0,clientHeight:100,get scrollHeight(){return 100+children.length*10;},lines:()=>children.map(n=>n.textContent)};})();
+    const context={console:{log(){},warn(){},error(){}},toolsBackButton:()=>'',escapeHtml:v=>String(v==null?'':v),renderToolsScreen(){},showToast(){},toolsView:'ping',AbortController,setTimeout,clearTimeout,document:{createElement(){return{className:'',textContent:''};},getElementById(id){return id==='toolsPingLog'?logEl:null;}}};
+    context.globalThis=context;
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-network-utils.js'),'utf8'),context,{filename:'tools-network-utils.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping.js'),'utf8'),context,{filename:'tools-ping.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping-ui.js'),'utf8'),context,{filename:'tools-ping-ui.js'});
+    context.MTPing.MONITOR_INTERVAL_MS=1;
+    context.fetch=async()=>{await new Promise(resolve=>setTimeout(resolve,10));return{ok:true,status:200};};
+    context.toolsPingMonitorStart('8.8.8.8');
+    await new Promise(resolve=>setTimeout(resolve,35));
+    context.toolsPingStop(); // зупинка монітора: залишковий host лишається
+    assert.equal(context.toolsPingMonitorState().running,false);
+    assert.equal(context.toolsPingMonitorState().host,'8.8.8.8');
+    /* one-shot із завислим Globalping-POST: скасовується тільки Stop'ом */
+    const abortErr=()=>{const e=new Error('Aborted');e.name='AbortError';return e;};
+    context.fetch=(url,opts)=>{
+      if(String(url).includes('globalping')){
+        return new Promise((resolve,reject)=>{
+          const signal=opts&&opts.signal;
+          if(signal&&signal.aborted)return reject(abortErr());
+          if(signal)signal.addEventListener('abort',()=>reject(abortErr()));
+        });
+      }
+      return Promise.resolve({ok:true,status:200});
+    };
+    const once=context.toolsPingRunOnce('example.com',{ok:true,host:'example.com',local:false});
+    await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(context.toolsPingOneShotState().running,true,'разова перевірка запущена');
+    assert.equal(context.toolsPingMonitorState().host,null,'старт one-shot деактивував старий mon.host');
+    context.toolsPingStop(); // мусить піти в one-shot-гілку, а не в monitor-refresh
+    await once; // run() повертає результат відміни, не кидає
+    assert.equal(context.toolsPingOneShotState().running,false,'one-shot зупинено');
+    const html=context.toolsPingHtml();
+    assert.ok(!html.includes('Почати знову'),'старий монітор не підставляє «Почати знову» після стопу one-shot');
+    assert.ok(html.includes('Почати моніторинг'),'UI у коректному one-shot стані');
+  }
+
+  /* 26. Після монітора one-shot через Globalping працює як раніше (щасливий шлях) */
+  {
+    const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),root=path.join(__dirname,'..');
+    const logEl=(()=>{const children=[];return{children,appendChild(n){children.push(n);},removeChild(n){const i=children.indexOf(n);if(i>=0)children.splice(i,1);},get firstChild(){return children[0];},scrollTop:0,clientHeight:100,get scrollHeight(){return 100+children.length*10;},lines:()=>children.map(n=>n.textContent)};})();
+    const context={console:{log(){},warn(){},error(){}},toolsBackButton:()=>'',escapeHtml:v=>String(v==null?'':v),renderToolsScreen(){},showToast(){},toolsView:'ping',AbortController,setTimeout,clearTimeout,document:{createElement(){return{className:'',textContent:''};},getElementById(id){return id==='toolsPingLog'?logEl:null;}}};
+    context.globalThis=context;
+    vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-network-utils.js'),'utf8'),context,{filename:'tools-network-utils.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping.js'),'utf8'),context,{filename:'tools-ping.js'});
+    vm.runInContext(fs.readFileSync(path.join(root,'js/tools-ping-ui.js'),'utf8'),context,{filename:'tools-ping-ui.js'});
+    context.MTPing.MONITOR_INTERVAL_MS=1;
+    context.fetch=async()=>{await new Promise(resolve=>setTimeout(resolve,10));return{ok:true,status:200};};
+    context.toolsPingMonitorStart('8.8.8.8');
+    await new Promise(resolve=>setTimeout(resolve,35));
+    context.toolsPingStop();
+    const DONE={status:'done',results:[{probe:{country:'UA',city:'Kyiv',network:'Kyivstar'},result:{status:'done',stats:{min:17,avg:18,max:20,loss:0}}}]};
+    const jsonBody=obj=>({ok:true,status:200,json:async()=>obj});
+    context.fetch=(url,init)=>{
+      if(String(url).includes('globalping'))return init&&init.method==='POST'?Promise.resolve(jsonBody({id:'m1'})):Promise.resolve(jsonBody(DONE));
+      return Promise.resolve({ok:true,status:200});
+    };
+    await context.toolsPingRunOnce('example.com',{ok:true,host:'example.com',local:false});
+    const st=context.toolsPingOneShotState();
+    assert.equal(st.last&&st.last.kind,'external');
+    assert.equal(st.last&&st.last.result&&st.last.result.ok,true,'one-shot Globalping успішний після монітора');
+    const html=context.toolsPingHtml();
+    assert.ok(html.includes('не з цього телефону'),'результат one-shot відображається');
+    assert.ok(!html.includes('Почати знову'),'завершений монітор не повертає кнопку repeat');
+    assert.ok(html.includes('Почати моніторинг'));
+  }
+
   console.log('PASS monitor: безперервний цикл (>3 спроб, серії успіхів/таймаутів/збоїв/відновлення), точні лічильники (total/success/failed/loss/min/avg/max), Stop миттєвий без фальшивих спроб, без перекриття fetch, DOM ≤100 рядків при повній статистиці, нова сесія з нуля, тільки прямі HTTPS-запити без Globalping');
 })().catch(error=>{console.error('FAIL:',error);process.exit(1);});

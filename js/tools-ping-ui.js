@@ -130,6 +130,12 @@ function toolsPingResultsHtml(last){
 function toolsPingMonitorStart(host){
   if(toolsPingMonitor&&toolsPingMonitor.running)return;
   if(typeof MTPing==='undefined'||typeof MTPing.runMonitor!=='function'){showToast('Службовий модуль недоступний');return;}
+  /* Нова сесія нагляду — чистий екран: one-shot-стан нейтралізуємо, щоб стара
+     ціль/результат разової перевірки не змішувалися з новим моніторингом
+     (поле показує host монітора, стара картка результату не показується). */
+  const st1=toolsPingState;
+  if(st1&&st1.running&&st1.controller)st1.controller.abort(); // на випадок залишеної разової перевірки
+  toolsPingState={running:false,controller:null,target:host,last:null};
   const controller=typeof AbortController==='function'?new AbortController():null;
   toolsPingMonitor={running:true,controller,host,stats:MTPing.createMonitorStats()};
   if(toolsPingViewActive())renderToolsScreen('ping'); // нова чиста сесія: порожній журнал, нульова статистика
@@ -179,32 +185,46 @@ async function toolsPingStart(){
 }
 async function toolsPingRunOnce(raw,parsed){
   if(typeof navigator!=='undefined'&&navigator.onLine===false){showToast('Немає з\'єднання — перевірка потребує інтернету');return;}
+  /* Разова перевірка деактивує відображуваний стан старого нагляду (host/stats),
+     щоб завершений моніторинг не впливав на one-shot UI і кнопку Stop. */
+  toolsPingMonitor={running:false,controller:null,host:null,stats:null};
   const controller=typeof AbortController==='function'?new AbortController():null;
   toolsPingState={running:true,controller,target:parsed.host,last:toolsPingState&&toolsPingState.last};
   renderToolsScreen('ping');
   const fetchImpl=(typeof fetch==='function')?fetch:null;
   /* run() валидирует сам — передаём сырой ввод, чтобы порт ( host:8080 ) дошёл до локальной проверки */
   const result=await MTPing.run(raw,{fetch:fetchImpl,signal:controller?controller.signal:null});
-  const state=toolsPingState||{};
+  if(!toolsPingState||toolsPingState.controller!==controller)return; // сесію замінено (старт монітора) — не перезаписуємо
   toolsPingState={running:false,controller:null,target:parsed.host,last:{kind:parsed.local?'local':(result.kind==='direct'?'direct':'external'),target:parsed.host,result}};
   if(toolsPingViewActive()){
     renderToolsScreen('ping');
     if(result.ok)showToast('Перевірку завершено');
-  }else if(state.controller){/* экран закрыли — результат дождётся возврата */}
+  }
+  /* екран закрили (leave) або сесію замінили — результат просто не малюємо */
 }
 function toolsPingStop(){
+  /* Stop діє на РЕАЛЬНО активну операцію, а не на залишковий стан:
+     активний one-shot → перерисовка one-shot UI; активний нагляд → лише
+     кнопка (журнал і статистика лишаються). Старий mon.host сам по собі
+     вибір гілки не визначає. */
   const st=toolsPingState;
-  if(st&&st.controller)st.controller.abort();
-  if(st){st.running=false;}
   const mon=toolsPingMonitor;
-  const hadMonitor=!!(mon&&mon.host!=null);
-  if(mon&&mon.running&&mon.controller)mon.controller.abort();
-  if(mon){mon.running=false;mon.controller=null;}
-  if(!toolsPingViewActive())return;
-  if(hadMonitor)toolsPingRefreshAction(); // журнал і статистика сесії лишаються на екрані
-  else renderToolsScreen('ping');
+  if(st&&st.running&&st.controller){ // зараз іде разова перевірка
+    st.controller.abort();
+    st.running=false;
+    if(toolsPingViewActive())renderToolsScreen('ping');
+    return;
+  }
+  if(mon&&mon.running&&mon.controller){ // зараз іде нагляд
+    mon.controller.abort(); // миттєво: цикл і поточна проба
+    mon.running=false;mon.controller=null;
+    if(toolsPingViewActive())toolsPingRefreshAction();
+    return;
+  }
+  if(toolsPingViewActive())renderToolsScreen('ping'); // нічого активного — нормалізуємо екран
 }
 function toolsPingMonitorState(){return toolsPingMonitor;} // доступ для тестів/діагностики (у браузері — теж глобальна функція)
+function toolsPingOneShotState(){return toolsPingState;} // доступ для тестів/діагностики
 
 function toolsPingLeave(){
   if(toolsPingState&&toolsPingState.controller)toolsPingState.controller.abort();
