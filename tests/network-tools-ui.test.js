@@ -27,9 +27,14 @@ assert.ok(html.indexOf('<script src="js/tools-speedtest.js"></script>')<html.ind
    окремий тест, тут — пряма наявність) */
 assert.match(html,/connect-src[^;]*https:\/\/api\.globalping\.org/,'meta CSP allows Globalping');
 assert.match(headers,/connect-src[^;]*https:\/\/api\.globalping\.org/,'_headers CSP allows Globalping');
-for(const origin of ['https:\/\/1\.1\.1\.1','https:\/\/8\.8\.8\.8','https:\/\/google\.com']){
-  assert.match(html,new RegExp('connect-src[^;]*'+origin),'meta CSP allows direct HTTPS check '+origin);
-  assert.match(headers,new RegExp('connect-src[^;]*'+origin),'_headers CSP allows direct HTTPS check '+origin);
+/* Кожна ціль DIRECT_HOSTS мусить бути дозволена connect-src в ОБОХ місцях —
+   інакше direct-маршрут блокується браузером (списки більше не розходяться) */
+const directOrigins=[...read('js/tools-ping.js').matchAll(/'[^']+':'(https:\/\/[^/]+)\//g)].map(m=>m[1]);
+assert.ok(directOrigins.length>=6,'DIRECT_HOSTS origins parsed: '+directOrigins.join(', '));
+for(const origin of directOrigins){
+  const pattern=origin.replace(/[.\/]/g,'\\$&');
+  assert.match(html,new RegExp('connect-src[^;]*'+pattern),'meta CSP allows direct HTTPS target '+origin);
+  assert.match(headers,new RegExp('connect-src[^;]*'+pattern),'_headers CSP allows direct HTTPS target '+origin);
 }
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
@@ -105,7 +110,8 @@ assert.match(speedUi,/Відгук/);
 assert.match(speedUi,/Стабільність/);
 assert.match(speedUi,/Під навантаженням/);
 assert.match(speedUi,/Вимірювання: Cloudflare/,'attribution present');
-assert.match(speedUi,/до ~400 МБ/,'чесний дисклеймер трафіку нового рушія');
+assert.match(speedUi,/ліміт об'єму \(~400 МБ отримано \/ ~150 МБ надіслано\)/,"чесний дисклеймер: цільові вікна + ранній ліміт об'єму");
+assert.match(speedUi,/фаза може завершитися раніше/,'текст не обіцяє строго 8 секунд');
 assert.doesNotMatch(speedUi,/packetLoss|Втрати/,'no loss row until there is an honest source');
 
 console.log('PASS network tools UI: wiring, offline shell, CSP, pinned engine, escaped rendering, jargon-free Ukrainian screens');

@@ -34,7 +34,7 @@ function toolsSpeedtestHtml(){
   <div id="toolsSpeedResults" style="margin-top:12px;">${toolsSpeedtestResultsHtml(st.last)}</div>
   <details class="card" style="margin-top:12px;">
     <summary class="tools-status-note">Деталі</summary>
-    <div class="tools-status-note" style="margin-top:6px;">Тест виконується через мережу Cloudflare (speed.cloudflare.com): завантаження ~8 с і відвантаження ~6 с у кілька паралельних потоків, щоб стабільно вимірювати 100–1000 Мбіт/с. На швидких лініях може бути передано до ~400 МБ (отримано) і ~150 МБ (надіслано). Packet loss не вимірюється.</div>
+    <div class="tools-status-note" style="margin-top:6px;">Тест виконується через мережу Cloudflare (speed.cloudflare.com): завантаження ~8 с і відвантаження ~6 с у кілька паралельних потоків, щоб стабільно вимірювати 100–1000 Мбіт/с; це цільові вікна — на дуже швидких лініях фаза може завершитися раніше, якщо спрацює ліміт об'єму (~400 МБ отримано / ~150 МБ надіслано). Packet loss не вимірюється.</div>
   </details>`;
 }
 
