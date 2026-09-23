@@ -30,6 +30,7 @@ function toolsPingHtml(){
 }
 function toolsPingModeNoteHtml(st){
   if(st&&st.last&&st.last.kind==='local')return 'Локальна перевірка: цей телефон → пристрій у вашій мережі (Wi-Fi).';
+  if(st&&st.last&&st.last.kind==='direct')return 'Швидка перевірка виконується з цього телефону через HTTPS — це перевірка доступності, а не ICMP-пінг.';
   return 'Перевірка виконується із зовнішніх вузлів: результат показує, як ціль видно з інтернету.';
 }
 
@@ -47,6 +48,23 @@ function toolsPingResultsHtml(last){
         <div class="tools-status-note" style="margin-top:6px;">Відгук: ~${Math.round(result.ms)} мс</div>`
       :'<div class="tools-status-line"><span>Пристрій у мережі</span><strong>❌ Не відповідає</strong></div>';
     return `<div class="card tools-status-card">${head}<div class="tools-status-note" style="margin-top:6px;">Перевірено з цього телефону. Це перевірка доступності пристрою, а не пакетний відгук мережі.</div></div>`;
+  }
+  if(last.kind==='direct'){
+    if(!result.ok){
+      const detail=result.detail?`<div class="tools-status-note" style="margin-top:4px;">Технічні подробиці: ${escapeHtml(String(result.detail).slice(0,160))}</div>`:'';
+      return `<div class="card tools-status-card"><div class="tools-status-line"><span>${escapeHtml(last.target)}</span><strong>❌</strong></div><div class="tools-status-note" style="margin-top:6px;">${escapeHtml(result.error||'Ціль не відповіла')}</div>${detail}<div class="tools-status-note" style="margin-top:6px;">HTTPS-перевірка з цього телефону (не ICMP-пінг).</div></div>`;
+    }
+    const failed=result.attempts-result.success;
+    return `<div class="card tools-status-card">
+      <div class="tools-status-line"><span>${escapeHtml(last.target)}</span><strong>✅ Доступний</strong></div>
+      <div class="tools-status-note" style="margin-top:4px;">Успішних спроб: ${result.success}/${result.attempts}${failed?` (без відповіді: ${failed})`:''}</div>
+      <div class="tools-router-grid" style="margin-top:10px;">
+        <div class="tools-status-note">Мін<br><strong style="font-size:15px;color:var(--text);">${Math.round(result.minMs)} мс</strong></div>
+        <div class="tools-status-note">Сер<br><strong style="font-size:15px;color:var(--text);">${Math.round(result.avgMs)} мс</strong></div>
+        <div class="tools-status-note">Макс<br><strong style="font-size:15px;color:var(--text);">${Math.round(result.maxMs)} мс</strong></div>
+      </div>
+      <div class="tools-status-note" style="margin-top:8px;">HTTPS-перевірка з цього телефону — час відповіді сервера, не ICMP-пінг.</div>
+    </div>`;
   }
   const rows=(result.rows||[]).map(row=>{
     if(row.failed)return `<div class="tools-status-line"><span>${escapeHtml(row.label)}${row.where?` <span class="tools-status-note">· ${escapeHtml(row.where)}</span>`:''}</span><strong>— не відповів</strong></div>`;
@@ -82,7 +100,7 @@ async function toolsPingStart(){
   /* run() валидирует сам — передаём сырой ввод, чтобы порт ( host:8080 ) дошёл до локальной проверки */
   const result=await MTPing.run(raw,{fetch:fetchImpl,signal:controller?controller.signal:null});
   const state=toolsPingState||{};
-  toolsPingState={running:false,controller:null,target:parsed.host,last:{kind:parsed.local?'local':'external',target:parsed.host,result}};
+  toolsPingState={running:false,controller:null,target:parsed.host,last:{kind:parsed.local?'local':(result.kind==='direct'?'direct':'external'),target:parsed.host,result}};
   if(toolsPingViewActive()){
     renderToolsScreen('ping');
     if(result.ok)showToast('Перевірку завершено');

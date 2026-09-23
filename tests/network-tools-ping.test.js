@@ -53,7 +53,7 @@ const DONE_MEASUREMENT={status:'done',results:[
         return jsonBody(DONE_MEASUREMENT);
       }]
     ])});
-    const result=await context.MTPing.run('1.1.1.1',{});
+    const result=await context.MTPing.run('example.com',{});
     assert.equal(result.ok,true);
     assert.equal(result.rows.length,3);
     assert.deepEqual([...result.rows.map(row=>row.label)],['Україна','Польща','Німеччина'],'labels are real probe countries (vm-realm values are spread into the test realm)');
@@ -75,7 +75,7 @@ const DONE_MEASUREMENT={status:'done',results:[
     const partial=JSON.parse(JSON.stringify(DONE_MEASUREMENT));
     partial.results[2].result={status:'failed',error:'probe timeout'};
     const context=newContext({fetch:fakeFetch([[GP,async(url,init)=>String(url).endsWith('/measurements')&&init.method==='POST'?jsonBody({id:'m2'}):jsonBody(partial)]])});
-    const result=await context.MTPing.run('1.1.1.1',{});
+    const result=await context.MTPing.run('example.com',{});
     assert.equal(result.ok,true);
     assert.equal(result.rows[2].failed,true);
     assert.equal(result.summary.avgMs,25,'only two real probes: (18+31)/2');
@@ -94,7 +94,7 @@ const DONE_MEASUREMENT={status:'done',results:[
         return jsonBody(DONE_MEASUREMENT);
       }]
     ])});
-    const result=await context.MTPing.run('1.1.1.1',{});
+    const result=await context.MTPing.run('example.com',{});
     assert.equal(result.ok,true);
     const posts=context.fetch.calls.filter(call=>call.init.method==='POST');
     assert.equal(posts.length,2,'exactly one fallback retry');
@@ -104,15 +104,15 @@ const DONE_MEASUREMENT={status:'done',results:[
   /* 4. Rate limit / недоступність / мережева помилка */
   {
     const limited=newContext({fetch:fakeFetch([[GP,async()=>({ok:false,status:429,json:async()=>({})})]])});
-    const limitedResult=await limited.MTPing.run('1.1.1.1',{});
+    const limitedResult=await limited.MTPing.run('example.com',{});
     assert.equal(limitedResult.ok,false);
     assert.match(limitedResult.error,/Занадто багато перевірок/);
     const down=newContext({fetch:fakeFetch([[GP,async()=>({ok:false,status:503,json:async()=>null})]])});
-    const downResult=await down.MTPing.run('1.1.1.1',{});
+    const downResult=await down.MTPing.run('example.com',{});
     assert.equal(downResult.ok,false);
     assert.match(downResult.error,/не вдалося розпочати/i);
     const offline=newContext({fetch:fakeFetch([[GP,async()=>{throw new Error('getaddrinfo ENOTFOUND');}]])});
-    const offlineResult=await offline.MTPing.run('1.1.1.1',{});
+    const offlineResult=await offline.MTPing.run('example.com',{});
     assert.equal(offlineResult.ok,false);
     assert.match(offlineResult.error,/Сервіс зовнішньої перевірки недоступний/);
     assert.match(offlineResult.detail,/ENOTFOUND/,'technical detail kept for «Деталі»');
@@ -143,13 +143,13 @@ const DONE_MEASUREMENT={status:'done',results:[
     assert.equal(context.fetch.calls[0].url,'http://192.168.1.1:8080/','port is kept for the local device probe');
   }
 
-  /* 6. Публічна ціль не перевіряється локально */
+  /* 6. Публічна НЕпресетна ціль не перевіряється локально */
   {
     const context=newContext({fetch:fakeFetch([
       [GP,async(url,init)=>String(url).endsWith('/measurements')&&init.method==='POST'?jsonBody({id:'m4'}):jsonBody(DONE_MEASUREMENT)],
       ['http://',async()=>{throw new Error('LOCAL CHECK MUST NOT RUN FOR A PUBLIC TARGET');}]
     ])});
-    const result=await context.MTPing.run('8.8.8.8',{});
+    const result=await context.MTPing.run('9.9.9.9',{});
     assert.equal(result.ok,true);
     assert.equal(result.kind,undefined);
   }
@@ -191,6 +191,68 @@ const DONE_MEASUREMENT={status:'done',results:[
     const result=await context.MTPing.run('not a host!',{});
     assert.equal(result.invalid,true);
     assert.equal(context.fetch.calls.length,0);
+  }
+
+  /* 11. Прямая HTTPS-проверка пресетных целей (1.1.1.1): успех, без Globalping */
+  {
+    const context=newContext({fetch:fakeFetch([
+      ['https://1.1.1.1/',async()=>({ok:true,status:200,arrayBuffer:async()=>new ArrayBuffer(0)})],
+      [GP,async()=>{throw new Error('GLOBALPING MUST NOT BE CALLED FOR A PRESET TARGET');}]
+    ])});
+    const result=await context.MTPing.run('1.1.1.1',{});
+    assert.equal(result.ok,true);
+    assert.equal(result.kind,'direct');
+    assert.equal(result.attempts,3);
+    assert.equal(result.success,3);
+    assert.ok(result.minMs<=result.avgMs&&result.avgMs<=result.maxMs);
+    assert.equal(context.fetch.calls.filter(call=>call.url.includes(GP)).length,0,'нуль внешних вызовов для пресета');
+    assert.equal(context.fetch.calls[0].url,'https://1.1.1.1/','прямой HTTPS-запрос');
+  }
+
+  /* 12. google.com → generate_204; частичный успех считается честно */
+  {
+    let hits=0;
+    const context=newContext({fetch:fakeFetch([
+      ['https://google.com/generate_204',async()=>{hits++;if(hits===3)throw new Error('timed out');return{ok:true,status:204,arrayBuffer:async()=>new ArrayBuffer(0)};}]
+    ])});
+    const result=await context.MTPing.run('google.com',{});
+    assert.equal(result.ok,true);
+    assert.equal(result.success,2);
+    assert.equal(result.attempts,3,'одна из трёх попыток без ответа учтена честно');
+  }
+
+  /* 13. Прямая проверка: цель не отвечает → человеческая ошибка с URL в деталях */
+  {
+    const context=newContext({fetch:fakeFetch([
+      ['https://1.1.1.1/',async()=>{throw new Error('TLS handshake failed');}]
+    ])});
+    const result=await context.MTPing.run('1.1.1.1',{});
+    assert.equal(result.ok,false);
+    assert.match(result.error,/Ціль не відповіла на HTTPS-запити з цього телефону/);
+    assert.match(result.detail,/https:\/\/1\.1\.1\.1\//);
+  }
+
+  /* 14. Отмена прямой проверки */
+  {
+    const context=newContext({});
+    context.fetch=async(url,init)=>new Promise((_resolve,reject)=>{if(init&&init.signal)init.signal.addEventListener('abort',()=>reject(new Error('AbortError')));});
+    const controller=new AbortController();
+    const pending=context.MTPing.runDirectHttps('1.1.1.1',{fetch:context.fetch,signal:controller.signal});
+    setTimeout(()=>controller.abort(),30);
+    const result=await pending;
+    assert.equal(result.ok,false);
+    assert.equal(result.cancelled,true);
+  }
+
+  /* 15. Не-пресетная цель по-прежнему идёт в Globalping; noDirect выключает прямую проверку */
+  {
+    const context=newContext({fetch:fakeFetch([
+      [GP,async(url,init)=>String(url).endsWith('/measurements')&&init.method==='POST'?jsonBody({id:'m5'}):jsonBody(DONE_MEASUREMENT)],
+      ['https://1.1.1.1/',async()=>{throw new Error('DIRECT MUST NOT RUN WITH noDirect');}]
+    ])});
+    const result=await context.MTPing.run('1.1.1.1',{noDirect:true});
+    assert.equal(result.ok,true);
+    assert.equal(result.rows.length,3,'noDirect → внешний маршрут');
   }
 
   console.log('PASS network tools ping: external normalization/summary real-only, partial probes, fallback locations, rate limit, unavailability, private targets never leave the phone, local timeout and abort are human-readable');

@@ -19,7 +19,7 @@ async function openTools(page, appEnv){
   await expect(page.locator('#toolsScreenRoot')).toBeVisible();
 }
 
-test('v91.66: наявні обидва екрани в меню Інструментів, навігація туди-назад', async ({page, context, appEnv}) => {
+test('v91.67: наявні обидва екрани в меню Інструментів, навігація туди-назад', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   await expect(page.locator('[data-tools-view="ping"]')).toBeVisible();
   await expect(page.locator('[data-tools-view="speedtest"]')).toBeVisible();
@@ -37,7 +37,7 @@ test('v91.66: наявні обидва екрани в меню Інструм�
   await expect(page.locator('[data-tools-view="ping"]')).toBeVisible();
 });
 
-test('v91.66: пінг публічної цілі йде в Globalping і показує реальні відповіді зондів', async ({page, context, appEnv}) => {
+test('v91.67: пінг публічної цілі йде в Globalping і показує реальні відповіді зондів', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   let measurements = 0;
   await context.route('**/api.globalping.org/v1/measurements**', route => {
@@ -46,7 +46,7 @@ test('v91.66: пінг публічної цілі йде в Globalping і по�
     return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(GP_DONE)});
   });
   await page.click('[data-tools-view="ping"]');
-  await page.fill('#toolsPingTarget', '1.1.1.1');
+  await page.fill('#toolsPingTarget', 'example.com');
   await page.click('[data-tools-action="ping-start"]');
   await expect(page.locator('#toolsPingResults')).toContainText('Україна', {timeout: 10000});
   await expect(page.locator('#toolsPingResults')).toContainText('18 мс');
@@ -54,7 +54,7 @@ test('v91.66: пінг публічної цілі йде в Globalping і по�
   expect(measurements).toBe(1);
 });
 
-test('v91.66: пінг приватної адреси ніколи не доходить до Globalping, локальний пристрій перевіряється з телефону', async ({page, context, appEnv}) => {
+test('v91.67: пінг приватної адреси ніколи не доходить до Globalping, локальний пристрій перевіряється з телефону', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   let globalpingHits = 0;
   await context.route('**/api.globalping.org/**', route => { globalpingHits++; return route.fulfill({status: 500, body: 'MUST NOT BE CALLED'}); });
@@ -72,18 +72,18 @@ test('v91.66: пінг приватної адреси ніколи не дох�
   expect(globalpingHits).toBe(0);
 });
 
-test('v91.66: помилка пінга (rate limit) показується людською, без технічного жаргону', async ({page, context, appEnv}) => {
+test('v91.67: помилка пінга (rate limit) показується людською, без технічного жаргону', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   await context.route('**/api.globalping.org/v1/measurements**', route => route.fulfill({status: 429, contentType: 'application/json', body: '{}'}));
   await page.click('[data-tools-view="ping"]');
-  await page.fill('#toolsPingTarget', '8.8.8.8');
+  await page.fill('#toolsPingTarget', 'example.com');
   await page.click('[data-tools-action="ping-start"]');
   await expect(page.locator('#toolsPingResults')).toContainText('Занадто багато перевірок', {timeout: 10000});
   const text = await page.locator('#toolsPingResults').innerText();
   expect(text).not.toMatch(/429|HTTP|ICMP|CORS/);
 });
 
-test('v91.66: некоректна ціль відхиляється одразу, без жодного запиту', async ({page, context, appEnv}) => {
+test('v91.67: некоректна ціль відхиляється одразу, без жодного запиту', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   let anyGlobalping = 0;
   await context.route('**/api.globalping.org/**', route => { anyGlobalping++; return route.fulfill({status: 200, contentType: 'application/json', body: '{}'}); });
@@ -94,61 +94,69 @@ test('v91.66: некоректна ціль відхиляється одраз�
   expect(anyGlobalping).toBe(0);
 });
 
-test('v91.66: «■ Зупинити» пінга чисто скасовує перевірку', async ({page, context, appEnv}) => {
+test('v91.67: «■ Зупинити» пінга чисто скасовує перевірку', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
-  await context.route('**/api.globalping.org/v1/measurements**', route => new Promise(() => {})); // вічний pending POST
+  await context.route('**/api.globalping.org/v1/measurements**', route => new Promise(() => {})); // вічный pending POST
   await page.click('[data-tools-view="ping"]');
-  await page.fill('#toolsPingTarget', '1.1.1.1');
+  await page.fill('#toolsPingTarget', 'example.com');
   await page.click('[data-tools-action="ping-start"]');
   await expect(page.locator('[data-tools-action="ping-stop"]')).toBeVisible();
   await page.click('[data-tools-action="ping-stop"]');
   await expect(page.locator('[data-tools-action="ping-start"]')).toBeVisible();
 });
 
-const FAKE_ENGINE_OK = `
-    export default class FakeEngine {
-      constructor(config){ this.config = config; this.running = false; }
-      play(){ this.running = true; this.onResultsChange && this.onResultsChange({type:'latency'}); this.onResultsChange && this.onResultsChange({type:'download'}); this.results = {
-        getDownloadBandwidth: () => 427.4e6, getUploadBandwidth: () => 312e6,
-        getUnloadedLatency: () => 14.4, getUnloadedJitter: () => 3.2,
-        getDownLoadedLatency: () => 32, getUpLoadedLatency: () => 28 };
-        setTimeout(() => { this.running = false; this.onFinish && this.onFinish(this.results); }, 400); }
-      pause(){ this.running = false; this.onFinish = null; }
-      isRunning(){ return this.running; }
-    }`;
-const FAKE_ENGINE_STUCK = `
-    export default class StuckEngine {
-      constructor(config){ this.running = false; }
-      play(){ this.running = true; this.onResultsChange && this.onResultsChange({type:'download'}); }
-      pause(){ this.running = false; this.onFinish = null; }
-      isRunning(){ return this.running; }
-    }`;
-/* Движок — same-origin precache-файл: його перехоплює Service Worker, тому
-   route-мок не спрацює. Підмінюємо файл в ізольованій копії ДО відкриття
-   застосунку (офіційний спосіб цього репо — e2e/helpers/env.js). */
-function plantEngine(appEnv, source){
-  fs.writeFileSync(path.join(appEnv.dir, 'vendor', 'cloudflare-speedtest', 'speedtest.js'), source);
+test('v91.67: пресет 1.1.1.1 перевіряється напряму з телефону (HTTPS), без Globalping', async ({page, context, appEnv}) => {
+  await openTools(page, appEnv);
+  let directHits = 0, globalpingHits = 0;
+  await context.route(/^https:\/\/1\.1\.1\.1\//, route => { directHits++; return route.fulfill({status: 200, body: 'ok'}); });
+  await context.route('**/api.globalping.org/**', route => { globalpingHits++; return route.fulfill({status: 500, body: 'MUST NOT BE CALLED'}); });
+  await page.click('[data-tools-view="ping"]');
+  await page.fill('#toolsPingTarget', '1.1.1.1');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingResults')).toContainText('Доступний', {timeout: 10000});
+  await expect(page.locator('#toolsPingResults')).toContainText('Успішних спроб: 3/3');
+  await expect(page.locator('#toolsPingResults')).toContainText('не ICMP-пінг');
+  expect(directHits).toBe(3);
+  expect(globalpingHits).toBe(0);
+});
+
+/* Speedtest працює напряму з speed.cloudflare.com (крос-домен: SW пропускає,
+   route перехоплює). Мок віддає до 2 МБ на запит — тест завершується швидко
+   і вимірює реальні байти/час у браузері. */
+function mockCloudflareSpeed(context){
+  return Promise.all([
+    context.route(/speed\.cloudflare\.com\/__down/, route => {
+      const bytes = Number(new URL(route.request().url()).searchParams.get('bytes')) || 0;
+      const serve = Math.min(2_000_000, bytes);
+      return route.fulfill({status: 200, contentType: 'application/octet-stream', headers: {'access-control-allow-origin': '*'}, body: serve > 0 ? 'x'.repeat(serve) : ''});
+    }),
+    context.route(/speed\.cloudflare\.com\/__up/, route => route.fulfill({status: 200, contentType: 'text/plain', headers: {'access-control-allow-origin': '*'}, body: 'ok'}))
+  ]);
 }
 
-test('v91.66: Speedtest — запуск через мок движка, стадії й метрики реальні, потім UI відновлюється', async ({page, context, appEnv}) => {
-  plantEngine(appEnv, FAKE_ENGINE_OK);
+test('v91.67: Speedtest — адаптивні потоки до speed.cloudflare.com, стадії й фінальні метрики, UI відновлюється', async ({page, context, appEnv}) => {
+  await mockCloudflareSpeed(context);
   await openTools(page, appEnv);
   await page.click('[data-tools-view="speedtest"]');
   await page.click('[data-tools-action="speed-start"]');
   await expect(page.locator('#toolsSpeedStage')).toContainText('Завантаження', {timeout: 10000});
-  await expect(page.locator('#toolsSpeedResults')).toContainText('427.4 Мбіт/с', {timeout: 10000});
+  await expect(page.locator('#toolsSpeedResults')).toContainText('Мбіт/с', {timeout: 30000});
   await expect(page.locator('#toolsSpeedResults')).toContainText('Відвантаження');
   await expect(page.locator('#toolsSpeedResults')).toContainText('Стабільність');
   await expect(page.locator('#toolsSpeedResults')).toContainText('Вимірювання: Cloudflare');
+  await expect(page.locator('#toolsSpeedResults')).toContainText('Передано: ↓');
   const resultsText = await page.locator('#toolsSpeedResults').innerText();
   expect(resultsText).not.toMatch(/Втрати|packet loss/i);
-  /* Повторний запуск: UI знову живий */
+  expect(resultsText).not.toMatch(/Не вдалося виміряти/);
+  /* Повторный запуск и остановка: UI восстанавливается */
   await page.locator('#toolsSpeedResults [data-tools-action="speed-start"]').click();
   await expect(page.locator('[data-tools-action="speed-stop"]')).toBeVisible();
+  await page.click('[data-tools-action="speed-stop"]');
+  await expect(page.locator('[data-tools-action="speed-start"]').first()).toBeVisible();
 });
 
-test('v91.66: Speedtest — «■ Зупинити» не записує незавершений результат і відновлює UI', async ({page, context, appEnv}) => {
-  plantEngine(appEnv, FAKE_ENGINE_STUCK);
+test('v91.67: Speedtest — «■ Зупинити» не записує незавершений результат і відновлює UI', async ({page, context, appEnv}) => {
+  await context.route(/speed\.cloudflare\.com\/__down/, route => new Promise(() => {})); // вічний pending
   await openTools(page, appEnv);
   await page.click('[data-tools-view="speedtest"]');
   await page.click('[data-tools-action="speed-start"]');
@@ -160,7 +168,7 @@ test('v91.66: Speedtest — «■ Зупинити» не записує нез�
   await expect(page.locator('#toolsSpeedResults')).not.toContainText('Мбіт/с');
 });
 
-test('v91.66: старі інструменти продовжують працювати поруч із новими', async ({page, context, appEnv}) => {
+test('v91.67: старі інструменти продовжують працювати поруч із новими', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   /* Діагностика відкривається окремо: запуск, роутер-пресети (пін v82) на місці */
   await page.click('[data-tools-action="quick-diagnostics"]');
