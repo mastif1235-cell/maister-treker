@@ -11,6 +11,12 @@
   'use strict';
 
   const API_BASE='https://api.globalping.org/v1';
+  /* Пресетні публічні цілі перевіряються НАПРЯМУКУ з телефону через HTTPS:
+     жодного стороннього сервісу, жодних крос-доменних сюрпризів, працює завжди.
+     Це перевірка доступності (HTTP/HTTPS), а не ICMP-пінг — UI чесно це
+     називає. Решта цілей — через Globalping (зовнішні вузли). */
+  const DIRECT_HOSTS={'1.1.1.1':'https://1.1.1.1/','1.0.0.1':'https://1.0.0.1/','8.8.8.8':'https://8.8.8.8/','8.8.4.4':'https://8.8.4.4/','google.com':'https://google.com/generate_204','dns.google':'https://dns.google/'};
+  const DIRECT_ATTEMPTS=3, DIRECT_TIMEOUT_MS=4000;
   /* A few sensible European vantage points; the probe network picks an
      available probe per country (never a hardcoded probe id). Ukraine first,
      then two nearby European countries; if none of them is available the API
@@ -107,7 +113,7 @@
     const fetchFn=options.fetch||globalThis.fetch,signal=options.signal;
     const created=await createMeasurement(fetchFn,host,signal);
     if(created.aborted)return{ok:false,cancelled:true};
-    if(created.networkError)return{ok:false,error:'Сервіс зовнішньої перевірки недоступний',detail:String(created.networkError&&created.networkError.message||created.networkError)};
+    if(created.networkError)return{ok:false,error:'Сервіс зовнішньої перевірки недоступний: запит не пройшов (мережа, VPN або блокувальник контенту). Спробуйте ще раз або перевірте пресетні цілі',detail:API_BASE+' · '+(created.networkError&&created.networkError.message||'network error')};
     if(created.status===429||created.status===403)return{ok:false,error:'Занадто багато перевірок поспіль. Спробуйте за кілька хвилин'};
     if(!created.ok||!created.body||!created.body.id)return{ok:false,error:'Не вдалося розпочати зовнішню перевірку',detail:'HTTP '+created.status};
     const polled=await pollMeasurement(fetchFn,created.body.id,signal);
@@ -142,15 +148,68 @@
     }finally{clearTimeout(timer);}
   }
 
+  /* Пряма HTTPS-перевірка з цього телефону: N спроб, час до відповіді.
+     Розумні DNS/IP мають валідні TLS-сертифікати з IP-SAN (1.1.1.1, 8.8.8.8),
+     google.com відповідає 204 на /generate_204 — статус не важливий, важливий
+     факт відповіді та час. */
+  async function runDirectHttps(host,options={}){
+    const fetchFn=options.fetch||globalThis.fetch,signal=options.signal;
+    const url=DIRECT_HOSTS[host]||('https://'+host+'/');
+    const attempts=Math.max(1,Number(options.attempts)||DIRECT_ATTEMPTS);
+    const timeoutMs=Math.max(500,Number(options.timeoutMs)||DIRECT_TIMEOUT_MS);
+    const times=[];
+    for(let index=0;index<attempts;index++){
+      if(signal&&signal.aborted)return{ok:false,cancelled:true};
+      const reqController=typeof AbortController==='function'?new AbortController():null;
+      const timer=setTimeout(()=>reqController&&reqController.abort(),timeoutMs);
+      const onAbort=()=>reqController&&reqController.abort();
+      if(signal)signal.addEventListener('abort',onAbort,{once:true});
+      const started=Date.now();
+      try{
+        /* no-cors: потрібен лише факт відповіді та час — opaque-відповідь
+           підходить і не вимагає від цілі спеціальних дозволів */
+        const response=await fetchFn(url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',mode:'no-cors',signal:reqController?reqController.signal:undefined});
+        if(!response)throw new Error('no response');
+        times.push(Date.now()-started);
+      }catch(_error){/* спроба не пройшла — рахуємо як без відповіді */}
+      finally{
+        clearTimeout(timer);
+        if(signal)signal.removeEventListener('abort',onAbort);
+      }
+    }
+    if(signal&&signal.aborted)return{ok:false,cancelled:true};
+    if(!times.length){
+      return{ok:false,error:'Ціль не відповіла на HTTPS-запити з цього телефону ('+attempts+' спроб)',detail:url};
+    }
+    return{
+      ok:true,kind:'direct',url,
+      attempts,success:times.length,
+      minMs:Math.min(...times),
+      avgMs:Math.round(times.reduce((sum,value)=>sum+value,0)/times.length),
+      maxMs:Math.max(...times)
+    };
+  }
+
   /* Router used by the UI: a local/private target NEVER goes to the external
-     probe service — it goes to the direct device check instead. */
+     probe service — it goes to the direct device check instead. Preset
+     public targets go to the direct-from-phone HTTPS check (reliable, no
+     third-party service); everything else goes to the external probe network. */
   async function run(host,options={}){
     const utils=options.utils||(typeof MTNetUtils!=='undefined'?MTNetUtils:null);
     const parsed=utils.parseTargetInput(host);
     if(!parsed.ok)return{ok:false,invalid:true,error:parsed.error};
-    const runOptions=Object.assign({},options,{port:parsed.port||null});
-    return parsed.local?runLocal(parsed.host,runOptions):runExternal(parsed.host,options);
+    const normalized=String(parsed.host).toLowerCase();
+    if(parsed.local){
+      const runOptions=Object.assign({},options,{port:parsed.port||null});
+      return runLocal(parsed.host,runOptions);
+    }
+    if(!options.noDirect&&Object.prototype.hasOwnProperty.call(DIRECT_HOSTS,normalized)){
+      const direct=await runDirectHttps(normalized,options);
+      if(direct.ok)direct.host=normalized;
+      return direct;
+    }
+    return runExternal(parsed.host,options);
   }
 
-  return{API_BASE,PROBE_LOCATIONS,countryName,createMeasurement,pollMeasurement,normalizeMeasurement,runExternal,runLocal,run};
+  return{API_BASE,PROBE_LOCATIONS,DIRECT_HOSTS,countryName,createMeasurement,pollMeasurement,normalizeMeasurement,runExternal,runLocal,runDirectHttps,run};
 });

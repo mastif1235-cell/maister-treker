@@ -34,7 +34,7 @@ function toolsSpeedtestHtml(){
   <div id="toolsSpeedResults" style="margin-top:12px;">${toolsSpeedtestResultsHtml(st.last)}</div>
   <details class="card" style="margin-top:12px;">
     <summary class="tools-status-note">Деталі</summary>
-    <div class="tools-status-note" style="margin-top:6px;">Тест виконується через мережу Cloudflare. Щоб не витрачати трафік, використано легкий профіль вимірювань (орієнтовно 15–25 МБ): на дуже швидких лініях значення може бути дещо нижчим за максимум каналу.</div>
+    <div class="tools-status-note" style="margin-top:6px;">Тест виконується через мережу Cloudflare (speed.cloudflare.com): завантаження ~8 с і відвантаження ~6 с у кілька паралельних потоків, щоб стабільно вимірювати 100–1000 Мбіт/с; це цільові вікна — на дуже швидких лініях фаза може завершитися раніше, якщо спрацює ліміт об'єму (~400 МБ отримано / ~150 МБ надіслано). Packet loss не вимірюється.</div>
   </details>`;
 }
 
@@ -42,19 +42,22 @@ function toolsSpeedtestResultsHtml(last){
   if(!last)return '<div class="card tools-status-card"><div class="tools-status-note">Тест ще не запускався. Вимірювання виконується з цього телефону.</div></div>';
   const r=last.result||{};
   if(!r.downloadMbps&&!r.uploadMbps&&!r.latencyMs){
-    return `<div class="card tools-status-card"><div class="tools-status-note">${escapeHtml(r.error||'Не вдалося виміряти швидкість')}</div></div>`;
+    const detail=r.detail?`<div class="tools-status-note" style="margin-top:4px;">Технічні подробиці: ${escapeHtml(String(r.detail).slice(0,160))}</div>`:'';
+    return `<div class="card tools-status-card"><div class="tools-status-note">${escapeHtml(r.error||'Не вдалося виміряти швидкість')}</div>${detail}</div>`;
   }
   const row=(label,value,unit)=>value==null?'':`<div class="tools-status-line"><span>${label}</span><strong>${value} ${unit}</strong></div>`;
   const loaded=r.loadedLatencyMs!=null?row('Під навантаженням',r.loadedLatencyMs,'мс'):'';
-  const loadedNote=(r.loadedDownMs!=null||r.loadedUpMs!=null)?`<div class="tools-status-note" style="margin-top:4px;">Під навантаженням: ↓${r.loadedDownMs!=null?r.loadedDownMs:'—'} / ↑${r.loadedUpMs!=null?r.loadedUpMs:'—'} мс</div>`:'';
+  const partial=(r.warnings&&r.warnings.length&&r.ok==='partial')?`<div class="tools-status-note" style="margin-top:4px;">⚠️ ${escapeHtml(r.warnings.join('; '))} — решта метрик виміряна успішно.</div>`:'';
+  const bytes=(r.bytesDown||r.bytesUp)?`<div class="tools-status-note" style="margin-top:4px;">Передано: ↓${Math.round((r.bytesDown||0)/1e6)} МБ / ↑${Math.round((r.bytesUp||0)/1e6)} МБ</div>`:'';
   return `<div class="card tools-status-card">
       ${row('Завантаження',r.downloadMbps,'Мбіт/с')}
       ${row('Відвантаження',r.uploadMbps,'Мбіт/с')}
       ${row('Відгук',r.latencyMs,'мс')}
       ${loaded}
       ${row('Стабільність',r.jitterMs,'мс')}
-      ${loadedNote}
-      <div class="tools-status-note" style="margin-top:8px;">Вимірювання: Cloudflare</div>
+      ${partial}
+      ${bytes}
+      <div class="tools-status-note" style="margin-top:8px;">Вимірювання: Cloudflare (HTTPS, з цього телефону)</div>
     </div>
     <button type="button" class="btn btn-accent btn-block" data-tools-action="speed-start" style="margin-top:10px;">Повторити</button>`;
 }
@@ -76,9 +79,8 @@ async function toolsSpeedtestStart(){
       },
       onError:message=>{
         const st=toolsSpeedtestState||{};
-        toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:'Не вдалося виміряти швидкість',detail:message}}};
+        toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:message||'Не вдалося виміряти швидкість'}}};
         if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
-        showToast('Не вдалося завершити тест');
       }
     });
     const st=toolsSpeedtestState;
