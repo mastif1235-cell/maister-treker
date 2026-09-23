@@ -39,13 +39,13 @@ for(const origin of directOrigins){
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
 /* Офлайн-шелл: нові файли + движок у precache, новий runtime */
-assert.equal((sw.match(/maister-treker-v67-runtime-111/g)||[]).length,1,'release cache pin');
+assert.equal((sw.match(/maister-treker-v67-runtime-112/g)||[]).length,1,'release cache pin');
 for(const entry of NEW_FILES.map(file=>'./'+file)){
   assert.equal(sw.split("'"+entry+"'").length-1,1,'precache entry exactly once: '+entry);
 }
 assert.doesNotMatch(sw,/vendor\/cloudflare-speedtest/,'отставший движок убран из офлайн-оболочки');
 assert.equal(fs.existsSync(path.join(root,'vendor','cloudflare-speedtest','speedtest.js')),false,'vendored engine removed (заменён собственным адаптивным движком)');
-assert.match(app,/APP_VERSION = 'v91\.67 · 2026-09-23'/,'release identity');
+assert.match(app,/APP_VERSION = 'v91\.68 · 2026-09-23'/,'release identity');
 
 /* Меню Інструментів: дві окремі кнопки-екрани */
 const domain=read('js/tools-domain.js');
@@ -72,14 +72,16 @@ assert.match(speedtestLogic,/chooseDownShape\(1000\)\.|streams:6/,'многоп�
 assert.doesNotMatch(speedtestLogic,/packetLoss/i,'packet loss не измеряется и не имитируется');
 assert.doesNotMatch(speedtestLogic,/vendor\//,'движок не тянет сторонний код');
 assert.doesNotMatch(speedtestLogic,/import\(/,'без динамического импорта движка');
-const cryptoUnused=crypto.createHash('sha256').update('v91.67').digest('hex').length===64;
+const cryptoUnused=crypto.createHash('sha256').update('v91.68').digest('hex').length===64;
 assert.ok(cryptoUnused);
 
 /* Безпека UI: жоден рядок з API не потрапляє в innerHTML без escapeHtml —
    інтерполяція з API-полями мусить містити escapeHtml( всередині ${...} */
 const pingUi=read('js/tools-ping-ui.js');
 assert.ok((pingUi.match(/escapeHtml\(/g)||[]).length>=6,'probe-derived strings are escaped');
-assert.doesNotMatch(pingUi,/\$\{(?![^}]*escapeHtml\()[^}]*(?:last\.target|row\.label|row\.where|result\.error|result\.detail|probe\.|stats\.)/,'raw API interpolation forbidden: wrap in escapeHtml()');
+/* stats.(total|success|failed|lossPct|minMs|avgMs|maxMs) — числові поля власного рушія (число|null) — безпечні без escape;
+   усі рядкові last./row./result.* як і раніше мусять іти через escapeHtml() */
+assert.doesNotMatch(pingUi,/\$\{(?![^}]*escapeHtml\()[^}]*(?:last\.target|row\.label|row\.where|result\.error|result\.detail|probe\.|stats\.(?!total\b|success\b|failed\b|lossPct\b|minMs\b|avgMs\b|maxMs\b))/,'raw API interpolation forbidden: wrap in escapeHtml()');
 assert.doesNotMatch(read('js/tools-speedtest-ui.js'),/innerHTML\s*=/,'speedtest screen mutates only through the shared renderer');
 
 /* Компактний UI: жодного жаргону в нових екранах (як і в старих — пін v82) */
@@ -92,15 +94,26 @@ for(const file of NEW_FILES){
 
 /* Головний UI українською: базові підписи на місці */
 assert.match(pingUi,/Ціль перевірки/);
-assert.match(pingUi,/Почати перевірку/);
+assert.match(pingUi,/Почати моніторинг/);
+assert.match(pingUi,/Почати знову/,'повторний старт після стопу — нова чиста сесія');
 assert.match(pingUi,/Зупинити/);
-assert.match(pingUi,/із зовнішніх вузлів/,'the external direction of the check is explicit');
+assert.match(pingUi,/зовнішніми вузлами Globalping/,'the external direction of the check is explicit');
 const pingLogic=read('js/tools-ping.js');
 assert.match(pingLogic,/DIRECT_HOSTS/,'пресетні цілі перевіряються напряму з телефону');
 assert.match(pingLogic,/'1\.1\.1\.1':'https:\/\/1\.1\.1\.1\/'/,'direct URL для 1.1.1.1');
 assert.match(pingLogic,/Ціль не відповіла на HTTPS-запити з цього телефону/,'пряма помилка людською');
 assert.match(pingLogic,/запит не пройшов \(мережа, VPN або блокувальник контенту\)/,'зовнішня помилка людською, без голого Failed to fetch');
 assert.match(pingUi,/не ICMP-пінг/,'UI честно називает метод: это не ICMP');
+/* v91.68 «Нагляд»: безперервні проби, live-журнал, статистика сесії */
+assert.match(pingUi,/toolsPingMonitorStart\(/,'пресети запускають безперервний моніторинг');
+assert.match(pingUi,/toolsPingRunOnce\(/,'довільні/локальні цілі — разова перевірка як раніше');
+assert.match(pingUi,/controller\.abort\(\)/,'стоп миттєво абортить цикл і поточну пробу');
+assert.match(pingUi,/toolsPingLogCap/,'DOM-журнал обмежується');
+assert.match(pingUi,/aria-live="polite"/,'live-журнал доступний скрінрідеру');
+assert.match(pingUi,/Немає відповіді/,'невдала спроба має людський рядок журналу');
+assert.match(pingUi,/Відповідь від /,'успішний рядок журналу у ping-подібному форматі');
+assert.match(read('js/tools-ping.js'),/MONITOR_INTERVAL_MS\s*=\s*1000/,'проби приблизно раз на секунду');
+assert.match(read('js/tools-ping.js'),/runMonitor/,'двигун безперервного циклу на місці');
 assert.match(pingUi,/Пристрій у мережі/);
 assert.match(pingUi,/не з цього телефону/,'server-side results are labeled');
 const speedUi=read('js/tools-speedtest-ui.js');

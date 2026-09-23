@@ -1,5 +1,8 @@
 'use strict';
 /* v91.66: браузерні екрани 📡 Пінг і ⚡ Speedtest.
+   v91.68: пінг-пресети працюють у режимі «Нагляд» — безперервні HTTPS-проби
+   (~1/с) з live-журналом і статистикою; разові перевірки (Globalping, локальні)
+   збережені як були.
    Зовнішні виклики мокаються (Globalping, Cloudflare-движок не запускаємо:
    реальний трафік у CI неприпустимий) — перевіряємо навігацію, запуск,
    зупинку, людські повідомлення про помилки і сумісність зі старими Tools. */
@@ -105,19 +108,89 @@ test('v91.67: «■ Зупинити» пінга чисто скасовує п
   await expect(page.locator('[data-tools-action="ping-start"]')).toBeVisible();
 });
 
-test('v91.67: пресет 1.1.1.1 перевіряється напряму з телефону (HTTPS), без Globalping', async ({page, context, appEnv}) => {
+test('v91.68: пресет 1.1.1.1 — безперервний нагляд з телефону (HTTPS): проби >3, статистика, стоп лишає журнал, без Globalping', async ({page, context, appEnv}) => {
   await openTools(page, appEnv);
   let directHits = 0, globalpingHits = 0;
   await context.route(/^https:\/\/1\.1\.1\.1\//, route => { directHits++; return route.fulfill({status: 200, body: 'ok'}); });
   await context.route('**/api.globalping.org/**', route => { globalpingHits++; return route.fulfill({status: 500, body: 'MUST NOT BE CALLED'}); });
   await page.click('[data-tools-view="ping"]');
-  await page.fill('#toolsPingTarget', '1.1.1.1');
+  await page.click('[data-ping-preset="1.1.1.1"]');
   await page.click('[data-tools-action="ping-start"]');
-  await expect(page.locator('#toolsPingResults')).toContainText('Доступний', {timeout: 10000});
-  await expect(page.locator('#toolsPingResults')).toContainText('Успішних спроб: 3/3');
-  await expect(page.locator('#toolsPingResults')).toContainText('не ICMP-пінг');
-  expect(directHits).toBe(3);
+  /* Моніторинг: кнопка одразу «■ Зупинити», рядки журналу приходять приблизно раз на секунду */
+  await expect(page.locator('[data-tools-action="ping-stop"]')).toBeVisible();
+  await expect(page.locator('#toolsPingLog .tools-ping-line').first()).toContainText('Відповідь від 1.1.1.1', {timeout: 5000});
+  await expect(page.locator('#toolsPingLog .tools-ping-line')).toHaveCount(4, {timeout: 8000}); // без ліміту 3-4 спроби
+  await expect(page.locator('#toolsPingStats')).toContainText('Перевірок');
+  await expect(page.locator('#toolsPingStats')).toContainText('Втрати');
+  await expect(page.locator('#toolsPingStats')).toContainText('0%');
+  expect(directHits).toBeGreaterThanOrEqual(4);
   expect(globalpingHits).toBe(0);
+  /* Стоп: нові проби не починаються; журнал і статистика лишаються на екрані */
+  await page.click('[data-tools-action="ping-stop"]');
+  await expect(page.locator('[data-tools-action="ping-start"]')).toContainText('Почати знову');
+  await page.waitForTimeout(150);
+  const hitsAtStop = directHits;
+  await page.waitForTimeout(2300);
+  expect(directHits).toBe(hitsAtStop);
+  await expect(page.locator('#toolsPingLog .tools-ping-line').first()).toContainText('Відповідь від 1.1.1.1');
+  await expect(page.locator('#toolsPingStats')).toContainText('Перевірок');
+});
+
+test('v91.68: нагляд переживає збої («Немає відповіді» не зупиняє цикл), повторний старт — нова чиста сесія', async ({page, context, appEnv}) => {
+  await openTools(page, appEnv);
+  let hits = 0, globalpingHits = 0;
+  await context.route(/^https:\/\/8\.8\.8\.8\//, route => { hits++; return hits % 2 === 0 ? route.abort('failed') : route.fulfill({status: 200, body: 'ok'}); });
+  await context.route('**/api.globalping.org/**', route => { globalpingHits++; return route.fulfill({status: 500, body: 'MUST NOT BE CALLED'}); });
+  await page.click('[data-tools-view="ping"]');
+  await page.click('[data-ping-preset="8.8.8.8"]');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingLog .tools-ping-line')).toHaveCount(4, {timeout: 9000});
+  /* Кожна друга спроба збоїлась: рядок «Немає відповіді», цикл триває, втрати > 0 */
+  await expect(page.locator('#toolsPingLog .tools-ping-fail').first()).toContainText('Немає відповіді');
+  await expect(page.locator('#toolsPingLog .tools-ping-line').nth(3)).toContainText('Немає відповіді');
+  const statsText = await page.locator('#toolsPingStats').innerText();
+  const loss = statsText.match(/Втрати\s*(\d+(?:\.\d+)?)%/);
+  expect(loss && Number(loss[1])).toBeGreaterThan(0);
+  expect(globalpingHits).toBe(0);
+  /* Повторний старт після стопу = нова чиста сесія: журнал порожній, статистика з нуля */
+  await page.click('[data-tools-action="ping-stop"]');
+  await expect(page.locator('[data-tools-action="ping-start"]')).toBeVisible();
+  await page.click('[data-tools-action="ping-start"]');
+  /* Нова сесія: лог починається спочатку (#1), лічильники — з нуля (стара мала ≥4) */
+  await expect(page.locator('#toolsPingLog .tools-ping-line')).toHaveCount(1, {timeout: 3000});
+  await expect(page.locator('#toolsPingLog .tools-ping-line').first()).toContainText('#1 ');
+  const freshStats = await page.locator('#toolsPingStats').innerText();
+  expect(freshStats).toMatch(/Перевірок\s*[01]\s*Успішних/);
+});
+
+test('v91.68: після нагляду разова перевірка через Globalping працює і UI не лишається в монітор-стані', async ({page, context, appEnv}) => {
+  await openTools(page, appEnv);
+  let directHits = 0, measurements = 0;
+  await context.route(/^https:\/\/1\.1\.1\.1\//, route => { directHits++; return route.fulfill({status: 200, body: 'ok'}); });
+  await context.route('**/api.globalping.org/v1/measurements**', route => {
+    const url = route.request().url();
+    if (route.request().method() === 'POST') { measurements++; return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(GP_JSON)}); }
+    return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(GP_DONE)});
+  });
+  await page.click('[data-tools-view="ping"]');
+  /* 1) нагляд 8.8.8.8: кілька проб і Stop */
+  await page.click('[data-ping-preset="8.8.8.8"]');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingLog .tools-ping-line').first()).toContainText('Відповідь від 8.8.8.8', {timeout: 5000});
+  await page.click('[data-tools-action="ping-stop"]');
+  await expect(page.locator('[data-tools-action="ping-start"]')).toContainText('Почати знову');
+  /* 2) разова перевірка example.com: стара монітор-сесія не перешкоджає */
+  await page.fill('#toolsPingTarget', 'example.com');
+  await page.click('[data-tools-action="ping-start"]');
+  await expect(page.locator('#toolsPingResults')).toContainText('не з цього телефону', {timeout: 10000});
+  await expect(page.locator('#toolsPingResults')).toContainText('18 мс');
+  expect(measurements).toBe(1);
+  /* 3) після one-shot кнопка «Почати моніторинг», а не «Почати знову» від старого монітора */
+  await expect(page.locator('[data-tools-action="ping-start"]')).toContainText('Почати моніторинг');
+  const startText = await page.locator('[data-tools-action="ping-start"]').innerText();
+  expect(startText).not.toContain('Почати знову');
+  /* поле лишається на введеній one-shot цілі */
+  await expect(page.locator('#toolsPingTarget')).toHaveValue('example.com');
 });
 
 /* Speedtest працює напряму з speed.cloudflare.com (крос-домен: SW пропускає,

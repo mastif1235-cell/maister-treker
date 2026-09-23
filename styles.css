@@ -458,3 +458,10 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 .tools-speed-dial-arc{transition:stroke-dashoffset .45s ease;}
 @media (prefers-reduced-motion: reduce){.tools-speed-dial-arc{transition:none;}}
 .tools-ping-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;text-align:center;}
+
+/* ─── Пінг: режим «Нагляд» (безперервний моніторинг) ─── */
+.tools-ping-log{max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;font-size:12px;line-height:1.6;}
+.tools-ping-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px;}
+.tools-ping-ok{color:var(--text);}
+.tools-ping-slow{color:#c98a1b;font-weight:600;}
+.tools-ping-fail{color:#d64545;font-weight:600;}
