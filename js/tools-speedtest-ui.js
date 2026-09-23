@@ -2,6 +2,7 @@
    measures; everything drawn here is ours (own dial, own wording). Packet
    loss is intentionally absent — there is no honest source for it yet. */
 let toolsSpeedtestState=null; // {running, handle, stage, liveMbps, last:{result}|null}
+let toolsSpeedtestRunId=0;
 
 function toolsSpeedtestDialHtml(valueMbps,active){
   const radius=52,circumference=2*Math.PI*radius;
@@ -49,6 +50,10 @@ function toolsSpeedtestResultsHtml(last){
   const loaded=r.loadedLatencyMs!=null?row('Під навантаженням',r.loadedLatencyMs,'мс'):'';
   const partial=(r.warnings&&r.warnings.length&&r.ok==='partial')?`<div class="tools-status-note" style="margin-top:4px;">⚠️ ${escapeHtml(r.warnings.join('; '))} — решта метрик виміряна успішно.</div>`:'';
   const bytes=(r.bytesDown||r.bytesUp)?`<div class="tools-status-note" style="margin-top:4px;">Передано: ↓${Math.round((r.bytesDown||0)/1e6)} МБ / ↑${Math.round((r.bytesUp||0)/1e6)} МБ</div>`:'';
+  const edge=last.edgeInfo;
+  const edgePlace=edge?(edge.city?`${edge.city} (${edge.colo})`:edge.colo):'';
+  const server=`Cloudflare${edgePlace?' · '+edgePlace:''}${edge?.country?' · '+edge.country:''} · Автоматично`;
+  const visitorCountry=edge&&!edge.country&&edge.visitorCountryCode?`<div class="tools-status-note" style="margin-top:3px;">Країна клієнта: ${escapeHtml(edge.visitorCountryCode)}</div>`:'';
   return `<div class="card tools-status-card">
       ${row('Завантаження',r.downloadMbps,'Мбіт/с')}
       ${row('Відвантаження',r.uploadMbps,'Мбіт/с')}
@@ -57,7 +62,8 @@ function toolsSpeedtestResultsHtml(last){
       ${row('Стабільність',r.jitterMs,'мс')}
       ${partial}
       ${bytes}
-      <div class="tools-status-note" style="margin-top:8px;">Вимірювання: Cloudflare (HTTPS, з цього телефону)</div>
+      <div class="tools-status-note" style="margin-top:8px;">Сервер: ${escapeHtml(server)}</div>
+      ${visitorCountry}
     </div>
     <button type="button" class="btn btn-accent btn-block" data-tools-action="speed-start" style="margin-top:10px;">Повторити</button>`;
 }
@@ -66,20 +72,33 @@ async function toolsSpeedtestStart(){
   if(toolsSpeedtestState&&toolsSpeedtestState.running)return;
   if(typeof navigator!=='undefined'&&navigator.onLine===false){showToast('Немає з\'єднання — тест потребує інтернету');return;}
   if(typeof MTSpeedtest==='undefined'){showToast('Не вдалося завантажити вимірювач');return;}
-  toolsSpeedtestState={running:true,handle:null,stage:'Підготовка…',liveMbps:null,last:toolsSpeedtestState&&toolsSpeedtestState.last};
+  toolsSpeedtestState?.edgeController?.abort();
+  const runId=++toolsSpeedtestRunId;
+  const edgeController=new AbortController();
+  toolsSpeedtestState={running:true,handle:null,stage:'Підготовка…',liveMbps:null,last:toolsSpeedtestState&&toolsSpeedtestState.last,runId,edgeController,edgeInfo:null};
   if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
+  if(typeof MTSpeedtestEdge!=='undefined'){
+    MTSpeedtestEdge.fetchCloudflareEdgeInfo({signal:edgeController.signal}).then(info=>{
+      const st=toolsSpeedtestState;
+      if(!st||st.runId!==runId||!info)return;
+      st.edgeInfo=info;
+      if(st.last&&st.last.runId===runId){st.last.edgeInfo=info;if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');}
+    });
+  }
   try{
     const handle=await MTSpeedtest.create({
-      onStage:(text,type)=>{const st=toolsSpeedtestState;if(!st)return;st.stage=text;if(toolsSpeedtestViewActive())toolsSpeedtestUpdateLive(null,text);},
-      onLive:mbps=>{const st=toolsSpeedtestState;if(!st)return;st.liveMbps=mbps;if(toolsSpeedtestViewActive())toolsSpeedtestUpdateLive(mbps,null);},
+      onStage:(text,type)=>{const st=toolsSpeedtestState;if(!st||st.runId!==runId)return;st.stage=text;if(toolsSpeedtestViewActive())toolsSpeedtestUpdateLive(null,text);},
+      onLive:mbps=>{const st=toolsSpeedtestState;if(!st||st.runId!==runId)return;st.liveMbps=mbps;if(toolsSpeedtestViewActive())toolsSpeedtestUpdateLive(mbps,null);},
       onFinish:result=>{
         const st=toolsSpeedtestState||{};
-        toolsSpeedtestState={running:false,handle:null,stage:'Готово',liveMbps:null,last:{result}};
+        if(st.runId!==runId)return;
+        toolsSpeedtestState={running:false,handle:null,stage:'Готово',liveMbps:null,last:{result,edgeInfo:st.edgeInfo,runId},runId,edgeController,edgeInfo:st.edgeInfo};
         if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
       },
       onError:message=>{
         const st=toolsSpeedtestState||{};
-        toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:message||'Не вдалося виміряти швидкість'}}};
+        if(st.runId!==runId)return;
+        toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:message||'Не вдалося виміряти швидкість'},runId},runId,edgeController};
         if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
       }
     });
@@ -88,18 +107,21 @@ async function toolsSpeedtestStart(){
     st.handle=handle;
     handle.play();
   }catch(error){
-    toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:'Не вдалося завантажити вимірювач',detail:String(error&&error.message||error)}}};
+    if(toolsSpeedtestState?.runId!==runId)return;
+    toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:{result:{error:'Не вдалося завантажити вимірювач',detail:String(error&&error.message||error)},runId},runId,edgeController};
     if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
   }
 }
 function toolsSpeedtestStop(){
   const st=toolsSpeedtestState;
+  st?.edgeController?.abort();
   if(st&&st.handle)st.handle.pause(); // незавершённый тест не превращается в результат (engine wrapper игнорирует onFinish после pause)
   toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:st?st.last:null};
   if(toolsSpeedtestViewActive())renderToolsScreen('speedtest');
 }
 function toolsSpeedtestLeave(){
   const st=toolsSpeedtestState;
+  if(st?.running)st.edgeController?.abort();
   if(st&&st.running&&st.handle)st.handle.pause();
   if(st&&st.running)toolsSpeedtestState={running:false,handle:null,stage:'',liveMbps:null,last:st.last};
 }
