@@ -1,40 +1,82 @@
-/* Пінг: presentation and screen state. Session state lives here (a new-file
-   owner per the tools extraction contract); tools-domain only renders this
-   view and dispatches its actions. All probe/API-derived strings are escaped
-   before they ever reach innerHTML. */
-let toolsPingState=null; // {running, controller, last:{kind, target, result}}
+/* Пінг: презентація і стан екрана. Головний режим — «Нагляд»: безперервні
+   HTTPS-проби з цього телефону (~1/с) з live-журналом і статистикою сесії;
+   пропадання інтернету лише рахується і НЕ зупиняє моніторинг. Разові
+   перевірки (Globalping для довільних цілей, локальні пристрої) працюють
+   як і раніше. Стан сесій живе тут; tools-domain лише рендерить екран. */
+let toolsPingState=null;   // разові перевірки (external/local/direct one-shot)
+let toolsPingMonitor=null; // сесія нагляду {running,controller,host,stats}
 
 function toolsPingHtml(){
-  const st=toolsPingState||{};
-  const running=!!st.running;
+  const st=toolsPingState||{},mon=toolsPingMonitor||{};
+  const running=!!mon.running||!!(st&&st.running); // «Зупинити» і під час разової перевірки
+  const repeat=!running&&mon.host!=null;
   return `${toolsBackButton()}
   <div class="card">
     <strong>Ціль перевірки</strong>
-    <div class="field" style="margin-top:6px;"><input type="text" id="toolsPingTarget" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="1.1.1.1 або google.com" value="${escapeHtml(st.target||'')}"></div>
+    <div class="field" style="margin-top:6px;"><input type="text" id="toolsPingTarget" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="1.1.1.1 або google.com" value="${escapeHtml(st.target||mon.host||'')}"></div>
     <div class="tools-router-grid" style="margin-top:8px;">
       <button type="button" class="btn" data-tools-action="ping-preset" data-ping-preset="1.1.1.1">1.1.1.1</button>
       <button type="button" class="btn" data-tools-action="ping-preset" data-ping-preset="8.8.8.8">8.8.8.8</button>
       <button type="button" class="btn" data-tools-action="ping-preset" data-ping-preset="google.com">google.com</button>
     </div>
-    ${running
-      ?'<button type="button" class="btn btn-block" data-tools-action="ping-stop" style="margin-top:10px;">■ Зупинити</button>'
-      :'<button type="button" class="btn btn-accent btn-block" data-tools-action="ping-start" style="margin-top:10px;">▶ Почати перевірку</button>'}
-    <div class="tools-status-note" style="margin-top:8px;" id="toolsPingModeNote">${toolsPingModeNoteHtml(st)}</div>
+    <div id="toolsPingAction" style="margin-top:10px;">${toolsPingActionButtonHtml(running,repeat)}</div>
+    ${mon.running?`<div class="tools-status-note" style="margin-top:8px;">Нагляд за <strong>${escapeHtml(mon.host)}</strong> — орієнтовно раз на секунду.</div>`:''}
+  </div>
+  <div class="card" style="margin-top:12px;">
+    <div id="toolsPingStats">${toolsPingStatsHtml(mon.stats)}</div>
+  </div>
+  <div class="card" style="margin-top:12px;">
+    <div id="toolsPingLog" class="tools-ping-log" aria-live="polite"></div>
   </div>
   <div id="toolsPingResults" style="margin-top:12px;">${toolsPingResultsHtml(st.last)}</div>
   <details class="card" style="margin-top:12px;">
     <summary class="tools-status-note">Деталі</summary>
-    <div class="tools-status-note" style="margin-top:6px;">Зовнішня перевірка виконується через Globalping — мережу відкритих вузлів. Ціль перевірки бачать ці вузли. Локальна перевірка виконується безпосередньо з цього пристрою.</div>
+    <div class="tools-status-note" style="margin-top:6px;">Пресетні цілі (1.1.1.1, 8.8.8.8, google.com тощо) перевіряються безперервно з цього телефону через HTTPS: це перевірка доступності, а не ICMP-пінг; час у рядку — час відповіді сервера.</div>
+    <div class="tools-status-note" style="margin-top:4px;">Зовнішня перевірка довільних цілей виконується через Globalping — мережу відкритих вузлів. Ціль перевірки бачать ці вузли.</div>
     <div class="tools-status-note" style="margin-top:4px;">Для локальних адрес (192.168.x.x, 10.x.x.x) Android може запросити дозвіл на доступ до локальної мережі.</div>
   </details>`;
 }
-function toolsPingModeNoteHtml(st){
-  if(st&&st.last&&st.last.kind==='local')return 'Локальна перевірка: цей телефон → пристрій у вашій мережі (Wi-Fi).';
-  if(st&&st.last&&st.last.kind==='direct')return 'Швидка перевірка виконується з цього телефону через HTTPS — це перевірка доступності, а не ICMP-пінг.';
-  return 'Перевірка виконується із зовнішніх вузлів: результат показує, як ціль видно з інтернету.';
+function toolsPingActionButtonHtml(running,repeat){
+  if(running)return '<button type="button" class="btn btn-block" data-tools-action="ping-stop">■ Зупинити</button>';
+  return `<button type="button" class="btn btn-accent btn-block" data-tools-action="ping-start">${repeat?'▶ Почати знову':'▶ Почати моніторинг'}</button>`;
 }
 
-/* Rows and summary are built only from real API values — nothing is invented. */
+/* Статистика всієї сесії (усі спроби від старту, навіть ті, чиї рядки вже
+   прибрані з журналу). Min/avg/max — тільки по успішних відповідях. */
+function toolsPingStatsHtml(stats){
+  if(!stats)return '<div class="tools-status-note">Моніторинг ще не запускався. Виберіть ціль і натисніть «Почати моніторинг» — відповіді з’являтимуться у журналі приблизно раз на секунду.</div>';
+  const cell=(label,value)=>`<div class="tools-status-note">${label}<br><strong style="font-size:15px;color:var(--text);">${value}</strong></div>`;
+  return `<div class="tools-router-grid">
+      ${cell('Перевірок',stats.total)}
+      ${cell('Успішних',stats.success)}
+      ${cell('Без відповіді',stats.failed)}
+      ${cell('Втрати',stats.lossPct+'%')}
+      ${cell('Мін',stats.minMs==null?'—':stats.minMs+' мс')}
+      ${cell('Сер',stats.avgMs==null?'—':stats.avgMs+' мс')}
+      ${cell('Макс',stats.maxMs==null?'—':stats.maxMs+' мс')}
+    </div>`;
+}
+
+/* Live-журнал: рядок з'являється одразу після спроби; у DOM тримаємо останні
+   ~100 рядків (старі прибираємо), автоскрол працює лише коли читач унизу. */
+function toolsPingLogCap(logEl,max){
+  let removed=0;
+  while(logEl.children.length>max){logEl.removeChild(logEl.firstChild);removed++;}
+  return removed;
+}
+function toolsPingLogShouldStick(logEl){
+  return logEl.scrollTop+logEl.clientHeight>=logEl.scrollHeight-40;
+}
+function toolsPingMonitorAppendRow(logEl,host,entry){
+  const stick=logEl.children.length===0||toolsPingLogShouldStick(logEl);
+  const line=document.createElement('div');
+  line.className='tools-ping-line '+(entry.ok?(entry.ms>=MTPing.MONITOR_SLOW_MS?'tools-ping-slow':'tools-ping-ok'):'tools-ping-fail');
+  line.textContent=entry.ok?('#'+entry.seq+' Відповідь від '+host+': '+entry.ms+' мс'):('#'+entry.seq+' Немає відповіді');
+  logEl.appendChild(line);
+  toolsPingLogCap(logEl,100);
+  if(stick)logEl.scrollTop=logEl.scrollHeight;
+}
+
 function toolsPingResultsHtml(last){
   if(!last)return '<div class="card tools-status-card"><div class="tools-status-note">Перевірку ще не запускали.</div></div>';
   const result=last.result||{};
@@ -85,13 +127,57 @@ function toolsPingResultsHtml(last){
     </div>`;
 }
 
+function toolsPingMonitorStart(host){
+  if(toolsPingMonitor&&toolsPingMonitor.running)return;
+  if(typeof MTPing==='undefined'||typeof MTPing.runMonitor!=='function'){showToast('Службовий модуль недоступний');return;}
+  const controller=typeof AbortController==='function'?new AbortController():null;
+  toolsPingMonitor={running:true,controller,host,stats:MTPing.createMonitorStats()};
+  if(toolsPingViewActive())renderToolsScreen('ping'); // нова чиста сесія: порожній журнал, нульова статистика
+  const logEl=document.getElementById('toolsPingLog'),statsEl=document.getElementById('toolsPingStats');
+  MTPing.runMonitor(host,{
+    fetch:(typeof fetch==='function')?fetch:undefined, // vm/тести: той самий глобальний fetch, що бачить UI
+    signal:controller?controller.signal:null,
+    intervalMs:MTPing.MONITOR_INTERVAL_MS,
+    timeoutMs:MTPing.MONITOR_TIMEOUT_MS,
+    onAttempt:entry=>{
+      const st=toolsPingMonitor;
+      if(!st||st.controller!==controller)return; // застаріла сесія після Stop
+      st.stats=entry.stats;
+      if(logEl)toolsPingMonitorAppendRow(logEl,st.host,entry);
+      if(statsEl)statsEl.innerHTML=toolsPingStatsHtml(entry.stats);
+    }
+  }).then(()=>{
+    const st=toolsPingMonitor;
+    if(st&&st.controller===controller){st.running=false;st.controller=null;toolsPingRefreshAction();}
+  });
+}
+/* Оновлюємо лише кнопку — журнал і статистика лишаються на екрані. */
+function toolsPingRefreshAction(){
+  const container=document.getElementById('toolsPingAction');
+  if(container)container.innerHTML=toolsPingActionButtonHtml(!!(toolsPingMonitor&&toolsPingMonitor.running),!!(toolsPingMonitor&&toolsPingMonitor.host));
+}
+function toolsPingStopMonitor(){
+  const st=toolsPingMonitor;
+  if(st&&st.running&&st.controller)st.controller.abort(); // миттєво: цикл і поточна проба
+  if(st){st.running=false;st.controller=null;}
+  if(toolsPingViewActive())toolsPingRefreshAction();
+}
+
 async function toolsPingStart(){
-  if(toolsPingState&&toolsPingState.running)return;
+  if(toolsPingMonitor&&toolsPingMonitor.running)return;
   const input=document.getElementById('toolsPingTarget');
   const raw=input?input.value:'';
   const utils=typeof MTNetUtils!=='undefined'?MTNetUtils:null;
   const parsed=utils?utils.parseTargetInput(raw):{ok:false,error:'Службовий модуль недоступний'};
   if(!parsed.ok){showToast(parsed.error||'Некоректна адреса');return;}
+  const directHosts=typeof MTPing!=='undefined'&&MTPing.DIRECT_HOSTS?MTPing.DIRECT_HOSTS:null;
+  if(!parsed.local&&directHosts&&Object.prototype.hasOwnProperty.call(directHosts,parsed.host)){
+    toolsPingMonitorStart(parsed.host); // безперервний нагляд
+    return;
+  }
+  await toolsPingRunOnce(raw,parsed); // локальні та довільні публічні цілі — як раніше
+}
+async function toolsPingRunOnce(raw,parsed){
   if(typeof navigator!=='undefined'&&navigator.onLine===false){showToast('Немає з\'єднання — перевірка потребує інтернету');return;}
   const controller=typeof AbortController==='function'?new AbortController():null;
   toolsPingState={running:true,controller,target:parsed.host,last:toolsPingState&&toolsPingState.last};
@@ -107,12 +193,24 @@ async function toolsPingStart(){
   }else if(state.controller){/* экран закрыли — результат дождётся возврата */}
 }
 function toolsPingStop(){
-  if(toolsPingState&&toolsPingState.controller)toolsPingState.controller.abort();
-  if(toolsPingState){toolsPingState.running=false;}
-  if(toolsPingViewActive())renderToolsScreen('ping');
+  const st=toolsPingState;
+  if(st&&st.controller)st.controller.abort();
+  if(st){st.running=false;}
+  const mon=toolsPingMonitor;
+  const hadMonitor=!!(mon&&mon.host!=null);
+  if(mon&&mon.running&&mon.controller)mon.controller.abort();
+  if(mon){mon.running=false;mon.controller=null;}
+  if(!toolsPingViewActive())return;
+  if(hadMonitor)toolsPingRefreshAction(); // журнал і статистика сесії лишаються на екрані
+  else renderToolsScreen('ping');
 }
+function toolsPingMonitorState(){return toolsPingMonitor;} // доступ для тестів/діагностики (у браузері — теж глобальна функція)
+
 function toolsPingLeave(){
   if(toolsPingState&&toolsPingState.controller)toolsPingState.controller.abort();
   toolsPingState=toolsPingState?{running:false,controller:null,target:toolsPingState.target,last:toolsPingState.last}:null;
+  const mon=toolsPingMonitor;
+  if(mon&&mon.running&&mon.controller)mon.controller.abort(); // закриття екрана зупиняє нагляд
+  if(mon){mon.running=false;mon.controller=null;}
 }
 function toolsPingViewActive(){return typeof toolsView!=='undefined'&&toolsView==='ping';}

@@ -2,6 +2,7 @@
    - external target → the Globalping community probes (PROBE → TARGET, anonymous free tier);
    - local/private target → a direct device check from this phone (PHONE → DEVICE), which is a
      reachability+latency probe, NOT a protocol-level echo; the UI must never claim otherwise.
+   - preset public targets → continuous HTTPS monitoring from this phone (tools-ping-ui «Нагляд»).
    All network I/O goes through an injected fetch so tests run fully offline. */
 (function(root,factory){
   const api=factory();
@@ -14,7 +15,7 @@
   /* Пресетні публічні цілі перевіряються НАПРЯМУКУ з телефону через HTTPS:
      жодного стороннього сервісу, жодних крос-доменних сюрпризів, працює завжди.
      Це перевірка доступності (HTTP/HTTPS), а не ICMP-пінг — UI чесно це
-     називає. Решта цілей — через Globalping (зовнішні вузли). */
+     називає (у «Деталі»). Решта цілей — через Globalping (зовнішні вузли). */
   const DIRECT_HOSTS={'1.1.1.1':'https://1.1.1.1/','1.0.0.1':'https://1.0.0.1/','8.8.8.8':'https://8.8.8.8/','8.8.4.4':'https://8.8.4.4/','google.com':'https://google.com/generate_204','dns.google':'https://dns.google/'};
   const DIRECT_ATTEMPTS=3, DIRECT_TIMEOUT_MS=4000;
   /* A few sensible European vantage points; the probe network picks an
@@ -22,6 +23,104 @@
      then two nearby European countries; if none of them is available the API
      call falls back to three probes worldwide. */
   const PROBE_LOCATIONS=[{country:'UA',limit:1},{country:'PL',limit:1},{country:'DE',limit:1}];
+  /* Нагляд (безперервний моніторинг): ціль ~1 проба/с, таймаут проби ~3.5 с,
+     «помітно високий» пінг для жовтого рядка. */
+  const MONITOR_INTERVAL_MS=1000, MONITOR_TIMEOUT_MS=3500, MONITOR_SLOW_MS=400;
+
+  function countryName(code){
+    return COUNTRY_NAMES[String(code||'').toUpperCase()]||String(code||'').toUpperCase();
+  }
+
+  function sleep(ms,signal){
+    return new Promise(resolve=>{
+      const timer=setTimeout(resolve,ms);
+      if(signal)signal.addEventListener('abort',()=>{clearTimeout(timer);resolve();},{once:true});
+    });
+  }
+
+  /* Сон, який переривається сигналом; слухач знімається завжди — без витоків
+     під час багатогодинного моніторингу. */
+  function sleepInterruptible(ms,signal){
+    return new Promise(resolve=>{
+      if(signal&&signal.aborted)return resolve();
+      const timer=setTimeout(done,ms);
+      function done(){clearTimeout(timer);if(signal)signal.removeEventListener('abort',done);resolve();}
+      if(signal)signal.addEventListener('abort',done,{once:true});
+    });
+  }
+
+  function createMonitorStats(){
+    return{total:0,success:0,failed:0,minMs:null,avgMs:null,maxMs:null,sumMs:0,lossPct:0};
+  }
+  /* Одна спроба оновлює агрегати всієї сесії (DOM-обмеження на журнал не
+     впливає: лічильники рахують усі спроби від старту). */
+  function recordMonitorAttempt(stats,ok,ms){
+    stats.total++;
+    if(ok&&ms!=null){
+      stats.success++;
+      stats.sumMs+=ms;
+      stats.minMs=stats.minMs==null?ms:Math.min(stats.minMs,ms);
+      stats.maxMs=stats.maxMs==null?ms:Math.max(stats.maxMs,ms);
+      stats.avgMs=Math.round(stats.sumMs/stats.success);
+    }else stats.failed++;
+    stats.lossPct=stats.total?Math.round(stats.failed/stats.total*1000)/10:0;
+    return stats;
+  }
+  function snapshotMonitorStats(stats){
+    return{total:stats.total,success:stats.success,failed:stats.failed,minMs:stats.minMs,avgMs:stats.avgMs,maxMs:stats.maxMs,lossPct:stats.lossPct};
+  }
+
+  /* Одна проба нагляду → мс або null (мережева помилка/таймаут — НЕ фатальна
+     помилка сесії, просто «Немає відповіді»). */
+  async function monitorProbe(host,options={}){
+    const fetchFn=options.fetch||globalThis.fetch,signal=options.signal;
+    const now=options.now||Date.now;
+    const timeoutMs=Math.max(300,Number(options.timeoutMs)||MONITOR_TIMEOUT_MS);
+    const url=DIRECT_HOSTS[host]||('https://'+host+'/');
+    const reqController=typeof AbortController==='function'?new AbortController():null;
+    const timer=setTimeout(()=>reqController&&reqController.abort(),timeoutMs);
+    const onAbort=()=>reqController&&reqController.abort();
+    if(signal)signal.addEventListener('abort',onAbort,{once:true});
+    const started=now();
+    try{
+      /* no-cors: потрібен лише факт відповіді та час — opaque-відповідь
+         підходить і не вимагає від цілі спеціальних дозволів */
+      const response=await fetchFn(url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',mode:'no-cors',signal:reqController?reqController.signal:undefined});
+      if(!response)throw new Error('no response');
+      return Math.max(1,now()-started);
+    }catch(_error){return null;}
+    finally{
+      clearTimeout(timer);
+      if(signal)signal.removeEventListener('abort',onAbort);
+    }
+  }
+
+  /* Безперервний нагляд: одна проба → пауза до повної секунди → наступна.
+     Жодних перекритих запитів, жодного busy-loop; цикл живе поки сигнал
+     активний. Мережеві збої/таймаути/офлайн лише рахуються — сесія триває
+     до «Зупинити» (abort знімає поточну пробу БЕЗ запису «Немає відповіді»). */
+  async function runMonitor(host,options={}){
+    const signal=options.signal;
+    const intervalMs=Math.max(50,Number(options.intervalMs)||MONITOR_INTERVAL_MS);
+    const timeoutMs=Math.max(300,Number(options.timeoutMs)||MONITOR_TIMEOUT_MS);
+    const onAttempt=options.onAttempt||function(){};
+    const now=options.now||Date.now;
+    const stats=createMonitorStats();
+    let seq=0;
+    while(!signal||!signal.aborted){
+      const started=now();
+      seq++;
+      const ms=await monitorProbe(host,{fetch:options.fetch,signal,timeoutMs,now});
+      if(signal&&signal.aborted)break; /* ручний Stop не зараховується */
+      recordMonitorAttempt(stats,ms!=null,ms);
+      onAttempt({seq,ok:ms!=null,ms:ms==null?null:ms,stats:snapshotMonitorStats(stats)});
+      const elapsed=now()-started;
+      const wait=intervalMs-elapsed;
+      if(wait>0)await sleepInterruptible(wait,signal);
+    }
+    return snapshotMonitorStats(stats);
+  }
+
   const COUNTRY_NAMES={UA:'Україна',PL:'Польща',DE:'Німеччина',CZ:'Чехія',SK:'Словаччина',RO:'Румунія',HU:'Угорщина',MD:'Молдова',LT:'Литва',LV:'Латвія',EE:'Естонія',AT:'Австрія',NL:'Нідерланди',BE:'Бельгія',FR:'Франція',GB:'Велика Британія',FI:'Фінляндія',SE:'Швеція',NO:'Норвегія',DK:'Данія',IT:'Італія',ES:'Іспанія',PT:'Португалія',BG:'Болгарія',RS:'Сербія',US:'США',CA:'Канада'};
   const POLL_INTERVAL_MS=1000, POLL_DEADLINE_MS=25000;
 
@@ -211,5 +310,5 @@
     return runExternal(parsed.host,options);
   }
 
-  return{API_BASE,PROBE_LOCATIONS,DIRECT_HOSTS,countryName,createMeasurement,pollMeasurement,normalizeMeasurement,runExternal,runLocal,runDirectHttps,run};
+  return{API_BASE,PROBE_LOCATIONS,DIRECT_HOSTS,MONITOR_INTERVAL_MS,MONITOR_TIMEOUT_MS,MONITOR_SLOW_MS,countryName,createMeasurement,pollMeasurement,normalizeMeasurement,runExternal,runLocal,runDirectHttps,createMonitorStats,recordMonitorAttempt,runMonitor,run};
 });
