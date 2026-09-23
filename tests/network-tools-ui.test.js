@@ -10,7 +10,7 @@ const root=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8').replace(/\r\n/g,'\n');
 
 const html=read('index.html'),sw=read('sw.js'),app=read('app.js'),headers=read('_headers');
-const NEW_FILES=['js/tools-network-utils.js','js/tools-ping.js','js/tools-ping-ui.js','js/tools-speedtest.js','js/tools-speedtest-ui.js'];
+const NEW_FILES=['js/tools-network-utils.js','js/tools-ping.js','js/tools-ping-ui.js','js/tools-speedtest.js','js/tools-speedtest-edge.js','js/tools-speedtest-ui.js'];
 
 /* Підключення: кожен модуль рівно один раз, у правильному порядку (спільні
    утиліти → логіка → UI), після існуючих tools-файлів */
@@ -22,6 +22,7 @@ for(const file of NEW_FILES){
 assert.ok(html.indexOf('<script src="js/tools-network-utils.js"></script>')<html.indexOf('<script src="js/tools-ping.js"></script>'),'utils before ping logic');
 assert.ok(html.indexOf('<script src="js/tools-ping.js"></script>')<html.indexOf('<script src="js/tools-ping-ui.js"></script>'),'logic before ui');
 assert.ok(html.indexOf('<script src="js/tools-speedtest.js"></script>')<html.indexOf('<script src="js/tools-speedtest-ui.js"></script>'),'logic before ui');
+assert.ok(html.indexOf('<script src="js/tools-speedtest-edge.js"></script>')<html.indexOf('<script src="js/tools-speedtest-ui.js"></script>'),'edge metadata before ui');
 
 /* CSP: зовнішня перевірка дозволена і в meta, і в _headers (паритет тримає
    окремий тест, тут — пряма наявність) */
@@ -39,13 +40,13 @@ for(const origin of directOrigins){
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
 /* Офлайн-шелл: нові файли + движок у precache, новий runtime */
-assert.equal((sw.match(/maister-treker-v67-runtime-112/g)||[]).length,1,'release cache pin');
+assert.equal((sw.match(/maister-treker-v67-runtime-113/g)||[]).length,1,'release cache pin');
 for(const entry of NEW_FILES.map(file=>'./'+file)){
   assert.equal(sw.split("'"+entry+"'").length-1,1,'precache entry exactly once: '+entry);
 }
 assert.doesNotMatch(sw,/vendor\/cloudflare-speedtest/,'отставший движок убран из офлайн-оболочки');
 assert.equal(fs.existsSync(path.join(root,'vendor','cloudflare-speedtest','speedtest.js')),false,'vendored engine removed (заменён собственным адаптивным движком)');
-assert.match(app,/APP_VERSION = 'v91\.68 · 2026-09-23'/,'release identity');
+assert.match(app,/APP_VERSION = 'v91\.69 · 2026-09-23'/,'release identity');
 
 /* Меню Інструментів: дві окремі кнопки-екрани */
 const domain=read('js/tools-domain.js');
@@ -72,7 +73,7 @@ assert.match(speedtestLogic,/chooseDownShape\(1000\)\.|streams:6/,'многоп�
 assert.doesNotMatch(speedtestLogic,/packetLoss/i,'packet loss не измеряется и не имитируется');
 assert.doesNotMatch(speedtestLogic,/vendor\//,'движок не тянет сторонний код');
 assert.doesNotMatch(speedtestLogic,/import\(/,'без динамического импорта движка');
-const cryptoUnused=crypto.createHash('sha256').update('v91.68').digest('hex').length===64;
+const cryptoUnused=crypto.createHash('sha256').update('v91.69').digest('hex').length===64;
 assert.ok(cryptoUnused);
 
 /* Безпека UI: жоден рядок з API не потрапляє в innerHTML без escapeHtml —
@@ -122,7 +123,7 @@ assert.match(speedUi,/Відвантаження/);
 assert.match(speedUi,/Відгук/);
 assert.match(speedUi,/Стабільність/);
 assert.match(speedUi,/Під навантаженням/);
-assert.match(speedUi,/Вимірювання: Cloudflare/,'attribution present');
+assert.match(speedUi,/Сервер: \$\{escapeHtml\(server\)\}/,'server attribution present');
 assert.match(speedUi,/ліміт об'єму \(~400 МБ отримано \/ ~150 МБ надіслано\)/,"чесний дисклеймер: цільові вікна + ранній ліміт об'єму");
 assert.match(speedUi,/фаза може завершитися раніше/,'текст не обіцяє строго 8 секунд');
 assert.doesNotMatch(speedUi,/packetLoss|Втрати/,'no loss row until there is an honest source');

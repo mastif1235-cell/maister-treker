@@ -209,6 +209,11 @@ function mockCloudflareSpeed(context){
 
 test('v91.67: Speedtest — адаптивні потоки до speed.cloudflare.com, стадії й фінальні метрики, UI відновлюється', async ({page, context, appEnv}) => {
   await mockCloudflareSpeed(context);
+  let traceRequests=0;
+  await context.route(/speed\.cloudflare\.com\/cdn-cgi\/trace/,route=>{
+    traceRequests++;
+    return route.fulfill({status:200,contentType:'text/plain',headers:{'access-control-allow-origin':'*'},body:'ip=203.0.113.5\ncolo=KBP\nloc=UA\n'});
+  });
   await openTools(page, appEnv);
   await page.click('[data-tools-view="speedtest"]');
   await page.click('[data-tools-action="speed-start"]');
@@ -216,13 +221,18 @@ test('v91.67: Speedtest — адаптивні потоки до speed.cloudflar
   await expect(page.locator('#toolsSpeedResults')).toContainText('Мбіт/с', {timeout: 30000});
   await expect(page.locator('#toolsSpeedResults')).toContainText('Відвантаження');
   await expect(page.locator('#toolsSpeedResults')).toContainText('Стабільність');
-  await expect(page.locator('#toolsSpeedResults')).toContainText('Вимірювання: Cloudflare');
+  await expect(page.locator('#toolsSpeedResults')).toContainText('Сервер: Cloudflare · Київ (KBP) · Україна · Автоматично');
+  const unknownEdgeHtml=await page.evaluate(()=>toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:MTSpeedtestEdge.parseCloudflareTrace('colo=XYZ\nloc=UA')}));
+  expect(unknownEdgeHtml).toContain('Сервер: Cloudflare · XYZ · Автоматично');
+  expect(unknownEdgeHtml).not.toMatch(/Країна клієнта|Україна/);
+  expect(traceRequests).toBe(1);
   await expect(page.locator('#toolsSpeedResults')).toContainText('Передано: ↓');
   const resultsText = await page.locator('#toolsSpeedResults').innerText();
   expect(resultsText).not.toMatch(/Втрати|packet loss/i);
   expect(resultsText).not.toMatch(/Не вдалося виміряти/);
   /* Повторный запуск и остановка: UI восстанавливается */
   await page.locator('#toolsSpeedResults [data-tools-action="speed-start"]').click();
+  await expect.poll(()=>traceRequests).toBe(2);
   await expect(page.locator('[data-tools-action="speed-stop"]')).toBeVisible();
   await page.click('[data-tools-action="speed-stop"]');
   await expect(page.locator('[data-tools-action="speed-start"]').first()).toBeVisible();
