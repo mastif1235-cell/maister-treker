@@ -222,6 +222,9 @@ test('v91.67: Speedtest — адаптивні потоки до speed.cloudflar
   await expect(page.locator('#toolsSpeedResults')).toContainText('Відвантаження');
   await expect(page.locator('#toolsSpeedResults')).toContainText('Стабільність');
   await expect(page.locator('#toolsSpeedResults')).toContainText('Сервер: Cloudflare · Київ (KBP) · Україна · Автоматично');
+  const unknownEdgeHtml=await page.evaluate(()=>toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:MTSpeedtestEdge.parseCloudflareTrace('colo=XYZ\nloc=UA')}));
+  expect(unknownEdgeHtml).toContain('Сервер: Cloudflare · XYZ · Автоматично');
+  expect(unknownEdgeHtml).not.toMatch(/Країна клієнта|Україна/);
   expect(traceRequests).toBe(1);
   await expect(page.locator('#toolsSpeedResults')).toContainText('Передано: ↓');
   const resultsText = await page.locator('#toolsSpeedResults').innerText();

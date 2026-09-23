@@ -10,8 +10,11 @@ const edge=require('../js/tools-speedtest-edge.js');
     provider:'Cloudflare',colo:'KBP',countryCode:'UA',city:'Київ',country:'Україна',visitorCountryCode:'UA'
   });
   assert.deepEqual(edge.parseCloudflareTrace('colo=WAW\r\nloc=PL\r\n'),{
-    provider:'Cloudflare',colo:'WAW',countryCode:'PL',city:'Warsaw',country:'Польща',visitorCountryCode:'PL'
+    provider:'Cloudflare',colo:'WAW',countryCode:'PL',city:'Варшава',country:'Польща',visitorCountryCode:'PL'
   });
+  for(const [colo,city] of Object.entries({FRA:'Франкфурт',AMS:'Амстердам',PRG:'Прага',VIE:'Відень',BUD:'Будапешт',OTP:'Бухарест'})){
+    assert.equal(edge.parseCloudflareTrace(`colo=${colo}\nloc=UA`).city,city,`${colo} has a Ukrainian city label`);
+  }
   assert.deepEqual(edge.parseCloudflareTrace('colo=XYZ\nloc=UA'),{
     provider:'Cloudflare',colo:'XYZ',countryCode:'',city:'',country:'',visitorCountryCode:'UA'
   });
@@ -52,9 +55,10 @@ const edge=require('../js/tools-speedtest-edge.js');
     assert.match(rendered,/112\.48/);
   }
   assert.match(context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=KBP\nloc=UA')}),/Київ \(KBP\).*Україна.*Автоматично/);
-  assert.match(context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=WAW\nloc=PL')}),/Warsaw \(WAW\).*Польща/);
-  assert.match(context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=XYZ\nloc=UA')}),/Cloudflare · XYZ · Автоматично[\s\S]*Країна клієнта: UA/);
-  assert.doesNotMatch(context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=XYZ\nloc=UA')}),/Місто|Київ|Warsaw/);
+  assert.match(context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=WAW\nloc=PL')}),/Варшава \(WAW\).*Польща/);
+  const unknownHtml=context.toolsSpeedtestResultsHtml({result:{ok:'full',downloadMbps:1},edgeInfo:edge.parseCloudflareTrace('colo=XYZ\nloc=UA')});
+  assert.match(unknownHtml,/Сервер: Cloudflare · XYZ · Автоматично/);
+  assert.doesNotMatch(unknownHtml,/Країна клієнта|Україна|Місто|Київ|Варшава/,'visitor country is never presented as edge country');
   assert.match(rendered,/Сервер: Cloudflare · Автоматично/,'malformed trace leaves speed result intact with fallback');
   console.log('PASS Cloudflare trace edge: known/unknown colo, network/HTTP/malformed fallback, one request per run, final UI');
 })().catch(error=>{console.error(error);process.exitCode=1;});

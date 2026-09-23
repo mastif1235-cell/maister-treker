@@ -6,7 +6,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
   const TRACE_URL='https://speed.cloudflare.com/cdn-cgi/trace';
-  const COLOS={KBP:['Київ','UA'],WAW:['Warsaw','PL'],FRA:['Frankfurt','DE'],AMS:['Amsterdam','NL'],PRG:['Prague','CZ'],VIE:['Vienna','AT'],BUD:['Budapest','HU'],OTP:['Bucharest','RO']};
+  const COLOS={KBP:['Київ','UA'],WAW:['Варшава','PL'],FRA:['Франкфурт','DE'],AMS:['Амстердам','NL'],PRG:['Прага','CZ'],VIE:['Відень','AT'],BUD:['Будапешт','HU'],OTP:['Бухарест','RO']};
   const COUNTRIES={UA:'Україна',PL:'Польща',DE:'Німеччина',NL:'Нідерланди',CZ:'Чехія',AT:'Австрія',RO:'Румунія',HU:'Угорщина'};
 
   function parseCloudflareTrace(body){

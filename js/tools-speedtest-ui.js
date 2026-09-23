@@ -53,7 +53,6 @@ function toolsSpeedtestResultsHtml(last){
   const edge=last.edgeInfo;
   const edgePlace=edge?(edge.city?`${edge.city} (${edge.colo})`:edge.colo):'';
   const server=`Cloudflare${edgePlace?' · '+edgePlace:''}${edge?.country?' · '+edge.country:''} · Автоматично`;
-  const visitorCountry=edge&&!edge.country&&edge.visitorCountryCode?`<div class="tools-status-note" style="margin-top:3px;">Країна клієнта: ${escapeHtml(edge.visitorCountryCode)}</div>`:'';
   return `<div class="card tools-status-card">
       ${row('Завантаження',r.downloadMbps,'Мбіт/с')}
       ${row('Відвантаження',r.uploadMbps,'Мбіт/с')}
@@ -63,7 +62,6 @@ function toolsSpeedtestResultsHtml(last){
       ${partial}
       ${bytes}
       <div class="tools-status-note" style="margin-top:8px;">Сервер: ${escapeHtml(server)}</div>
-      ${visitorCountry}
     </div>
     <button type="button" class="btn btn-accent btn-block" data-tools-action="speed-start" style="margin-top:10px;">Повторити</button>`;
 }
