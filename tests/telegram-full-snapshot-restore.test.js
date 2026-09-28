@@ -380,17 +380,54 @@ function snapshotOf(tickets,deleted,savedAt){
     assert.equal(w2.world.tickets.length,2,'T21: converged — exactly two tickets');
   }
 
-  /* T24. У снапшоті НЕМАЄ системних секретів (спільний securityStrip). */
+  /* T24. Надісланий повний снапшот не містить пароля, навіть у legacy-тексті. */
   {
     const {context,world}=makeWorld();
-    world.tickets.push(mkTicket('sec1',{login:'client-login',password:'client-pass',apiToken:'SUPER-SECRET-TOKEN',syncHmacSecret:'SECRET'}));
-    const snapshot=context.buildFullSnapshotObject();
-    const text=JSON.stringify(snapshot);
+    world.tickets.push(mkTicket('sec1',{
+      login:'user123',password:'super-secret',
+      content:'Логін: user123\nПароль: super-secret\nРобота виконана',
+      backupNote:'Пароль: super-secret',note:'Зберегти договір\n🔑 Пароль: super-secret',
+      _origContent:'Пароль: super-secret',
+      apiToken:'SUPER-SECRET-TOKEN',syncHmacSecret:'SYSTEM-SECRET'
+    }));
+    assert.equal((await context.createTelegramFullSnapshot()).ok,true,'T24: sendDocument and pin succeed');
+    const text=world.channel.at(-1).text,snapshot=JSON.parse(text),ticket=snapshot.tickets[0];
     assert.equal(/SUPER-SECRET-TOKEN/.test(text),false,'T24: stripped secret key values absent');
-    assert.equal(/SECRET\b/.test(text.replace(/syncHmacSecret/g,'')),false,'T24: no secret values');
+    assert.equal(text.includes('SYSTEM-SECRET'),false,'T24: no system secret values');
     assert.equal(text.includes('"syncHmacSecret"'),false,'T24: secret keys stripped');
-    assert.ok(text.includes('"login":"client-login"'),'T24: CLIENT credentials (the archive\'s purpose) preserved');
+    assert.equal(ticket.login,'user123','T24: login remains available for recovery');
+    assert.equal(Object.hasOwn(ticket,'password'),false,'T24: password field is absent');
+    assert.equal(text.includes('"password"'),false,'T24: no password key in serialized snapshot');
+    assert.equal(text.includes('super-secret'),false,'T24: labeled password lines are absent');
+    assert.equal(ticket.content,'Логін: user123\nРобота виконана','T24: non-secret content remains');
+    assert.equal(ticket.note,'Зберегти договір','T24: non-secret note remains');
+    assert.equal(ticket.city,'Таромское','T24: unrelated ticket fields remain');
+    assert.equal(world.tickets[0].password,'super-secret','T24: local ticket is not mutated');
     assert.equal(text.includes('"tgBackupPending"'),false,'T24: transient fields not stored');
+  }
+
+  /* T25. Старий снапшот з password читається і відновлює решту даних та фото. */
+  {
+    const {context,world}=makeWorld();
+    const legacy=mkTicket('legacy1',{
+      login:'user123',password:'old-secret',note:'Не змінювати адресу',
+      photos:['idb:legacy-photo'],tgPhotoFileIds:['legacy-file-id']
+    });
+    const snapshot=snapshotOf([legacy,mkTicket('deleted1')],[{id:'deleted1',deletedAt:1737000000000}]);
+    assert.equal(context.validateFullSnapshot(snapshot).ok,true,'T25: old schema remains valid');
+    const analysis=context.analyzeSnapshotForRestore(snapshot);
+    assert.equal(analysis.ok,true,'T25: old snapshot can be analyzed');
+    assert.equal(analysis.newCount,1,'T25: live ticket is counted');
+    assert.equal(analysis.deletedCount,1,'T25: tombstone is counted');
+    const result=await context.restoreFromTelegramFullSnapshot(snapshot);
+    assert.equal(result.ok,true,'T25: old snapshot restores');
+    assert.equal(world.tickets.length,1,'T25: deleted ticket stays deleted');
+    assert.equal(world.tickets[0].login,'user123','T25: login is restored');
+    assert.equal(world.tickets[0].password,'old-secret','T25: legacy password remains readable');
+    assert.equal(world.tickets[0].note,'Не змінювати адресу','T25: other ticket fields survive');
+    assert.equal(world.tickets[0].id,'legacy1','T25: original ticket id survives');
+    assert.equal(result.photos.restored,1,'T25: photo file_id restore still works');
+    assert.equal(world.photoFetchCalls[0],'legacy-file-id','T25: original Telegram file_id is used');
   }
 
   /* Додатково: analyze — чесний предпросмотр (нові/існуючі/видалені/фото). */
@@ -401,5 +438,5 @@ function snapshotOf(tickets,deleted,savedAt){
     assert.equal(a.ok&&a.total===3&&a.newCount===1&&a.existingCount===1&&a.deletedCount===1&&a.photoJobs===1,true,'analyze: preview counts are exact');
   }
 
-  console.log('PASS telegram full-snapshot restore: T1–T24 (merge by original id, idempotent, tombstones-aware, secrets-free, zero Telegram mutations, zero Sheets calls, pin-anchored snapshots with delete-first never used)');
+  console.log('PASS telegram full-snapshot restore: T1–T25 (new snapshots redact passwords, old snapshots restore, merge by original id, idempotent, tombstones-aware, zero Telegram mutations during restore, zero Sheets calls)');
 })().catch(error=>{console.error(error);process.exitCode=1;});
