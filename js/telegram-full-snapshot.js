@@ -28,10 +28,22 @@ const MT_FULL_SNAPSHOT_NAME = 'master-tracker-full-backup.json';
 const MT_PHOTO_RESTORE_CONCURRENCY = 2; // делікатно до Telegram rate limits
 
 /* ---- Побудова об'єкта снапшота (чиста функція) ---- */
+function mtFullSnapshotStripPasswordLines(text){
+  const lines=text.split(/\r?\n/);
+  const safe=lines.filter(line=>!/^\s*(?:🔑\s*)?(?:парол(?:ь|я)|password|pass)\s*[:：=]/i.test(line));
+  return safe.length===lines.length?text:safe.join(text.includes('\r\n')?'\r\n':'\n');
+}
 function mtFullSnapshotStripTicket(t){
   const clean=typeof securityStripSystemSecrets==='function'
     ?securityStripSystemSecrets(t)
     :JSON.parse(JSON.stringify(t||{}));
+  // Лише нові повні Telegram-снапшоти: старі файли з password restore читає без змін.
+  delete clean.password;
+  delete clean._origContent;
+  delete clean._origSum;
+  for(const field of ['content','backupNote','note','masterNote','otherNote','abonentNote']){
+    if(typeof clean[field]==='string')clean[field]=mtFullSnapshotStripPasswordLines(clean[field]);
+  }
   // Службовий runtime-стан у снапшоті не потрібен
   delete clean.tgBackupPending;
   delete clean.tgBackupCleanupMsgIds;
