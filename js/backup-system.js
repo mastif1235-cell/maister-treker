@@ -7,11 +7,31 @@
   const FORMAT='master-tracker-encrypted-backup';
   const VERSION=1,ITERATIONS=310000,MIN_ITERATIONS=100000,MAX_ITERATIONS=1000000;
   const MAX_FILE_BYTES=220*1024*1024,MAX_PLAIN_BYTES=120*1024*1024,MAX_ITEMS=50000,MAX_PHOTOS=10000,MAX_PHOTO_CHARS=12*1024*1024;
+  // Match SECURITY_DOM_MAX_PHOTO_URL_CHARS: valid legacy ticket photos may be 16 MiB.
+  // Top-level photoData has its own stricter 12 MiB limit above.
+  const MAX_LEGACY_DATA_URL_CHARS=16*1024*1024;
   const enc=new TextEncoder(),dec=new TextDecoder();
   function bytesToBase64(bytes){let out='';for(let i=0;i<bytes.length;i+=0x8000)out+=String.fromCharCode(...bytes.subarray(i,Math.min(i+0x8000,bytes.length)));return btoa(out);}
   function base64ToBytes(value){const text=String(value||'');if(!text||!/^[A-Za-z0-9+/]+={0,2}$/.test(text))throw new Error('BAD_BASE64');const raw=atob(text);return Uint8Array.from(raw,c=>c.charCodeAt(0));}
   function hasUnsafeKeys(value,depth=0,seen=new Set()){if(depth>24)return true;if(value===null||typeof value!=='object')return false;if(seen.has(value))return false;seen.add(value);for(const key of Object.keys(value)){if(key==='__proto__'||key==='prototype'||key==='constructor'||hasUnsafeKeys(value[key],depth+1,seen))return true;}return false;}
   function isPlainObject(value){if(!value||typeof value!=='object'||Array.isArray(value))return false;const proto=Object.getPrototypeOf(value);return proto===Object.prototype||proto===null;}
+  function hasOversizedDataUrl(value){
+    function scan(current,depth){
+      if(depth>24)return true;
+      if(typeof current==='string')return current.length>MAX_LEGACY_DATA_URL_CHARS&&/^\s*data:/i.test(current);
+      if(!current||typeof current!=='object')return false;
+      if(Array.isArray(current)){
+        for(const item of current)if(scan(item,depth+1))return true;
+      }else{
+        for(const key of Object.keys(current)){
+          if(depth===0&&key==='photoData')continue; // validated separately
+          if(scan(current[key],depth+1))return true;
+        }
+      }
+      return false;
+    }
+    return scan(value,0);
+  }
   function validatePayload(data){
     if(!isPlainObject(data)||hasUnsafeKeys(data))return false;
     if(data.app&&data.app!=='master-tracker')return false;
@@ -24,6 +44,8 @@
     if(data.photoData!==undefined){if(!isPlainObject(data.photoData)||Object.keys(data.photoData).length>MAX_PHOTOS)return false;for(const [key,value] of Object.entries(data.photoData)){if(!String(key).startsWith('idb:')||typeof value!=='string'||!value.startsWith('data:image/')||value.length>MAX_PHOTO_CHARS)return false;}}
     if(data.syncJournal!==undefined&&!isPlainObject(data.syncJournal))return false;
     try{if(enc.encode(JSON.stringify(data)).byteLength>MAX_PLAIN_BYTES)return false;}catch(_e){return false;}
+    // Run only after the 120 MiB payload cap; that cap also bounds this depth-limited walk.
+    if(hasOversizedDataUrl(data))return false;
     return Array.isArray(data.tickets)||Array.isArray(data.shifts)||isPlainObject(data.settings)||Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
   }
   function validateEnvelope(value){
@@ -34,7 +56,7 @@
   async function derive(password,salt,iterations){const material=await crypto.subtle.importKey('raw',enc.encode(String(password)),{name:'PBKDF2'},false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
   async function encrypt(payload,password){if(!validatePayload(payload))throw new Error('BAD_PAYLOAD');const plain=enc.encode(JSON.stringify(payload));if(plain.length>MAX_PLAIN_BYTES)throw new Error('BACKUP_TOO_LARGE');const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));const key=await derive(password,salt,ITERATIONS);const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,plain));return{format:FORMAT,version:VERSION,app:'master-tracker',algorithm:'AES-GCM-256',kdf:'PBKDF2-SHA256',iterations:ITERATIONS,salt:bytesToBase64(salt),iv:bytesToBase64(iv),ciphertext:bytesToBase64(cipher)};}
   async function decrypt(envelope,password){if(!validateEnvelope(envelope))throw new Error('BAD_ENVELOPE');const key=await derive(password,base64ToBytes(envelope.salt),Number(envelope.iterations));const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:base64ToBytes(envelope.iv)},key,base64ToBytes(envelope.ciphertext));if(plain.byteLength>MAX_PLAIN_BYTES)throw new Error('BACKUP_TOO_LARGE');const data=JSON.parse(dec.decode(plain));if(!validatePayload(data))throw new Error('BAD_PAYLOAD');return data;}
-  return{FORMAT,VERSION,ITERATIONS,MAX_FILE_BYTES,MAX_PLAIN_BYTES,hasUnsafeKeys,validatePayload,validateEnvelope,encrypt,decrypt};
+  return{FORMAT,VERSION,ITERATIONS,MAX_FILE_BYTES,MAX_PLAIN_BYTES,MAX_LEGACY_DATA_URL_CHARS,hasUnsafeKeys,validatePayload,validateEnvelope,encrypt,decrypt};
 });
 
 if(typeof window!=='undefined'){
