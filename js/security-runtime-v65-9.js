@@ -8,7 +8,6 @@
      is already saved on this device (no password prompt during startup).
    ===================================================================== */
 
-const SECURITY_RUNTIME_RELEASE_LABEL = 'v65.0-security.10 · 2026-08-18';
 const SECURITY_RUNTIME_PHYSICAL_BACKUP_KEY = 'securityPhysicalBackupLastDate';
 
 function securityRuntimeSafeHref(value){
@@ -158,15 +157,5 @@ if(typeof securityMergeImportedSettings==='function'){
   const securityRuntimePreviousSettingsMerge=securityMergeImportedSettings;
   securityMergeImportedSettings=function(imported,current){
     return securityRuntimeNormalizeCatalogSettings(securityRuntimePreviousSettingsMerge(imported,current));
-  };
-}
-
-if(typeof renderSettingsScreen==='function'){
-  const securityRuntimeOriginalRenderSettings=renderSettingsScreen;
-  renderSettingsScreen=function(){
-    const result=securityRuntimeOriginalRenderSettings.apply(this,arguments);
-    const label=document.getElementById('appVersionLabel');
-    if(label) label.textContent=`Версія застосунку: ${SECURITY_RUNTIME_RELEASE_LABEL}`;
-    return result;
   };
 }

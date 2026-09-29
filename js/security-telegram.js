@@ -5,7 +5,6 @@
    адресу, логін, договір, нотатки, geo та службові Telegram id.
    ===================================================================== */
 
-const SECURITY_TELEGRAM_RELEASE_LABEL = 'v65.0-security.6 · 2026-08-18';
 
 function securityTelegramRedactPasswordLines(text){
   return String(text || '')
@@ -83,14 +82,4 @@ function securityTelegramWrapArchiveFetch(originalFetch){
 }
 if(typeof telegramBackupFetchJson==='function'){
   telegramBackupFetchJson=securityTelegramWrapArchiveFetch(telegramBackupFetchJson);
-}
-
-if(typeof renderSettingsScreen === 'function'){
-  const securityTelegramOriginalRenderSettings = renderSettingsScreen;
-  renderSettingsScreen = function(){
-    const result = securityTelegramOriginalRenderSettings.apply(this, arguments);
-    const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${SECURITY_TELEGRAM_RELEASE_LABEL}`;
-    return result;
-  };
 }
