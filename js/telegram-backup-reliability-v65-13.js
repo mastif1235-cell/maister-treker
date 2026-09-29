@@ -7,19 +7,8 @@
    повну копію, бо photosOk лишається false.
 */
 
-const TELEGRAM_BACKUP_RELIABILITY_LABEL = 'v65.0-security.13 · 2026-08-18';
 
 // Non-idempotent sendPhoto/sendMessage/sendDocument are intentionally not
 // retried here: a lost response can mean that Telegram accepted the message.
 // The canonical backup lifecycle records that state as ambiguous instead of
 // blindly creating a duplicate.
-
-if(typeof renderSettingsScreen === 'function'){
-  const telegramReliabilityPreviousRenderSettings = renderSettingsScreen;
-  renderSettingsScreen = function(){
-    const result = telegramReliabilityPreviousRenderSettings.apply(this, arguments);
-    const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${TELEGRAM_BACKUP_RELIABILITY_LABEL}`;
-    return result;
-  };
-}

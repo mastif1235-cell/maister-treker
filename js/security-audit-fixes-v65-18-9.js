@@ -36,13 +36,3 @@ if(typeof openTicketPhotoFullscreen === 'function'){
     return securityAuditOriginalOpenTicketPhotoFullscreen.call(this, safe);
   };
 }
-
-if(typeof renderSettingsScreen === 'function'){
-  const securityAuditOriginalRenderSettings = renderSettingsScreen;
-  renderSettingsScreen = function(){
-    const result = securityAuditOriginalRenderSettings.apply(this, arguments);
-    const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${APP_VERSION}`;
-    return result;
-  };
-}

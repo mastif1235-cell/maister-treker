@@ -162,13 +162,6 @@ function toolsPingRefreshAction(){
   const container=document.getElementById('toolsPingAction');
   if(container)container.innerHTML=toolsPingActionButtonHtml(!!(toolsPingMonitor&&toolsPingMonitor.running),!!(toolsPingMonitor&&toolsPingMonitor.host));
 }
-function toolsPingStopMonitor(){
-  const st=toolsPingMonitor;
-  if(st&&st.running&&st.controller)st.controller.abort(); // миттєво: цикл і поточна проба
-  if(st){st.running=false;st.controller=null;}
-  if(toolsPingViewActive())toolsPingRefreshAction();
-}
-
 async function toolsPingStart(){
   if(toolsPingMonitor&&toolsPingMonitor.running)return;
   const input=document.getElementById('toolsPingTarget');

@@ -3,7 +3,6 @@
    PBKDF2-SHA256 + salt, сумісна міграція зі старого SHA-256.
    ===================================================================== */
 
-const SECURITY_LOCK_RELEASE_LABEL = 'v65.0-security.2 · 2026-08-18';
 const SECURITY_PBKDF2_ITERATIONS = 210000;
 const SECURITY_PBKDF2_MIN_LENGTH = 6;
 const SECURITY_LOCK_THROTTLE_KEY = 'appLockThrottleV1';
@@ -167,4 +166,3 @@ showLockScreen = function(onUnlock){
     bioBtn.classList.add('hidden');
   }
 };
-

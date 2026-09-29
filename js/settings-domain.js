@@ -141,10 +141,6 @@ function bindSettingsScreen(){
   document.getElementById('vizitkaUrlInput').addEventListener('input', e=>{
     settings.vizitkaUrl = e.target.value.trim(); saveSettings();
   });
-  document.getElementById('dogovorUrlInput').addEventListener('input', e=>{
-    settings.dogovorUrl = e.target.value.trim(); saveSettings();
-  });
-
   document.getElementById('loadCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
   document.getElementById('restoreCloudBtn').addEventListener('click', ()=>restoreFromGoogleSheets('tickets'));
   document.getElementById('sendAllBtn').addEventListener('click', sendAllToCloud);

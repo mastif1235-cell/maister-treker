@@ -26,7 +26,6 @@ function renderSettingsScreen(){
   document.getElementById('syncHmacSecretInput').value = settings.syncHmacSecret || '';
   document.getElementById('shiftsScriptUrlInput').value = settings.shiftsScriptUrl || '';
   document.getElementById('vizitkaUrlInput').value = settings.vizitkaUrl || '';
-  document.getElementById('dogovorUrlInput').value = settings.dogovorUrl || '';
   renderTagMgmtList();
   renderQuickDialMgmtList();
   renderCityMgmtList();

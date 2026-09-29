@@ -4,7 +4,6 @@
    Тут лише сумісні захисні обгортки: без зміни формату заявок/синхронізації.
    ===================================================================== */
 
-const SECURITY_RELEASE_LABEL = 'v65.0-security.1 · 2026-08-18';
 const SECURITY_BACKUP_MAX_BYTES = 120 * 1024 * 1024;
 const SECURITY_SENSITIVE_SETTING_KEYS = new Set([
   'tgBotToken',
@@ -122,17 +121,5 @@ if(typeof showVizitka === 'function'){
       return;
     }
     return securityOriginalShowVizitka();
-  };
-}
-
-// Показуємо реальний security-реліз, не торкаючись старої APP_VERSION у
-// великому app.js. Це тимчасово до наступного планового розбиття app.js.
-if(typeof renderSettingsScreen === 'function'){
-  const securityOriginalRenderSettingsScreen = renderSettingsScreen;
-  renderSettingsScreen = function(){
-    const result = securityOriginalRenderSettingsScreen.apply(this, arguments);
-    const label = document.getElementById('appVersionLabel');
-    if(label) label.textContent = `Версія застосунку: ${SECURITY_RELEASE_LABEL}`;
-    return result;
   };
 }

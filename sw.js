@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-115';
+const CACHE_NAME = 'maister-treker-v67-runtime-116';
 const CORE_ASSETS = [
   './js/tools-speedtest-edge.js',
   './js/address-book.js','./js/address-book-link.js','./js/address-book-linker.js','./js/address-book-sync.js','./js/address-book-ui.js',

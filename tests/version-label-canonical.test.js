@@ -2,21 +2,30 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const patch=fs.readFileSync(path.join(root,'js','security-audit-fixes-v65-18-9.js'),'utf8');
+const renderer=fs.readFileSync(path.join(root,'js','settings-render.js'),'utf8');
 const version=app.match(/const APP_VERSION\s*=\s*'([^']+)'/)[1];
-assert.doesNotMatch(patch,/SECURITY_AUDIT_RELEASE_LABEL/,'security patch has no independent display release label');
-assert.match(patch,/label\.textContent\s*=\s*`Версія застосунку: \$\{APP_VERSION\}`/,'late security wrapper uses canonical APP_VERSION');
-const label={textContent:''};
-const context={APP_VERSION:version,document:{getElementById:id=>id==='appVersionLabel'?label:null},renderSettingsScreen(){label.textContent='stale';return 'rendered';}};
-vm.createContext(context);vm.runInContext(patch,context);
-assert.equal(context.renderSettingsScreen(),'rendered');
-assert.equal(label.textContent,`Версія застосунку: ${version}`,'settings ends with the canonical app version');
+assert.match(renderer,/appVersionLabel'\)\.textContent\s*=\s*`Версія застосунку: \$\{APP_VERSION\}`/,'settings renderer owns the canonical version label');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const scripts=[...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match=>match[1]);
-const auditIndex=scripts.indexOf('js/security-audit-fixes-v65-18-9.js');
-assert.ok(auditIndex>=0,'security audit patch is wired');
-for(const src of scripts.slice(auditIndex+1)){
+const rendererIndex=scripts.indexOf('js/settings-render.js');
+assert.ok(rendererIndex>=0,'settings renderer is wired');
+let versionOwners=0;
+for(const src of scripts){
   const file=path.join(root,src);
-  if(fs.existsSync(file)) assert.doesNotMatch(fs.readFileSync(file,'utf8'),/appVersionLabel/,'no later runtime wrapper replaces the canonical label');
+  if(!fs.existsSync(file)) continue;
+  const source=fs.readFileSync(file,'utf8');
+  if(/appVersionLabel/.test(source)){
+    versionOwners++;
+    assert.equal(src,'js/settings-render.js','only the settings renderer writes the version label');
+  }
+  if(src!== 'js/settings-render.js') assert.doesNotMatch(source,/\brenderSettingsScreen\s*=(?!=)/,'no runtime wrapper replaces the settings renderer');
 }
-console.log('PASS settings version label is sourced from APP_VERSION after all runtime wrappers');
+assert.equal(versionOwners,1,'one canonical version-label owner');
+assert.ok(scripts.indexOf('js/security-audit-fixes-v65-18-9.js')>rendererIndex,'security runtime still loads after settings renderer');
+const label={textContent:''},elements=new Map([['appVersionLabel',label]]);
+const context={APP_VERSION:version,settings:{tgDispatchers:[]},window:{},document:{getElementById(id){if(!elements.has(id))elements.set(id,{classList:{toggle(){}},value:'',checked:false,textContent:''});return elements.get(id);}},ensureSettingsHub(){},renderDeletedTicketsList(){},renderTagMgmtList(){},renderQuickDialMgmtList(){},renderCityMgmtList(){},renderCwMgmtList(){},renderMatMgmtList(){},renderWorkMgmtList(){},renderCableMgmtList(){},renderMasterMgmtList(){},renderDailyBackupList(){},renderMapMarkerPreferences(){},renderBackupPasswordStatus(){}};
+vm.createContext(context);
+vm.runInContext(renderer.slice(0,renderer.indexOf('function renderMapMarkerPreferences()')),context);
+context.renderSettingsScreen();
+assert.equal(label.textContent,`Версія застосунку: ${version}`,'rendered UI shows the canonical app version');
+console.log('PASS settings version label has one canonical owner and renders APP_VERSION');
