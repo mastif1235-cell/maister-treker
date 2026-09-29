@@ -22,7 +22,7 @@ function load(initial){
   return {api:sandbox.MTTicketCompactView,values};
 }
 
-const ticket={id:'ticket-1',date:'29.09.2026',time:'18:40',city:'Дніпро',street:'вул. Робоча',house:'15',apartment:'27',sum:450,
+const ticket={id:'ticket-1',date:'29.09.2026',time:'18:40',type:'Ремонт',city:'Дніпро',street:'вул. Робоча',house:'15',apartment:'27',sum:450,
   clientName:'PRIVATE_CLIENT',phone:'PRIVATE_PHONE',password:'PRIVATE_PASSWORD',content:'PRIVATE_NOTE'};
 const fullRenderer=t=>`<div class="ticket-card" data-id="${t.id}"><button class="edit-ticket-btn">Редагувати</button><button class="delete-ticket-btn">Видалити</button><span>${t.clientName}</span></div>`;
 
@@ -34,7 +34,11 @@ const fullRenderer=t=>`<div class="ticket-card" data-id="${t.id}"><button class=
   assert.equal(api.toggleMode(),'compact');
   assert.equal(values.get('mtTicketViewModeV1'),'compact');
   const html=api.renderItem(ticket,fullRenderer);
-  for(const text of ['29.09.2026','18:40','Дніпро, вул. Робоча, 15, кв. 27','450 грн','Розгорнути']) assert.ok(html.includes(text),text);
+  for(const text of ['29.09.2026','18:40','Ремонт','Дніпро, вул. Робоча, 15, кв. 27','450 грн','Розгорнути']) assert.ok(html.includes(text),text);
+  for(const type of ['Підключення','Ремонт','Інше']) assert.ok(api.renderCard({...ticket,type}).includes(`<span class="ticket-compact-type">${type}</span>`),type);
+  assert.ok(!api.renderCard({...ticket,type:''}).includes('ticket-compact-type'),'empty type has no badge');
+  assert.ok(!api.renderCard({...ticket,type:'  '}).includes('ticket-compact-type'),'blank type has no badge');
+  assert.ok(api.renderCard({...ticket,type:'<script>'}).includes('&lt;script&gt;'),'unknown type is escaped');
   for(const forbidden of ['PRIVATE_CLIENT','PRIVATE_PHONE','PRIVATE_PASSWORD','PRIVATE_NOTE','edit-ticket-btn','delete-ticket-btn','Telegram','Фото','Google Maps']) assert.ok(!html.includes(forbidden),forbidden);
   assert.equal(api.toggleExpanded(ticket.id),true);
   assert.ok(api.renderItem(ticket,fullRenderer).includes(fullRenderer(ticket)),'expanded item reuses canonical full renderer');
@@ -57,9 +61,11 @@ const html=read('index.html'),sw=read('sw.js'),domain=read('js/tickets-domain.js
 assert.ok(html.indexOf('js/tickets-render.js')<html.indexOf('js/tickets-compact-view.js'));
 assert.ok(html.indexOf('js/tickets-compact-view.js')<html.indexOf('js/tickets-domain.js'));
 assert.ok(sw.includes("'./js/tickets-compact-view.js'"));
+assert.ok(html.indexOf('id="ticketList"')<html.indexOf('class="ticket-view-actions"'));
+assert.ok(html.indexOf('class="ticket-view-actions"')<html.indexOf('id="quickDialCard"'));
 assert.ok(domain.includes('visible.map(t=>MTTicketCompactView.renderItem(t,renderTicketCard))'),'the same filtered/sorted list selects either presentation');
 assert.ok(bindings.includes("document.getElementById('showVizitkaBtn').addEventListener('click', showVizitka)"),'existing Vizitka action remains bound');
 assert.ok(!read('js/tickets-compact-view.js').includes('function renderTicketCard('),'full renderer is not duplicated');
-assert.ok(read('app.js').includes("APP_VERSION = 'v91.73 · 2026-09-29'"));
-assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v67-runtime-117'"));
+assert.ok(read('app.js').includes("APP_VERSION = 'v91.74 · 2026-09-29'"));
+assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v67-runtime-118'"));
 console.log('PASS compact ticket mode state, safe markup, renderer reuse, wiring and release pins');
