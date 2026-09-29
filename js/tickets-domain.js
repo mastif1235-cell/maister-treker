@@ -18,6 +18,9 @@ function getDailyTicketNumber(t){
 function refreshTicketCardDom(id){
   const t = tickets.find(x=>String(x.id)===String(id));
   if(!t) return;
+  document.querySelectorAll('#ticketList .ticket-compact-card[data-id]').forEach(el=>{
+    if(el.dataset.id===String(id)) el.outerHTML=MTTicketCompactView.renderCard(t);
+  });
   document.querySelectorAll(`.ticket-card[data-id="${id}"]`).forEach(el=>{
     const workOnly = el.dataset.workonly === '1'; // NEW: не втрачаємо режим "тільки робота" (профіль абонента) при фоновому оновленні
     el.outerHTML = renderTicketCard(t, {workOnly});
@@ -173,6 +176,7 @@ function showTicketConflictResolution(id){
 
 function renderMainTicketList(){
   const listEl = document.getElementById('ticketList');
+  MTTicketCompactView.updateModeButton(document.getElementById('ticketViewModeBtn'));
   let list;
   const q = searchQuery.trim().toLowerCase();
 
@@ -215,7 +219,7 @@ function renderMainTicketList(){
   }
 
   const visible = list.slice(0, ticketListRenderLimit);
-  let html = visible.map(renderTicketCard).join('');
+  let html = visible.map(t=>MTTicketCompactView.renderItem(t,renderTicketCard)).join('');
   if(list.length > visible.length){
     const remaining = list.length - visible.length;
     html += buildShowMoreTicketsButton(remaining);

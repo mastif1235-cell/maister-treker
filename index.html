@@ -79,13 +79,11 @@
         <button class="btn btn-sm btn-ghost" id="modeResetBtn">До дня ✕</button>
       </div>
 
-      <div id="ticketList" class="ticket-list"></div>
-
-      <div class="card">
-        <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">💳 Візитка LNET</strong></div>
-        <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">QR-код на контакти диспетчера — покажіть абоненту, щоб він відсканував і зберіг номери.</div>
-        <button type="button" class="btn btn-block" id="showVizitkaBtn">📇 Показати QR-візитку</button>
+      <div class="ticket-view-actions">
+        <button type="button" class="btn" id="showVizitkaBtn" title="QR-код з контактами диспетчера">📇 Візитка</button>
+        <button type="button" class="btn" id="ticketViewModeBtn" aria-pressed="false">Компактно</button>
       </div>
+      <div id="ticketList" class="ticket-list"></div>
 
       <div class="card hidden" id="quickDialCard" style="margin-bottom:70px;">
         <div class="row between" style="margin-bottom:4px;"><strong style="font-size:13.5px;">☎️ Швидкий набір</strong></div>
@@ -840,6 +838,7 @@
 <script src="js/settings-render.js"></script>
 <script src="js/calculator-render.js"></script>
 <script src="js/tickets-render.js"></script>
+<script src="js/tickets-compact-view.js"></script>
 <script src="js/address-render.js"></script>
 <script src="js/calendar-stats-render.js"></script>
 <script src="js/shift-render.js"></script>
