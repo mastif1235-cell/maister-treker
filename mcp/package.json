@@ -2,7 +2,7 @@
   "name": "maister-tracker-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "READ-ONLY remote MCP server (Cloudflare Worker) for Maister-Tracker. Serves tickets/shifts/reports to standard MCP clients via the existing signed GAS/Sheets sync contract. Stores no ticket data.",
+  "description": "Read-only MCP tools for Maister-Tracker via signed GAS/Sheets, with an optional redacted ticket/shift snapshot in Cloudflare KV.",
   "type": "module",
   "main": "src/index.js",
   "engines": {
