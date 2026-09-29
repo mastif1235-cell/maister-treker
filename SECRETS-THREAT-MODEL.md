@@ -12,7 +12,7 @@
 
 Telegram Bot API requires the bot token in the request path (`/bot<token>/method`). A direct browser client therefore cannot satisfy an absolute no-secret-in-URL rule. It also exposes the token to any successful same-origin script execution and to local browser/network diagnostics. Moving the value from localStorage to IndexedDB or obfuscating it would not change that XSS boundary.
 
-The minimum current option is to retain direct Telegram access without adding a large proxy: use a dedicated least-privilege bot, private chats, no unrelated bot permissions, rotate the token after suspected compromise, exclude it from backups/logs, and complete the Stage 7 XSS/CSP controls. This preserves offline-first operation and has no server operating cost, but token confidentiality cannot be guaranteed against same-origin XSS or a compromised device.
+The minimum current option is to retain direct Telegram access without adding a large proxy: use a dedicated least-privilege bot, private chats, no unrelated bot permissions, rotate the token after suspected compromise, exclude it from backups/logs, and maintain the existing XSS/CSP controls. This preserves offline-first operation and has no server operating cost, but token confidentiality cannot be guaranteed against same-origin XSS or a compromised device.
 
 A future narrow Telegram relay is the only way to remove the token from client URLs. Its benefit is server-side token custody and request policy enforcement. Its cost is a new authenticated service, abuse/rate-limit controls, attachment streaming/storage decisions, monitoring and another production dependency. It requires separate approval and is not introduced automatically.
 
@@ -20,4 +20,4 @@ A future narrow Telegram relay is the only way to remove the token from client U
 
 - App lock is an access deterrent, not encryption at rest; an unlocked origin can read client-held credentials.
 - Browser DevTools and the device owner can observe direct Telegram requests.
-- Production CORS behavior and the installed-PWA v66 upgrade remain separate deployment gates.
+- Production CORS behavior and installed-PWA upgrades remain separate deployment concerns.
