@@ -31,13 +31,12 @@
   function renderCard(ticket){
     const id=escapeHtml(ticket.id);
     const dateTime=[ticket.date,ticket.time].filter(Boolean).join(' · ');
+    const type=String(ticket.type??'').trim();
     return `<article class="ticket-compact-card" data-id="${id}">
-      <div class="ticket-compact-meta">${escapeHtml(dateTime)}</div>
+      <div class="ticket-compact-meta"><span>${escapeHtml(dateTime)}</span>${type?`<span class="ticket-compact-type">${escapeHtml(type)}</span>`:''}</div>
+      <span class="ticket-compact-sum tabular">${fmtMoney(ticket.sum)}</span>
       <div class="ticket-compact-address">${escapeHtml(addressLabel(ticket))}</div>
-      <div class="ticket-compact-bottom">
-        <span class="ticket-compact-sum tabular">${fmtMoney(ticket.sum)}</span>
-        <button type="button" class="btn ticket-view-expand-btn" data-id="${id}">Розгорнути</button>
-      </div>
+      <button type="button" class="btn ticket-view-expand-btn" data-id="${id}">Розгорнути</button>
     </article>`;
   }
   function renderItem(ticket,fullRenderer){

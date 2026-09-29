@@ -40,13 +40,13 @@ for(const origin of directOrigins){
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
 /* Офлайн-шелл: нові файли + движок у precache, новий runtime */
-assert.equal((sw.match(/maister-treker-v67-runtime-117/g)||[]).length,1,'release cache pin');
+assert.equal((sw.match(/maister-treker-v67-runtime-118/g)||[]).length,1,'release cache pin');
 for(const entry of NEW_FILES.map(file=>'./'+file)){
   assert.equal(sw.split("'"+entry+"'").length-1,1,'precache entry exactly once: '+entry);
 }
 assert.doesNotMatch(sw,/vendor\/cloudflare-speedtest/,'отставший движок убран из офлайн-оболочки');
 assert.equal(fs.existsSync(path.join(root,'vendor','cloudflare-speedtest','speedtest.js')),false,'vendored engine removed (заменён собственным адаптивным движком)');
-assert.match(app,/APP_VERSION = 'v91\.73 · 2026-09-29'/,'release identity');
+assert.match(app,/APP_VERSION = 'v91\.74 · 2026-09-29'/,'release identity');
 
 /* Меню Інструментів: дві окремі кнопки-екрани */
 const domain=read('js/tools-domain.js');
@@ -73,7 +73,7 @@ assert.match(speedtestLogic,/chooseDownShape\(1000\)\.|streams:6/,'многоп�
 assert.doesNotMatch(speedtestLogic,/packetLoss/i,'packet loss не измеряется и не имитируется');
 assert.doesNotMatch(speedtestLogic,/vendor\//,'движок не тянет сторонний код');
 assert.doesNotMatch(speedtestLogic,/import\(/,'без динамического импорта движка');
-const cryptoUnused=crypto.createHash('sha256').update('v91.73').digest('hex').length===64;
+const cryptoUnused=crypto.createHash('sha256').update('v91.74').digest('hex').length===64;
 assert.ok(cryptoUnused);
 
 /* Безпека UI: жоден рядок з API не потрапляє в innerHTML без escapeHtml —
