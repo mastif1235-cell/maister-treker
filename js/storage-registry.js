@@ -2,6 +2,7 @@
   'use strict';
   const entries=Object.freeze({
     settings:{key:'settings',owner:'settings-core',persistence:'persistent',secret:true},
+    ticketViewMode:{key:'mtTicketViewModeV1',owner:'tickets-compact-view',persistence:'device-local-ui',secret:false},
     shifts:{key:'shifts',owner:'storage-orchestration',persistence:'persistent',secret:false},
     deletedTickets:{key:'deletedTickets',owner:'tickets-domain',persistence:'persistent',secret:false},
     naryadQueue:{key:'naryadQueue',owner:'storage-orchestration',persistence:'persistent',secret:false},

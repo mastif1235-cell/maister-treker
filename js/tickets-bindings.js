@@ -94,7 +94,21 @@ function bindTicketsScreen(){
     searchQuery=''; document.getElementById('searchInput').value=''; activeFilterTags.clear();
     renderTicketsScreen();
   });
+  document.getElementById('ticketViewModeBtn').addEventListener('click', ()=>{
+    MTTicketCompactView.toggleMode();
+    renderMainTicketList();
+  });
   document.getElementById('ticketList').addEventListener('click', async e=>{
+    const viewBtn=e.target.closest('.ticket-view-expand-btn, .ticket-view-collapse-btn');
+    if(viewBtn){
+      const ticket=tickets.find(item=>String(item.id)===viewBtn.dataset.id);
+      const card=viewBtn.closest('.ticket-compact-card, .ticket-compact-expanded');
+      if(ticket&&card){
+        MTTicketCompactView.toggleExpanded(ticket.id);
+        card.outerHTML=MTTicketCompactView.renderItem(ticket,renderTicketCard);
+      }
+      return;
+    }
     const networkOpen=e.target.closest('.ticket-network-open');
     const networkUnlink=e.target.closest('.ticket-network-unlink');
     if(networkOpen){toolsShowNetworkPoint(networkOpen.dataset.pointId);return;}

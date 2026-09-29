@@ -253,6 +253,18 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px; margin-bottom:10px;}
 
 .ticket-list{display:flex; flex-direction:column; gap:10px;}
+.ticket-view-actions{display:flex; gap:8px; margin-bottom:10px;}
+.ticket-view-actions .btn{min-width:0; min-height:44px; white-space:nowrap;}
+.ticket-view-actions #showVizitkaBtn{flex:0 0 auto;}
+.ticket-view-actions #ticketViewModeBtn{flex:1;}
+.ticket-compact-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; min-width:0;}
+.ticket-compact-meta{font-family:var(--mono); font-size:12px; font-weight:700; color:var(--text-dim);}
+.ticket-compact-address{font-size:14.5px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; margin-top:3px;}
+.ticket-compact-bottom{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:5px;}
+.ticket-compact-sum{font-family:var(--mono); font-size:16px; font-weight:700; color:var(--accent); min-width:0; overflow-wrap:anywhere;}
+.ticket-compact-bottom .btn{min-height:44px; padding:0 12px; flex:0 0 auto;}
+.ticket-compact-expanded{min-width:0;}
+.ticket-compact-expanded .ticket-view-collapse-btn{min-height:44px; width:100%; margin-bottom:6px;}
 .ticket-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:13px;}
 .ticket-card .tc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
 .ticket-card .tc-time{font-family:var(--mono); font-size:12px; color:var(--text-dim); font-weight:700;}
