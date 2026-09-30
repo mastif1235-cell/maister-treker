@@ -133,6 +133,7 @@ function toolsMapHtml(){
     return `<button type="button" class="tools-map-filter active" data-map-filter="${escapeHtml(category)}" aria-pressed="true">${meta.icon} ${escapeHtml(meta.label)}</button>`;
   }).join('');
   return `${toolsBackButton()}
+    ${typeof toolsOfflineDownloadHtml==='function'?toolsOfflineDownloadHtml():''}
     <div id="toolsMapStatus" class="tools-map-status hidden" role="status"></div>
     <div class="tools-map-shell ${toolsMapFullscreen?'tools-map-fullscreen':''}"><div class="tools-map" id="toolsLeafletMap" aria-label="Інтерактивна карта об’єктів"></div><div class="tools-map-service-controls" aria-label="Дії карти"><button type="button" class="tools-map-floating-btn" data-tools-action="map-my-location" aria-label="Моє місце" title="Моє місце">🎯</button><button type="button" class="tools-map-floating-btn" data-tools-action="map-add-object" aria-label="Додати об’єкт" title="Додати об’єкт">＋</button></div><div class="tools-map-fullscreen-control"><button type="button" class="tools-map-floating-btn" data-tools-action="map-toggle-fullscreen" aria-label="${toolsMapFullscreen?'Вийти з повноекранної карти':'Відкрити карту на весь екран'}" title="${toolsMapFullscreen?'Вийти':'На весь екран'}">${toolsMapFullscreen?'✕':'⛶'}</button></div><div id="toolsMapEmptyState" class="tools-map-empty hidden"><strong>Офлайн-підкладка для цієї області не встановлена.</strong><div>Маркери доступні без підкладки. Керування офлайн-картою знаходиться в Налаштуваннях.</div></div></div>
     <div class="tools-map-filters" id="toolsMapFilters" aria-label="Фільтри об’єктів карти"><button type="button" class="tools-map-filter active" data-map-filter="all" aria-pressed="true">Усі</button><button type="button" class="tools-map-filter" data-map-filter="none" aria-pressed="false">Зняти всі</button>${filters}</div>
@@ -335,9 +336,10 @@ function renderToolsScreen(view){
   }
   else if(toolsView==='network')root.innerHTML=toolsNetworkHtml();
   else if(toolsView==='offline'){
-    root.innerHTML=toolsOfflineHtml();requestAnimationFrame(()=>{MTToolsMap.mount(document.getElementById('toolsOfflineSelectMap'),[],{statusNode:document.getElementById('toolsOfflineSelectStatus')});if(toolsOfflinePendingBounds)setTimeout(()=>MTToolsMap.drawBounds(toolsOfflinePendingBounds),0);});
+    root.innerHTML=(typeof toolsOfflineDownloadHtml==='function'?toolsOfflineDownloadHtml():'')+toolsOfflineHtml();requestAnimationFrame(()=>{MTToolsMap.mount(document.getElementById('toolsOfflineSelectMap'),[],{statusNode:document.getElementById('toolsOfflineSelectStatus')});if(toolsOfflinePendingBounds)setTimeout(()=>MTToolsMap.drawBounds(toolsOfflinePendingBounds),0);});
   }
   else{toolsView='home';root.innerHTML=toolsHomeHtml();}
+  if((toolsView==='map'||toolsView==='offline')&&typeof toolsInitOfflineDownloadUi==='function')toolsInitOfflineDownloadUi();
 }
 function bindToolsScreen(){
   const root=document.getElementById('toolsScreenRoot');
@@ -347,6 +349,7 @@ function bindToolsScreen(){
     const point=event.target.closest('.tools-network-open');if(point){toolsShowNetworkPoint(point.dataset.pointId);return;}
     const groupedPoint=event.target.closest('.tools-network-object');if(groupedPoint){toolsFocusNetworkPoint(groupedPoint.dataset.pointId);return;}
     const action=event.target.closest('[data-tools-action]')?.dataset.toolsAction;
+    if(action?.startsWith('offline-download-')){void toolsOfflineDownloadAction(action);return;}
     if(action==='quick-diagnostics')toolsOpenDiagnostics(null,'tools');
     else if(action==='ai-assistant'){ if(window.MTAI&&MTAI.ui)MTAI.ui.open(); }
     else if(action==='run-diagnostics')runToolsDiagnostics();

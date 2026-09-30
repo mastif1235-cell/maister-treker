@@ -481,3 +481,10 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 .tools-ping-ok{color:var(--text);}
 .tools-ping-slow{color:#c98a1b;font-weight:600;}
 .tools-ping-fail{color:#d64545;font-weight:600;}
+.tools-offline-download{min-width:0;overflow-wrap:anywhere;}
+.tools-offline-download-title{margin-top:7px;font-size:15px;}
+.tools-offline-download-meta{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:6px;}
+.tools-offline-download-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.tools-offline-download-actions .btn{min-height:44px;flex:1 1 120px;white-space:normal;}
+.tools-offline-download progress{display:block;width:100%;height:14px;margin:10px 0 6px;}
+#toolsOfflineDownloadBytes{font-size:13px;font-variant-numeric:tabular-nums;min-height:20px;}

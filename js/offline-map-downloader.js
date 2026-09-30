@@ -1,0 +1,101 @@
+/* Page controller: metadata publication and cross-tab writer lock. File bytes
+   stay in the dedicated browser worker/OPFS, never in page state. */
+(function(root,factory){
+  const create=factory();if(typeof module==='object'&&module.exports)module.exports=create;else root.MTOfflineDownloader=create(root);
+})(typeof globalThis!=='undefined'?globalThis:this,function(){
+  'use strict';
+  return function create(root){
+    const storage=root.MTOfflineMap,core=root.MTOfflineDownloadCore;
+    const entry=()=>root.MTOfflineMapCatalog?.[0];
+    let state={phase:storage.readJournal()?.broken?'broken':storage.readJournal()?'paused':'idle',manifest:null,message:'',quota:null};
+    let worker=null,operation=null,manifestAbort=null,stopRequested=false,stopReason='STOPPED';
+    const listeners=new Set();
+    const snapshot=()=>({...state,active:storage.readMeta(),journal:storage.readJournal(),configured:!!entry()?.manifestUrl,busy:!!operation});
+    const emit=patch=>{state={...state,...patch};for(const listener of listeners)listener(snapshot());};
+    const supported=()=>!!(root.Worker&&root.navigator?.storage?.getDirectory&&root.navigator?.locks?.request);
+    async function loadManifest(signal){
+      const item=entry();if(!item?.manifestUrl)throw new Error('HOSTING_UNCONFIGURED');
+      const url=core.publicUrl(item.manifestUrl).href;
+      let response;
+      try{response=await root.fetch(url,{cache:'no-store',credentials:'omit',redirect:'error',signal});}
+      catch(error){if(error?.name==='AbortError')throw error;throw new Error('MANIFEST_UNAVAILABLE');}
+      if(response.status!==200||!response.body)throw new Error('MANIFEST_UNAVAILABLE');
+      const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
+      try{for(;;){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>32768)throw new Error('MANIFEST_INVALID');text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}finally{await reader.cancel().catch(()=>{});}
+      let value;try{value=JSON.parse(text);}catch(_e){throw new Error('MANIFEST_INVALID');}
+      return core.manifest(value,url,item.id);
+    }
+    async function refresh(){
+      if(operation||!entry()?.manifestUrl)return snapshot();
+      try{const manifest=await loadManifest();if(!operation)emit({manifest,message:''});}catch(error){if(!operation)emit({message:String(error.message)});}return snapshot();
+    }
+    function transfer(manifest,journal){
+      return new Promise((resolve,reject)=>{
+        worker=new root.Worker(new URL('js/offline-map-download-worker.js',root.document.baseURI));
+        let settled=false;
+        const finish=(error,verified)=>{if(settled)return;settled=true;worker?.terminate();worker=null;error?reject(error):resolve(verified);};
+        worker.onerror=()=>finish(new Error('DOWNLOAD_WORKER'));
+        worker.onmessage=event=>{
+          const data=event.data;
+          try{
+            if(data.type==='checkpoint'){
+              if(!Number.isSafeInteger(data.downloadedBytes)||data.downloadedBytes<journal.downloadedBytes||data.downloadedBytes>manifest.size)throw new Error('DOWNLOAD_CHECKPOINT');
+              journal={...journal,downloadedBytes:data.downloadedBytes,etag:data.etag,lastModified:data.lastModified,updatedAt:new Date().toISOString()};
+              storage.writeJournal(journal);emit({phase:stopRequested?'stopping':'downloading'});
+            }else if(data.type==='verifying')emit({phase:'verifying'});
+            else if(data.type==='complete')finish(null,{verified:data.verified,journal});
+            else if(data.type==='paused'){
+              journal={...journal,broken:!!data.broken};storage.writeJournal(journal);
+              emit({phase:data.broken?'broken':'paused',message:stopRequested?stopReason:data.code});finish(null,null);
+            }
+          }catch(error){finish(error);}
+        };
+        worker.postMessage({type:'start',manifest,journal,directory:storage.DIRECTORY});
+        if(stopRequested)worker.postMessage({type:'stop'});
+      });
+    }
+    async function perform(){
+      if(!supported())throw new Error('DOWNLOAD_UNSUPPORTED');
+      manifestAbort=new AbortController();emit({phase:'checking',message:'',quota:null});
+      const manifest=await loadManifest(manifestAbort.signal);emit({manifest});
+      if(stopRequested)throw new Error('STOPPED');
+      let journal=storage.readJournal();
+      if(journal?.broken)throw new Error('INTEGRITY_BROKEN');
+      if(journal&&!core.sameDownload(journal,manifest))throw new Error('RESUME_MANIFEST_CHANGED');
+      const active=storage.readMeta();
+      if(!journal&&active?.mapId===manifest.id&&active.version===manifest.version&&active.sha256===manifest.sha256){emit({phase:'ready',message:'ALREADY_CURRENT'});return;}
+      let estimate=null;try{estimate=await root.navigator.storage.estimate?.();}catch(_e){}
+      const quota=core.quota(estimate,manifest.size);emit({quota});
+      if(quota.enough===false)throw new Error('DOWNLOAD_QUOTA');
+      try{await root.navigator.storage.persist?.();}catch(_e){} // best effort, not a gate
+      if(stopRequested)throw new Error('STOPPED');
+      if(!journal){
+        const now=new Date().toISOString();journal={mapId:manifest.id,version:manifest.version,url:manifest.url,totalSize:manifest.size,sha256:manifest.sha256,downloadedBytes:0,etag:manifest.etag,lastModified:'',targetSlot:active?.activeSlot===storage.SLOTS[0]?storage.SLOTS[1]:storage.SLOTS[0],startedAt:now,updatedAt:now,completed:false};
+        storage.writeJournal(journal);
+      }
+      emit({phase:'downloading'});
+      const result=await transfer(manifest,journal);
+      if(result&&!stopRequested){await storage.activateDownload(manifest,result.journal,result.verified);emit({phase:'ready',message:''});}
+      else if(result)emit({phase:'paused',message:stopReason});
+    }
+    function start(){
+      if(operation)return operation;
+      stopRequested=false;stopReason='STOPPED';
+      operation=Promise.resolve().then(()=>storage.withWriteLock(perform)).catch(error=>{
+        const journal=storage.readJournal();emit({phase:journal?.broken?'broken':journal?'paused':'idle',message:stopRequested?stopReason:String(error.message)});
+      }).finally(()=>{worker?.terminate();worker=null;manifestAbort=null;operation=null;emit({});});
+      return operation;
+    }
+    async function stop(reason='STOPPED'){
+      stopReason=reason;stopRequested=true;if(operation)emit({phase:'stopping'});
+      manifestAbort?.abort();worker?.postMessage({type:'stop'});
+      if(operation)await operation;
+    }
+    async function discard(){await stop();await storage.discardPartial();emit({phase:'idle',message:''});}
+    async function remove(){await stop();const ok=await storage.remove();emit({phase:'idle',message:ok?'':'DELETE_FAILED'});return ok;}
+    // Chromium can keep an already-open HTTP connection streaming after an
+    // offline event. Explicitly abort it and flush, not just future requests.
+    root.addEventListener?.('offline',()=>{if(operation)void stop('DOWNLOAD_NETWORK');});
+    return {snapshot,supported,refresh,start,stop,discard,remove,subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);}};
+  };
+});

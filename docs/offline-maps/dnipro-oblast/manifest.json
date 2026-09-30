@@ -1,0 +1,16 @@
+{
+  "id": "dnipro-oblast",
+  "title": "Дніпропетровська область",
+  "version": "2026-09-30",
+  "source": "Protomaps / OpenStreetMap",
+  "sourceBuild": "Protomaps 20260930 / basemap 4.15.2",
+  "license": "ODbL",
+  "attribution": "© OpenStreetMap contributors",
+  "file": "2026-09-30/dnipro-oblast-z0-15.pmtiles",
+  "size": 114207260,
+  "minZoom": 0,
+  "maxZoom": 15,
+  "displayMaxZoom": 18,
+  "sha256": "4ebb26c99a51407dab3a1d45cdfaef9f2d176003a1bdb19579caa1d9001877da",
+  "updatedAt": "2026-09-30T00:00:00Z"
+}

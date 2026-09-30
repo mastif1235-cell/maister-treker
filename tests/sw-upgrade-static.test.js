@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,fetchCalls=0,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v67-runtime-119'/,'installed-PWA cache revision is unique for the v91.75 production release');
-assert.match(appSource,/APP_VERSION\s*=\s*'v91\.75 · 2026-09-30'/,'canonical release identity is v91.75');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v67-runtime-120'/,'installed-PWA cache revision is unique for the v91.76 production release');
+assert.match(appSource,/APP_VERSION\s*=\s*'v91\.76 · 2026-09-30'/,'canonical release identity is v91.76');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/function serviceWorkerUpdateIsSafe\(\)[\s\S]*hasUnsavedChanges\(\)[\s\S]*modalRoot[\s\S]*toolsSpeedController[\s\S]*isPointPlacementActive/,'update is deferred while a form, modal, speed test or map placement is active');
 assert.match(appSource,/function serviceWorkerApplyUpdate\(\)[\s\S]*if\(serviceWorkerRefreshing\) return false;[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'reload stays single-shot and still saves the draft');
@@ -35,6 +35,10 @@ async function networkedEvent(request,respond){let response;handlers.fetch({requ
   assert.equal(puts.length,1,'the gap is filled in the active cache exactly once');
   assert.match(String(puts[0][0].url||puts[0][0]),/late-audio\.js$/,'gap fill writes only the previously missing file');
   assert.equal(puts[0][0].url,'https://example.test/js/late-audio.js');
+  for(const request of [{url:'https://example.test/map.pmtiles',method:'GET'}, {url:'https://example.test/dnipro/manifest.json',method:'GET',cache:'no-store',destination:''}]){
+    const bypass=await fetchEvent(request);assert.equal(bypass.value,undefined,'map archive / no-store manifest bypass shell cache');
+  }
+  assert.equal(puts.length,1,'map downloads never enter service-worker cache');
   assert.equal(localTouches,0);assert.equal(idbTouches,0);assert.equal(/Clear-Site-Data|indexedDB|localStorage|deleteDatabase|opfs/i.test(source),false);assert.equal(/Clear-Site-Data|deleteDatabase/.test(appSource),false);
   // Клієнтська частина: оновлення не має виривати користувача з роботи.
   function clientHarness(state){

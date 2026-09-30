@@ -17,6 +17,7 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 | localStorage | `mtToolsCalculatorDraftV1` | tools-domain | Tools diagnostic draft | Temporary | Personal data |
 | localStorage | `mtOfflineAreasV1` / `mtOfflineAreaBoundsV1` | tools-domain | Offline area UI metadata / legacy read compatibility | Persistent | No |
 | localStorage | `mtOfflineMapMetaV1` / `mtOfflineMapModeV1` | offline-map-storage | Active PMTiles slot metadata and mode | Persistent | No |
+| localStorage | `mtOfflineMapDownloadV1` | offline-map-storage / offline-map-downloader | Flushed byte checkpoint, inactive slot, public source/version/hash/HTTP validators; no file bytes | Until completion/deletion | No |
 | localStorage | `mt-maptiler-key-v1` | maptiler-local-config | Device-local MapTiler BYOK key | Persistent | Yes; excluded from exports |
 | localStorage | `mt-map-layer-v1` | maptiler-local-config | Selected online layer | Persistent | No |
 | localStorage | `mt-single-writer-lease-v1` | single-writer-lock | Expiring fallback writer lease | Temporary lease | No |
@@ -30,3 +31,13 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 | OPFS | `master-tracker-offline-maps/map-a.pmtiles`, `map-b.pmtiles` | offline-map-storage | A/B-installed offline map | Persistent | No |
 
 `sessionStorage` currently has no production-owned keys. Unknown or legacy browser-storage keys are deliberately preserved. There is no namespace-wide `clear()` operation or automatic cleanup migration.
+
+The automatic offline-map downloader writes directly to the inactive A/B slot
+in a dedicated browser worker. `mt-offline-map-write-v1` is an exclusive Web Lock
+shared with manual import and map deletion, not a ticket/DB lock. The journal is
+written only after OPFS `flush()`. On resume, bytes after the last journalled
+checkpoint are truncated; the active slot is never truncated. Only a completely
+verified file is published by one `mtOfflineMapMetaV1` write. Failed downloads
+and failed integrity checks retain the old active map. Archives/journal are not
+part of ticket backup or sync; the shell caches code, never PMTiles. See
+[offline map setup and Android checks](OFFLINE_MAP_DOWNLOAD.md).

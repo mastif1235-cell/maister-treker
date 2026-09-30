@@ -10,6 +10,8 @@
   const SLOTS=['map-a.pmtiles','map-b.pmtiles'];
   const META_KEY='mtOfflineMapMetaV1';
   const MODE_KEY='mtOfflineMapModeV1';
+  const JOURNAL_KEY='mtOfflineMapDownloadV1';
+  const LOCK_NAME='mt-offline-map-write-v1';
   let viewMode='';
   const VECTOR_TILE_TYPE=1;
   const RASTER_TILE_TYPES=new Set([2,3,4,5]);
@@ -43,6 +45,18 @@
   }
   function writeMeta(value){local()?.setItem(META_KEY,JSON.stringify(value));}
   function clearMeta(){local()?.removeItem(META_KEY);}
+  function readJournal(){
+    try{
+      const j=JSON.parse(local()?.getItem(JOURNAL_KEY)||'null');
+      return j&&j.completed===false&&SLOTS.includes(j.targetSlot)&&j.targetSlot!==readMeta()?.activeSlot&&typeof j.mapId==='string'&&typeof j.url==='string'&&Number.isSafeInteger(j.totalSize)&&j.totalSize>=127&&Number.isSafeInteger(j.downloadedBytes)&&j.downloadedBytes>=0&&j.downloadedBytes<=j.totalSize?j:null;
+    }catch(_e){return null;}
+  }
+  function writeJournal(value){local().setItem(JOURNAL_KEY,JSON.stringify(value));}
+  function clearJournal(){local()?.removeItem(JOURNAL_KEY);}
+  function withWriteLock(task){
+    const locks=root.navigator?.locks;
+    return locks?.request?locks.request(LOCK_NAME,{ifAvailable:true},lock=>{if(!lock)throw new Error('OFFLINE_MAP_BUSY');return task();}):task();
+  }
   function storedMode(){const value=local()?.getItem(MODE_KEY);return ['auto','online','offline'].includes(value)?value:'auto';}
   function getMode(){return viewMode||storedMode();}
   function setMode(value){const next=['auto','online','offline'].includes(value)?value:'auto';viewMode='';local()?.setItem(MODE_KEY,next);return next;}
@@ -84,12 +98,13 @@
     }catch(error){try{await writable.abort?.();}catch(_e){}throw error;}
   }
   async function removeSlot(directory,slot){try{await directory.removeEntry(slot);}catch(_e){}}
-  async function install(file,prepared=null,options={}){
+  async function installUnlocked(file,prepared=null,options={}){
+    if(readJournal())throw new Error('OFFLINE_MAP_PARTIAL_EXISTS');
     const inspected=prepared||await inspectFile(file),previous=readMeta();
     const active=previous?.activeSlot,theSlot=active===SLOTS[0]?SLOTS[1]:SLOTS[0];
     const directory=await getDirectory(true),handle=await directory.getFileHandle(theSlot,{create:true});
     try{
-      await storage()?.persist?.();
+      try{await storage()?.persist?.();}catch(_e){}
       await writeFile(handle,file);
       const savedFile=await handle.getFile(),verified=await inspectFile(savedFile);
       if(savedFile.size!==file.size)throw new Error('PMTILES_COPY_INCOMPLETE');
@@ -99,6 +114,28 @@
       return meta;
     }catch(error){await removeSlot(directory,theSlot);throw error;}
   }
+  function install(file,prepared=null,options={}){return withWriteLock(()=>installUnlocked(file,prepared,options));}
+  async function activateDownload(manifest,journal,verified){
+    const previous=readMeta();
+    if(journal.targetSlot===previous?.activeSlot||!SLOTS.includes(journal.targetSlot))throw new Error('OFFLINE_MAP_SLOT');
+    const directory=await getDirectory(false),file=await (await directory.getFileHandle(journal.targetSlot)).getFile();
+    if(file.size!==manifest.size||verified.sha256!==manifest.sha256)throw new Error('INTEGRITY_SIZE');
+    const meta={...verified,activeSlot:journal.targetSlot,completed:true,mapId:manifest.id,version:manifest.version,source:manifest.source,license:manifest.license,sourceBuild:manifest.sourceBuild,sha256:manifest.sha256,displayMaxZoom:manifest.displayMaxZoom,attribution:manifest.attribution,name:manifest.title,sourceName:manifest.file,updatedAt:manifest.updatedAt,importedAt:new Date().toISOString()};
+    // This single synchronous localStorage write is the publication point.
+    // Failures before it leave the old slot active. Cleanup is best effort:
+    // never roll back/delete the newly published slot if cleanup fails.
+    writeMeta(meta);
+    try{clearJournal();}catch(_e){}
+    if(previous?.activeSlot)await removeSlot(directory,previous.activeSlot);
+    return meta;
+  }
+  async function discardPartial(){
+    return withWriteLock(async()=>{
+      const j=readJournal();if(j){const directory=await getDirectory(true);await removeEntryStrict(directory,j.targetSlot);}
+      clearJournal();return true;
+    });
+  }
+  async function removeEntryStrict(directory,name){try{await directory.removeEntry(name);}catch(error){if(error?.name!=='NotFoundError')throw error;}}
   async function installed(){
     const meta=readMeta();if(!meta)return null;
     try{
@@ -112,9 +149,12 @@
     const pm=library();return{...current,archive:new pm.PMTiles(new pm.FileSource(current.file))};
   }
   async function remove(){
-    const meta=readMeta();if(!meta)return true;
-    try{const directory=await getDirectory(false);await removeSlot(directory,meta.activeSlot);clearMeta();return true;}catch(_e){return false;}
+    try{return await withWriteLock(async()=>{
+      const directory=await getDirectory(true);
+      for(const slot of SLOTS)await removeEntryStrict(directory,slot);
+      clearJournal();clearMeta();return true;
+    });}catch(_e){return false;}
   }
 
-  return{DIRECTORY,META_KEY,MODE_KEY,VECTOR_TILE_TYPE,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,setViewMode,resetViewMode,readMeta};
+  return{DIRECTORY,META_KEY,MODE_KEY,JOURNAL_KEY,SLOTS,LOCK_NAME,VECTOR_TILE_TYPE,RASTER_TILE_TYPES,supported,formatBytes,validBounds,cleanHeader,inspectFile,quotaFor,install,installed,archive,remove,getMode,setMode,setViewMode,resetViewMode,readMeta,readJournal,writeJournal,clearJournal,withWriteLock,activateDownload,discardPartial};
 });
