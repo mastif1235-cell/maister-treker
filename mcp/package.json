@@ -11,5 +11,8 @@
   "scripts": {
     "test": "node --test test/unit/*.test.js test/integration/*.test.js",
     "check": "bash scripts/check.sh"
+  },
+  "dependencies": {
+    "aws4fetch": "1.0.20"
   }
 }

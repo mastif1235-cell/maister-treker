@@ -1,12 +1,12 @@
 # One-region offline map (v91.76): PRIVATE R2
 
-BACKEND SIGNER REQUIRED: YES. AUTH REQUIRED: YES. PRODUCTION CONNECTION: BLOCKED
-until the owner approves a signer and a server-side map entitlement mechanism.
-This PR implements only the client interface and isolated test mocks. No R2
-resources, backend, production Worker or Apps Script have been created/deployed.
-`js/offline-map-catalog.js` intentionally keeps `manifestUrl` empty and no URL
-provider configured. Download stays disabled. Installed/manual maps remain usable
-without a manifest, signer or network. Release remains v91.76 / runtime-120.
+BACKEND SIGNER IMPLEMENTED: YES. AUTH REQUIRED: YES. PRODUCTION SETUP: NOT DEPLOYED.
+The existing Worker now has an isolated map-only route and the PWA has an
+authenticated provider. No Worker deploy, R2 creation, secrets provisioning or
+Apps Script changes have been performed. `manifestUrl` remains empty until the
+owner completes private R2/CSP setup. Download stays disabled meanwhile.
+Installed/manual maps remain usable without a manifest, signer or network.
+Release remains v91.76 / runtime-120; PR #61 MUST NOT MERGE without owner approval.
 
 ## Access model and provider contract
 
@@ -27,7 +27,8 @@ echoed identity: `mapId`, `version`, `downloadId`, `sha256`, `size`.
 All identity fields must match the manifest. The provider must honor cancellation,
 use `credentials:'omit'`, no-store and no redirects, and reject authorization
 errors. Provider errors are mapped to a fixed code, never shown with secret URLs.
-This is an injectable interface, **not an anonymous deployed signer endpoint**.
+The implementation is POST /offline-map/grant on the existing Worker, not an
+anonymous endpoint. MAP_BEARER_TOKENS is mandatory and has no MCP/ASK fallback.
 
 Permanent manifest URLs remain strict HTTPS without query, username/password or
 fragment. Signed download URLs allow query parameters but still reject non-HTTPS,
@@ -56,6 +57,9 @@ endpoint**, not a public custom-domain URL.
   safely and preserves the checkpoint, never marks the archive broken and never
   loops forever. Signer denial does not retry. A later Resume can try after login.
   Expiry normally affects a subsequent request, not bytes already streaming.
+- A CORS-masked network error can also renew ONCE, only when online, partial
+  bytes exist and the current grant is within 30 seconds of expiry. Otherwise
+  pause. A second failure pauses without marking integrity broken.
 - Fetch remains `credentials:'omit'`, no-store, redirect:error; object GET also
   uses no-referrer. Do not log signed URLs or include them in diagnostics/analytics.
   They are bearer capabilities: anyone holding one can use it until expiry.
@@ -77,25 +81,28 @@ endpoint**, not a public custom-domain URL.
 - Atomic active metadata publication after verification; failed update keeps old
   slot. Confirmed deletion/manual import/MapLibre remain unchanged. Native Z0–15
   display overzoom Z18; overzoom cannot add missing source OSM building coverage.
-- No tickets/DB/sync/backup/Ping/Speedtest/Apps Script/mcp changes. PMTiles archive
+- No tickets/DB/sync/backup-schema/Ping/Speedtest/Apps Script changes. PMTiles archive
   and A/B storage format are untouched; clearing browser data can still evict maps.
 
-## Signer choices — design only, separate owner approval required
+## Implemented signer and owner access
 
-A. Existing project Cloudflare Worker: possible only after explicit permission
-to add a route and a distinct map entitlement policy; no change in this PR.
-B. Separate minimal Worker: isolates map authorization/rate limiting and R2 signing;
-new resource/deployment requires separate permission, not performed here.
-C. Another secure HTTPS endpoint: same authentication/entitlement and GET contract.
+The existing Worker uses the existing bearer verifier with a SEPARATE
+MAP_BEARER_TOKENS pool. It rejects overlapping MCP/ASK credentials in map config.
+Only the code-owned dnipro-oblast/2026-09-30 catalog entry can be signed; all five
+client identity fields must match, and unknown input keys are rejected. Small
+JSON input is streamed with a 2048-byte cap. SigV4 GET uses pinned aws4fetch,
+TTL 900 seconds and host-only signed headers, not fixed Range. There is no R2
+download proxy or GAS/AI dependency. Missing map configuration/binding fails
+closed only for the map route. Native limiter: 6/60 seconds per client/map,
+per-location best effort, 429 + Retry-After: 60. No D1/new Worker/new DB.
 
-Existing MCP/ask bearer authentication has a read scope for its current APIs,
-**not a map entitlement**. The app's local lock is also not server authentication.
-No existing token, sync HMAC or Telegram secret is silently repurposed. Minimal
-safe option: owner-provisioned, revocable per-user/device map credential or a
-server-verified login issuing a short-lived map-scoped access token. The signer
-must verify that principal's entitlement to the requested allowlisted map/version.
-No R2/admin secrets or shared hardcoded credential may ship in frontend config.
-Choosing/provisioning this auth is a production blocker, not bypassed with CORS.
+Each phone has a separately revocable owner-provisioned map token. UI never
+echoes it after entry. It is kept outside settings in a separate AES-GCM record
+using the existing IndexedDB vault key; unavailable vault means session memory
+only, never plaintext fallback. No token is imported/exported/backed up/synced.
+The app's local lock and CORS do not authorize downloads. Theft/XSS can expose
+a usable client credential; revocation blocks future grants, not installed
+OPFS bytes or already-issued URLs before expiry. This is not DRM/device binding.
 
 ## Owner setup and acceptance checklist (after separate approval)
 
@@ -104,14 +111,15 @@ Choosing/provisioning this auth is a production blocker, not bypassed with CORS.
    Do not expose the PMTiles object permanently. The manifest may be hosted
    separately on a public HTTPS origin; it contains only non-secret metadata.
 
-2. Agree and provision server-side authentication + map entitlement first.
+2. Provision the separately approved map-only authentication.
    Signer must reject unauthenticated/unentitled clients (401/403), rate-limit,
    and accept only an allowlisted mapId/version/downloadId mapping. Never let
    the client choose arbitrary bucket/key/method/expiry. Sign GET only, with
    10–30 minute lifetime and read-only scoped R2 credentials stored server-side.
    Return matching identity, optional exact quoted ETag, ISO expiresAt and URL.
    Return no-store. Do not log the signed URL; never expose R2/admin credentials.
-   Implementation/deployment is a SEPARATE task; this PR does not create it.
+   Code is implemented in this PR; provisioning/deployment remains manual and
+   requires separate permission. Native rate-limit binding is required.
 
 3. Upload the already prepared archive privately, without rebuilding:
    C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\offline-map-research-20260930\dnipro-oblast-z0-15.pmtiles
@@ -138,12 +146,12 @@ Choosing/provisioning this auth is a production blocker, not bypassed with CORS.
    update server allowlist, then publish new manifest last. Do not overwrite
    immutable objects. Do not add etag unless it is the actual quoted HTTP ETag.
 
-6. Implement the separately authorized client provider with runtime map-scoped
-   authentication, not R2 credentials. Set manifestUrl. Allow exactly the
+6. The provider is already implemented with runtime map-scoped authentication,
+   not R2 credentials. Set manifestUrl. Allow exactly the
    manifest, signer and account R2 S3 HTTPS origins in connect-src in BOTH
    index.html and _headers. No wildcard. Coordinate a later release/cache bump
-   for this setup: installed shell assets do not reliably update without it.
-   No production endpoint is configured or fabricated in this PR.
+   only if this PR has already shipped. Before its merge, keep v91.76/runtime-120.
+   Provider uses the existing production Worker origin; no new Worker.
 
 7. From actual PWA origin check: unauthorized signer denied, authorized signer
    issues short-lived GET, permanent unsigned object URL denied. GET 200 has
@@ -159,6 +167,67 @@ Choosing/provisioning this auth is a production blocker, not bypassed with CORS.
    Васильківка; attribution and local markers. Failed/interrupted update keeps
    old map; successful update switches slots. Discard/delete/manual import work;
    tickets/photos/settings are untouched. No deploy or merge without approval.
+
+9. Exact manual setup (OWNER ONLY, AFTER separate provisioning/deploy approval).
+   This is not an instruction to Codex to execute any of these operations now.
+   Open Cloudflare Dashboard -> R2 -> Create bucket, name maister-offline-maps,
+   Standard storage. Keep public r2.dev and public custom domains DISABLED.
+   R2 -> Manage API tokens -> Create Account API token -> Object Read Only,
+   restrict ONLY to maister-offline-maps. Save Access Key ID/Secret Access Key
+   privately. These credentials sign/download; they CANNOT upload the archive.
+   Upload uses the owner's Cloudflare login permissions instead.
+
+   In the EXISTING mcp/wrangler.toml, preserve ALL current Worker/KV/GAS/AI
+   settings. Under its EXISTING [vars] add:
+     R2_ACCOUNT_ID = "<actual non-secret 32-hex account ID>"
+     R2_BUCKET = "maister-offline-maps"
+     MAP_SIGN_TTL_SECONDS = "900"
+     MAP_ALLOWED_ORIGIN = "https://mastif1235-cell.github.io"
+   Add a top-level binding (not inside [vars]); namespace 1061 must be unused
+   by other rate limit bindings in this account, otherwise choose another:
+     [[ratelimits]]
+     name = "MAP_GRANT_RATE_LIMIT"
+     namespace_id = "1061"
+     simple = { limit = 6, period = 60 }
+   Wrangler >=4.36 is required. Missing binding disables map signing.
+   No R2 bucket binding is necessary: signing does not fetch/proxy the file.
+
+   Generate TWO independent high-entropy credentials privately (at least
+   32 random bytes each, base64url without padding). Never reuse MCP/ASK.
+   MAP_BEARER_TOKENS secret format (placeholders, NOT literal credentials):
+     phone-a:<phone A token>:read;phone-b:<phone B token>:read
+   Each phone's UI receives only its bare token, not the entire pool.
+   Revoke a lost phone by removing its entry from this Worker secret.
+   Never store these values in files/config/manifest/screenshots/logs.
+
+   PowerShell commands below are for the owner AFTER approval, from this repo:
+   rtk proxy npx wrangler@4 secret put MAP_BEARER_TOKENS --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npx wrangler@4 secret put R2_ACCESS_KEY_ID --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npx wrangler@4 secret put R2_SECRET_ACCESS_KEY --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npx wrangler@4 r2 object put "maister-offline-maps/dnipro/2026-09-30/dnipro-oblast-z0-15.pmtiles" --remote --file "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\offline-map-research-20260930\dnipro-oblast-z0-15.pmtiles" --content-type "application/octet-stream" --cache-control "private, no-store" --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npx wrangler@4 r2 bucket cors set maister-offline-maps --file "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\offline-map-r2-cors.json" --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npx wrangler@4 r2 bucket cors list maister-offline-maps --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+   rtk proxy npm ci --prefix "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp" --ignore-scripts
+   rtk proxy npx wrangler@4 deploy --config "C:\Users\Артем\OneDrive\Документы\ChatGPT\мастер трекер\audit-main-v91-48\mcp\wrangler.toml"
+
+   Enter secret values only at Wrangler's private interactive prompt.
+   Verify uploaded object's size/hash/key and stable ETag. Do not overwrite
+   versioned objects. Do not set Content-Encoding for the PMTiles archive.
+
+10. Public manifest publication uses the EXISTING GitHub Pages deployment,
+    not R2 public access: docs/offline-maps/dnipro-oblast/manifest.json is already
+    in this PR. After separately approved merge/Pages deployment it is served at
+    https://mastif1235-cell.github.io/maister-treker/docs/offline-maps/dnipro-oblast/manifest.json
+    Before enabling downloads, set this exact URL as manifestUrl. Both CSP
+    connect-src lists already allow the owner-approved exact S3 origin:
+    https://a1e94c2f68447a4f7874830c42a513e8.r2.cloudflarestorage.com
+    Never invent an account ID or use *.cloudflarestorage.com. This exact-origin
+    setup is mandatory; a valid signature alone cannot bypass browser CSP.
+
+11. Live checks MUST run after setup: missing/wrong MCP/ASK token denied;
+    each authorized phone can grant only the catalog map. Browser GET/Range/
+    If-Match/CORS, actual expired URL and airplane-mode Android acceptance.
+    Current status: REAL R2 NOT TESTED; PHYSICAL ANDROID NOT TESTED.
 ```
 
 Official references: [R2 presigned URLs, bearer capabilities and S3-only endpoint](https://developers.cloudflare.com/r2/api/s3/presigned-urls/),

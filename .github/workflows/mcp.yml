@@ -27,6 +27,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install pinned signer dependency
+        working-directory: mcp
+        run: npm ci --ignore-scripts
+
       - name: Syntax check (node --check every file)
         working-directory: mcp
         run: npm run check

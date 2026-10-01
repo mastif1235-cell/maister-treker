@@ -76,7 +76,9 @@ async function run(m,j,directoryName,downloadUrl){
     check();
     if(bytes<m.size){
       const headers={};if(bytes){headers.Range=`bytes=${bytes}-`;if(j.etag)headers['If-Match']=j.etag;else if(j.lastModified)headers['If-Unmodified-Since']=j.lastModified;}
-      const response=await fetch(core.downloadUrl(downloadUrl).href,{headers,signal:abort.signal,cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
+      let response;
+      try{response=await fetch(core.downloadUrl(downloadUrl).href,{headers,signal:abort.signal,cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});}
+      catch(error){if(error?.name==='AbortError')throw error;throw new Error('DOWNLOAD_NETWORK');}
       if(response.status===403)throw new Error('DOWNLOAD_URL_EXPIRED');
       identity=core.response(response.headers,response.status,bytes,m,j);
       if(!response.body)throw new Error('DOWNLOAD_BODY');
@@ -95,7 +97,7 @@ async function run(m,j,directoryName,downloadUrl){
     const verified=await verify(await fileHandle.getFile(),m);check();result={type:'complete',verified};
   }catch(error){
     try{if(handle)checkpoint();}catch(_flushError){} // Never journal unflushed bytes.
-    result={type:'paused',code:stopped?'STOPPED':String(error?.message||'DOWNLOAD_NETWORK'),broken:!stopped&&(phase==='verify'||String(error?.message||'').startsWith('INTEGRITY_'))};
+    result={type:'paused',code:stopped?'STOPPED':phase!=='verify'&&error?.name==='TypeError'?'DOWNLOAD_NETWORK':String(error?.message||'DOWNLOAD_NETWORK'),broken:!stopped&&(phase==='verify'||String(error?.message||'').startsWith('INTEGRITY_'))};
   }finally{try{await reader?.cancel();}catch(_e){}try{handle?.close();}catch(_e){}abort=null;}
   // Signal terminal state only after releasing the OPFS writer. A quick Resume
   // or manual import must not race an access handle still being closed.

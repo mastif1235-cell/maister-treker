@@ -82,6 +82,19 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   expiry.worker.message({type:'paused',code:'DOWNLOAD_URL_EXPIRED',broken:false});await tick();
   assert.equal(expiry.grants,2);assert.equal(expiry.worker.start.journal.downloadedBytes,100);assert.equal(expiry.journal.broken,false);
   expiry.worker.message({type:'paused',code:'DOWNLOAD_URL_EXPIRED',broken:false});await run;assert.equal(expiry.grants,2);assert.equal(ec.snapshot().phase,'paused');assert.equal(expiry.journal.broken,false);
+  // R2 can hide expiry 403 behind CORS: only refresh once for an online,
+  // near-expired grant with an existing partial; never for arbitrary failures.
+  for(const [online,near,partialBytes,retries] of [[true,true,100,2],[false,true,100,1],[true,false,100,1],[true,true,0,1]]){
+    const masked=controllerContext(),original=masked.root.getOfflineMapDownloadUrl;
+    masked.root.navigator.onLine=online;
+    masked.root.getOfflineMapDownloadUrl=async(...args)=>({...await original(...args),expiresAt:new Date(Date.now()+(near?20000:600000)).toISOString()});
+    const mc=create(masked.root);const pending=mc.start();await tick();
+    if(partialBytes)masked.worker.message({type:'checkpoint',downloadedBytes:partialBytes,etag:'"v1"',lastModified:''});
+    masked.worker.message({type:'paused',code:'DOWNLOAD_NETWORK',broken:false});await tick();
+    assert.equal(masked.grants,retries);
+    if(retries===2){assert.equal(masked.worker.start.journal.downloadedBytes,partialBytes);masked.worker.message({type:'paused',code:'DOWNLOAD_NETWORK',broken:false});}
+    await pending;assert.equal(mc.snapshot().phase,'paused');assert.equal(masked.journal.broken,false);assert.equal(masked.grants,retries);
+  }
   const stale=controllerContext(),get=stale.root.getOfflineMapDownloadUrl;let issued=0;
   stale.root.getOfflineMapDownloadUrl=async(...args)=>({...await get(...args),expiresAt:new Date(Date.now()+(++issued===1?-10000:600000)).toISOString()});
   const sc=create(stale.root);run=sc.start();await tick();assert.equal(issued,2);await sc.stop();await run;

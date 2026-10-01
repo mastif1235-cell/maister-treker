@@ -14,11 +14,12 @@ async function provider(appEnv){
       if(req.headers.authorization!=='Bearer test-authorized-user'){res.writeHead(401,cors).end();return;}
       const mapId=requested.searchParams.get('mapId'),version=requested.searchParams.get('version');
       if(mapId!==manifest.id||version!==manifest.version){res.writeHead(403,cors).end();return;}
-      res.writeHead(200,{...cors,'Content-Type':'application/json'}).end(JSON.stringify({mapId,version,downloadId:manifest.downloadId,sha256:manifest.sha256,size:manifest.size,url:`${url}/fixture.pmtiles?X-Amz-Signature=mock-${++signatures}`,expiresAt:new Date(Date.now()+600000).toISOString(),etag:'"fixture-v1"'}));return;
+      res.writeHead(200,{...cors,'Content-Type':'application/json'}).end(JSON.stringify({mapId,version,downloadId:manifest.downloadId,sha256:manifest.sha256,size:manifest.size,url:`${url}/fixture.pmtiles?X-Amz-Signature=mock-${++signatures}`,expiresAt:new Date(Date.now()+(['cors-expired','cors403'].includes(mode)?20000:600000)).toISOString(),etag:'"fixture-v1"'}));return;
     }
     if(requested.pathname!=='/fixture.pmtiles'||!requested.searchParams.has('X-Amz-Signature')){res.writeHead(403,cors).end();return;}
     const range=req.headers.range,start=range?Number(/^bytes=(\d+)-$/.exec(range)?.[1]):0;
     requests.push({range,start,ifMatch:req.headers['if-match'],signature:requested.searchParams.get('X-Amz-Signature')});
+    if(mode==='cors-expired'||mode==='cors403'){if(mode==='cors-expired')mode='normal';res.writeHead(403,{'Cache-Control':'no-store'}).end();return;}
     if(mode==='expired'||mode==='403'){if(mode==='expired')mode='normal';res.writeHead(403,cors).end();return;}
     const status=range&&mode!=='200'?206:200,at=status===206?start:0;
     res.writeHead(status,{...cors,'ETag':mode==='etag'?'"other"':'"fixture-v1"','Content-Length':data.bytes.length-at,'Content-Type':'application/octet-stream',...(status===206?{'Content-Range':`bytes ${mode==='range'?start+1:start}-${data.bytes.length-1}/${data.bytes.length}`}:{})});
@@ -142,5 +143,16 @@ test('offline-map: expired signed GET renews with fresh signature and same Range
     p.setMode('expired');await click(page,'start');await waitReady(page);
     const [expired,fresh]=p.requests.slice(-2);expect(expired.range).toBe(`bytes=${checkpoint}-`);expect(fresh.range).toBe(expired.range);expect(fresh.ifMatch).toBe('"fixture-v1"');expect(fresh.signature).not.toBe(expired.signature);
     expect(await page.evaluate(()=>MTOfflineMap.readMeta().sha256)).toBe(p.manifest().sha256);
+  }finally{await p.close();}
+});
+test('offline-map: near-expiry CORS-masked 403 renews once; second failure pauses safely',async({page,appEnv})=>{
+  const p=await provider(appEnv);
+  try{
+    await gotoApp(page,appEnv.url);await open(page);await click(page,'start');await page.waitForFunction(()=>MTOfflineMap.readJournal()?.downloadedBytes>0);await click(page,'stop');await page.waitForFunction(()=>!MTOfflineDownloader.snapshot().busy);
+    const checkpoint=await page.evaluate(()=>MTOfflineMap.readJournal().downloadedBytes);
+    p.setMode('cors403');const before=p.requests.length;await click(page,'start');await page.waitForFunction(()=>!MTOfflineDownloader.snapshot().busy);
+    expect(p.requests.length-before).toBe(2);expect(await page.evaluate(()=>MTOfflineMap.readJournal().broken)).toBe(false);expect(await page.evaluate(()=>MTOfflineMap.readJournal().downloadedBytes)).toBe(checkpoint);
+    p.setMode('cors-expired');await click(page,'start');await waitReady(page);
+    const [expired,fresh]=p.requests.slice(-2);expect(expired.range).toBe(`bytes=${checkpoint}-`);expect(fresh.range).toBe(expired.range);expect(fresh.ifMatch).toBe('"fixture-v1"');expect(fresh.signature).not.toBe(expired.signature);
   }finally{await p.close();}
 });

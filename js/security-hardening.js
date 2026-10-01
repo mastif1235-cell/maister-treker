@@ -6,6 +6,7 @@
 
 const SECURITY_BACKUP_MAX_BYTES = 120 * 1024 * 1024;
 const SECURITY_SENSITIVE_SETTING_KEYS = new Set([
+  'offlineMapAccessToken',
   'tgBotToken',
   'syncSecret',
   'syncHmacSecret',
@@ -51,7 +52,7 @@ function securityStripSystemSecrets(value,depth=0){
   if(Array.isArray(value))return value.map(item=>securityStripSystemSecrets(item,depth+1));
   if(!value||typeof value!=='object')return value;
   const clean={};
-  const secretName=/^(?:syncHmacSecret|syncSecret|tgBotToken|tgBackupChatId|tgDispatcherChatId|tgDispatchers|tgMyChatId|tgShiftsMsgId|mapTiler(?:Api)?Key|authorization(?:Header)?|accessToken|refreshToken|apiToken|callbackUrl)$/i;
+  const secretName=/^(?:offlineMapAccessToken|syncHmacSecret|syncSecret|tgBotToken|tgBackupChatId|tgDispatcherChatId|tgDispatchers|tgMyChatId|tgShiftsMsgId|mapTiler(?:Api)?Key|authorization(?:Header)?|accessToken|refreshToken|apiToken|callbackUrl)$/i;
   Object.keys(value).forEach(key=>{if(!secretName.test(key))clean[key]=securityStripSystemSecrets(value[key],depth+1);});
   return clean;
 }

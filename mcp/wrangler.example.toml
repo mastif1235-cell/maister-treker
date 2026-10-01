@@ -30,6 +30,21 @@ MCP_LIST_CACHE_TTL_MS = "15000"
 # MCP_TOOL_ERROR: NETWORK aborts on real calls).
 MCP_GAS_TIMEOUT_MS = "20000"
 
+# Map route is fail-closed until ALL vars/secrets/binding are configured.
+# No fallback to MCP/ASK tokens. Actual account ID is non-secret.
+#R2_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
+#R2_BUCKET = "maister-offline-maps"
+#MAP_SIGN_TTL_SECONDS = "900"
+#MAP_ALLOWED_ORIGIN = "https://mastif1235-cell.github.io"
+# Secrets only: MAP_BEARER_TOKENS, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+# MAP_BEARER_TOKENS: phone-a:<independent-random-token>:read;phone-b:<independent-random-token>:read
+# Native per-location, best-effort limit; missing binding disables map route.
+# Add at top level, not inside [vars] (Wrangler >= 4.36):
+# [[ratelimits]]
+# name = "MAP_GRANT_RATE_LIMIT"
+# namespace_id = "1061"
+# simple = { limit = 6, period = 60 }
+
 # --- stage A: KV snapshot cache knobs (defaults shown) ---
 #MCP_SNAPSHOT_TTL_MS = "300000"     # fresh window, 5 min
 #MCP_SNAPSHOT_STALE_MS = "86400000" # max age still served when GAS fails

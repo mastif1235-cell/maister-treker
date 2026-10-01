@@ -1,0 +1,11 @@
+{
+  "rules": [{
+    "allowed": {
+      "origins": ["https://mastif1235-cell.github.io"],
+      "methods": ["GET", "HEAD"],
+      "headers": ["Range", "If-Match", "If-Unmodified-Since"]
+    },
+    "exposeHeaders": ["ETag", "Content-Range", "Content-Length", "Accept-Ranges", "Last-Modified", "Content-Encoding"],
+    "maxAgeSeconds": 3600
+  }]
+}

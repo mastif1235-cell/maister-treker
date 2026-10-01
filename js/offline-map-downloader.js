@@ -33,7 +33,7 @@
       if(typeof root.getOfflineMapDownloadUrl!=='function')throw new Error('HOSTING_UNCONFIGURED');
       let value;
       try{value=await root.getOfflineMapDownloadUrl(manifest.id,manifest.version,{downloadId:manifest.downloadId,sha256:manifest.sha256,size:manifest.size,signal:manifestAbort.signal});}
-      catch(_error){throw new Error(stopRequested?'STOPPED':'DOWNLOAD_AUTH');} // Never expose provider errors/URLs.
+      catch(error){throw new Error(stopRequested?'STOPPED':['DOWNLOAD_AUTH','DOWNLOAD_RATE_LIMIT','DOWNLOAD_TIMEOUT','DOWNLOAD_NETWORK','DOWNLOAD_GRANT'].includes(error?.message)?error.message:'DOWNLOAD_AUTH');} // Never expose provider errors/URLs.
       if(stopRequested)throw new Error('STOPPED');
       return core.grant(value,manifest,journal);
     }
@@ -96,7 +96,11 @@
         if(grant?.etag&&!journal.etag){journal={...journal,etag:grant.etag};storage.writeJournal(journal);}
         emit({phase:'downloading'});
         const result=await transfer(manifest,journal,grant);journal=result.journal;
-        if(result.paused){if(!stopRequested&&result.code==='DOWNLOAD_URL_EXPIRED'&&attempt===0)continue;return;}
+        if(result.paused){
+          const maskedExpiry=result.code==='DOWNLOAD_NETWORK'&&root.navigator.onLine!==false&&journal.downloadedBytes>0&&grant&&Date.now()>=grant.expiresAt-30000;
+          if(!stopRequested&&!journal.broken&&attempt===0&&(result.code==='DOWNLOAD_URL_EXPIRED'||maskedExpiry))continue;
+          return;
+        }
         if(!stopRequested){await storage.activateDownload(manifest,journal,result.verified);emit({phase:'ready',message:''});}
         else emit({phase:'paused',message:stopReason});
         return;

@@ -26,6 +26,11 @@ function directives(csp){
   return map;
 }
 const index = directives(indexCsp), header = directives(headerCsp);
+const mapR2Origin='https://a1e94c2f68447a4f7874830c42a513e8.r2.cloudflarestorage.com';
+for(const policy of [index,header]){
+  assert.ok(policy['connect-src'].includes(mapR2Origin),'map download allows only the approved account S3 origin');
+  assert.deepEqual(policy['connect-src'].filter(origin=>origin.includes('cloudflarestorage.com')),[mapR2Origin]);
+}
 
 // Джерела з index.html, які стосуються конкретних директив, мають бути і в _headers.
 for(const name of ['default-src','script-src','style-src','img-src','connect-src','worker-src','object-src','base-uri','form-action']){
