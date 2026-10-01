@@ -53,6 +53,8 @@ async function gotoApp(page, baseUrl){
       const now = new Date();
       const pad = n => String(n).padStart(2, '0');
       localStorage.setItem('externalDailyBackupDate', `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+      // First-of-month backup reminder also covers unrelated UI; seed only this isolated fixture.
+      localStorage.setItem('cleanupReminderMonth', `${now.getFullYear()}-${pad(now.getMonth() + 1)}`);
     }catch(_e){}
   });
   await page.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });

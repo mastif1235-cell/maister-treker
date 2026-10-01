@@ -57,8 +57,14 @@ function loadModule(options={}){
   directory.failSlot='';
   const second=await api.install(new FakeFile('replacement.pmtiles',8192),{...prepared,size:8192,fileName:'replacement.pmtiles'});
   assert.equal(second.activeSlot,'map-b.pmtiles');assert.equal(directory.files.has('map-a.pmtiles'),false,'old slot is removed only after successful replacement');
-  const journal={mapId:'dnipro-oblast',version:'2026-09-30',url:'https://maps.example.test/file.pmtiles',totalSize:4096,downloadedBytes:100,targetSlot:'map-a.pmtiles',completed:false};
+  const journal={mapId:'dnipro-oblast',version:'2026-09-30',downloadId:'dnipro-oblast-2026-09-30',totalSize:4096,downloadedBytes:100,targetSlot:'map-a.pmtiles',completed:false};
   api.writeJournal(journal);assert.equal(api.readJournal().downloadedBytes,100);
+  api.writeJournal({...journal,url:'https://private.test/file?X-Amz-Signature=secret',token:'secret',credentials:{secret:'secret'},expiresAt:'secret'});
+  assert.equal(JSON.stringify(api.readJournal()).includes('secret'),false);assert.equal('url' in api.readJournal(),false);
+  assert.equal(local.get(api.JOURNAL_KEY).includes('secret'),false,'raw durable journal contains no URL, token or credentials');
+  const {downloadId,...oldJournal}=journal;local.set(api.JOURNAL_KEY,JSON.stringify({...oldJournal,url:'https://old-public.test/file.pmtiles'}));
+  assert.equal(api.readJournal().legacyIdentity,true);assert.equal(api.readJournal().downloadedBytes,100);assert.equal('url' in api.readJournal(),false);
+  api.writeJournal({...api.readJournal(),downloadId});assert.equal(local.get(api.JOURNAL_KEY).includes('old-public'),false);assert.equal('legacyIdentity' in api.readJournal(),false);
   await assert.rejects(()=>api.install(new FakeFile('manual.pmtiles')),/OFFLINE_MAP_PARTIAL_EXISTS/,'manual import cannot overwrite a paused download');
   await api.discardPartial();assert.equal(api.readJournal(),null);assert.equal(api.readMeta().activeSlot,'map-b.pmtiles');
   directory.files.set('map-a.pmtiles',{size:4096});api.writeJournal({...journal,downloadedBytes:4096});

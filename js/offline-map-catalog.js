@@ -1,6 +1,9 @@
-/* Public read-only hosting only. Set manifestUrl after the owner configures R2
-   and adds that exact HTTPS origin to connect-src in index.html + _headers.
-   No credentials, temporary URLs, r2.dev or 114 MB file in the PWA shell. */
+/* Public secret-free manifest; PMTiles stays in PRIVATE R2.
+   After separately authorized backend/auth setup, set manifestUrl and provide
+   root.getOfflineMapDownloadUrl(mapId, version, {downloadId, sha256, size, signal}).
+   It must use an authenticated signer and return matching identity plus
+   {url, expiresAt, etag?}. URLs are ephemeral; no R2/admin credentials here.
+   Allow only the exact manifest/signer/S3 HTTPS origins in index.html + _headers. */
 (function(root){
   'use strict';
   root.MTOfflineMapCatalog=Object.freeze([

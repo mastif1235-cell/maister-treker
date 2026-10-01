@@ -60,7 +60,7 @@ async function verify(file,m){
   for(const id of samples){check();const [z,x,y]=pmtiles.tileIdToZxy(id),tile=await archive.getZxy(z,x,y);if(!tile?.data?.byteLength)throw new Error('INTEGRITY_TILES');}
   return {fileName:m.file,size:file.size,header:{specVersion:h.specVersion,tileType:h.tileType,minZoom:h.minZoom,maxZoom:h.maxZoom,minLon:h.minLon,minLat:h.minLat,maxLon:h.maxLon,maxLat:h.maxLat,centerLon:h.centerLon,centerLat:h.centerLat,centerZoom:h.centerZoom},sha256};
 }
-async function run(m,j,directoryName){
+async function run(m,j,directoryName,downloadUrl){
   let handle=null,bytes=j.downloadedBytes,last=0,reader=null,result=null;
   let identity={etag:j.etag||'',lastModified:j.lastModified||''},phase='download';
   const checkpoint=()=>{
@@ -76,7 +76,8 @@ async function run(m,j,directoryName){
     check();
     if(bytes<m.size){
       const headers={};if(bytes){headers.Range=`bytes=${bytes}-`;if(j.etag)headers['If-Match']=j.etag;else if(j.lastModified)headers['If-Unmodified-Since']=j.lastModified;}
-      const response=await fetch(m.url,{headers,signal:abort.signal,cache:'no-store',credentials:'omit',redirect:'error'});
+      const response=await fetch(core.downloadUrl(downloadUrl).href,{headers,signal:abort.signal,cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
+      if(response.status===403)throw new Error('DOWNLOAD_URL_EXPIRED');
       identity=core.response(response.headers,response.status,bytes,m,j);
       if(!response.body)throw new Error('DOWNLOAD_BODY');
       checkpoint();reader=response.body.getReader();
@@ -102,5 +103,5 @@ async function run(m,j,directoryName){
 }
 onmessage=event=>{
   if(event.data.type==='stop'){stopped=true;abort?.abort();return;}
-  if(event.data.type==='start'&&!abort){stopped=false;abort=new AbortController();void run(event.data.manifest,event.data.journal,event.data.directory);}
+  if(event.data.type==='start'&&!abort){stopped=false;abort=new AbortController();void run(event.data.manifest,event.data.journal,event.data.directory,event.data.downloadUrl);}
 };

@@ -17,7 +17,7 @@ This registry documents ownership; it does not migrate, clear, or rename existin
 | localStorage | `mtToolsCalculatorDraftV1` | tools-domain | Tools diagnostic draft | Temporary | Personal data |
 | localStorage | `mtOfflineAreasV1` / `mtOfflineAreaBoundsV1` | tools-domain | Offline area UI metadata / legacy read compatibility | Persistent | No |
 | localStorage | `mtOfflineMapMetaV1` / `mtOfflineMapModeV1` | offline-map-storage | Active PMTiles slot metadata and mode | Persistent | No |
-| localStorage | `mtOfflineMapDownloadV1` | offline-map-storage / offline-map-downloader | Flushed byte checkpoint, inactive slot, public source/version/hash/HTTP validators; no file bytes | Until completion/deletion | No |
+| localStorage | `mtOfflineMapDownloadV1` | offline-map-storage / offline-map-downloader | Flushed byte checkpoint, inactive slot, map/object identity/version/hash/HTTP validators; no file bytes, signed URLs or auth tokens | Until completion/deletion | No |
 | localStorage | `mt-maptiler-key-v1` | maptiler-local-config | Device-local MapTiler BYOK key | Persistent | Yes; excluded from exports |
 | localStorage | `mt-map-layer-v1` | maptiler-local-config | Selected online layer | Persistent | No |
 | localStorage | `mt-single-writer-lease-v1` | single-writer-lock | Expiring fallback writer lease | Temporary lease | No |

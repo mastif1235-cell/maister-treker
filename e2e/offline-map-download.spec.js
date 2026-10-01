@@ -3,14 +3,23 @@ const {test,expect,gotoApp,waitServiceWorkerCacheReady}=require('./app-test');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {fixture}=require('../tests/helpers/offline-map-fixture');
 async function provider(appEnv){
-  const data=fixture(),requests=[];let manifest={...data.manifest},mode='normal';
+  const data=fixture(),requests=[];let manifest={...data.manifest},mode='normal',signatures=0;
   const server=http.createServer((req,res)=>{
     const cors={'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'ETag, Content-Range, Content-Length, Last-Modified','Cache-Control':'no-store'};
-    if(req.method==='OPTIONS'){res.writeHead(204,{...cors,'Access-Control-Allow-Methods':'GET, HEAD','Access-Control-Allow-Headers':'Range, If-Match, If-Unmodified-Since'}).end();return;}
+    if(req.method==='OPTIONS'){res.writeHead(204,{...cors,'Access-Control-Allow-Methods':'GET, HEAD','Access-Control-Allow-Headers':'Authorization, Range, If-Match, If-Unmodified-Since'}).end();return;}
     if(req.url==='/manifest.json'){res.writeHead(200,{...cors,'Content-Type':'application/json'}).end(JSON.stringify(manifest));return;}
-    if(req.url!=='/fixture.pmtiles'){res.writeHead(404,cors).end();return;}
+    const requested=new URL(req.url,'http://localhost');
+    if(requested.pathname==='/sign'){
+      // TEST ONLY entitlement mock, not a production signer/auth mechanism.
+      if(req.headers.authorization!=='Bearer test-authorized-user'){res.writeHead(401,cors).end();return;}
+      const mapId=requested.searchParams.get('mapId'),version=requested.searchParams.get('version');
+      if(mapId!==manifest.id||version!==manifest.version){res.writeHead(403,cors).end();return;}
+      res.writeHead(200,{...cors,'Content-Type':'application/json'}).end(JSON.stringify({mapId,version,downloadId:manifest.downloadId,sha256:manifest.sha256,size:manifest.size,url:`${url}/fixture.pmtiles?X-Amz-Signature=mock-${++signatures}`,expiresAt:new Date(Date.now()+600000).toISOString(),etag:'"fixture-v1"'}));return;
+    }
+    if(requested.pathname!=='/fixture.pmtiles'||!requested.searchParams.has('X-Amz-Signature')){res.writeHead(403,cors).end();return;}
     const range=req.headers.range,start=range?Number(/^bytes=(\d+)-$/.exec(range)?.[1]):0;
-    requests.push({range,start,ifMatch:req.headers['if-match']});
+    requests.push({range,start,ifMatch:req.headers['if-match'],signature:requested.searchParams.get('X-Amz-Signature')});
+    if(mode==='expired'||mode==='403'){if(mode==='expired')mode='normal';res.writeHead(403,cors).end();return;}
     const status=range&&mode!=='200'?206:200,at=status===206?start:0;
     res.writeHead(status,{...cors,'ETag':mode==='etag'?'"other"':'"fixture-v1"','Content-Length':data.bytes.length-at,'Content-Type':'application/octet-stream',...(status===206?{'Content-Range':`bytes ${mode==='range'?start+1:start}-${data.bytes.length-1}/${data.bytes.length}`}:{})});
     let position=at;
@@ -24,6 +33,7 @@ async function provider(appEnv){
   const url=`http://127.0.0.1:${server.address().port}`;
   const config=path.join(appEnv.dir,'js/offline-map-catalog.js');
   fs.writeFileSync(config,fs.readFileSync(config,'utf8').replace("manifestUrl:''",`manifestUrl:'${url}/manifest.json'`));
+  fs.appendFileSync(config,`\n// Isolated test auth/provider; never shipped in production.\nwindow.getOfflineMapDownloadUrl=async(mapId,version,{signal})=>{const response=await fetch('${url}/sign?'+new URLSearchParams({mapId,version}),{headers:{Authorization:'Bearer test-authorized-user'},credentials:'omit',cache:'no-store',redirect:'error',signal});if(!response.ok)throw new Error('Not authorized');return response.json();};\n`);
   const html=path.join(appEnv.dir,'index.html');fs.writeFileSync(html,fs.readFileSync(html,'utf8').replace("connect-src 'self'",`connect-src 'self' ${url}`));
   return {requests,url,manifest:()=>manifest,setManifest:value=>{manifest={...manifest,...value};},setMode:value=>{mode=value;},close:()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);})};
 }
@@ -45,6 +55,7 @@ for(const width of [320,360,390])test(`offline-map ${width}px: stream, stop, rel
     await expect(page.locator('#toolsOfflineDownloadBytes')).toContainText('%');await click(page,'stop');
     await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Завантаження призупинено');
     const journal=await page.evaluate(()=>MTOfflineMap.readJournal());expect(journal.downloadedBytes).toBeGreaterThan(0);expect(journal.downloadedBytes).toBeLessThan(journal.totalSize);expect(journal.completed).toBe(false);
+    const rawJournal=await page.evaluate(()=>localStorage.getItem(MTOfflineMap.JOURNAL_KEY));expect(rawJournal).not.toContain('X-Amz');expect(rawJournal).not.toContain('test-authorized-user');expect(journal.url).toBeUndefined();
     // Progress must not remount the map. A DOM sentinel survives chunks/stop.
     await page.evaluate(()=>document.getElementById('toolsLeafletMap').dataset.sentinel='kept');
     await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await open(page);
@@ -53,10 +64,11 @@ for(const width of [320,360,390])test(`offline-map ${width}px: stream, stop, rel
     await page.evaluate(()=>document.getElementById('toolsLeafletMap').dataset.sentinel='kept');
     await click(page,'start');await waitReady(page);
     expect(p.requests.at(-1).range).toBe(`bytes=${resume.downloadedBytes}-`);expect(p.requests.at(-1).ifMatch).toBe('"fixture-v1"');
+    expect(p.requests.at(-1).signature).not.toBe(p.requests[0].signature);
     expect(await page.locator('#toolsLeafletMap').getAttribute('data-sentinel')).toBe('kept');
     const meta=await page.evaluate(()=>MTOfflineMap.readMeta());expect(meta.completed).toBe(true);expect(meta.sha256).toBe(p.manifest().sha256);
     await page.locator('#toolsOfflineDownloadCard').screenshot({path:test.info().outputPath(`offline-map-${width}.png`)});
-    const cached=await page.evaluate(async()=>{const urls=(await Promise.all((await caches.keys()).map(async key=>(await (await caches.open(key)).keys()).map(r=>r.url)))).flat();return urls.filter(url=>url.endsWith('.pmtiles')||url.includes('/manifest.json')&&!url.endsWith(location.origin+'/manifest.json'));});expect(cached).toEqual([]);
+    const cached=await page.evaluate(async()=>{const urls=(await Promise.all((await caches.keys()).map(async key=>(await (await caches.open(key)).keys()).map(r=>r.url)))).flat();return urls.filter(url=>new URL(url).pathname.endsWith('.pmtiles')||url.includes('X-Amz-Signature')||url.includes('/manifest.json')&&!url.endsWith(location.origin+'/manifest.json'));});expect(cached).toEqual([]);
     await context.setOffline(true);await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await open(page);
     await page.locator('#toolsOfflineDownloadCard [data-tools-action="open-offline-map"]').click();
     await page.waitForFunction(()=>window.MTToolsMapLibreAdapter?.getMap()?.getStyle()?.sources?.['mt-offline']?.url?.startsWith('pmtiles://'));
@@ -117,4 +129,18 @@ test('offline-map: unsafe resume responses never append; missing network preserv
 });
 test('offline-map: unconfigured hosting is honest and download is disabled',async({page,appEnv})=>{
   await gotoApp(page,appEnv.url);await open(page);await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Завантаження ще не налаштовано');await expect(page.locator('[data-tools-action="offline-download-start"]')).toBeDisabled();
+});
+test('offline-map: expired signed GET renews with fresh signature and same Range; repeated 403 pauses, never broken',async({page,appEnv})=>{
+  const p=await provider(appEnv);
+  try{
+    expect((await fetch(p.url+'/sign?mapId=dnipro-oblast&version=2026-09-30')).status).toBe(401);
+    expect((await fetch(p.url+'/fixture.pmtiles')).status).toBe(403);
+    await gotoApp(page,appEnv.url);await open(page);await click(page,'start');await page.waitForFunction(()=>MTOfflineMap.readJournal()?.downloadedBytes>0);await click(page,'stop');await page.waitForFunction(()=>!MTOfflineDownloader.snapshot().busy);
+    const checkpoint=await page.evaluate(()=>MTOfflineMap.readJournal().downloadedBytes);
+    p.setMode('403');const before=p.requests.length;await click(page,'start');await page.waitForFunction(()=>!MTOfflineDownloader.snapshot().busy);
+    expect(p.requests.length-before).toBe(2);expect(await page.evaluate(()=>MTOfflineMap.readJournal().broken)).toBe(false);expect(await page.evaluate(()=>MTOfflineMap.readJournal().downloadedBytes)).toBe(checkpoint);
+    p.setMode('expired');await click(page,'start');await waitReady(page);
+    const [expired,fresh]=p.requests.slice(-2);expect(expired.range).toBe(`bytes=${checkpoint}-`);expect(fresh.range).toBe(expired.range);expect(fresh.ifMatch).toBe('"fixture-v1"');expect(fresh.signature).not.toBe(expired.signature);
+    expect(await page.evaluate(()=>MTOfflineMap.readMeta().sha256)).toBe(p.manifest().sha256);
+  }finally{await p.close();}
 });

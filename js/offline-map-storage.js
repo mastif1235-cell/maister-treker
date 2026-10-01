@@ -45,13 +45,18 @@
   }
   function writeMeta(value){local()?.setItem(META_KEY,JSON.stringify(value));}
   function clearMeta(){local()?.removeItem(META_KEY);}
+  function journalFields(value){
+    const fields=['mapId','version','downloadId','totalSize','sha256','downloadedBytes','etag','lastModified','targetSlot','startedAt','updatedAt','completed','broken'];
+    const safe={};for(const key of fields)if(Object.prototype.hasOwnProperty.call(value,key))safe[key]=value[key];return safe;
+  }
   function readJournal(){
     try{
       const j=JSON.parse(local()?.getItem(JOURNAL_KEY)||'null');
-      return j&&j.completed===false&&SLOTS.includes(j.targetSlot)&&j.targetSlot!==readMeta()?.activeSlot&&typeof j.mapId==='string'&&typeof j.url==='string'&&Number.isSafeInteger(j.totalSize)&&j.totalSize>=127&&Number.isSafeInteger(j.downloadedBytes)&&j.downloadedBytes>=0&&j.downloadedBytes<=j.totalSize?j:null;
+      if(!j||j.completed!==false||!SLOTS.includes(j.targetSlot)||j.targetSlot===readMeta()?.activeSlot||typeof j.mapId!=='string'||!(typeof j.downloadId==='string'||typeof j.url==='string')||!Number.isSafeInteger(j.totalSize)||j.totalSize<127||!Number.isSafeInteger(j.downloadedBytes)||j.downloadedBytes<0||j.downloadedBytes>j.totalSize)return null;
+      const safe=journalFields(j);if(!j.downloadId&&typeof j.url==='string')safe.legacyIdentity=true;return safe;
     }catch(_e){return null;}
   }
-  function writeJournal(value){local().setItem(JOURNAL_KEY,JSON.stringify(value));}
+  function writeJournal(value){local().setItem(JOURNAL_KEY,JSON.stringify(journalFields(value)));}
   function clearJournal(){local()?.removeItem(JOURNAL_KEY);}
   function withWriteLock(task){
     const locks=root.navigator?.locks;

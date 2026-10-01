@@ -18,7 +18,7 @@ function fixture(options={}){
   header[96]=1;header[97]=1;header[98]=1;header[99]=1;header[100]=0;header[101]=0;
   for(const [at,value] of [[102,32],[106,47],[110,37],[114,50],[119,34.5],[123,48.5]])header.writeInt32LE(Math.round(value*1e7),at);header[118]=0;
   const bytes=Buffer.concat([header,directory,metadata,tile,Buffer.alloc(size-leaf-tile.length)]);
-  const manifest={id:'dnipro-oblast',title:'Дніпропетровська область',version:'2026-09-30',source:'Protomaps / OpenStreetMap',license:'ODbL',attribution:'© OpenStreetMap contributors',file:'fixture.pmtiles',size:bytes.length,minZoom:0,maxZoom:0,displayMaxZoom:18,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),updatedAt:'2026-09-30T00:00:00Z'};
+  const manifest={id:'dnipro-oblast',title:'Дніпропетровська область',version:'2026-09-30',source:'Protomaps / OpenStreetMap',license:'ODbL',attribution:'© OpenStreetMap contributors',downloadId:'dnipro-oblast-2026-09-30',size:bytes.length,minZoom:0,maxZoom:0,displayMaxZoom:18,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),updatedAt:'2026-09-30T00:00:00Z'};
   return {bytes,manifest};
 }
 module.exports={fixture};
