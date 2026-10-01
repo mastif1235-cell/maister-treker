@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const core=require('../js/offline-map-download-core'),create=require('../js/offline-map-downloader');
+const root={};vm.createContext(root);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/offline-map-catalog.js'),'utf8'),root);
+const entry=root.MTOfflineMapCatalog[0];
+assert.equal(entry.id,'dnipro-oblast');
+assert.equal(entry.manifestUrl,'https://mastif1235-cell.github.io/maister-treker/docs/offline-maps/dnipro-oblast/manifest.json');
+const url=core.publicUrl(entry.manifestUrl);
+assert.equal(url.search,'');assert.equal(url.hash,'');assert.equal(url.username,'');assert.equal(url.password,'');
+const publicManifest=JSON.parse(fs.readFileSync(path.join(__dirname,'../docs/offline-maps/dnipro-oblast/manifest.json'),'utf8'));
+const manifest=core.manifest(publicManifest,url.href,entry.id);
+assert.equal(manifest.size,entry.size);assert.equal(manifest.downloadId,'dnipro-oblast-2026-09-30');
+assert.equal(manifest.sha256,'4ebb26c99a51407dab3a1d45cdfaef9f2d176003a1bdb19579caa1d9001877da');
+assert.equal(Object.keys(publicManifest).some(key=>/token|secret|credential|password|accesskey|url/i.test(key)),false);
+Object.assign(root,{MTOfflineDownloadCore:core,MTOfflineMap:{readMeta:()=>null,readJournal:()=>null},getOfflineMapDownloadUrl(){},fetch:async()=>new Response(JSON.stringify(publicManifest))});
+(async()=>{
+  const controller=create(root);assert.equal(controller.snapshot().configured,true);
+  await controller.refresh();assert.equal(controller.snapshot().message,'');assert.equal(controller.snapshot().manifest.id,'dnipro-oblast');
+  root.fetch=async()=>new Response('',{status:404});await controller.refresh();
+  assert.equal(controller.snapshot().configured,true);assert.equal(controller.snapshot().message,'MANIFEST_UNAVAILABLE');
+  console.log('PASS production catalog: exact secret-free Pages manifest, download configured, honest 404 fallback');
+})().catch(error=>{console.error(error);process.exitCode=1;});

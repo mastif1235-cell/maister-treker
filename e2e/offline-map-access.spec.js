@@ -1,6 +1,41 @@
 'use strict';
 const {test,expect,gotoApp}=require('./app-test');
 const {randomBytes}=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path');
+test('map access: shipped catalog loads public manifest and phone token enables download to signer at 320px',async({page,appEnv})=>{
+  const manifestUrl='https://mastif1235-cell.github.io/maister-treker/docs/offline-maps/dnipro-oblast/manifest.json';
+  const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'../docs/offline-maps/dnipro-oblast/manifest.json'),'utf8'));
+  const token=randomBytes(32).toString('base64url'),grants=[];
+  // Production Pages loads this URL under connect-src 'self'. The isolated
+  // localhost fixture has another origin; permit only the exact Pages origin there.
+  const html=path.join(appEnv.dir,'index.html');
+  fs.writeFileSync(html,fs.readFileSync(html,'utf8').replace("connect-src 'self'","connect-src 'self' https://mastif1235-cell.github.io"));
+  await page.route(manifestUrl,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(manifest),headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/offline-map/grant',async route=>{
+    grants.push({authorization:route.request().headers().authorization,body:JSON.parse(route.request().postData())});
+    // No real secrets or private R2 bytes in E2E; verify the exact download request and safe auth failure.
+    await route.fulfill({status:401,contentType:'application/json',body:'{}',headers:{'Access-Control-Allow-Origin':'*'}});
+  });
+  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
+  await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();
+  await page.waitForFunction(()=>MTOfflineDownloader.snapshot().manifest?.id==='dnipro-oblast',null,{timeout:30000});
+  expect(await page.evaluate(()=>MTOfflineMapCatalog[0].manifestUrl)).toBe(manifestUrl);
+  const card=page.locator('#toolsOfflineDownloadCard');
+  await expect(card).toContainText('Дніпропетровська область');
+  await expect(card).not.toContainText('Завантаження ще не налаштовано');
+  await card.locator('[data-tools-action="offline-download-token"]').click();
+  await page.locator('#offlineMapTokenInput').fill(token);await page.locator('#offlineMapTokenSave').click();
+  await expect(card).toContainText('✅ Доступ налаштовано');
+  const start=card.getByRole('button',{name:'Завантажити',exact:true});
+  await expect(start).toBeVisible();await expect(start).toBeEnabled();await start.scrollIntoViewIfNeeded();
+  expect(await start.evaluate(node=>node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await card.screenshot({path:test.info().outputPath('configured-map-download-320.png')});
+  await start.click();
+  await expect(card).toContainText('Немає доступу до карти. Введіть або замініть токен цього телефону.');
+  expect(grants).toEqual([{authorization:'Bearer '+token,body:{mapId:manifest.id,version:manifest.version,downloadId:manifest.downloadId,sha256:manifest.sha256,size:manifest.size}}]);
+  expect(await page.evaluate(t=>JSON.stringify(MTOfflineMap.readJournal()).includes(t)||document.body.textContent.includes(t),token)).toBe(false);
+});
 test('map access: encrypted per-phone credential survives reload, is hidden and deletion preserves local map',async({page,appEnv})=>{
   await page.setViewportSize({width:320,height:740});
   const token=randomBytes(32).toString('base64url');await gotoApp(page,appEnv.url);

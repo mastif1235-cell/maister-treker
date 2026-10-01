@@ -33,7 +33,7 @@ async function provider(appEnv){
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const url=`http://127.0.0.1:${server.address().port}`;
   const config=path.join(appEnv.dir,'js/offline-map-catalog.js');
-  fs.writeFileSync(config,fs.readFileSync(config,'utf8').replace("manifestUrl:''",`manifestUrl:'${url}/manifest.json'`));
+  fs.writeFileSync(config,fs.readFileSync(config,'utf8').replace(/manifestUrl:'[^']*'/,`manifestUrl:'${url}/manifest.json'`));
   fs.appendFileSync(config,`\n// Isolated test auth/provider; never shipped in production.\nwindow.getOfflineMapDownloadUrl=async(mapId,version,{signal})=>{const response=await fetch('${url}/sign?'+new URLSearchParams({mapId,version}),{headers:{Authorization:'Bearer test-authorized-user'},credentials:'omit',cache:'no-store',redirect:'error',signal});if(!response.ok)throw new Error('Not authorized');return response.json();};\n`);
   const html=path.join(appEnv.dir,'index.html');fs.writeFileSync(html,fs.readFileSync(html,'utf8').replace("connect-src 'self'",`connect-src 'self' ${url}`));
   return {requests,url,manifest:()=>manifest,setManifest:value=>{manifest={...manifest,...value};},setMode:value=>{mode=value;},close:()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);})};
@@ -129,6 +129,9 @@ test('offline-map: unsafe resume responses never append; missing network preserv
   }finally{await p.close();}
 });
 test('offline-map: unconfigured hosting is honest and download is disabled',async({page,appEnv})=>{
+  // Explicitly simulate missing hosting in the isolated copy, not the shipped catalog.
+  const config=path.join(appEnv.dir,'js/offline-map-catalog.js');
+  fs.writeFileSync(config,fs.readFileSync(config,'utf8').replace(/manifestUrl:'[^']*'/,"manifestUrl:''"));
   await gotoApp(page,appEnv.url);await open(page);await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Завантаження ще не налаштовано');await expect(page.locator('[data-tools-action="offline-download-start"]')).toBeDisabled();
 });
 test('offline-map: expired signed GET renews with fresh signature and same Range; repeated 403 pauses, never broken',async({page,appEnv})=>{
