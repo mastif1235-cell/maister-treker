@@ -125,6 +125,7 @@ function mtSettingsSecretsPreparePersist(source){
    Так токен не втрачається при першому старті оновленого застосунку, а
    введений у UI новий токен (vault) не перезаписується старим. */
 async function mtSettingsSecretsRestoreIntoSettings(){
+  await mtOfflineMapTokenRestore();
   if(typeof settings === 'undefined' || !settings) return false;
   const legacy = mtSettingsSecretsExtract(settings);
   const hadLegacyPlaintext = MT_SETTINGS_SECRET_KEYS.some(key => legacy[key]);
@@ -160,6 +161,48 @@ async function mtSettingsSecretsRestoreIntoSettings(){
     }
   }catch(_e){ /* пошкоджений raw — не критично, його перезапише saveSettings() */ }
   return true;
+}
+
+/* Map-only credential is deliberately NOT a settings property. Its separate
+   encrypted record uses the existing vault key/DB, never the legacy plaintext
+   fallback, export, sync or settings diagnostics. */
+let mtOfflineMapAccessToken = '';
+let mtOfflineMapTokenPersistent = false;
+const MT_OFFLINE_MAP_TOKEN_RECORD = '__offlineMapAccessV1';
+function mtOfflineMapTokenGet(){ return mtOfflineMapAccessToken; }
+function mtOfflineMapTokenStatus(){ return {configured:!!mtOfflineMapAccessToken,persistent:mtOfflineMapTokenPersistent}; }
+async function mtOfflineMapTokenRestore(){
+  mtOfflineMapAccessToken='';mtOfflineMapTokenPersistent=false;
+  if(!mtSettingsSecretsVaultAvailable())return;
+  try{
+    const record=await backupDbGet(MT_OFFLINE_MAP_TOKEN_RECORD),key=await backupDbGet(MT_SETTINGS_SECRETS_KEY_RECORD);
+    if(!record||record.version!==1||!key)return;
+    const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv)},key,new Uint8Array(record.ciphertext));
+    const token=new TextDecoder().decode(plain);
+    if(/^[A-Za-z0-9_-]{32,128}$/.test(token)){mtOfflineMapAccessToken=token;mtOfflineMapTokenPersistent=true;}
+  }catch(_e){} // Fail closed; a local map remains usable.
+}
+async function mtOfflineMapTokenSet(value){
+  const token=String(value||'').trim();
+  if(token&&!/^[A-Za-z0-9_-]{32,128}$/.test(token))throw new Error('MAP_TOKEN_INVALID');
+  // First invalidate the previous disk credential. Never report successful
+  // replacement/deletion if the old token could silently return on reload.
+  if(mtSettingsSecretsVaultAvailable()){
+    try{if(!await backupDbPut(MT_OFFLINE_MAP_TOKEN_RECORD,{version:1,cleared:true}))throw new Error();}
+    catch(_e){
+      if(mtOfflineMapTokenPersistent)throw new Error('MAP_TOKEN_STORAGE');
+      mtOfflineMapAccessToken=token;mtOfflineMapTokenPersistent=false;return mtOfflineMapTokenStatus();
+    }
+  }else if(mtOfflineMapTokenPersistent){throw new Error('MAP_TOKEN_STORAGE');}
+  mtOfflineMapAccessToken=token;mtOfflineMapTokenPersistent=false;
+  if(!token||!mtSettingsSecretsVaultAvailable())return mtOfflineMapTokenStatus();
+  try{
+    const key=await mtSettingsSecretsVaultKey();if(!key)return mtOfflineMapTokenStatus();
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(token)));
+    mtOfflineMapTokenPersistent=!!await backupDbPut(MT_OFFLINE_MAP_TOKEN_RECORD,{version:1,iv,ciphertext});
+  }catch(_e){} // Session-memory only, never plaintext fallback.
+  return mtOfflineMapTokenStatus();
 }
 
 /* Останній шанс записати свіжій секрет у vault, коли користувач ховає

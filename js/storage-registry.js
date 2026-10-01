@@ -16,6 +16,7 @@
     offlineAreas:{key:'mtOfflineAreasV1',owner:'tools-domain',persistence:'persistent',secret:false},
     offlineLegacyBounds:{key:'mtOfflineAreaBoundsV1',owner:'tools-domain',persistence:'legacy-read',secret:false},
     offlineMeta:{key:'mtOfflineMapMetaV1',owner:'offline-map-storage',persistence:'persistent',secret:false},
+    offlineDownload:{key:'mtOfflineMapDownloadV1',owner:'offline-map-storage',persistence:'persistent',secret:false},
     offlineMode:{key:'mtOfflineMapModeV1',owner:'offline-map-storage',persistence:'persistent',secret:false},
     mapTilerKey:{key:'mt-maptiler-key-v1',owner:'maptiler-local-config',persistence:'device-secret',secret:true},
     mapLayer:{key:'mt-map-layer-v1',owner:'maptiler-local-config',persistence:'persistent',secret:false},

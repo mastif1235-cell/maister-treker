@@ -1,5 +1,6 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-119';
+const CACHE_NAME = 'maister-treker-v67-runtime-120';
 const CORE_ASSETS = [
+  './js/offline-map-catalog.js','./js/offline-map-download-provider.js','./js/offline-map-download-core.js','./js/offline-map-downloader.js','./js/offline-map-download-worker.js','./js/offline-map-sha256.js','./js/tools-offline-download-ui.js',
   './js/tools-speedtest-edge.js',
   './js/address-book.js','./js/address-book-link.js','./js/address-book-linker.js','./js/address-book-sync.js','./js/address-book-ui.js',
   './','./index.html','./dogovor-secure.html','./d.html','./d.js','./dogovor-secure.js','./styles.css','./qrcode.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/leaflet.js','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png','./vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/maplibre-gl.mjs','./vendor/maplibre/maplibre-gl-shared.mjs','./vendor/maplibre/maplibre-gl-worker.mjs','./vendor/maplibre/LICENSE.txt','./vendor/pmtiles/pmtiles.js','./vendor/pmtiles/LICENSE.txt',
@@ -141,6 +142,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   if (e.request.method !== 'GET') return;
+  // Large archives live only in local file storage. No-store fetches (manifest /
+  // Range downloads) must never be served from or written to the shell cache.
+  if(/\.pmtiles$/i.test(url.pathname)||(e.request.cache==='no-store'&&e.request.destination===''))return;
   if(e.request.mode === 'navigate'){
     e.respondWith((async()=>{
       const hit=await caches.match(e.request,{ignoreSearch:true})||await caches.match('./index.html');

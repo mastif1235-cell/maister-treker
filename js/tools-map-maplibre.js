@@ -179,9 +179,9 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const sourceId='mt-offline',url=`pmtiles://${key}`,attribution=String(metadata?.attribution||stored.info?.attribution||'© OpenStreetMap contributors');
     if(Number(header.tileType)===1){
       const vectorLayers=Array.isArray(metadata?.vector_layers)?metadata.vector_layers:[];if(!vectorLayers.length)throw new Error('VECTOR_LAYERS_METADATA_MISSING');
-      return{style:{version:8,sources:{[sourceId]:{type:'vector',url,attribution}},layers:[...blankStyle().layers,...createOfflineVectorLayers(sourceId,vectorLayers)]},header};
+      return{style:{version:8,sources:{[sourceId]:{type:'vector',url,attribution}},layers:[...blankStyle().layers,...createOfflineVectorLayers(sourceId,vectorLayers)]},header,displayMaxZoom:Number(stored.info?.displayMaxZoom)||22};
     }
-    if([2,3,4,5].includes(Number(header.tileType)))return{style:{version:8,sources:{[sourceId]:{type:'raster',url,tileSize:256,attribution}},layers:[...blankStyle().layers,{id:'mt-offline-raster',type:'raster',source:sourceId}]},header};
+    if([2,3,4,5].includes(Number(header.tileType)))return{style:{version:8,sources:{[sourceId]:{type:'raster',url,tileSize:256,attribution}},layers:[...blankStyle().layers,{id:'mt-offline-raster',type:'raster',source:sourceId}]},header,displayMaxZoom:Number(stored.info?.displayMaxZoom)||22};
     throw new Error(`UNSUPPORTED_TILE_TYPE_${header.tileType}`);
   };
   const switchBaseLayer=async(kind,statusNode=currentOptions.statusNode,options={})=>{
@@ -189,13 +189,13 @@ export function createMapLibreAdapter(gl,root=globalThis){
     styleStatusNode=statusNode;styleStatusMessage=options.message||'';
     const generation=++styleGeneration;
     if(kind==='offline'){
-      try{const prepared=await offlineStyle();if(generation!==styleGeneration)return false;currentBase='offline';map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
+      try{const prepared=await offlineStyle();if(generation!==styleGeneration)return false;currentBase='offline';map.setMaxZoom?.(prepared.displayMaxZoom);map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
       catch(error){if(generation!==styleGeneration)return false;root.MTSafeError?.reportError?.(error,{scope:'map-offline-style'});setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
     }else if(kind==='satellite'){
       if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн.');return false;}
       const key=root.MTMapTilerLocal?.getKey?.();if(!key){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
-      currentBase='satellite';map.setStyle(createSatelliteStyle(key));
-    }else{currentBase='map';offlineBounds=null;map.setStyle(createOsmStyle());}
+      currentBase='satellite';map.setMaxZoom?.(22);map.setStyle(createSatelliteStyle(key));
+    }else{currentBase='map';offlineBounds=null;map.setMaxZoom?.(22);map.setStyle(createOsmStyle());}
     scheduleOverlayRestore(generation);
     setEmptyState(false);
     if(options.remember!==false){if(currentBase==='offline')root.MTOfflineMap?.setMode?.('offline');else root.MTMapTilerLocal?.saveLayer?.(currentBase);}
@@ -206,10 +206,10 @@ export function createMapLibreAdapter(gl,root=globalThis){
     if(kind==='satellite'){
       const key=root.MTMapTilerLocal?.getKey?.();
       if(root.navigator?.onLine===false||!key){picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,!key?'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.':'Супутникова карта доступна лише онлайн.');return false;}
-      picker.map.setStyle(createSatelliteStyle(key));setStatus(pickerStatusNode,'');return true;
+      picker.map.setMaxZoom?.(22);picker.map.setStyle(createSatelliteStyle(key));setStatus(pickerStatusNode,'');return true;
     }
-    if(kind!=='offline'){picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'');return true;}
-    try{const prepared=await offlineStyle();picker.map.setStyle(prepared.style);setStatus(pickerStatusNode,'Офлайн-карта активна.');return true;}
+    if(kind!=='offline'){picker.map.setMaxZoom?.(22);picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'');return true;}
+    try{const prepared=await offlineStyle();picker.map.setMaxZoom?.(prepared.displayMaxZoom);picker.map.setStyle(prepared.style);setStatus(pickerStatusNode,'Офлайн-карта активна.');return true;}
     catch(error){root.MTSafeError?.reportError?.(error,{scope:'map-picker-offline-style'});picker.map.setStyle(createOsmStyle());setStatus(pickerStatusNode,'Офлайн-карта не встановлена. Залишено звичайну карту.');return false;}
   };
   const handleConnectivityChange=()=>{

@@ -42,6 +42,7 @@ import {createGroqClient} from './ask/groq.js';
 import {createDeepSeekClient} from './ask/deepseek.js';
 import {createAskOrchestrator} from './ask/orchestrator.js';
 import {TOOL_DEFINITIONS} from './tools/definitions.js';
+import {createMapGrantHandler} from './offline-map/grant.js';
 
 const SECURITY_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -108,6 +109,7 @@ function jsonResponse(status, body, extraHeaders){
 
 export function createApp(env, deps){
   deps = deps || {};
+  const mapGrant = createMapGrantHandler(env, deps.mapGrant);
   /* Per-request execution context holder: Cloudflare passes a fresh ctx to
      every fetch/scheduled invocation; the snapshot provider uses it for
      background writes (stale-while-revalidate). */
@@ -368,6 +370,8 @@ export function createApp(env, deps){
   async function handler(request){
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
+
+    if(path === '/offline-map/grant') return mapGrant(request);
 
     if(request.method === 'OPTIONS' && (path === '/ask' || path === '/ai/config' || path === '/healthz' || path === '/directory')){
       return new Response(null, {status:204, headers:Object.assign({}, CORS_HEADERS)});

@@ -57,6 +57,22 @@ function loadModule(options={}){
   directory.failSlot='';
   const second=await api.install(new FakeFile('replacement.pmtiles',8192),{...prepared,size:8192,fileName:'replacement.pmtiles'});
   assert.equal(second.activeSlot,'map-b.pmtiles');assert.equal(directory.files.has('map-a.pmtiles'),false,'old slot is removed only after successful replacement');
+  const journal={mapId:'dnipro-oblast',version:'2026-09-30',downloadId:'dnipro-oblast-2026-09-30',totalSize:4096,downloadedBytes:100,targetSlot:'map-a.pmtiles',completed:false};
+  api.writeJournal(journal);assert.equal(api.readJournal().downloadedBytes,100);
+  api.writeJournal({...journal,url:'https://private.test/file?X-Amz-Signature=secret',token:'secret',credentials:{secret:'secret'},expiresAt:'secret'});
+  assert.equal(JSON.stringify(api.readJournal()).includes('secret'),false);assert.equal('url' in api.readJournal(),false);
+  assert.equal(local.get(api.JOURNAL_KEY).includes('secret'),false,'raw durable journal contains no URL, token or credentials');
+  const {downloadId,...oldJournal}=journal;local.set(api.JOURNAL_KEY,JSON.stringify({...oldJournal,url:'https://old-public.test/file.pmtiles'}));
+  assert.equal(api.readJournal().legacyIdentity,true);assert.equal(api.readJournal().downloadedBytes,100);assert.equal('url' in api.readJournal(),false);
+  api.writeJournal({...api.readJournal(),downloadId});assert.equal(local.get(api.JOURNAL_KEY).includes('old-public'),false);assert.equal('legacyIdentity' in api.readJournal(),false);
+  await assert.rejects(()=>api.install(new FakeFile('manual.pmtiles')),/OFFLINE_MAP_PARTIAL_EXISTS/,'manual import cannot overwrite a paused download');
+  await api.discardPartial();assert.equal(api.readJournal(),null);assert.equal(api.readMeta().activeSlot,'map-b.pmtiles');
+  directory.files.set('map-a.pmtiles',{size:4096});api.writeJournal({...journal,downloadedBytes:4096});
+  const manifest={id:'dnipro-oblast',version:'2026-09-30',size:4096,file:'file.pmtiles',sha256:'a'.repeat(64),title:'Дніпропетровська область',source:'Protomaps / OpenStreetMap',license:'ODbL',attribution:'© OpenStreetMap contributors',displayMaxZoom:18,updatedAt:'2026-09-30T00:00:00Z'};
+  const download=await api.activateDownload(manifest,journal,{...prepared,sha256:manifest.sha256});
+  assert.equal(download.activeSlot,'map-a.pmtiles');assert.equal(download.completed,true);assert.equal(api.readJournal(),null);assert.equal(directory.files.has('map-b.pmtiles'),false);
+  directory.files.set('map-b.pmtiles',{size:1024}); // deletion includes crash leftovers
   assert.equal(await api.remove(),true);assert.equal(await api.installed(),null);assert.equal(JSON.parse(local.get('unrelated')).tickets,3,'map deletion removes only PMTiles');
+  assert.equal(directory.files.size,0,'both slots, including inactive garbage, removed');
   console.log('PASS PMTiles validation, quota, persistence, safe replacement and isolated deletion');
 })().catch(error=>{console.error(error);process.exitCode=1;});

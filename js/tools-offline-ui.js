@@ -4,6 +4,7 @@ function toolsBoundsLabel(header={}){
 }
 async function toolsPrepareOfflineMap(file,areaId=toolsOfflineImportAreaId){
   if(!file)return;
+  if(MTOfflineMap.readJournal?.()){showToast('Спочатку видаліть незавершене завантаження карти');return;}
   const fileName=String(file.name||'').toLowerCase();
   if(fileName.endsWith('.json')){
     let isAreaParameters=false;
@@ -23,7 +24,7 @@ async function toolsPrepareOfflineMap(file,areaId=toolsOfflineImportAreaId){
       document.getElementById('toolsOfflineMapConfirmBtn').onclick=async event=>{
         const button=event.currentTarget;button.disabled=true;button.textContent='Зберігаю…';
         try{await MTOfflineMap.install(file,info,{areaId:area?.id||''});toolsOfflineImportAreaId='';closeModal();renderToolsScreen('offline');showToast('✅ Офлайн-карту встановлено');}
-        catch(_e){button.disabled=false;button.textContent='Спробувати ще';showToast('Не вдалося зберегти карту. Попередню карту не змінено');}
+        catch(error){button.disabled=false;button.textContent='Спробувати ще';showToast(error?.message==='OFFLINE_MAP_BUSY'?'Карта вже змінюється в іншій вкладці.':'Не вдалося зберегти карту. Попередню карту не змінено');}
       };
     }});
   }catch(error){
@@ -33,7 +34,7 @@ async function toolsPrepareOfflineMap(file,areaId=toolsOfflineImportAreaId){
 }
 async function toolsDeleteOfflineMap(){
   if(!await openConfirmModal({title:'Видалити офлайн-карту?',message:'Буде видалено лише офлайн-карту. Заявки, точки, фото й налаштування залишаться.',confirmLabel:'Видалити',danger:true}))return;
-  const ok=await MTOfflineMap.remove();
+  const ok=typeof MTOfflineDownloader!=='undefined'?await MTOfflineDownloader.remove():await MTOfflineMap.remove();
   if(ok){renderToolsScreen(toolsView==='offline'?'offline':'map');showToast('Офлайн-карту видалено');}else showToast('Не вдалося видалити офлайн-карту');
 }
 function toolsOfflineSelectionHtml(value){
