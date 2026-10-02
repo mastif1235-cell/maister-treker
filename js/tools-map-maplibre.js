@@ -30,6 +30,8 @@ export function createSatelliteStyle(key){
 function blankStyle(){return{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#eef1ed'}}]};}
 const OFFLINE_TEXT_FONT=['Arial','Roboto','Noto Sans','sans-serif'];
 const offlineTextField=['coalesce',['get','name:uk'],['get','name'],['get','name:en']];
+const offlineHasName=['any',['has','name:uk'],['has','name'],['has','name:en']];
+const offlineLocalRoad=['any',['==',['get','kind'],'minor_road'],['in',['get','kind_detail'],['literal',['residential','service','unclassified','living_street','pedestrian','alley','driveway']]]];
 const sourceLayer=(sourceId,name,layer)=>({id:`mt-offline-${name}`,source:sourceId,'source-layer':layer});
 export function createOfflineVectorLayers(sourceId,vectorLayers){
   const available=new Set((vectorLayers||[]).map(layer=>String(layer?.id||'')).filter(Boolean)),result=[];
@@ -58,8 +60,12 @@ export function createOfflineVectorLayers(sourceId,vectorLayers){
     {id:'roads-highway',type:'line',filter:['==',['get','kind'],'highway'],paint:{'line-color':'#efb77f','line-width':['interpolate',['linear'],['zoom'],7,.8,12,2.4,16,7]}},
     {id:'roads-major',type:'line',filter:['==',['get','kind'],'major_road'],paint:{'line-color':'#f6d8a7','line-width':['interpolate',['linear'],['zoom'],8,.7,12,2.1,16,6.4]}},
     {id:'roads-minor',type:'line',filter:['in',['get','kind'],['literal',['minor_road','path']]],paint:{'line-color':['match',['get','kind'],'path','#dedbd3','#ffffff'],'line-width':['interpolate',['linear'],['zoom'],11,.5,14,1.8,17,4.6]}},
-    {id:'road-labels',type:'symbol',minzoom:14,filter:['all',['==',['geometry-type'],'LineString'],['has','name']],layout:{'symbol-placement':'line','text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],14,10,17,13],'text-max-angle':35,'text-padding':3},paint:{'text-color':'#55534f','text-halo-color':'#ffffff','text-halo-width':1.2}}
+    {id:'road-labels',type:'symbol',minzoom:14,filter:['all',['==',['geometry-type'],'LineString'],offlineHasName,['!',offlineLocalRoad]],layout:{'symbol-placement':'line','text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],14,10,16,12,18,14],'symbol-spacing':['interpolate',['linear'],['zoom'],14,200,18,120],'text-max-angle':45,'text-padding':2,'text-allow-overlap':false},paint:{'text-color':'#55534f','text-halo-color':'#ffffff','text-halo-width':1.2}},
+    {id:'road-labels-local',type:'symbol',minzoom:14,filter:['all',['==',['geometry-type'],'LineString'],offlineHasName,offlineLocalRoad],layout:{'symbol-placement':'line','text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],14,10,15,11,17,12,18,13],'symbol-spacing':['interpolate',['linear'],['zoom'],14,180,16,110,18,75],'text-max-angle':60,'text-padding':1,'text-allow-overlap':false},paint:{'text-color':'#55534f','text-halo-color':'#ffffff','text-halo-width':1.2}}
   );
+  // Audited Protomaps 4.15.2: address points are in buildings at native Z15.
+  // Building polygons have no numbers; do not invent fields or double-label them.
+  if((vectorLayers||[]).some(layer=>layer.id==='buildings'&&layer.fields?.addr_housenumber))add('buildings',{id:'house-numbers',type:'symbol',minzoom:16,filter:['all',['==',['geometry-type'],'Point'],['==',['get','kind'],'address'],['has','addr_housenumber']],layout:{'text-field':['get','addr_housenumber'],'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],16,10,17,11,18,12],'text-padding':.5,'text-variable-anchor':['center','top','bottom','left','right'],'text-radial-offset':.2,'text-allow-overlap':false,'text-ignore-placement':true},paint:{'text-color':'#4d4944','text-halo-color':'#ffffff','text-halo-width':1.3}});
   add('places',{id:'place-labels',type:'symbol',filter:['all',['==',['geometry-type'],'Point'],['has','name']],layout:{'text-field':offlineTextField,'text-font':OFFLINE_TEXT_FONT,'text-size':['interpolate',['linear'],['zoom'],6,11,12,15],'text-padding':4,'text-allow-overlap':false},paint:{'text-color':'#3d4547','text-halo-color':'#f7f8f4','text-halo-width':1.4}});
   return result;
 }

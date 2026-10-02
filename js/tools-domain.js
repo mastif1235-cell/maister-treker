@@ -126,13 +126,11 @@ function openToolsDiagnosticsFromProfile(ids=[]){
 
 function toolsMapHtml(){
   const objects=MTToolsCore.mapObjects(tickets,toolsNetworkPoints);
-  const offline=MTOfflineMap?.readMeta?.();
   const filters=MTToolsCore.MAP_CATEGORIES.map(category=>{
     const meta=MTToolsMap.CATEGORY_META[category];
     return `<button type="button" class="tools-map-filter active" data-map-filter="${escapeHtml(category)}" aria-pressed="true">${meta.icon} ${escapeHtml(meta.label)}</button>`;
   }).join('');
   return `${toolsBackButton()}
-    <div id="toolsOfflineMapCompactStatus" class="tools-offline-map-meta" role="status" style="margin:0 0 9px;">${offline?`✅ Офлайн-карта встановлена · ${(offline.size/1000000).toFixed(1)} МБ`:'Офлайн-карта не встановлена'}</div>
     <div id="toolsMapStatus" class="tools-map-status hidden" role="status"></div>
     <div class="tools-map-shell ${toolsMapFullscreen?'tools-map-fullscreen':''}"><div class="tools-map" id="toolsLeafletMap" aria-label="Інтерактивна карта об’єктів"></div><div class="tools-map-service-controls" aria-label="Дії карти"><button type="button" class="tools-map-floating-btn" data-tools-action="map-my-location" aria-label="Моє місце" title="Моє місце">🎯</button><button type="button" class="tools-map-floating-btn" data-tools-action="map-add-object" aria-label="Додати об’єкт" title="Додати об’єкт">＋</button></div><div class="tools-map-fullscreen-control"><button type="button" class="tools-map-floating-btn" data-tools-action="map-toggle-fullscreen" aria-label="${toolsMapFullscreen?'Вийти з повноекранної карти':'Відкрити карту на весь екран'}" title="${toolsMapFullscreen?'Вийти':'На весь екран'}">${toolsMapFullscreen?'✕':'⛶'}</button></div><div id="toolsMapEmptyState" class="tools-map-empty hidden"><strong>Офлайн-підкладка для цієї області не встановлена.</strong><div>Маркери доступні без підкладки. Керування офлайн-картою знаходиться в Налаштуваннях.</div></div></div>
     <div class="tools-map-filters" id="toolsMapFilters" aria-label="Фільтри об’єктів карти"><button type="button" class="tools-map-filter active" data-map-filter="all" aria-pressed="true">Усі</button><button type="button" class="tools-map-filter" data-map-filter="none" aria-pressed="false">Зняти всі</button>${filters}</div>

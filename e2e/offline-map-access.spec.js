@@ -9,12 +9,14 @@ async function openSettings(page){
   await page.locator('#settingsHubContent details').filter({has:page.locator('#openOfflineMapSettingsBtn')}).locator('summary').click();
   await page.locator('#openOfflineMapSettingsBtn').click();await expect(page.locator('#toolsOfflineDownloadCard')).toBeVisible();
 }
-test('offline-map UX: main map has compact status only; full controls are in Settings at 320px',async({page,appEnv})=>{
+test('offline-map UX: main map has no permanent install status; full controls are in Settings at 320px',async({page,appEnv})=>{
   await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
   await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();
   await expect(page.locator('#toolsOfflineDownloadCard')).toHaveCount(0);
-  await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveText('Офлайн-карта не встановлена');
+  await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveCount(0);
   await expect(page.locator('[data-tools-action="offline-download-token"]')).toHaveCount(0);
+  await page.locator('[data-mt-base-layer="offline"]').click();
+  await expect(page.locator('#toolsMapStatus')).toContainText('Офлайн-карта не встановлена');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await openSettings(page);
   await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Дніпропетровська область');

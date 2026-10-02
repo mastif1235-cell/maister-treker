@@ -2,8 +2,8 @@
 const {test,expect,gotoApp,waitServiceWorkerCacheReady}=require('./app-test');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {fixture}=require('../tests/helpers/offline-map-fixture');
-async function provider(appEnv){
-  const data=fixture(),requests=[];let manifest={...data.manifest},mode='normal',signatures=0;
+async function provider(appEnv,fixtureOptions={}){
+  const data=fixture(fixtureOptions),requests=[];let manifest={...data.manifest},mode='normal',signatures=0;
   const server=http.createServer((req,res)=>{
     const cors={'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'ETag, Content-Range, Content-Length, Last-Modified','Cache-Control':'no-store'};
     if(req.method==='OPTIONS'){res.writeHead(204,{...cors,'Access-Control-Allow-Methods':'GET, HEAD','Access-Control-Allow-Headers':'Authorization, Range, If-Match, If-Unmodified-Since'}).end();return;}
@@ -46,6 +46,34 @@ async function open(page){
   await page.locator('#openOfflineMapSettingsBtn').click();await expect(page.locator('#toolsOfflineDownloadCard')).toBeVisible();
 }
 const click=(page,action)=>page.locator(`#toolsOfflineDownloadCard [data-tools-action="offline-download-${action}"]`).click();
+test('offline address detail: actual audited Dnipro Z15 tile renders house numbers and local streets at Z16–18',async({page,appEnv,context})=>{
+  const p=await provider(appEnv,{addressDetail:true});
+  try{
+    await page.setViewportSize({width:390,height:844});await gotoApp(page,appEnv.url);await open(page);
+    await page.waitForFunction(()=>MTOfflineDownloader.snapshot().manifest!==null);
+    await click(page,'start');await waitReady(page);await page.locator('[data-tools-action="open-offline-map"]').click();
+    await page.waitForFunction(()=>MTToolsMapLibreAdapter.getMap().getSource('mt-offline'));
+    await context.setOffline(true);
+    for(const zoom of [16,17,18]){
+      await page.evaluate(({zoom,center})=>MTToolsMapLibreAdapter.getMap().jumpTo({center,zoom}),{zoom,center:require('../tests/fixtures/dnipro-address-tile.json').viewCenter});
+      await page.waitForFunction(()=>{
+        const map=MTToolsMapLibreAdapter.getMap();return map.isStyleLoaded()&&map.queryRenderedFeatures({layers:['mt-offline-house-numbers']}).length>0&&map.queryRenderedFeatures({layers:['mt-offline-road-labels-local']}).length>0;
+      },null,{timeout:30000}).catch(async error=>{
+        console.log('ADDRESS_RENDER_DIAGNOSTIC',await page.evaluate(()=>{const m=MTToolsMapLibreAdapter.getMap();return{loaded:m.isStyleLoaded(),zoom:m.getZoom(),status:document.getElementById('toolsMapStatus').textContent,layers:m.getStyle().layers.map(l=>l.id),sourceAddresses:m.querySourceFeatures('mt-offline',{sourceLayer:'buildings'}).filter(f=>f.properties.addr_housenumber).length,renderedHouses:m.queryRenderedFeatures({layers:['mt-offline-house-numbers']}).length,renderedRoads:m.queryRenderedFeatures({layers:['mt-offline-road-labels-local']}).length};}));
+        throw error;
+      });
+      const rendered=await page.evaluate(()=>{
+        const m=MTToolsMapLibreAdapter.getMap();return{houses:m.queryRenderedFeatures({layers:['mt-offline-house-numbers']}).map(f=>f.properties),streets:m.queryRenderedFeatures({layers:['mt-offline-road-labels-local']}).map(f=>f.properties)};
+      });
+      expect(rendered.houses.every(p=>p.kind==='address'&&p.addr_housenumber)).toBe(true);
+      expect(rendered.streets.every(p=>p['name:uk']||p.name||p['name:en'])).toBe(true);
+      await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveCount(0);await expect(page.locator('#toolsOfflineDownloadCard')).toHaveCount(0);
+      await page.locator('#toolsScreenRoot').screenshot({path:test.info().outputPath(`dnipro-real-addresses-z${zoom}.png`)});
+    }
+    await open(page);await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('✅ Офлайн-карта готова');
+    await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Версія: 2026-09-30');
+  }finally{await p.close();}
+});
 async function waitReady(page){await page.waitForFunction(()=>MTOfflineDownloader.snapshot().phase==='ready'&&!MTOfflineDownloader.snapshot().busy,null,{timeout:30000});await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('✅ Офлайн-карта готова');}
 async function confirmDelete(page,action){
   await click(page,action);await page.locator('#modalRoot').getByRole('button',{name:'Видалити',exact:true}).click();
@@ -86,8 +114,8 @@ for(const width of [320,360,390])test(`offline-map ${width}px: stream, stop, rel
     await page.waitForFunction(()=>MTToolsMapLibreAdapter.getMap().getZoom()===18);
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenStreetMap');
     await expect(page.locator('#toolsOfflineDownloadCard')).toHaveCount(0);
-    await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveText(`✅ Офлайн-карта встановлена · ${(meta.size/1000000).toFixed(1)} МБ`);
-    await page.locator('#toolsScreenRoot').screenshot({path:test.info().outputPath(`offline-map-compact-status-${width}.png`)});
+    await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveCount(0);
+    await page.locator('#toolsScreenRoot').screenshot({path:test.info().outputPath(`offline-map-no-install-status-${width}.png`)});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await open(page);
     const buttonHeights=await page.locator('#toolsOfflineDownloadCard .btn').evaluateAll(buttons=>buttons.map(b=>b.getBoundingClientRect().height));expect(buttonHeights.every(h=>h>=44)).toBe(true);

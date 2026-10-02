@@ -14,8 +14,6 @@ function toolsOfflineDownloadMessage(code){
   return messages[code]||(code?(navigator.onLine===false?'Немає мережі. Завантаження призупинено.':'Завантаження призупинено. Перевірте мережу та спробуйте продовжити.'): '');
 }
 function toolsUpdateOfflineDownloadUi(state=MTOfflineDownloader.snapshot()){
-  const compact=document.getElementById('toolsOfflineMapCompactStatus');
-  if(compact)compact.textContent=state.active?`✅ Офлайн-карта встановлена · ${(state.active.size/1000000).toFixed(1)} МБ`:'Офлайн-карта не встановлена';
   const node=document.getElementById('toolsOfflineDownloadCard');if(!node)return;
   const item=MTOfflineMapCatalog[0],m=state.manifest,j=state.journal,active=state.active;
   const downloading=['checking','downloading','stopping','verifying'].includes(state.phase),ready=active?.mapId===item.id;
