@@ -2,6 +2,7 @@
    Dictionaries are data, not question-specific branches. A selected item is
    NOT proof of installation. Evidence exposes only matched vocabulary, never
    the surrounding note (which may contain customer information). */
+import {reconcileWork} from './work-reconciliation.js';
 export const ENTITIES = [
   {id:'onu_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:onu|ont|ону|онушк[а-я]*)'},
   {id:'router_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:роутер[а-я]*|маршрутизатор[а-я]*|router)'},
@@ -53,7 +54,7 @@ export function normalizeEntity(value){
 }
 export function validateSemantic(raw){
   if(!raw || typeof raw!=='object' || Array.isArray(raw)) return null;
-  if(Object.keys(raw).some(k => !['entity','action','category','signal_context'].includes(k))) return null;
+  if(Object.keys(raw).some(k => !['entity','action','category','signal_context','profile'].includes(k))) return null;
   const out = {};
   if(raw.entity!==undefined){ out.entity=normalizeEntity(raw.entity); if(!out.entity) return null; }
   if(raw.action!==undefined){ if(!EVENT_ACTIONS.includes(raw.action)) return null; out.action=raw.action; }
@@ -61,6 +62,11 @@ export function validateSemantic(raw){
   out.category=raw.category || 'definite';
   if(raw.signal_context!==undefined && !['subscriber','input','any'].includes(raw.signal_context)) return null;
   out.signal_context=raw.signal_context || 'subscriber';
+  if(raw.profile!==undefined){
+    if(!['work_v2','onu_physical'].includes(raw.profile))return null;
+    if(raw.profile==='onu_physical'&&(out.entity!=='onu'||out.action!=='install'))return null;
+    out.profile=raw.profile;
+  }
   return out;
 }
 const PRIVATE_LINE = /^\s*(?:Пароль|Лог[іи]н|Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера|ПовніДаніJSON)\s*:/i;
@@ -91,7 +97,7 @@ export function extractSignals(text){
 export function directCoworkers(ticket){
   return [...new Set((ticket.connectMasters || []).map(n => String(typeof n==='string'?n:n&&n.name||'').trim()).filter(Boolean))];
 }
-export function workEvents(ticket, legacyText){
+export function workEvents(ticket, legacyText, options={}){
   const coworkers=directCoworkers(ticket);
   const sources=[{kind:'public_text',text:legacyText}];
   for(const k of ['note','abonentNote','otherNote']) sources.push({kind:k,text:ticket[k]});
@@ -174,12 +180,15 @@ export function workEvents(ticket, legacyText){
   // A unique ticket reading cannot be assigned to several different actions
   // without timing/context proof. Ticket-level statistics still use it.
   if(metric.length===1 && metricTargets.length===1) metricTargets[0].metric=metric[0];
-  return {events,signals};
+  const analysis={events,signals};
+  return options.profile?reconcileWork(ticket,analysis,sources.map(s=>publicText(s.text))):analysis;
 }
 
 export function semanticMatches(event, filter){
   if(filter.entity && event.entity!==filter.entity) return false;
-  if(filter.action && filter.action!=='mention' && event.action!==filter.action) return false;
+  if(filter.profile==='onu_physical'){
+    if(!['install','replace'].includes(event.action))return false;
+  }else if(filter.action && filter.action!=='mention' && event.action!==filter.action) return false;
   return filter.category==='all' || event.category===filter.category;
 }
 export function semanticSignal(analysis, filter){

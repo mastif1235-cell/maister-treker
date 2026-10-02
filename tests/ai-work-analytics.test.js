@@ -5,7 +5,7 @@ const posted=[];
 const sandbox={MTAI:{config:{LIMITS:{questionMaxChars:2000},DEFAULT_PROVIDER:'groq',DEFAULT_MODEL:'test'},storage:{get:()=>({})}},setTimeout,clearTimeout,AbortController,console};
 sandbox.globalThis=sandbox;
 vm.runInNewContext(read('js/ai/ai-client.js'),sandbox);
-const semantic={entity:'onu',action:'install',category:'definite',signal_context:'subscriber'};
+const semantic={entity:'onu',action:'install',category:'definite',signal_context:'subscriber',profile:'onu_physical'};
 const client=sandbox.MTAI.createClient({getConfig:()=>({backendUrl:'https://test.invalid',bearer:'synthetic'}),fetchImpl:async(url,options)=>{posted.push(JSON.parse(options.body));return {ok:true,status:200,json:async()=>({ok:true,answer:'ok',queryContext:{resolved_filters:{semantic}}})};}});
 (async()=>{
   const response=await client.ask('test',[],{queryContext:{resolved_filters:{semantic,coworker:'Петя',note:'private'}}});
@@ -16,6 +16,12 @@ const client=sandbox.MTAI.createClient({getConfig:()=>({backendUrl:'https://test
   assert.equal(posted[1].context,undefined,'bad semantic context must not leave a wider city-only filter');
   await client.ask('test',[],{queryContext:{resolved_filters:{semantic:{unknown_filter:'X'},city:'X'}}});
   assert.equal(posted[2].context,undefined,'unknown semantic keys also fail closed');
+  for(const profile of ['unsafe','__proto__']){
+    await client.ask('test',[],{queryContext:{resolved_filters:{semantic:{...semantic,profile},city:'X'}}});
+    assert.equal(posted.at(-1).context,undefined,'unknown computed profile cannot widen a query');
+  }
+  await client.ask('test',[],{queryContext:{resolved_filters:{semantic:{...semantic,entity:'router'},city:'X'}}});
+  assert.equal(posted.at(-1).context,undefined,'ONU physical profile cannot be applied to a router');
   assert.match(read('js/ai/ai-ui.js'),/ai-work-evidence-actions/);
   assert.match(read('js/ai/ai-config.js'),/Скільки ONU встановив/);
   console.log('ai-work-analytics frontend: PASS');

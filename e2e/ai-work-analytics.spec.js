@@ -8,7 +8,7 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   const {runSmartQuery}=await load('smart-query.js');
   const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
   const texts=['Установил ONU, сигнал -21','Сигнал ONU -29','Проверил ONU','Заменил БП ONU','Заменил ONU','Поставил ONU и роутер','С Петей подключили абонента, поставили ONU и роутер','ONU клиента, сигнал -25'];
-  const tickets=texts.map((text,i)=>({id:'ABCDEFGH'[i],date:'15.09.2026',time:'10:00',sum:100,connectMasters:i===6?['Петя']:[],equipment:[],cables:[],presetWorks:[],additionalWork:[],tags:[]}));
+  const tickets=texts.map((text,i)=>({id:'ABCDEFGH'[i],date:'15.09.2026',time:'10:00',sum:100,type:i===6?'Підключення':'Ремонт',macAddress:i===6?'001122334455':'',connectMasters:i===6?['Петя']:[],equipment:[],cables:[],presetWorks:[],additionalWork:[],tags:[]}));
   const ctx={tickets,shifts:[{date:'15.09.2026',coworker:'Петя',hours:8}],searchIndex:texts.map((text,i)=>({id:tickets[i].id,text}))};
   const queries=[];
   const orch=createAskOrchestrator({groq:{chat(){throw new Error('No approximate LLM counts');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery(ctx,p);}},toolDefs:TOOL_DEFINITIONS});
@@ -30,6 +30,9 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   const exactFilters=query=>Object.fromEntries(['semantic','date_from','date_to','coworker'].map(key=>[key,query[key]]));
   expect(exactFilters(queries[1])).toEqual(exactFilters(queries[0]));
   expect(queries[1].coworker).toBe('петей');
+  expect(queries[1].semantic.profile).toBe('onu_physical');
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('direct_ticket');
+  await expect(page.locator('.ai-msg-assistant').last()).not.toContainText('001122334455');
   await expect(page.locator('#aiSendBtn')).toBeEnabled();
   await page.locator('#aiInput').fill('Почему так посчитано?');await page.locator('#aiSendBtn').click();
   await expect.poll(()=>queries.length).toBe(3);

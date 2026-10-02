@@ -613,6 +613,11 @@ export function runSmartQuery(ctx, params){
   const workById = new Map();
   const ambiguousWork = new Set();
   const excludedWork = new Set();
+  const legacyCoworkerRows=[];
+  const coworkerProof=new Map();
+  const physicalScope=[];
+  // A roster makes a tag a candidate, never a proven direct selection.
+  const knownMasters=semantic?.profile?[...new Set(tickets.flatMap(directCoworkers).concat(shifts.flatMap(s=>String(s.coworker||'').split(',').map(n=>n.trim()))).filter(Boolean))]:[];
 
   for(const t of tickets){
     /* v91.48: a legacy date format («5.7.2026») must not silently exclude a
@@ -693,7 +698,7 @@ export function runSmartQuery(ctx, params){
     if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) continue;
     if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) continue;
 
-    const analysis = semantic ? workEvents(t, legacyText) : null;
+    const analysis = semantic ? workEvents(t, legacyText, semantic) : null;
     if(analysis) workById.set(t.id, analysis);
     const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);
     let signalAccepts=true;
@@ -732,9 +737,10 @@ export function runSmartQuery(ctx, params){
     if(coworkerQuery){
       const direct = semantic ? directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) : (t.connectMasters || []).some(function(name){ return coworkerNameMatches(name, coworkerQuery); });
       if(direct) coworkerEvidence = 'direct';
+      else if(semantic?.profile && (t.tags||[]).some(tag=>knownMasters.some(name=>normItem(name)===normItem(tag))&&semanticCoworkerNameMatches(tag,coworkerQuery)))coworkerEvidence='legacy_master_tag';
       else if(!semantic && coworkerShiftDates.has(String(t.date))) coworkerEvidence = 'same_day_shift';
       if(!coworkerEvidence) continue;
-      reasons.push('напарник:' + (coworkerEvidence === 'direct' ? 'заявка (структурно)' : 'збіг за зміною того ж дня'));
+      reasons.push('напарник:' + (coworkerEvidence === 'direct' ? 'заявка (структурно)' : coworkerEvidence==='legacy_master_tag'?'legacy master tag (кандидат)':'збіг за зміною того ж дня'));
     }
 
     const itemReasons = [];
@@ -753,6 +759,14 @@ export function runSmartQuery(ctx, params){
       continue;
     }
     reasons.push.apply(reasons, itemReasons);
+    if(semantic?.profile){
+      coworkerProof.set(t.id,coworkerEvidence==='legacy_master_tag'?'legacy_master_tag':'direct_ticket');
+      if(coworkerEvidence==='legacy_master_tag'){
+        if(analysis.events.some(e=>semanticMatches(e,semantic)))legacyCoworkerRows.push(t);
+        continue; // ambiguous coworker provenance never enters definite totals
+      }
+      physicalScope.push(t);
+    }
     if(semantic && (semantic.entity || semantic.action)){
       const relevant=analysis.events.filter(e => !semantic.entity || e.entity===semantic.entity);
       if(relevant.some(e => e.category==='ambiguous' && (!semantic.action || e.action===semantic.action || e.action==='mention'))) ambiguousWork.add(t.id);
@@ -963,6 +977,16 @@ export function runSmartQuery(ctx, params){
       base.work_totals.ambiguous_tickets=Array.from(ambiguousWork).filter(id=>!list.some(t=>t.id===id)).length;
       base.work_totals.excluded_tickets=excludedWork.size;
       base.work_totals.count_policy='definite_by_default; quantity_only_explicit; direct_coworker_only';
+      if(semantic.profile){
+        base.work_totals.legacy_coworker_candidates=legacyCoworkerRows.length;
+        base.work_totals.business_derived_quantity_events=list.flatMap(t=>workById.get(t.id).events.filter(e=>semanticMatches(e,semantic)&&e.quantity_source==='business_derived')).length;
+        base.work_totals.count_policy='definite_direct; legacy_tags_candidate_only; explicit_or_business_derived_quantity';
+        if(semantic.profile==='onu_physical'){
+          const placements=list.flatMap(t=>workById.get(t.id).events.filter(e=>e.category==='definite'&&semanticMatches(e,semantic)));
+          const excludedContexts=physicalScope.filter(t=>!placements.some(e=>e.ticket_id===String(t.id))).flatMap(t=>workById.get(t.id).contexts||[]);
+          base.work_totals.onu_breakdown={new_connections:placements.filter(e=>e.install_origin==='connection').length,standalone_installs:placements.filter(e=>e.action==='install'&&e.install_origin!=='connection').length,replacements:placements.filter(e=>e.action==='replace').length,total_physical_placements:placements.length,customer_owned_excluded:excludedContexts.filter(e=>e.reason==='customer_owned_onu').length,reused_excluded:excludedContexts.filter(e=>e.reason==='reused_onu_transfer').length};
+        }
+      }
     }
     const limit = args.params.limit == null ? 50 : args.params.limit;
     const offset = args.params.offset || 0;
@@ -1021,6 +1045,11 @@ export function runSmartQuery(ctx, params){
     });
     if(semantic){
       base.evidence=list.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,coworkers:directCoworkers(t).slice(0,10),events:(workById.get(t.id)?.events||[]).filter(e=>semanticMatches(e,semantic)).slice(0,20)}));
+      if(semantic.profile){
+        base.evidence.forEach(row=>{row.coworker_reason=coworkerQuery?coworkerProof.get(row.ticket_id):undefined;});
+        base.legacy_evidence=legacyCoworkerRows.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,reason:'legacy_master_tag',category:'ambiguous',events:workById.get(t.id).events.filter(e=>semanticMatches(e,semantic)).slice(0,3)}));
+        base.exclusion_evidence=physicalScope.filter(t=>!workById.get(t.id).events.some(e=>e.category==='definite'&&semanticMatches(e,semantic))).flatMap(t=>(workById.get(t.id).contexts||[]).map(e=>({ticket_id:validateTicketId(t.id)||'',date:t.date,reason:e.reason,category:'excluded',evidence:e.evidence}))).slice(offset,offset+limit);
+      }
     }
     /* full-set analytics (independent of the page above); city spellings are
        collapsed by canonicalCityKey so one real city never doubles up. */
