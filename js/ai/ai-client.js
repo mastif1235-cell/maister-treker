@@ -204,7 +204,7 @@ MTAI.createClient = function(options){
         if(typeof v === 'string' && QC_ID_RE.test(v)) out[key] = v.toLowerCase();
       }else if(key === 'semantic'){
         if(!v || typeof v !== 'object' || Array.isArray(v)) return null;
-        if(Object.keys(v).some(function(k){return !['entity','action','category','signal_context'].includes(k);})) return null;
+        if(Object.keys(v).some(function(k){return !['entity','action','category','signal_context','profile'].includes(k);})) return null;
         const sem={};
         const entities=['onu','onu_power_supply','router','router_power_supply','power_supply','cable','fiber','splice','splitter','patchcord','connector','box','connection'];
         const actions=['install','replace','remove','check','configure','repair','restore','lay','weld','move','connect','measure','complete','mention','fault','measurement'];
@@ -212,6 +212,7 @@ MTAI.createClient = function(options){
         if(v.action!==undefined){if(!actions.includes(v.action)) return null;sem.action=v.action;}
         if(v.category!==undefined){if(!['definite','ambiguous','excluded','all'].includes(v.category)) return null;sem.category=v.category;}
         if(v.signal_context!==undefined){if(!['subscriber','input','any'].includes(v.signal_context)) return null;sem.signal_context=v.signal_context;}
+        if(v.profile!==undefined){if(!['work_v2','onu_physical'].includes(v.profile))return null;if(v.profile==='onu_physical'&&(sem.entity!=='onu'||sem.action!=='install'))return null;sem.profile=v.profile;}
         out.semantic=sem;
       }else if(key === 'tags'){
         if(Array.isArray(v)) out[key] = v.slice(0,20).map(function(t){ return String(t == null ? '' : t).slice(0,60); }).filter(Boolean);

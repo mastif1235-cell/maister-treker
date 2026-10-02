@@ -25,7 +25,7 @@ export function workIntent(question,now){
   const semantic={};
   if(entities.length) semantic.entity=entities[0].id;
   if(actions.length) semantic.action=actions[0].id;
-  if(semantic.entity==='connection' && (!semantic.action || semantic.action==='connect')) semantic.action='complete';
+   if(semantic.entity==='connection' && (!semantic.action || semantic.action==='connect')) semantic.action='complete';
   if(/упоминан|згадк/iu.test(q)){semantic.action='mention';semantic.category='all';}
   if(signalQuestion && semantic.entity==='onu' && !semantic.action) delete semantic.entity;
   const params={mode:/покаж|показать/iu.test(q)?'list':/средн|середн|худш|найгір|лучш|найкращ/iu.test(q)?'stats':'count',semantic};
@@ -52,11 +52,13 @@ export function workIntent(question,now){
   for(const def of ENTITIES.concat(ACTIONS)) residual=residual.replace(new RegExp('(?<![\\p{L}\\p{N}])(?:'+def.pattern.replaceAll('[а-я]','[а-яіїєґ]')+')(?![\\p{L}\\p{N}])','giu'),' ');
   if(coworker) residual=residual.replace(coworker[0],' ');
   if(threshold) residual=residual.replace(threshold[0],' ');
+  if(semantic.entity==='connection')residual=residual.replace(/(?<![\p{L}])(?:пров[её]л[аи]?|пров[іе]в|виконав)(?![\p{L}])/giu,' ');
   residual=residual.replace(/[\d.,:?!-]+/g,' ');
   const filler=/^(?:сколько|скільки|я|ми|мы|покажи|покажіть|показать|показати|сделал|зробив|зробили|бы[лв][а-я]*|бул[а-я]*|за|в|у|з|с|по|до|эт[а-я]*|ц[еь][а-я]*|прошл[а-я]*|минул[а-я]*|сегодня|сьогодні|вчера|вчора|недел[а-я]*|тижд[а-я]*|месяц[а-я]*|місяц[а-яь]*|последн[а-я]*|останн[а-яі]*|дней|дня|днів|год|рік|время|час|все|всё|увесь|весь|январ[а-я]*|феврал[а-я]*|март[а-я]*|апрел[а-я]*|ма[йяе]|июн[а-я]*|июл[а-я]*|август[а-я]*|сентябр[а-я]*|октябр[а-я]*|ноябр[а-я]*|декабр[а-я]*|січн[а-яі]*|лют[а-яі]*|берез[а-яі]*|квіт[а-яі]*|трав[а-яі]*|черв[а-яі]*|лип[а-яі]*|серп[а-яі]*|верес[а-яі]*|жовт[а-яі]*|листопад[а-яі]*|груд[а-яі]*|заявок|заявки|заяв[а-я]*|сигнал[а-я]*|dBm|дбм|средн[а-я]*|середн[а-яі]*|худш[а-я]*|найгірш[а-яі]*|самый|самая|най|лучш[а-я]*|найкращ[а-яі]*|был|чаще|всего|найчаст[а-яі]*|какое|яке|оборудован[а-я]*|обладнан[а-яі]*|каждым|кожним|по|напарник[а-яі]*|с|кем|з|ким|упоминан[а-я]*|згадк[а-яі]*)$/iu;
   if(residual.split(/[^\p{L}]+/u).filter(Boolean).some(t=>!filler.test(t))) return null;
   semantic.category=semantic.category||'definite';
-  semantic.signal_context=semantic.signal_context||'subscriber';
+   semantic.signal_context=semantic.signal_context||'subscriber';
+   semantic.profile=semantic.entity==='onu'&&semantic.action==='install'?'onu_physical':'work_v2';
   return params;
 }
 
@@ -67,13 +69,20 @@ export function workAnswer(data,params){
   const period=params.date_from||params.date_to ? (params.date_from||'…')+'–'+(params.date_to||'…') : 'увесь час';
   const sem=data.resolved_filters.semantic;
   const lines=['Період: '+period+'.', 'Знайдено '+totals.tickets+' заявок; '+totals.events+' подій ('+(sem.entity||'усі обʼєкти')+' / '+(sem.action||'аналіз сигналу')+').'];
-  if(totals.quantity_known_events) lines.push('Явно вказана кількість: '+totals.quantity_sum+'; подій без кількості: '+totals.quantity_unknown_events+'.');
+   if(totals.onu_breakdown){
+     const b=totals.onu_breakdown;
+     lines.push('Нові підключення: '+b.new_connections+'; окремі установки: '+b.standalone_installs+'; заміни: '+b.replacements+'.');
+     lines.push('Всього фізичних встановлень ONU (подій): '+b.total_physical_placements+'. ONU абонента виключено: '+b.customer_owned_excluded+'; перенос/повторне використання: '+b.reused_excluded+'.');
+   }
+   if(totals.quantity_known_events) lines.push((totals.business_derived_quantity_events?'Відома кількість (включає business-derived з підключень): ':'Явно вказана кількість: ')+totals.quantity_sum+'; подій без кількості: '+totals.quantity_unknown_events+'.');
+    if(totals.legacy_coworker_tickets)lines.push('У '+totals.legacy_coworker_tickets+' заявках майстер вказаний в історичному тезі самої заявки (legacy_master_tag); включено в definite підрахунок, не за зміною.');
   if(totals.ambiguous_tickets) lines.push('Ще '+totals.ambiguous_tickets+' заявок неоднозначні — не включені в основний підрахунок.');
   if(params.mode==='stats') lines.push('Сума заявок: '+totals.money_sum+' грн. Сигнал: середній '+(totals.signal.average??'не вказано')+', найгірший '+(totals.signal.min??'не вказано')+', найкращий '+(totals.signal.max??'не вказано')+' dBm.');
   if(params.mode==='group') for(const group of totals.groups) lines.push(group.key+': '+group.tickets+' заявок, '+group.events+' подій.');
   if(data.evidence){
     lines.push('Показано '+data.evidence.length+' із '+totals.tickets+' заявок.');
-    data.evidence.forEach((row,i)=>lines.push((i+1)+'. '+row.date+' · '+row.ticket_id+' · '+(data.tickets[i]?.address||'адреса не вказана')+' · '+(row.coworkers.join(', ')||'напарник не вказаний')+' — '+row.events.slice(0,3).map(e=>e.evidence+' ('+e.reason+')').join('; ')+(row.events.length>3?' …':'')));
+      data.evidence.forEach((row,i)=>lines.push((i+1)+'. '+row.date+' · '+row.ticket_id+' · '+(data.tickets[i]?.address||'адреса не вказана')+' · '+(row.coworker_reason==='legacy_master_tag'?params.coworker||'майстер':row.coworkers.join(', ')||'напарник не вказаний')+(row.coworker_reason?' ('+row.coworker_reason+': '+(row.coworker_reason==='legacy_master_tag'?'майстер вказаний в історичному тезі самої заявки':'майстер прямо вказаний у заявці')+')':'')+' — '+row.events.slice(0,3).map(e=>e.evidence+' ('+e.reason+')').join('; ')+(row.events.length>3?' …':'')));
+      for(const row of data.exclusion_evidence||[])lines.push('Виключено: '+row.ticket_id+' · '+row.reason+' · '+row.evidence+'.');
   }
   lines.push('Установки, заміни, зняття, перевірки та прості згадки розділено. Кількість одиниць не вигадується. Для перевірки: «Показати заявки» або «Чому так пораховано?»');
   return lines.join('\n');
