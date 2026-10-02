@@ -127,20 +127,18 @@ function openToolsDiagnosticsFromProfile(ids=[]){
 function toolsMapHtml(){
   const objects=MTToolsCore.mapObjects(tickets,toolsNetworkPoints);
   const offline=MTOfflineMap?.readMeta?.();
-  const mode=MTOfflineMap?.getMode?.()||'auto';
   const filters=MTToolsCore.MAP_CATEGORIES.map(category=>{
     const meta=MTToolsMap.CATEGORY_META[category];
     return `<button type="button" class="tools-map-filter active" data-map-filter="${escapeHtml(category)}" aria-pressed="true">${meta.icon} ${escapeHtml(meta.label)}</button>`;
   }).join('');
   return `${toolsBackButton()}
-    ${typeof toolsOfflineDownloadHtml==='function'?toolsOfflineDownloadHtml():''}
+    <div id="toolsOfflineMapCompactStatus" class="tools-offline-map-meta" role="status" style="margin:0 0 9px;">${offline?`✅ Офлайн-карта встановлена · ${(offline.size/1000000).toFixed(1)} МБ`:'Офлайн-карта не встановлена'}</div>
     <div id="toolsMapStatus" class="tools-map-status hidden" role="status"></div>
     <div class="tools-map-shell ${toolsMapFullscreen?'tools-map-fullscreen':''}"><div class="tools-map" id="toolsLeafletMap" aria-label="Інтерактивна карта об’єктів"></div><div class="tools-map-service-controls" aria-label="Дії карти"><button type="button" class="tools-map-floating-btn" data-tools-action="map-my-location" aria-label="Моє місце" title="Моє місце">🎯</button><button type="button" class="tools-map-floating-btn" data-tools-action="map-add-object" aria-label="Додати об’єкт" title="Додати об’єкт">＋</button></div><div class="tools-map-fullscreen-control"><button type="button" class="tools-map-floating-btn" data-tools-action="map-toggle-fullscreen" aria-label="${toolsMapFullscreen?'Вийти з повноекранної карти':'Відкрити карту на весь екран'}" title="${toolsMapFullscreen?'Вийти':'На весь екран'}">${toolsMapFullscreen?'✕':'⛶'}</button></div><div id="toolsMapEmptyState" class="tools-map-empty hidden"><strong>Офлайн-підкладка для цієї області не встановлена.</strong><div>Маркери доступні без підкладки. Керування офлайн-картою знаходиться в Налаштуваннях.</div></div></div>
     <div class="tools-map-filters" id="toolsMapFilters" aria-label="Фільтри об’єктів карти"><button type="button" class="tools-map-filter active" data-map-filter="all" aria-pressed="true">Усі</button><button type="button" class="tools-map-filter" data-map-filter="none" aria-pressed="false">Зняти всі</button>${filters}</div>
     ${objects.length?'':'<div class="card" style="font-size:12px;color:var(--text-dim);">Немає об’єктів із координатами. Додайте геолокацію до профілю або створіть точку мережі.</div>'}
     <div class="card tools-network-groups-card"><div class="row between wrap"><strong>Об’єкти мережі</strong><span class="tools-offline-map-meta">${toolsNetworkPoints.length}</span></div><div class="field" style="margin-top:8px;"><label>Пошук об’єктів</label><input type="search" role="searchbox" name="mt-internal-network-search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" inputmode="search" id="toolsNetworkSearch" value="${escapeHtml(toolsNetworkSearch)}" placeholder="ID, тип, місто, вулиця, будинок, примітка"></div><div id="toolsNetworkGroups">${toolsNetworkGroupsHtml()}</div></div>
     <div class="row wrap tools-map-actions"><button type="button" class="btn" data-tools-action="map-bind-address" style="flex:1 0 100%;">📍 Прив’язати існуючу адресу</button></div>
-    <div class="tools-offline-map-meta" style="margin:-2px 0 9px;">${offline?`✅ Офлайн-карта встановлена · ${escapeHtml(MTOfflineMap.formatBytes(offline.size))} · режим ${escapeHtml(mode)}`:'Офлайн-карта не встановлена'}</div>
     <details class="tools-map-info"><summary>ⓘ Про карту</summary><div>Звичайна підкладка: OpenStreetMap. Супутникова: MapTiler із власним ключем користувача. Постачальник плиток отримує лише координати видимої ділянки — без ПІБ, телефонів, адресного тексту, MAC, нотаток, фото чи історії.</div></details>`;
 }
 function toolsNetworkGroupsHtml(){
@@ -339,7 +337,7 @@ function renderToolsScreen(view){
     root.innerHTML=(typeof toolsOfflineDownloadHtml==='function'?toolsOfflineDownloadHtml():'')+toolsOfflineHtml();requestAnimationFrame(()=>{MTToolsMap.mount(document.getElementById('toolsOfflineSelectMap'),[],{statusNode:document.getElementById('toolsOfflineSelectStatus')});if(toolsOfflinePendingBounds)setTimeout(()=>MTToolsMap.drawBounds(toolsOfflinePendingBounds),0);});
   }
   else{toolsView='home';root.innerHTML=toolsHomeHtml();}
-  if((toolsView==='map'||toolsView==='offline')&&typeof toolsInitOfflineDownloadUi==='function')toolsInitOfflineDownloadUi();
+  if(toolsView==='offline'&&typeof toolsInitOfflineDownloadUi==='function')toolsInitOfflineDownloadUi();
 }
 function bindToolsScreen(){
   const root=document.getElementById('toolsScreenRoot');

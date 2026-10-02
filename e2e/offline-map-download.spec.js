@@ -38,7 +38,13 @@ async function provider(appEnv){
   const html=path.join(appEnv.dir,'index.html');fs.writeFileSync(html,fs.readFileSync(html,'utf8').replace("connect-src 'self'",`connect-src 'self' ${url}`));
   return {requests,url,manifest:()=>manifest,setManifest:value=>{manifest={...manifest,...value};},setMode:value=>{mode=value;},close:()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);})};
 }
-async function open(page){await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();await expect(page.locator('#toolsOfflineDownloadCard')).toBeVisible();}
+async function open(page){
+  await page.click('.tab-btn[data-tab="settings"]');
+  if(await page.locator('#settingsHubBackBtn').isVisible())await page.locator('#settingsHubBackBtn').click();
+  await page.locator('[data-settings-hub="data"]').click();
+  await page.locator('#settingsHubContent details').filter({has:page.locator('#openOfflineMapSettingsBtn')}).locator('summary').click();
+  await page.locator('#openOfflineMapSettingsBtn').click();await expect(page.locator('#toolsOfflineDownloadCard')).toBeVisible();
+}
 const click=(page,action)=>page.locator(`#toolsOfflineDownloadCard [data-tools-action="offline-download-${action}"]`).click();
 async function waitReady(page){await page.waitForFunction(()=>MTOfflineDownloader.snapshot().phase==='ready'&&!MTOfflineDownloader.snapshot().busy,null,{timeout:30000});await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('✅ Офлайн-карта готова');}
 async function confirmDelete(page,action){
@@ -58,16 +64,17 @@ for(const width of [320,360,390])test(`offline-map ${width}px: stream, stop, rel
     const journal=await page.evaluate(()=>MTOfflineMap.readJournal());expect(journal.downloadedBytes).toBeGreaterThan(0);expect(journal.downloadedBytes).toBeLessThan(journal.totalSize);expect(journal.completed).toBe(false);
     const rawJournal=await page.evaluate(()=>localStorage.getItem(MTOfflineMap.JOURNAL_KEY));expect(rawJournal).not.toContain('X-Amz');expect(rawJournal).not.toContain('test-authorized-user');expect(journal.url).toBeUndefined();
     // Progress must not remount the map. A DOM sentinel survives chunks/stop.
-    await page.evaluate(()=>document.getElementById('toolsLeafletMap').dataset.sentinel='kept');
+    await page.evaluate(()=>document.getElementById('toolsOfflineSelectMap').dataset.sentinel='kept');
     await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await open(page);
     await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Продовжити');
     const resume=await page.evaluate(()=>MTOfflineMap.readJournal());expect(resume.downloadedBytes).toBe(journal.downloadedBytes);
-    await page.evaluate(()=>document.getElementById('toolsLeafletMap').dataset.sentinel='kept');
+    await page.evaluate(()=>document.getElementById('toolsOfflineSelectMap').dataset.sentinel='kept');
     await click(page,'start');await waitReady(page);
     expect(p.requests.at(-1).range).toBe(`bytes=${resume.downloadedBytes}-`);expect(p.requests.at(-1).ifMatch).toBe('"fixture-v1"');
     expect(p.requests.at(-1).signature).not.toBe(p.requests[0].signature);
-    expect(await page.locator('#toolsLeafletMap').getAttribute('data-sentinel')).toBe('kept');
+    expect(await page.locator('#toolsOfflineSelectMap').getAttribute('data-sentinel')).toBe('kept');
     const meta=await page.evaluate(()=>MTOfflineMap.readMeta());expect(meta.completed).toBe(true);expect(meta.sha256).toBe(p.manifest().sha256);
+    await expect(page.locator('#toolsOfflineDownloadCard')).toContainText(`Версія: ${meta.version}`);
     await page.locator('#toolsOfflineDownloadCard').screenshot({path:test.info().outputPath(`offline-map-${width}.png`)});
     const cached=await page.evaluate(async()=>{const urls=(await Promise.all((await caches.keys()).map(async key=>(await (await caches.open(key)).keys()).map(r=>r.url)))).flat();return urls.filter(url=>new URL(url).pathname.endsWith('.pmtiles')||url.includes('X-Amz-Signature')||url.includes('/manifest.json')&&!url.endsWith(location.origin+'/manifest.json'));});expect(cached).toEqual([]);
     await context.setOffline(true);await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await open(page);
@@ -78,7 +85,11 @@ for(const width of [320,360,390])test(`offline-map ${width}px: stream, stop, rel
     await page.evaluate(()=>MTToolsMapLibreAdapter.getMap().jumpTo({center:[34.5,48.5],zoom:19}));
     await page.waitForFunction(()=>MTToolsMapLibreAdapter.getMap().getZoom()===18);
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenStreetMap');
+    await expect(page.locator('#toolsOfflineDownloadCard')).toHaveCount(0);
+    await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveText(`✅ Офлайн-карта встановлена · ${(meta.size/1000000).toFixed(1)} МБ`);
+    await page.locator('#toolsScreenRoot').screenshot({path:test.info().outputPath(`offline-map-compact-status-${width}.png`)});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await open(page);
     const buttonHeights=await page.locator('#toolsOfflineDownloadCard .btn').evaluateAll(buttons=>buttons.map(b=>b.getBoundingClientRect().height));expect(buttonHeights.every(h=>h>=44)).toBe(true);
     await confirmDelete(page,'delete');await expect(page.locator('#toolsOfflineDownloadCard')).not.toContainText('✅ Офлайн-карта готова');
     expect(await page.evaluate(async()=>{const dir=await (await navigator.storage.getDirectory()).getDirectoryHandle(MTOfflineMap.DIRECTORY);return {files:Array.fromAsync?await Array.fromAsync(dir.keys()):await (async()=>{const files=[];for await(const name of dir.keys())files.push(name);return files;})(),meta:MTOfflineMap.readMeta(),journal:MTOfflineMap.readJournal()};})).toEqual({files:[],meta:null,journal:null});

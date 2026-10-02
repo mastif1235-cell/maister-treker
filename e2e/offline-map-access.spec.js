@@ -2,6 +2,25 @@
 const {test,expect,gotoApp}=require('./app-test');
 const {randomBytes}=require('node:crypto');
 const fs=require('node:fs'),path=require('node:path');
+async function openSettings(page){
+  await page.click('.tab-btn[data-tab="settings"]');
+  if(await page.locator('#settingsHubBackBtn').isVisible())await page.locator('#settingsHubBackBtn').click();
+  await page.locator('[data-settings-hub="data"]').click();
+  await page.locator('#settingsHubContent details').filter({has:page.locator('#openOfflineMapSettingsBtn')}).locator('summary').click();
+  await page.locator('#openOfflineMapSettingsBtn').click();await expect(page.locator('#toolsOfflineDownloadCard')).toBeVisible();
+}
+test('offline-map UX: main map has compact status only; full controls are in Settings at 320px',async({page,appEnv})=>{
+  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
+  await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();
+  await expect(page.locator('#toolsOfflineDownloadCard')).toHaveCount(0);
+  await expect(page.locator('#toolsOfflineMapCompactStatus')).toHaveText('Офлайн-карта не встановлена');
+  await expect(page.locator('[data-tools-action="offline-download-token"]')).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await openSettings(page);
+  await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('Дніпропетровська область');
+  await expect(page.locator('[data-tools-action="offline-download-token"]')).toBeVisible();
+  await expect(page.locator('[data-tools-action="offline-download-start"]')).toBeVisible();
+});
 test('map access: shipped catalog loads public manifest and phone token enables download to signer at 320px',async({page,appEnv})=>{
   const manifestUrl='https://mastif1235-cell.github.io/maister-treker/docs/offline-maps/dnipro-oblast/manifest.json';
   const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'../docs/offline-maps/dnipro-oblast/manifest.json'),'utf8'));
@@ -17,7 +36,7 @@ test('map access: shipped catalog loads public manifest and phone token enables 
     await route.fulfill({status:401,contentType:'application/json',body:'{}',headers:{'Access-Control-Allow-Origin':'*'}});
   });
   await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
-  await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();
+  await openSettings(page);
   await page.waitForFunction(()=>MTOfflineDownloader.snapshot().manifest?.id==='dnipro-oblast',null,{timeout:30000});
   expect(await page.evaluate(()=>MTOfflineMapCatalog[0].manifestUrl)).toBe(manifestUrl);
   const card=page.locator('#toolsOfflineDownloadCard');
@@ -39,7 +58,7 @@ test('map access: shipped catalog loads public manifest and phone token enables 
 test('map access: encrypted per-phone credential survives reload, is hidden and deletion preserves local map',async({page,appEnv})=>{
   await page.setViewportSize({width:320,height:740});
   const token=randomBytes(32).toString('base64url');await gotoApp(page,appEnv.url);
-  const open=async()=>{await page.click('.tab-btn[data-tab="tools"]');await page.locator('[data-tools-view="map"]').click();};
+  const open=()=>openSettings(page);
   await open();await page.locator('[data-tools-action="offline-download-token"]').click();
   await page.locator('#offlineMapTokenInput').fill(token);await page.locator('#offlineMapTokenSave').click();
   await expect(page.locator('#toolsOfflineDownloadCard')).toContainText('✅ Доступ налаштовано');
