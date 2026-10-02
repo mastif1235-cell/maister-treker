@@ -17,7 +17,9 @@ Equipment selection alone is NOT installation. Unknown semantic IDs/keys
 fail closed. Entity without action asks for clarification, preserving period.
 
 Default category is definite. Bare object mentions and conflicting quantities
-are ambiguous; negated/planned/conditional work is excluded. Events are distinct
+are ambiguous; negated/planned/conditional work is excluded. Future/infinitive
+free text is also excluded, while a performed preset-work row may use an
+infinitive catalogue label. Events are distinct
 entity/action/category combinations per ticket, not an inferred number of
 physical units. Repeated sources are deduplicated. Only explicit text/preset
 quantity contributes to quantity_sum; missing quantity stays null. Money uses
@@ -40,7 +42,9 @@ is ambiguous. Negative money is not signal. Strict worse-than excludes the
 boundary. Multiple contradictory subscriber readings are ambiguous; structured
 signal wins unless legacy text proves that the same value is input-only
 (the old redacted projection does not preserve signal provenance). A unique
-subscriber metric is attached only to ONU/connection events, never router/PSU.
+subscriber metric is attached only when one definite ONU/connection event can
+receive it, never router/PSU or several different actions. Ticket signal stats
+remain available even when event association is ambiguous.
 
 Counts, events, explicit quantity, money, groups and signal min/max/average
 are computed over the entire matched set before pagination. Entity/action/
@@ -67,19 +71,24 @@ not deploy Worker or publish Pages.
 
 ## Local verification and handoff
 
-- MCP: 459/459 PASS, including 17 new semantic/period/signal/follow-up tests.
+- MCP: 461/461 PASS, including 19 new semantic/period/signal/follow-up tests.
 - E2E: 42/42 PASS on the final implementation; AI mock uses real Worker
   modules, a 320px viewport and a reload with the same semantic filter.
 - Root: 200/201 PASS. All 24 frontend AI files PASS. The sole remaining FAIL
   is the existing timing-sensitive `network-tools-monitor.test.js:81`:
-  observed average 48ms instead of approximately 40ms. Neither Ping code nor
+  observed average 47–48ms instead of approximately 40ms. Neither Ping code nor
   that test was modified or weakened. The failure also reproduces without
-  parallel E2E load.
+  parallel E2E load. Checked with system Node v24.21.0, bundled v24.19.0 and
+  an ephemeral official v22.23.3 runtime (matching the CI's Node 22 major,
+  SHA-256 checked against nodejs.org SHASUMS256). A single bundled targeted
+  retry passed, but the full suites still reproduced the failure; it is not
+  reported as a clean full PASS or as a proven Node-version-specific bug.
 - Syntax: 93 JS files PASS (changed frontend files and all MCP src/test/scripts,
   equivalent to check.sh; Bash is unavailable). `git diff --check`: PASS.
 - Version: `v91.79 · 2026-10-02`; cache: `maister-treker-v67-runtime-123`.
-- No push/DRAFT PR: the authorization requires all checks PASS. Separate
-  permission is required to open a DRAFT with the known unrelated Ping FAIL.
+- No push/DRAFT PR or GitHub CI: the authorization requires all checks PASS.
+  The remaining local FAIL prevents satisfying that prerequisite; no assertion
+  was weakened and no new workflow/infrastructure was added to bypass the gate.
 - No merge, deployment, secrets/config/bindings or production traffic changes.
 
 ## Changed files

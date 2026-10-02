@@ -151,3 +151,15 @@ test('unknown constraints never silently disappear in the deterministic shortcut
   for(const q of ['Сколько ONU поставил в Киеве?','Сколько ONU поставил без напарника?','Сколько ONU поставил с 31 по 32 сентября?','Сколько ONU поставил за неизвестный период?','Скільки роутерів по 1500?']) assert.equal(workIntent(q,now),null,q);
   for(const q of ['Скільки ONU встановив цього місяця?','Скільки БП ONU замінив?']) assert.ok(workIntent(q,now),q);
 });
+test('future and infinitive free text are never proof of completed installation',()=>{
+  for(const text of ['Поставлю ONU','Поставим ONU','Встановлю ONU','Встановимо ONU','Установить ONU','Встановити ONU']){
+    assert.equal(workEvents(rows[0],text).events[0].category,'excluded',text);
+  }
+  const selected=workEvents({...rows[0],presetWorks:[{label:'Установить ONU',qty:1}]},'');
+  assert.equal(selected.events[0].category,'definite');
+});
+test('one ticket signal is not assigned to multiple ONU actions',()=>{
+  const result=workEvents(rows[0],'Поставил ONU; проверил ONU; сигнал -21');
+  assert.equal(result.signals.length,1);
+  assert.equal(result.events.filter(e=>e.metric).length,0);
+});

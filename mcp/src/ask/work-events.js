@@ -113,7 +113,11 @@ export function workEvents(ticket, legacyText){
         let action=verb ? verb.id : 'mention';
         if(object.id==='connection' && action==='connect') action='complete';
         const lead=clause.slice(0,verb?verb.start:object.start);
-        const blocked=/(?:^|\s)(?:не|нет|ні|без)\s*(?:\p{L}+\s+){0,1}$/iu.test(lead) || /(?:нужно|надо|треба|план|будем|будемо|будет|завтра|хотел|хочу|якщо|если)/iu.test(clause);
+        // Infinitive/future in a free note is not completed work. A selected
+        // preset work is a structured performed-work row, so its catalogue
+        // label may legitimately use an infinitive.
+        const notCompleted=verb && source.kind!=='preset_work' && /(?:ть|ти|лю|им|имо)$/iu.test(verb.text);
+        const blocked=notCompleted || /(?:^|\s)(?:не|нет|ні|без)\s*(?:\p{L}+\s+){0,1}$/iu.test(lead) || /(?:нужно|надо|треба|план|будем|будемо|будет|завтра|хотел|хочу|якщо|если)/iu.test(clause);
         // A verb on the other side of a comma belongs to another clause.
         const between=verb?clause.slice(Math.min(verb.end,object.end),Math.max(verb.start,object.start)):'';
         if(between.includes(',')) action='mention';
@@ -154,10 +158,11 @@ export function workEvents(ticket, legacyText){
   if(new Set(signals.filter(s=>s.context==='subscriber').map(s=>s.value)).size>1){
     signals.forEach(s=>{if(s.context==='subscriber') s.category='ambiguous';});
   }
-  for(const event of events){
-    const metric=signals.filter(s=>s.context==='subscriber' && s.category==='definite');
-    if(metric.length===1 && ['onu','connection'].includes(event.entity)) event.metric=metric[0];
-  }
+  const metric=signals.filter(s=>s.context==='subscriber' && s.category==='definite');
+  const metricTargets=events.filter(e=>e.category==='definite' && ['onu','connection'].includes(e.entity));
+  // A unique ticket reading cannot be assigned to several different actions
+  // without timing/context proof. Ticket-level statistics still use it.
+  if(metric.length===1 && metricTargets.length===1) metricTargets[0].metric=metric[0];
   return {events,signals};
 }
 
