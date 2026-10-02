@@ -22,6 +22,8 @@ import {cleanStr, normalizeStem, matchScore, normalizeHouse, normalizeApartment,
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
+import {validateSemantic, workEvents, semanticMatches, semanticSignal, aggregateWork, directCoworkers} from './work-events.js';
+import {projectQueryFilters} from './query-context.js';
 import {isDirectoryIndex, resolveDirectoryCity, resolveDirectoryStreet, isResolvedStatus, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
 
 const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -363,6 +365,14 @@ function aliasOf(token){
   return null;
 }
 
+function semanticCoworkerNameMatches(storedName,query){
+  const normalize=name=>normItem(name).split(' ').map(token=>{
+    if(aliasOf(token))return token;
+    const base=token.replace(/е[ию]$/,'я');
+    return aliasOf(base)?base:token;
+  }).join(' ');
+  return !!String(storedName||'').trim() && coworkerNameMatches(normalize(storedName),normalize(query));
+}
 function nameTokens(name){
   return normItem(name).split(' ').filter(function(t){ return t.length >= 3; });
 }
@@ -440,6 +450,11 @@ export function sortNewestFirst(list){
    Stage 1 text path unchanged. */
 export function runSmartQuery(ctx, params){
   params = params || {};
+  const semantic = params.semantic === undefined ? null : validateSemantic(params.semantic);
+  if(params.semantic !== undefined && !semantic) return {ok:false,code:'INVALID_INPUT',message:'Некоректний semantic intent; невідомі entity/action не підтримуються.'};
+  if(semantic && semantic.entity && !semantic.action){
+    return {ok:true,data:{tool:'query_tickets',clarification:true,question:'Що рахувати: установки, заміни, зняття чи всі згадки?',choices:['install','replace','remove','mention'],resolved_filters:projectQueryFilters({...params,semantic})}};
+  }
   const tickets = Array.isArray(ctx.tickets) ? ctx.tickets : [];
   const shifts = Array.isArray(ctx.shifts) ? ctx.shifts : [];
   const directory = isDirectoryIndex(ctx.directory) ? ctx.directory : null;
@@ -453,7 +468,7 @@ export function runSmartQuery(ctx, params){
   const mode = params.mode || 'list';
   if(MODES.indexOf(mode) === -1) return {ok:false, code:'INVALID_INPUT', message:'Некоректний mode (доступні: exists, count, list, group, stats)'};
   const groupBy = params.group_by || null;
-  if(mode === 'group' && GROUP_KEYS.indexOf(groupBy) === -1){
+  if(mode === 'group' && GROUP_KEYS.indexOf(groupBy) === -1 && !(semantic && ['entity','action'].includes(groupBy))){
     return {ok:false, code:'INVALID_INPUT', message:'group_by обовʼязковий для mode=group (city, street, house, date, month, type, payment, item, coworker)'};
   }
 
@@ -595,6 +610,9 @@ export function runSmartQuery(ctx, params){
   const rangeCount = {total:0};
   const matched = [];
   const reasonsFor = new Map();
+  const workById = new Map();
+  const ambiguousWork = new Set();
+  const excludedWork = new Set();
 
   for(const t of tickets){
     /* v91.48: a legacy date format («5.7.2026») must not silently exclude a
@@ -675,19 +693,22 @@ export function runSmartQuery(ctx, params){
     if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) continue;
     if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) continue;
 
-    const sigNum = ticketSignalNumber(t);
-    if(params.has_signal === true && sigNum == null) continue;
-    if(params.has_signal === false && sigNum != null) continue;
+    const analysis = semantic ? workEvents(t, legacyText) : null;
+    if(analysis) workById.set(t.id, analysis);
+    const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);
+    let signalAccepts=true;
+    if(params.has_signal === true && sigNum == null) signalAccepts=false;
+    if(params.has_signal === false && sigNum != null) signalAccepts=false;
     if(params.signal_worse_than != null){
-      if(sigNum == null || sigNum >= params.signal_worse_than) continue;
+      if(sigNum == null || sigNum >= params.signal_worse_than) signalAccepts=false;
       reasons.push('сигнал:' + sigNum + ' < ' + params.signal_worse_than);
     }
     if(params.signal_worse_or_equal != null){
-      if(sigNum == null || sigNum > params.signal_worse_or_equal) continue;
+      if(sigNum == null || sigNum > params.signal_worse_or_equal) signalAccepts=false;
       reasons.push('сигнал:' + sigNum + ' ≤ ' + params.signal_worse_or_equal);
     }
     if(params.signal_better_than != null){
-      if(sigNum == null || sigNum < params.signal_better_than) continue;
+      if(sigNum == null || sigNum < params.signal_better_than) signalAccepts=false;
       reasons.push('сигнал:' + sigNum + ' ≥ ' + params.signal_better_than);
     }
 
@@ -709,9 +730,9 @@ export function runSmartQuery(ctx, params){
 
     let coworkerEvidence = null;
     if(coworkerQuery){
-      const direct = (t.connectMasters || []).some(function(name){ return coworkerNameMatches(name, coworkerQuery); });
+      const direct = semantic ? directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) : (t.connectMasters || []).some(function(name){ return coworkerNameMatches(name, coworkerQuery); });
       if(direct) coworkerEvidence = 'direct';
-      else if(coworkerShiftDates.has(String(t.date))) coworkerEvidence = 'same_day_shift';
+      else if(!semantic && coworkerShiftDates.has(String(t.date))) coworkerEvidence = 'same_day_shift';
       if(!coworkerEvidence) continue;
       reasons.push('напарник:' + (coworkerEvidence === 'direct' ? 'заявка (структурно)' : 'збіг за зміною того ж дня'));
     }
@@ -726,7 +747,19 @@ export function runSmartQuery(ctx, params){
       itemReasons.push(String(entry.condition.text).slice(0, 40) + ':' + (result.evidence === 'legacy_text' ? 'legacy текст' : result.pool) + (result.qty_derived ? ' (кількість похідна)' : ''));
     }
     if(!itemsOk) continue;
+    if(!signalAccepts){
+      const workAccepts=!semantic?.entity && !semantic?.action || analysis?.events.some(e=>semanticMatches(e,semantic));
+      if(semantic && workAccepts && sigNum===null && analysis.signals.some(s=>s.category==='ambiguous' && (s.context==='unknown' || semantic.signal_context==='any' || s.context===semantic.signal_context))) ambiguousWork.add(t.id);
+      continue;
+    }
     reasons.push.apply(reasons, itemReasons);
+    if(semantic && (semantic.entity || semantic.action)){
+      const relevant=analysis.events.filter(e => !semantic.entity || e.entity===semantic.entity);
+      if(relevant.some(e => e.category==='ambiguous' && (!semantic.action || e.action===semantic.action || e.action==='mention'))) ambiguousWork.add(t.id);
+      if(relevant.some(e => e.category==='excluded' && (!semantic.action || e.action===semantic.action))) excludedWork.add(t.id);
+      if(!analysis.events.some(e => semanticMatches(e,semantic))) continue;
+      reasons.push('робота:явний обʼєкт + дія (' + semantic.category + ')');
+    }
 
     /* full-set coverage counters (computed for every row passing the range) */
     if(sigNum != null) signalParsedCount.parsed++; else signalParsedCount.missing++;
@@ -840,6 +873,7 @@ export function runSmartQuery(ctx, params){
     if(contractQuery) rf.contract = true;
     if(macQuery) rf.mac = true;
     if(coworkerQuery) rf.coworker = coworkerQuery;
+    if(semantic) rf.semantic = {...semantic};
     if(resolvedItems.length){
       rf.items = resolvedItems.map(function(entry){
         const out = {text:String(entry.condition.text).slice(0, 80)};
@@ -924,6 +958,12 @@ export function runSmartQuery(ctx, params){
 
   function fillByMode(base, args){
     const list = args.sorted;
+    if(semantic){
+      base.work_totals=aggregateWork(list,workById,semantic,args.groupBy);
+      base.work_totals.ambiguous_tickets=Array.from(ambiguousWork).filter(id=>!list.some(t=>t.id===id)).length;
+      base.work_totals.excluded_tickets=excludedWork.size;
+      base.work_totals.count_policy='definite_by_default; quantity_only_explicit; direct_coworker_only';
+    }
     const limit = args.params.limit == null ? 50 : args.params.limit;
     const offset = args.params.offset || 0;
 
@@ -941,7 +981,7 @@ export function runSmartQuery(ctx, params){
     }
     if(args.mode === 'group'){
       base.group_by = args.groupBy;
-      base.groups = buildGroups(list, args);
+      base.groups = semantic && ['entity','action','coworker'].includes(args.groupBy) ? base.work_totals.groups : buildGroups(list, args);
       return base;
     }
     if(args.mode === 'stats'){
@@ -957,7 +997,7 @@ export function runSmartQuery(ctx, params){
       /* same canonical view the filters used — the row's city/street/house and
          its one-line address are now built from ONE source (v91.51) */
       const addr = info.addr || {city:t.city, street:t.street, house:t.house};
-      const sigNum = ticketSignalNumber(t);
+      const sigNum = semantic ? semanticSignal(workById.get(t.id),semantic) : ticketSignalNumber(t);
       return {
         ord:offset + idx + 1,
         id:validateTicketId(t.id) || '',
@@ -979,6 +1019,9 @@ export function runSmartQuery(ctx, params){
         match_reasons:info.reasons.slice(0, 6)
       };
     });
+    if(semantic){
+      base.evidence=list.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,coworkers:directCoworkers(t).slice(0,10),events:(workById.get(t.id)?.events||[]).filter(e=>semanticMatches(e,semantic)).slice(0,20)}));
+    }
     /* full-set analytics (independent of the page above); city spellings are
        collapsed by canonicalCityKey so one real city never doubles up. */
     const cities = Object.create(null), streets = Object.create(null);
@@ -1110,7 +1153,7 @@ export function runSmartQuery(ctx, params){
         best = {date:t.date, address:compactAddress(Object.assign({}, t, {city:bestAddr.city, street:bestAddr.street, house:bestAddr.house})), sum, type:String(t.type || '')};
       }
     }
-    const signals = list.map(ticketSignalNumber).filter(function(n){ return n != null; });
+    const signals = list.map(t=>semantic?semanticSignal(workById.get(t.id),semantic):ticketSignalNumber(t)).filter(function(n){ return n != null; });
     const signalStats = signals.length ? {
       parsed:signals.length,
       missing:list.length - signals.length,

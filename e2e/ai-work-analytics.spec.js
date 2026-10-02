@@ -1,0 +1,48 @@
+'use strict';
+const {test,expect,gotoApp}=require('./app-test');
+const {pathToFileURL}=require('node:url');
+const path=require('node:path');
+test('AI work analytics: real deterministic Worker modules, count -> evidence -> reload preserves filter',async({page,appEnv})=>{
+  const load=p=>import(pathToFileURL(path.join(__dirname,'../mcp/src/ask',p)).href);
+  const {createAskOrchestrator}=await load('orchestrator.js');
+  const {runSmartQuery}=await load('smart-query.js');
+  const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
+  const texts=['Установил ONU, сигнал -21','Сигнал ONU -29','Проверил ONU','Заменил БП ONU','Заменил ONU','Поставил ONU и роутер','С Петей подключили абонента, поставили ONU и роутер','ONU клиента, сигнал -25'];
+  const tickets=texts.map((text,i)=>({id:'ABCDEFGH'[i],date:'15.09.2026',time:'10:00',sum:100,connectMasters:i===6?['Петя']:[],equipment:[],cables:[],presetWorks:[],additionalWork:[],tags:[]}));
+  const ctx={tickets,shifts:[{date:'15.09.2026',coworker:'Петя',hours:8}],searchIndex:texts.map((text,i)=>({id:tickets[i].id,text}))};
+  const queries=[];
+  const orch=createAskOrchestrator({groq:{chat(){throw new Error('No approximate LLM counts');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery(ctx,p);}},toolDefs:TOOL_DEFINITIONS});
+  await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
+    const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
+    if(route.request().method()==='OPTIONS') return route.fulfill({status:204,headers});
+    const body=route.request().postDataJSON();
+    const result=await orch.handle(body.question,{now:new Date(2026,9,2,12),...body.context});
+    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  });
+  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
+  // localhost deliberately chooses the dev shared backend on boot. Pin only
+  // this synthetic fixture's custom URL so reload keeps using our mock.
+  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
+  await page.locator('#aiInput').fill('Сколько ONU поставил с Петей в сентябре?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Знайдено 1 заявок');
+  await page.getByRole('button',{name:'Показати заявки',exact:true}).click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
+  const exactFilters=query=>Object.fromEntries(['semantic','date_from','date_to','coworker'].map(key=>[key,query[key]]));
+  expect(exactFilters(queries[1])).toEqual(exactFilters(queries[0]));
+  expect(queries[1].coworker).toBe('петей');
+  await expect(page.locator('#aiSendBtn')).toBeEnabled();
+  await page.locator('#aiInput').fill('Почему так посчитано?');await page.locator('#aiSendBtn').click();
+  await expect.poll(()=>queries.length).toBe(3);
+  await expect(page.locator('#aiSendBtn')).toBeEnabled();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
+  expect(exactFilters(queries[2])).toEqual(exactFilters(queries[0]));
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);
+  expect(await page.evaluate(()=>MTAI.storage.get().backendUrl)).toBe('https://maister-tracker-mcp.mastif1235.workers.dev');
+  await page.evaluate(()=>MTAI.ui.open());
+  await page.locator('#aiInput').fill('Чому так пораховано?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
+  expect(exactFilters(queries[3])).toEqual(exactFilters(queries[0]));
+  await page.locator('#aiInput').fill('Сколько ONU было в сентябре?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Що рахувати');
+});

@@ -181,7 +181,7 @@ MTAI.createClient = function(options){
      фільтри попереднього query_tickets) — строга біла проєкція, дзеркало
      серверного mcp/src/ask/query-context.js. Ніяких нотаток/телефонів/ПІБ:
      невідомі ключі відкидаються. */
-  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items'];
+  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items','semantic'];
   /* Stage 2D: directory identity of a resolved place (UUID shape only) — the
      follow-up re-runs by UUID, mirror of the server whitelist. */
   const QC_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -202,6 +202,17 @@ MTAI.createClient = function(options){
         if(typeof v === 'boolean') out[key] = v;
       }else if(key === 'city_id' || key === 'street_id'){
         if(typeof v === 'string' && QC_ID_RE.test(v)) out[key] = v.toLowerCase();
+      }else if(key === 'semantic'){
+        if(!v || typeof v !== 'object' || Array.isArray(v)) return null;
+        if(Object.keys(v).some(function(k){return !['entity','action','category','signal_context'].includes(k);})) return null;
+        const sem={};
+        const entities=['onu','onu_power_supply','router','router_power_supply','power_supply','cable','fiber','splice','splitter','patchcord','connector','box','connection'];
+        const actions=['install','replace','remove','check','configure','repair','restore','lay','weld','move','connect','measure','complete','mention','fault','measurement'];
+        if(v.entity!==undefined){if(!entities.includes(v.entity)) return null;sem.entity=v.entity;}
+        if(v.action!==undefined){if(!actions.includes(v.action)) return null;sem.action=v.action;}
+        if(v.category!==undefined){if(!['definite','ambiguous','excluded','all'].includes(v.category)) return null;sem.category=v.category;}
+        if(v.signal_context!==undefined){if(!['subscriber','input','any'].includes(v.signal_context)) return null;sem.signal_context=v.signal_context;}
+        out.semantic=sem;
       }else if(key === 'tags'){
         if(Array.isArray(v)) out[key] = v.slice(0,20).map(function(t){ return String(t == null ? '' : t).slice(0,60); }).filter(Boolean);
       }else if(key === 'items'){
