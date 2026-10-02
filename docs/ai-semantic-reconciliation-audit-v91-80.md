@@ -229,3 +229,19 @@ effect in production. This stage permits only a DRAFT PR. No merge, deploy,
 production switch, secrets/auth/R2 change or data migration was performed.
 Because the latest root result is not fully green, DRAFT creation is gated on
 the owner's explicit exception for the unchanged pre-existing Ping timing test.
+
+## Changed files (23)
+
+- Runtime: app.js, sw.js, js/ai/ai-client.js.
+- Computed analytics: mcp/src/ask/orchestrator.js, smart-query.js, work-events.js,
+  work-intent.js, work-reconciliation.js; mcp/src/tools/definitions.js.
+- MCP regressions: mcp/test/unit/work-reconciliation.test.js,
+  mcp/test/unit/work-backward-compatibility.test.js,
+  mcp/test/integration/work-reconciliation.test.js.
+- Frontend/sync regressions: tests/ai-sync-masters-roundtrip.test.js,
+  tests/ai-work-analytics.test.js; e2e/ai-work-analytics.spec.js.
+- Release pins only: e2e/tickets-compact-view.spec.js,
+  tests/network-tools-ui.test.js, tests/sw-upgrade-static.test.js,
+  tests/tickets-compact-view.test.js, tests/tools-v82-field-package.test.js,
+  tests/tools-v84-field-update.test.js, tests/tools-v85-narrow-field-fixes.test.js.
+- Audit/handoff: docs/ai-semantic-reconciliation-audit-v91-80.md.
