@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
+const posted=[];
+const sandbox={MTAI:{config:{LIMITS:{questionMaxChars:2000},DEFAULT_PROVIDER:'groq',DEFAULT_MODEL:'test'},storage:{get:()=>({})}},setTimeout,clearTimeout,AbortController,console};
+sandbox.globalThis=sandbox;
+vm.runInNewContext(read('js/ai/ai-client.js'),sandbox);
+const semantic={entity:'onu',action:'install',category:'definite',signal_context:'subscriber'};
+const client=sandbox.MTAI.createClient({getConfig:()=>({backendUrl:'https://test.invalid',bearer:'synthetic'}),fetchImpl:async(url,options)=>{posted.push(JSON.parse(options.body));return {ok:true,status:200,json:async()=>({ok:true,answer:'ok',queryContext:{resolved_filters:{semantic}}})};}});
+(async()=>{
+  const response=await client.ask('test',[],{queryContext:{resolved_filters:{semantic,coworker:'Петя',note:'private'}}});
+  assert.deepEqual(posted[0].context.queryContext.resolved_filters.semantic,semantic);
+  assert.equal(posted[0].context.queryContext.resolved_filters.note,undefined);
+  assert.equal(response.queryContext.resolved_filters.semantic.entity,'onu');
+  await client.ask('test',[],{queryContext:{resolved_filters:{semantic:{entity:'unknown'},city:'X'}}});
+  assert.equal(posted[1].context,undefined,'bad semantic context must not leave a wider city-only filter');
+  await client.ask('test',[],{queryContext:{resolved_filters:{semantic:{unknown_filter:'X'},city:'X'}}});
+  assert.equal(posted[2].context,undefined,'unknown semantic keys also fail closed');
+  assert.match(read('js/ai/ai-ui.js'),/ai-work-evidence-actions/);
+  assert.match(read('js/ai/ai-config.js'),/Скільки ONU встановив/);
+  console.log('ai-work-analytics frontend: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});

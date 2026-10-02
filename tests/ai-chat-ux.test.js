@@ -100,7 +100,7 @@ function load(files, fetchImpl, extra){
   {
     const sb=load(CORE, async function(){ throw new Error('no network'); });
     const q=sb.MTAI.config.quickPrompts();
-    assert.equal(q.length,8,'8 quick prompts');
+    assert.equal(q.length,12,'8 existing + 4 semantic work prompts');
     assert.match(q[0],/сьогодні/);
     assert.match(q[1],/Останні 5 заявок/);
     assert.match(q[2],/за адресою/);

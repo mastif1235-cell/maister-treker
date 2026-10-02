@@ -111,7 +111,7 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
 
   /* 2) Тоггл раскрывает полный список (8) */
   toggleBtn.click();
-  assert.equal(chipsIn(q()).length,8,'toggle expands full list (8)');
+  assert.equal(chipsIn(q()).length,12,'toggle expands existing + semantic work prompts');
   console.log('PASS 💡 toggle expands full prompt list');
 
   /* 3) Выбор chip: сворачивает панель и отправляет вопрос с ИСТОРИЕЙ */
@@ -207,7 +207,7 @@ const tick=(ms)=>new Promise(r=>setTimeout(r,ms||15));
   /* 11) Панель подсказок: полный список при toggled активной сессии — все 8 монтажных */
   (function(){ let f=null; walk(q(),el=>{ if(el.tagName==='BUTTON'&&/Підказки/.test(textTree(el))) f=el; }); f.click(); })();
   const expanded=chipsIn(q()).map(b=>textTree(b));
-  assert.equal(expanded.length,8,'8 field prompts in expanded panel');
+  assert.equal(expanded.length,12,'12 field prompts in expanded panel');
   assert.ok(expanded.some(t=>/сигнал/.test(t)),'weak-signal prompt present');
   console.log('PASS expanded prompts: 8 field-technician prompts incl. weak signal');
 

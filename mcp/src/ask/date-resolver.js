@@ -97,21 +97,38 @@ function findMonthInText(t, now){
 export function resolveDateRanges(text, now){
   const t = String(text == null ? '' : text).toLowerCase().replace(/ё/g, 'е');
   const out = [];
+  if(/(?:вс[её]\s+время|весь\s+час|за\s+весь\s+час)/.test(t)) return out;
+  // An explicit day range must override the named whole month.
+  const days=/(?:с|з)\s+(\d{1,2})\s+(?:по|до)\s+(\d{1,2})\s+([а-яїієґ]+)(?:\s+(20\d{2}))?/.exec(t);
+  if(days){
+    const month=findMonthInText(days[3]+(days[4]?' '+days[4]:''),now);
+    if(month){
+      const from=new Date(month.year,month.idx,Number(days[1])), to=new Date(month.year,month.idx,Number(days[2]));
+      if(from.getMonth()===month.idx && to.getMonth()===month.idx && from<=to) pushRange(out,days[0],from,to);
+      return out;
+    }
+  }
+  const year=/(?:за\s+(?:год|рік)|(?:этот|цей)\s+(?:год|рік))(?:\s+(20\d{2}))?/.exec(t);
+  if(year){
+    const y=year[1]?Number(year[1]):now.getFullYear();
+    pushRange(out,'рік '+y,new Date(y,0,1),new Date(y,11,31));
+    return out;
+  }
 
   if(new RegExp(L + '(сьогодні|сегодня)' + R).test(t)) pushRange(out, 'сьогодні/сегодня', now, now);
   if(new RegExp(L + '(вчора|вчера)' + R).test(t)) pushRange(out, 'вчора/вчера', addDays(now, -1), addDays(now, -1));
   if(new RegExp(L + '(позавчора|позавчера)' + R).test(t)) pushRange(out, 'позавчора/позавчера', addDays(now, -2), addDays(now, -2));
 
-  if(new RegExp(L + '(цей|цью|этот|эту)\\s+недел').test(t) || new RegExp(L + 'на\\s+(цому|этой)\\s+недел').test(t)){
+  if(new RegExp(L + '(цей|цього|этот|эта|эту|этой)\\s+(?:недел|тижд)').test(t) || new RegExp(L + 'на\\s+(цьому|этой)\\s+(?:недел|тижд)').test(t)){
     const mon = mondayOf(now);
     pushRange(out, 'цей тиждень/эта неделя', mon, addDays(mon, 6));
   }
-  if(new RegExp(L + '(минулий|минулого|минулої|прошлый|прошлого|прошлую|прошлой)\\s+недел').test(t)){
+  if(new RegExp(L + '(минулий|минулого|минулої|прошлый|прошлого|прошлая|прошлую|прошлой)\\s+(?:недел|тижд)').test(t)){
     const mon = addDays(mondayOf(now), -7);
     pushRange(out, 'минулий тиждень/прошлая неделя', mon, addDays(mon, 6));
   }
 
-  if(new RegExp(L + '(цей|цого|этот|этого|поточний|поточного|текущий|текущего)\\s+' + MONTH).test(t)){
+  if(new RegExp(L + '(цей|цього|цого|этот|этого|поточний|поточного|текущий|текущего)\\s+' + MONTH).test(t)){
     const r = monthRange(now.getFullYear(), now.getMonth());
     pushRange(out, 'цей місяць/этот месяц', r.from, r.to);
   }

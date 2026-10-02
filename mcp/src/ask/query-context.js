@@ -14,11 +14,13 @@
 
 /* Filter keys that are safe to carry between turns (mirror of
    buildResolvedFilters output, minus value-less presence flags). */
+import {validateSemantic} from './work-events.js';
+
 const INHERITABLE_KEYS = [
   'date_from', 'date_to', 'city', 'street', 'city_id', 'street_id', 'house', 'apartment',
   'type', 'tags', 'payment', 'sum_min', 'sum_max',
   'signal_worse_than', 'signal_worse_or_equal', 'signal_better_than',
-  'has_signal', 'coworker', 'items'
+  'has_signal', 'coworker', 'items', 'semantic'
 ];
 
 /* Stage 2D: directory identity of a resolved place — carried between turns
@@ -110,6 +112,12 @@ export function projectQueryFilters(filters){
       case 'has_signal':
         if(typeof v === 'boolean') out.has_signal = v;
         break;
+      case 'semantic': {
+        const semantic=validateSemantic(v);
+        if(!semantic) return null; // never drop a bad work filter and widen it
+        out.semantic=semantic;
+        break;
+      }
       case 'items': {
         const items = projectItems(v);
         if(items.length) out.items = items;
@@ -124,7 +132,7 @@ export function projectQueryFilters(filters){
 export function projectQueryContext(envelope){
   if(!isPlainObject(envelope)) return null;
   const filters = projectQueryFilters(envelope.resolved_filters);
-  if(!Object.keys(filters).length) return null;
+  if(!filters || !Object.keys(filters).length) return null;
   return {
     resolved_filters: filters,
     mode: typeof envelope.mode === 'string' ? clip(envelope.mode, 12) : 'list',
@@ -136,7 +144,7 @@ export function projectQueryContext(envelope){
 export function sanitizeIncomingQueryContext(raw){
   if(!isPlainObject(raw)) return null;
   const filters = projectQueryFilters(raw.resolved_filters);
-  if(!Object.keys(filters).length) return null;
+  if(!filters || !Object.keys(filters).length) return null;
   return {
     resolved_filters: filters,
     mode: typeof raw.mode === 'string' ? clip(raw.mode, 12) : 'list',
@@ -182,6 +190,7 @@ export function mergeInheritedFilters(args, inheritedFilters){
   delete merged.inherit_previous_filters;
   if(hasStructuralParams(args)) return merged;
   const safe = projectQueryFilters(inheritedFilters);
+  if(!safe) return Object.assign(merged,{semantic:inheritedFilters.semantic});
   for(const key of Object.keys(safe)){
     if(merged[key] === undefined) merged[key] = safe[key];
   }

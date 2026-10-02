@@ -338,6 +338,14 @@ function build(){
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
+        if(out.meta && out.meta.semantic === true && out.meta.intent !== 'list' && !out.meta.clarification){
+          const actions=doc.createElement('div');actions.className='ai-work-evidence-actions';
+          for(const text of ['Показати заявки','Чому так пораховано?']){
+            const button=doc.createElement('button');button.type='button';button.className='btn btn-sm';button.textContent=text;
+            button.addEventListener('click',function(){chat.send(text);});actions.appendChild(button);
+          }
+          b.appendChild(actions);
+        }
         /* v91.60: 🔊 for this answer's user text only (never metadata/cards/ids);
            auto-read (OFF by default) reads each NEW successful answer once. */
         if(voiceTts && voiceTts.supported()) attachSpeakButton(b, out.text);
