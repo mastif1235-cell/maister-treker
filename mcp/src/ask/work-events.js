@@ -19,7 +19,7 @@ export const ENTITIES = [
 ];
 export const ACTIONS = [
   {id:'install', pattern:'установ[а-я]*|встанов[а-я]*|постав[а-я]*|ставил[а-я]*|ставили|монтаж|смонтир[а-я]*|змонт[а-я]*'},
-  {id:'replace', pattern:'замен[а-я]*|зам[іи]н[а-я]*|менял[а-я]*|міняв[а-я]*|поменял[а-я]*'},
+  {id:'replace', pattern:'замен[а-я]*|зам[іи]н[а-я]*|менял[а-я]*|менять|міняв[а-я]*|міняти|поменял[а-я]*'},
   {id:'remove', pattern:'снял[а-я]*|зня[а-я]*|демонтаж|демонт[а-я]*'},
   {id:'check', pattern:'провер[а-я]*|перев[іи]р[а-я]*|д[іи]агност[а-я]*'},
   {id:'configure', pattern:'настро[а-я]*|налашту[а-я]*'},
@@ -72,18 +72,27 @@ function publicText(value){
    Unlabelled dBm is ambiguous, and plain negative numbers are not metrics. */
 export function extractSignals(text){
   const out=[];
+  const safeText=publicText(text);
+  let previousEnd=0;
   const re=/(?:(сигнал\s*(?:onu|ону|ont)?|(?:onu|ону|ont)|вход(?:ной\s+сигнал)?|вхід(?:ний\s+сигнал)?)\s*[:=]?\s*)?(-\d+(?:[.,]\d+)?)\s*(d\s*bm|д\s*бм)?/giu;
-  for(const m of publicText(text).matchAll(re)){
-    if(!m[1] && !m[3]) continue;
+  for(const m of safeText.matchAll(re)){
+    const previous=out.at(-1);
+    const continuation=!m[1] && previous && /^[\s,;]*(?:потом|затем|потім|далі)?\s*$/iu.test(safeText.slice(previousEnd,m.index));
+    if(!m[1] && !m[3] && !continuation) continue;
     const value=Number(m[2].replace(',','.'));
     if(value < -100 || value > 0) continue;
     const context=m[1] ? (/вход|вхід/i.test(m[1]) ? 'input' : 'subscriber') : 'unknown';
+    if(continuation && previous.value!==value) previous.category='ambiguous';
     out.push({value,unit:'dBm',context,category:context==='unknown'?'ambiguous':'definite'});
+    previousEnd=m.index+m[0].length;
   }
   return out;
 }
+export function directCoworkers(ticket){
+  return [...new Set((ticket.connectMasters || []).map(n => String(typeof n==='string'?n:n&&n.name||'').trim()).filter(Boolean))];
+}
 export function workEvents(ticket, legacyText){
-  const coworkers=(ticket.connectMasters || []).map(n => String(typeof n==='string'?n:n&&n.name||'').trim()).filter(Boolean);
+  const coworkers=directCoworkers(ticket);
   const sources=[{kind:'public_text',text:legacyText}];
   for(const k of ['note','abonentNote','otherNote']) sources.push({kind:k,text:ticket[k]});
   for(const w of ticket.presetWorks || []) sources.push({kind:'preset_work',text:w.label,quantity:Number(w.qty)>0?Number(w.qty):null});
@@ -125,7 +134,8 @@ export function workEvents(ticket, legacyText){
         if(!verb && /не\s*(?:работает|працює)|неисправ|несправ/iu.test(clause)){action='fault';category='definite';}
         // Bare measurement/fault mentions are excluded from installs, not
         // interpreted as events with a made-up installation action.
-        const quantityMatch=verb && /(?:^|\s)(\d+(?:[.,]\d+)?)\s*$/.exec(clause.slice(verb.end,object.start));
+        const quantityLead=verb && clause.slice(verb.end<=object.start?verb.end:0,object.start);
+        const quantityMatch=verb && /(?:^|\s)(\d+(?:[.,]\d+)?)\s*$/.exec(quantityLead);
         const quantity=quantityMatch?Number(quantityMatch[1].replace(',','.')):source.quantity;
         if(quantity===0) category='excluded';
         add(object.id,action,category,(verb?verb.text+' ':'')+object.text,source.kind,quantity);
@@ -145,7 +155,8 @@ export function workEvents(ticket, legacyText){
     // v3/v4 projections can derive signal from legacy text without preserving
     // provenance. A value evidenced ONLY as input must not become subscriber.
     const inputOnly=textSignals.some(s=>s.context==='input' && s.value===Number(structured)) && !textSignals.some(s=>s.context==='subscriber' && s.value===Number(structured));
-    if(!inputOnly) signals.push({value:Number(structured),unit:'dBm',context:'subscriber',category:'definite',source:'structured_signal'});
+    const uncertain=textSignals.some(s=>s.context==='subscriber' && s.category==='ambiguous') && textSignals.some(s=>s.value===Number(structured) && s.category==='ambiguous');
+    if(!inputOnly) signals.push({value:Number(structured),unit:'dBm',context:'subscriber',category:uncertain?'ambiguous':'definite',source:'structured_signal'});
   }
   for(const source of sources){
     for(const metric of extractSignals(source.text)){
@@ -190,7 +201,7 @@ export function aggregateWork(rows, byId, filter, groupBy){
       const parts=String(t.date||'').trim().split('.');
       keys=[parts.length===3?parts[2]+'-'+parts[1].padStart(2,'0'):'(без дати)'];
     }
-    if(groupBy==='coworker') keys=t.connectMasters?.length?t.connectMasters.map(n=>String(typeof n==='string'?n:n.name)) : ['(не вказано)'];
+    if(groupBy==='coworker'){keys=directCoworkers(t);if(!keys.length)keys=['(не вказано)'];}
     for(const key of new Set(keys)){
       if(!groups.has(key)) groups.set(key,{key,tickets:0,events:0,quantity_sum:0,quantity_known_events:0,quantity_unknown_events:0,money_sum:0});
       const group=groups.get(key), scoped=matched.filter(e=>groupBy==='entity'?e.entity===key:groupBy==='action'?e.action===key:true);

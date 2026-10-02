@@ -40,7 +40,8 @@ Date, retaining the existing clock contract.
 Signals: labelled subscriber/ONU and input values are separate; unlabelled dBm
 is ambiguous. Negative money is not signal. Strict worse-than excludes the
 boundary. Multiple contradictory subscriber readings are ambiguous; structured
-signal wins unless legacy text proves that the same value is input-only
+signal wins unless legacy text proves that the same value is input-only or an
+ambiguous reading followed by a different unlabelled continuation
 (the old redacted projection does not preserve signal provenance). A unique
 subscriber metric is attached only when one definite ONU/connection event can
 receive it, never router/PSU or several different actions. Ticket signal stats
@@ -71,7 +72,7 @@ not deploy Worker or publish Pages.
 
 ## Local verification and handoff
 
-- MCP: 461/461 PASS, including 19 new semantic/period/signal/follow-up tests.
+- MCP: 467/467 PASS, including 25 semantic/period/signal/follow-up tests.
 - E2E: 42/42 PASS on the final implementation; AI mock uses real Worker
   modules, a 320px viewport and a reload with the same semantic filter.
 - Root: 200/201 PASS. All 24 frontend AI files PASS. The sole remaining FAIL
@@ -83,13 +84,36 @@ not deploy Worker or publish Pages.
   SHA-256 checked against nodejs.org SHASUMS256). A single bundled targeted
   retry passed, but the full suites still reproduced the failure; it is not
   reported as a clean full PASS or as a proven Node-version-specific bug.
-- Syntax: 93 JS files PASS (changed frontend files and all MCP src/test/scripts,
+- Syntax: 94 JS files PASS (changed frontend files and all MCP src/test/scripts,
   equivalent to check.sh; Bash is unavailable). `git diff --check`: PASS.
 - Version: `v91.79 · 2026-10-02`; cache: `maister-treker-v67-runtime-123`.
-- No push/DRAFT PR or GitHub CI: the authorization requires all checks PASS.
-  The remaining local FAIL prevents satisfying that prerequisite; no assertion
-  was weakened and no new workflow/infrastructure was added to bypass the gate.
+- DRAFT PR #64 was separately authorized despite the known local Ping timing
+  failure. GitHub Tests / MCP Tests / E2E passed on the initial implementation
+  HEAD. Targeted self-review fixes require CI on their own new HEAD; no assertion
+  was weakened and no workflow/infrastructure was added to bypass a gate.
 - No merge, deployment, secrets/config/bindings or production traffic changes.
+
+## Final targeted semantic review
+
+Covered negation/planned/future, number-before/after-entity word order, multiple
+events, compound PSU/component masking, mixed RU/UA, subscriber/input signals,
+uncertain signal continuation, multiple direct coworkers versus same-day shifts,
+groups, Russian evidence follow-ups, and persisted filters after reload.
+
+Fixed conservative parsing gaps: explicit "2 ONU поставил" quantity;
+"будем менять ONU" exclusion; "ONU -27, потом -29" uncertainty (including
+legacy-derived structured signal); blank direct coworker names; duplicate/object
+coworker names. Inflected "Петей" matching is confined to semantic mode, so old
+non-semantic behavior does not widen. Nine complete legacy query result envelopes
+were compared against main and stayed identical (count/list/group/stats,
+equipment, coworker, date/signal filters).
+
+Word numerals such as "две" intentionally leave quantity unknown. Dictionaries
+remain finite, repeated identical actions are distinct combinations rather than
+invented physical-unit counts, and ambiguous signals are not assigned to an
+event. Multi-coworker groups remain non-additive. The strengthened E2E waits for
+each response to finish before checking exact semantic/date/coworker filters;
+this avoids reading a previous message while the next request is still pending.
 
 ## Changed files
 
@@ -109,6 +133,7 @@ Implementation:
 Tests, release pins and documentation:
 
 - `mcp/test/unit/work-events.test.js`
+- `mcp/test/unit/work-events-edge.test.js`
 - `tests/ai-work-analytics.test.js`
 - `tests/ai-chat-ux.test.js`
 - `tests/ai-mobile-ux.test.js`

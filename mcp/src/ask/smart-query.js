@@ -22,7 +22,7 @@ import {cleanStr, normalizeStem, matchScore, normalizeHouse, normalizeApartment,
 import {buildCanonicalCatalog, resolveCanonicalAddress, cityFilterAccepts, cityStemAccepts, streetFilterAccepts, incompleteStemDisplay} from './canonical.js';
 import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
-import {validateSemantic, workEvents, semanticMatches, semanticSignal, aggregateWork} from './work-events.js';
+import {validateSemantic, workEvents, semanticMatches, semanticSignal, aggregateWork, directCoworkers} from './work-events.js';
 import {projectQueryFilters} from './query-context.js';
 import {isDirectoryIndex, resolveDirectoryCity, resolveDirectoryStreet, isResolvedStatus, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
 
@@ -360,11 +360,19 @@ const NAME_ALIASES = [
 
 function aliasOf(token){
   for(const group of NAME_ALIASES){
-    if(group.indexOf(token) !== -1 || group.includes(token.replace(/е[ию]$/, 'я'))) return group[0];
+    if(group.indexOf(token) !== -1) return group[0];
   }
   return null;
 }
 
+function semanticCoworkerNameMatches(storedName,query){
+  const normalize=name=>normItem(name).split(' ').map(token=>{
+    if(aliasOf(token))return token;
+    const base=token.replace(/е[ию]$/,'я');
+    return aliasOf(base)?base:token;
+  }).join(' ');
+  return !!String(storedName||'').trim() && coworkerNameMatches(normalize(storedName),normalize(query));
+}
 function nameTokens(name){
   return normItem(name).split(' ').filter(function(t){ return t.length >= 3; });
 }
@@ -722,7 +730,7 @@ export function runSmartQuery(ctx, params){
 
     let coworkerEvidence = null;
     if(coworkerQuery){
-      const direct = (t.connectMasters || []).some(function(name){ return coworkerNameMatches(name, coworkerQuery); });
+      const direct = semantic ? directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) : (t.connectMasters || []).some(function(name){ return coworkerNameMatches(name, coworkerQuery); });
       if(direct) coworkerEvidence = 'direct';
       else if(!semantic && coworkerShiftDates.has(String(t.date))) coworkerEvidence = 'same_day_shift';
       if(!coworkerEvidence) continue;
@@ -1012,7 +1020,7 @@ export function runSmartQuery(ctx, params){
       };
     });
     if(semantic){
-      base.evidence=list.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,coworkers:(workById.get(t.id)?.events[0]?.coworkers||[]),events:(workById.get(t.id)?.events||[]).filter(e=>semanticMatches(e,semantic)).slice(0,20)}));
+      base.evidence=list.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,coworkers:directCoworkers(t).slice(0,10),events:(workById.get(t.id)?.events||[]).filter(e=>semanticMatches(e,semantic)).slice(0,20)}));
     }
     /* full-set analytics (independent of the page above); city spellings are
        collapsed by canonicalCityKey so one real city never doubles up. */
