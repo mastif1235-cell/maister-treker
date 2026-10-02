@@ -64,3 +64,53 @@ AI UI. The 12-tool READ-only contract is unchanged in size; semantic is optional
 Provider token-budget assertions and security/privacy regressions are retained.
 Worker code requires a later separately authorized release; this branch does
 not deploy Worker or publish Pages.
+
+## Local verification and handoff
+
+- MCP: 459/459 PASS, including 17 new semantic/period/signal/follow-up tests.
+- E2E: 42/42 PASS on the final implementation; AI mock uses real Worker
+  modules, a 320px viewport and a reload with the same semantic filter.
+- Root: 200/201 PASS. All 24 frontend AI files PASS. The sole remaining FAIL
+  is the existing timing-sensitive `network-tools-monitor.test.js:81`:
+  observed average 48ms instead of approximately 40ms. Neither Ping code nor
+  that test was modified or weakened. The failure also reproduces without
+  parallel E2E load.
+- Syntax: 93 JS files PASS (changed frontend files and all MCP src/test/scripts,
+  equivalent to check.sh; Bash is unavailable). `git diff --check`: PASS.
+- Version: `v91.79 · 2026-10-02`; cache: `maister-treker-v67-runtime-123`.
+- No push/DRAFT PR: the authorization requires all checks PASS. Separate
+  permission is required to open a DRAFT with the known unrelated Ping FAIL.
+- No merge, deployment, secrets/config/bindings or production traffic changes.
+
+## Changed files
+
+Implementation:
+
+- `mcp/src/ask/work-events.js`
+- `mcp/src/ask/work-intent.js`
+- `mcp/src/ask/smart-query.js`
+- `mcp/src/ask/date-resolver.js`
+- `mcp/src/ask/query-context.js`
+- `mcp/src/ask/orchestrator.js`
+- `mcp/src/tools/definitions.js`
+- `js/ai/ai-client.js`
+- `js/ai/ai-config.js`
+- `js/ai/ai-ui.js`
+
+Tests, release pins and documentation:
+
+- `mcp/test/unit/work-events.test.js`
+- `tests/ai-work-analytics.test.js`
+- `tests/ai-chat-ux.test.js`
+- `tests/ai-mobile-ux.test.js`
+- `e2e/ai-work-analytics.spec.js`
+- `e2e/tickets-compact-view.spec.js` (version pin only)
+- `tests/network-tools-ui.test.js` (version/cache pins only)
+- `tests/sw-upgrade-static.test.js` (pins only)
+- `tests/tickets-compact-view.test.js` (pins only)
+- `tests/tools-v82-field-package.test.js` (pins only)
+- `tests/tools-v84-field-update.test.js` (pin only)
+- `tests/tools-v85-narrow-field-fixes.test.js` (pin only)
+- `app.js` (APP_VERSION only)
+- `sw.js` (CACHE_NAME only)
+- `docs/ai-work-analytics-v91-79.md`
