@@ -5,7 +5,7 @@ test('compact list keeps ticket order, expands one full card and survives offlin
   await page.setViewportSize({width:320,height:740});
   const errors=await gotoApp(page,appEnv.url);
   const cache=await waitServiceWorkerCacheReady(page);
-  expect(cache).toBe('maister-treker-v67-runtime-121');
+  expect(cache).toBe('maister-treker-v67-runtime-122');
   expect(await page.evaluate(async()=>{
     const base={date:currentTicketDate,city:'Дніпро',street:'вул. Робоча',house:'15',apartment:'27',address:'вул. Робоча 15, кв. 27',sum:450};
     tickets=[
