@@ -167,10 +167,14 @@ changed (the published v91.79 release previously passed 42/42).
   startup. No new Sheets column, DB migration, ID change or mass backfill.
 - Computed profiles are opt-in: work_v2 and onu_physical. Calls without profile
   preserve v91.79 explicit semantics; all non-semantic envelopes are unchanged.
-- Direct connectMasters is definite direct_ticket evidence. An exact tag
-  matching a name in the existing direct/shift roster is a legacy_master_tag
-  candidate only. Candidates obey the same date, item and signal constraints
-  and are excluded from definite totals. Same-day shift is never definite.
+- Direct connectMasters is definite direct_ticket evidence with highest
+  provenance. After the owner's specific-query business clarification, an exact
+  normalized ticket tag matching the requested coworker is definite
+  legacy_master_tag evidence, even with absent/conflicting shifts or another
+  direct coworker. Safe query cases Петей/Женей resolve to Петя/Женя; stored
+  tags use full normalized equality, never fuzzy/substring matching. No roster
+  is built or transmitted. Same-day shift is never definite. General coworker
+  grouping remains direct-only, not inferred from arbitrary historical tags.
 - Connection type + MAC present derives ONU install quantity=1 with reason
   derived_from_connection, quantity_source=business_derived. Explicit install
   on the same connection is deduplicated; explicit replace retains replacement
@@ -190,7 +194,7 @@ changed (the published v91.79 release previously passed 42/42).
 
 ## Candidate verification
 
-- C1–C3 / O1–O10 and additional profile, dedup, quantity-conflict, RU/UA,
+- C1–C3 / L1–L6 / O1–O10 and additional profile, dedup, quantity-conflict, RU/UA,
   exclusion, item/date scope, roster and follow-up privacy tests: PASS.
 - Actual serializer -> durable offline journal -> signed transport -> real
   Code.gs in-memory Sheets -> mapper -> redacted ticket -> coworker semantic
@@ -200,20 +204,23 @@ changed (the published v91.79 release previously passed 42/42).
   those synthetic baseline results, not Git-history or RTK dependencies.
 - Raw Worker entry-point tools/list/tools/call contract, GET-only GAS reads,
   invalid-profile rejection and response privacy: PASS.
-- MCP full: 489/489 PASS (includes privacy/security and READ-only guards).
+- MCP full: 496/496 PASS (includes privacy/security and READ-only guards).
 - Frontend AI: 25/25 PASS, including sync boundary and fail-closed profiles.
 - E2E full: 42/42 PASS, including count -> evidence -> reload at 320px.
 - Root full: final 201/202; only pre-existing timing-sensitive
-  network-tools-monitor.test.js:81 at 47ms (expected 38–46ms). An earlier full
-  repeat was 202/202 PASS; the first run hit the same test at 48ms.
+  network-tools-monitor.test.js:81 at 48ms (expected 38–46ms). Before the
+  specific-query refinement an earlier full repeat was 202/202 PASS; the
+  immediately previous final run hit the same test at 47ms.
   Ping code, timers and assertions were not modified or weakened.
-- Syntax: 100/100 JS files PASS; mcp/scripts/check.sh PASS; diff-check PASS.
+- Syntax: 104/104 JS files PASS; mcp/scripts/check.sh PASS; diff-check PASS.
 
 ## Known limitations and release boundary
 
-Legacy tags cannot prove direct selection provenance; the Worker has no
-settings.masters roster. Tags not matching available direct/shift names remain
-unattributed. Historical names are not repaired automatically. Existing pending
+The Worker has no settings.masters roster. Under the owner's approved narrow
+business rule, a specific requested coworker's exact historical tag is definite
+ticket-level evidence, not direct selection provenance. General historical
+coworker grouping is not expanded without a trusted roster. Historical names
+are not repaired automatically. Existing pending
 requests retain their original payload; only a later normal user edit/new ticket
 includes the added field. KV snapshot version stays 4.
 
@@ -227,8 +234,8 @@ selected hardware alone remains mention-only; signal does not prove installation
 Candidate changes require a later authorized frontend + Worker release to take
 effect in production. This stage permits only a DRAFT PR. No merge, deploy,
 production switch, secrets/auth/R2 change or data migration was performed.
-Because the latest root result is not fully green, DRAFT creation is gated on
-the owner's explicit exception for the unchanged pre-existing Ping timing test.
+The owner authorized DRAFT PR #65 despite the existing Ping timing failure;
+subsequent refinement remains on that PR with v91.80 / runtime-124 unchanged.
 
 ## Changed files (23)
 

@@ -75,14 +75,13 @@ export function workAnswer(data,params){
      lines.push('Всього фізичних встановлень ONU (подій): '+b.total_physical_placements+'. ONU абонента виключено: '+b.customer_owned_excluded+'; перенос/повторне використання: '+b.reused_excluded+'.');
    }
    if(totals.quantity_known_events) lines.push((totals.business_derived_quantity_events?'Відома кількість (включає business-derived з підключень): ':'Явно вказана кількість: ')+totals.quantity_sum+'; подій без кількості: '+totals.quantity_unknown_events+'.');
-   if(totals.legacy_coworker_candidates)lines.push('Ще '+totals.legacy_coworker_candidates+' заявок мають legacy master-tag evidence у самій заявці, не лише збіг зміни. Це кандидати з непідтвердженим походженням тегу; не включені в definite підрахунок.');
+    if(totals.legacy_coworker_tickets)lines.push('У '+totals.legacy_coworker_tickets+' заявках майстер вказаний в історичному тезі самої заявки (legacy_master_tag); включено в definite підрахунок, не за зміною.');
   if(totals.ambiguous_tickets) lines.push('Ще '+totals.ambiguous_tickets+' заявок неоднозначні — не включені в основний підрахунок.');
   if(params.mode==='stats') lines.push('Сума заявок: '+totals.money_sum+' грн. Сигнал: середній '+(totals.signal.average??'не вказано')+', найгірший '+(totals.signal.min??'не вказано')+', найкращий '+(totals.signal.max??'не вказано')+' dBm.');
   if(params.mode==='group') for(const group of totals.groups) lines.push(group.key+': '+group.tickets+' заявок, '+group.events+' подій.');
   if(data.evidence){
     lines.push('Показано '+data.evidence.length+' із '+totals.tickets+' заявок.');
-     data.evidence.forEach((row,i)=>lines.push((i+1)+'. '+row.date+' · '+row.ticket_id+' · '+(data.tickets[i]?.address||'адреса не вказана')+' · '+(row.coworkers.join(', ')||'напарник не вказаний')+(row.coworker_reason?' ('+row.coworker_reason+')':'')+' — '+row.events.slice(0,3).map(e=>e.evidence+' ('+e.reason+')').join('; ')+(row.events.length>3?' …':'')));
-      for(const row of data.legacy_evidence||[])lines.push('Legacy candidate: '+row.ticket_id+' · legacy_master_tag (не definite).');
+      data.evidence.forEach((row,i)=>lines.push((i+1)+'. '+row.date+' · '+row.ticket_id+' · '+(data.tickets[i]?.address||'адреса не вказана')+' · '+(row.coworker_reason==='legacy_master_tag'?params.coworker||'майстер':row.coworkers.join(', ')||'напарник не вказаний')+(row.coworker_reason?' ('+row.coworker_reason+': '+(row.coworker_reason==='legacy_master_tag'?'майстер вказаний в історичному тезі самої заявки':'майстер прямо вказаний у заявці')+')':'')+' — '+row.events.slice(0,3).map(e=>e.evidence+' ('+e.reason+')').join('; ')+(row.events.length>3?' …':'')));
       for(const row of data.exclusion_evidence||[])lines.push('Виключено: '+row.ticket_id+' · '+row.reason+' · '+row.evidence+'.');
   }
   lines.push('Установки, заміни, зняття, перевірки та прості згадки розділено. Кількість одиниць не вигадується. Для перевірки: «Показати заявки» або «Чому так пораховано?»');

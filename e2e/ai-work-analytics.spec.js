@@ -7,9 +7,9 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   const {createAskOrchestrator}=await load('orchestrator.js');
   const {runSmartQuery}=await load('smart-query.js');
   const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
-  const texts=['Установил ONU, сигнал -21','Сигнал ONU -29','Проверил ONU','Заменил БП ONU','Заменил ONU','Поставил ONU и роутер','С Петей подключили абонента, поставили ONU и роутер','ONU клиента, сигнал -25'];
-  const tickets=texts.map((text,i)=>({id:'ABCDEFGH'[i],date:'15.09.2026',time:'10:00',sum:100,type:i===6?'Підключення':'Ремонт',macAddress:i===6?'001122334455':'',connectMasters:i===6?['Петя']:[],equipment:[],cables:[],presetWorks:[],additionalWork:[],tags:[]}));
-  const ctx={tickets,shifts:[{date:'15.09.2026',coworker:'Петя',hours:8}],searchIndex:texts.map((text,i)=>({id:tickets[i].id,text}))};
+  const texts=['Установил ONU, сигнал -21','Сигнал ONU -29','Проверил ONU','Заменил БП ONU','Заменил ONU','Поставил ONU и роутер','С Петей подключили абонента, поставили ONU и роутер','ONU клиента, сигнал -25',''];
+  const tickets=texts.map((text,i)=>({id:'ABCDEFGHI'[i],date:'15.09.2026',time:'10:00',sum:100,type:i===6||i===8?'Підключення':'Ремонт',macAddress:i===6||i===8?'001122334455':'',connectMasters:i===6?['Петя']:[],equipment:[],cables:[],presetWorks:[],additionalWork:[],tags:i===8?['Петя','Артем']:[]}));
+  const ctx={tickets,shifts:[{date:'15.09.2026',coworker:'Женя',hours:8}],searchIndex:texts.map((text,i)=>({id:tickets[i].id,text}))};
   const queries=[];
   const orch=createAskOrchestrator({groq:{chat(){throw new Error('No approximate LLM counts');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery(ctx,p);}},toolDefs:TOOL_DEFINITIONS});
   await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
@@ -24,7 +24,7 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   // this synthetic fixture's custom URL so reload keeps using our mock.
   await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
   await page.locator('#aiInput').fill('Сколько ONU поставил с Петей в сентябре?');await page.locator('#aiSendBtn').click();
-  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Знайдено 1 заявок');
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Знайдено 2 заявок');
   await page.getByRole('button',{name:'Показати заявки',exact:true}).click();
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
   const exactFilters=query=>Object.fromEntries(['semantic','date_from','date_to','coworker'].map(key=>[key,query[key]]));
@@ -32,12 +32,14 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   expect(queries[1].coworker).toBe('петей');
   expect(queries[1].semantic.profile).toBe('onu_physical');
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('direct_ticket');
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('legacy_master_tag');
   await expect(page.locator('.ai-msg-assistant').last()).not.toContainText('001122334455');
   await expect(page.locator('#aiSendBtn')).toBeEnabled();
   await page.locator('#aiInput').fill('Почему так посчитано?');await page.locator('#aiSendBtn').click();
   await expect.poll(()=>queries.length).toBe(3);
   await expect(page.locator('#aiSendBtn')).toBeEnabled();
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('legacy_master_tag');
   expect(exactFilters(queries[2])).toEqual(exactFilters(queries[0]));
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);

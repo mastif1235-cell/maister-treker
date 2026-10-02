@@ -32,19 +32,51 @@ test('C1 real local -> sync JSON -> GAS mapper -> redaction -> semantic direct c
  assert.equal(Object.hasOwn(JSON.parse(legacy.fullDataJson),'connectMasters'),false);
  assert.equal(redactTicket(ticketFromGasRow(legacy)).connectMasters.length,0);
 });
-test('C2 historical master tag is candidate, never silently zero or definite',()=>{
+test('C2 exact historical tag is definite for a specific coworker, without any roster/shift',()=>{
  const t={...base,tags:['підключення','Женя','Артем']};
  const params={mode:'list',coworker:'Женей',semantic:{entity:'connection',action:'complete',profile:'work_v2'}};
  const data=runSmartQuery(context([t]),params).data;
- assert.equal(data.matched,0);assert.equal(data.work_totals.legacy_coworker_candidates,1);
- assert.equal(data.legacy_evidence[0].reason,'legacy_master_tag');assert.equal(data.legacy_evidence[0].category,'ambiguous');
- assert.match(workAnswer(data,params),/у самій заявці, не лише збіг зміни/);
+ assert.equal(data.matched,1);assert.equal(data.work_totals.legacy_coworker_tickets,1);
+ assert.equal(data.evidence[0].coworker_reason,'legacy_master_tag');assert.equal(data.evidence[0].events[0].category,'definite');
+ assert.match(workAnswer(data,params),/історичному тезі самої заявки/);
  const unknown=runSmartQuery({...context([t]),shifts:[]},params).data;
- assert.equal(unknown.work_totals.legacy_coworker_candidates,0,'unknown arbitrary tag is not a known-master candidate');
+ assert.equal(unknown.matched,1,'no roster or shift is required for the user-approved specific filter');
 });
 test('C3 same-day shift without a tag is not definite or a legacy ticket candidate',()=>{
  const data=runSmartQuery(context([base]),{mode:'count',coworker:'Петя',semantic:{entity:'connection',action:'complete',profile:'work_v2'}}).data;
- assert.equal(data.matched,0);assert.equal(data.work_totals.legacy_coworker_candidates,0);
+ assert.equal(data.matched,0);assert.equal(data.work_totals.legacy_coworker_tickets,0);
+});
+for(const [id,masters,tags,coworker,shift,matched,reason] of [
+ ['L1',[],['Женя','Артем','підключення'],'Женей','Петя',1,'legacy_master_tag'],
+ ['L2',[],['Петя'],'Петя','Женя',1,'legacy_master_tag'],
+ ['L3',[],[],'Петя','Петя',0,null],
+ ['L4',['Петя'],['Женя'],'Петя','Женя',1,'direct_ticket'],
+ ['L5',[],['важная заявка','ремонт'],'Петя','Петя',0,null],
+ ['L6',[],['Женя'],'Женей',null,1,'legacy_master_tag']
+])test(id+': specific coworker historical business rule',()=>{
+ const ctx={tickets:[{...base,connectMasters:masters,tags}],shifts:shift?[{date:base.date,coworker:shift}]:[],searchIndex:[]};
+ const params={mode:'list',coworker,semantic:{entity:'connection',action:'complete',profile:'work_v2'}};
+ const data=runSmartQuery(ctx,params).data;assert.equal(data.matched,matched);
+ if(reason)assert.equal(data.evidence[0].coworker_reason,reason);
+ if(id==='L4'){
+  const second=runSmartQuery(ctx,{...params,coworker:'Женя'}).data;
+  assert.equal(second.matched,1);assert.equal(second.evidence[0].coworker_reason,'legacy_master_tag');
+  const direct=runSmartQuery({...ctx,tickets:[{...ctx.tickets[0],tags:['Петя','Женя']}]},params).data;
+  assert.equal(direct.evidence[0].coworker_reason,'direct_ticket','direct provenance wins when both exist');
+ }
+ if(id==='L1'){
+  const other=runSmartQuery(ctx,{...params,coworker:'Артем'}).data;assert.equal(other.matched,1);
+  assert.equal(runSmartQuery(ctx,{...params,coworker:'Петя'}).data.matched,0,'shift conflict never creates a second definite master');
+ }
+});
+test('no fuzzy/substring legacy tags; general historical grouping remains direct-only; raw semantic filter supported',()=>{
+ const params={mode:'list',coworker:'Женей',semantic:{entity:'connection',action:'complete',profile:'work_v2'}};
+ for(const tags of [['Женечка'],['Женя extra'],['Же'],['старый Женя'],['Женей']])assert.equal(runSmartQuery(context([{...base,tags}]),params).data.matched,0,JSON.stringify(tags));
+ const exact=runSmartQuery(context([{...base,tags:['  ЖЕНЯ  ']}]),params).data;assert.equal(exact.matched,1);
+ const grouped=runSmartQuery(context([{...base,tags:['Петя','Женя'],connectMasters:['Артем']}]),{mode:'group',group_by:'coworker',semantic:params.semantic}).data;
+ assert.deepEqual(grouped.groups.map(g=>g.key),['Артем'],'do not derive a general roster from tags');
+ const raw=runSmartQuery(context([{...base,tags:['Женя']}],['подключили абонента']),{...params,semantic:{entity:'connection',action:'complete'}}).data;
+ assert.equal(raw.matched,1);assert.equal(raw.evidence[0].coworker_reason,'legacy_master_tag');
 });
 for(const [id,text,fields,placements,reason] of [
  ['O1','',{},1,'derived_from_connection'],
@@ -102,23 +134,23 @@ test('new ONU priority is action-scoped; excluded events never become physical t
  assert.equal(data.exclusion_evidence[0].reason,'customer_owned_onu');
  assert.ok(!JSON.stringify(data.exclusion_evidence).includes(base.macAddress));
 });
-test('legacy candidates respect date/item filters; direct priority and comma-separated roster',()=>{
+test('specific legacy matches respect date/item filters and direct priority',()=>{
  const tickets=[{...base,id:'DIRECT',connectMasters:['Женя'],tags:['Женя']},{...base,id:'CANDIDATE',tags:['Женя']},{...base,id:'OLD',date:'01.08.2026',tags:['Женя']}];
  const ctx={...context(tickets),shifts:[{date:base.date,coworker:'Петя, Женя'}]};
  const params={mode:'list',date_from:'01.09.2026',date_to:'30.09.2026',coworker:'Женей',semantic:{entity:'connection',action:'complete',profile:'work_v2'}};
  const data=runSmartQuery(ctx,params).data;
- assert.equal(data.matched,1);assert.equal(data.work_totals.legacy_coworker_candidates,1);
- assert.equal(data.evidence[0].coworker_reason,'direct_ticket');
- assert.equal(data.legacy_evidence[0].ticket_id,'CANDIDATE');
- assert.equal(runSmartQuery(ctx,{...params,items:[{kind:'equipment',text:'router'}]}).data.work_totals.legacy_coworker_candidates,0);
+ assert.equal(data.matched,2);assert.equal(data.work_totals.legacy_coworker_tickets,1);
+ assert.equal(data.evidence.find(e=>e.ticket_id==='DIRECT').coworker_reason,'direct_ticket');
+ assert.equal(data.evidence.find(e=>e.ticket_id==='CANDIDATE').coworker_reason,'legacy_master_tag');
+ assert.equal(runSmartQuery(ctx,{...params,items:[{kind:'equipment',text:'router'}]}).data.matched,0);
  assert.equal(workIntent('Сколько подключений я провёл с Женей в сентябре?',new Date(2026,9,2)).semantic.profile,'work_v2');
 });
 test('count -> both evidence follow-ups survive serialized context, preserve profile/date/coworker and evidence privacy',async()=>{
  const tickets=[{...base,connectMasters:['Петя']},{...base,id:'LEGACY',tags:['Петя']}],calls=[];
  const orch=createAskOrchestrator({groq:{chat(){throw new Error('no LLM arithmetic');}},toolDefs:TOOL_DEFINITIONS,tools:{query_tickets:async p=>{calls.push(p);return runSmartQuery(context(tickets),p);}}});
  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12)});
- assert.equal(first.queryContext.resolved_filters.semantic.profile,'onu_physical');assert.equal(first.total,1);
- assert.match(first.answer,/legacy master-tag/);
+ assert.equal(first.queryContext.resolved_filters.semantic.profile,'onu_physical');assert.equal(first.total,2);
+ assert.match(first.answer,/legacy_master_tag/);
  for(const question of ['Показать заявки','Почему так посчитано?']){
   const follow=await orch.handle(question,{queryContext:JSON.parse(JSON.stringify(first.queryContext))});
   for(const key of ['semantic','date_from','date_to','coworker'])assert.deepEqual(calls.at(-1)[key],calls[0][key]);
