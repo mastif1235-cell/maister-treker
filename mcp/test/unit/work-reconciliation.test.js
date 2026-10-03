@@ -143,12 +143,12 @@ test('specific legacy matches respect date/item filters and direct priority',()=
  assert.equal(data.evidence.find(e=>e.ticket_id==='DIRECT').coworker_reason,'direct_ticket');
  assert.equal(data.evidence.find(e=>e.ticket_id==='CANDIDATE').coworker_reason,'legacy_master_tag');
  assert.equal(runSmartQuery(ctx,{...params,items:[{kind:'equipment',text:'router'}]}).data.matched,0);
- assert.equal(workIntent('Сколько подключений я провёл с Женей в сентябре?',new Date(2026,9,2)).semantic.profile,'work_v2');
+ assert.equal(workIntent('Сколько подключений я провёл с Женей в сентябре?',new Date(2026,9,2),['Женя']).semantic.profile,'work_v2');
 });
 test('count -> both evidence follow-ups survive serialized context, preserve profile/date/coworker and evidence privacy',async()=>{
  const tickets=[{...base,connectMasters:['Петя']},{...base,id:'LEGACY',tags:['Петя']}],calls=[];
  const orch=createAskOrchestrator({groq:{chat(){throw new Error('no LLM arithmetic');}},toolDefs:TOOL_DEFINITIONS,tools:{query_tickets:async p=>{calls.push(p);return runSmartQuery(context(tickets),p);}}});
- const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12)});
+ const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12),coworkerRoster:['Петя']});
  assert.equal(first.queryContext.resolved_filters.semantic.profile,'onu_physical');assert.equal(first.total,2);
  assert.match(first.answer,/legacy_master_tag/);
  for(const question of ['Показать заявки','Почему так посчитано?']){

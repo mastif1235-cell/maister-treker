@@ -103,12 +103,12 @@ test('periods resolve actual calendar boundaries, day interval wins',()=>{
   assert.deepEqual(resolveDateRanges('с 31 по 32 сентября',now),[]);
 });
 test('acceptance questions -> deterministic semantic intents',()=>{
-  for(const q of ['Сколько ONU поставил?','Сколько ONU заменил?','Сколько БП ONU заменил?','Сколько роутеров поставил?','Сколько подключений с Петей?','Сколько ONU поставил с Петей в сентябре?','Сколько заявок с сигналом хуже -28?','Сколько ONU было в сентябре?']) assert.ok(workIntent(q,now),q);
+  for(const q of ['Сколько ONU поставил?','Сколько ONU заменил?','Сколько БП ONU заменил?','Сколько роутеров поставил?','Сколько подключений с Петей?','Сколько ONU поставил с Петей в сентябре?','Сколько заявок с сигналом хуже -28?','Сколько ONU было в сентябре?']) assert.ok(workIntent(q,now,['Петя']),q);
 });
 test('/ask count -> evidence: fresh same filter, no LLM guess or raw data exposure',async()=>{
   const calls=[];
   const orch=createAskOrchestrator({groq:{chat(){throw new Error('LLM should not count');}},tools:{query_tickets:async p=>{calls.push(p);return runSmartQuery(ctx,p);}},toolDefs:TOOL_DEFINITIONS});
-  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now});
+  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now,coworkerRoster:['Петя']});
   assert.equal(first.ok,true);assert.equal(first.total,1);
   const follow=await orch.handle('Показать заявки',{now,queryContext:first.queryContext});
   assert.equal(follow.ok,true);assert.equal(follow.total,1);

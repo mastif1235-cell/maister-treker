@@ -174,7 +174,8 @@
       ticket.password = extra.password || '';
     }
 
-    return {invalid:false, ticket:normalizeImportedCollections(ticket)};
+    const structured=fullData||extra.fullData;
+    return {invalid:false, ticket:normalizeImportedCollections(ticket), legacyMissingMasters:isPlainObject(structured)&&!Object.prototype.hasOwnProperty.call(structured,'connectMasters')};
   }
 
   function cloudShiftToLocal(row){
@@ -277,7 +278,7 @@
     return String(value);
   }
 
-  function canonicalTicket(ticket, deps){
+  function canonicalTicket(ticket, deps, legacyMissingMasters){
     deps = deps || {};
     const toPayload = (typeof deps.ticketToSyncPayload === 'function') ? deps.ticketToSyncPayload : function(t){
       return {id:t.id, date:t.date, time:t.time, content:t.content, sum:t.sum, tags:t.tags || [], backupNote:'', fullDataJson:''};
@@ -293,6 +294,9 @@
     let full = null;
     try{ full = JSON.parse(String(p.fullDataJson || '') || 'null'); }catch(_e){ full = null; }
     if(isPlainObject(full)){
+      // Old serializers omitted this one field. Ignore absence for comparison
+      // only; explicit [] in new cloud data is still a meaningful removal.
+      if(legacyMissingMasters) delete full.connectMasters;
       // geoLink — це локація, а не формат тексту: якщо з обох боків є
       // координати, довга/коротка ссылка сама по собі не є розбіжністю.
       const lat = comparableValue(full.geoLat);
@@ -342,7 +346,7 @@
       stats.cloudCount++;
       const localTicket = localById.get(id);
       if(!localTicket){ stats.newCount++; items.push({kind:'new', id, cloud:parsed.ticket}); return; }
-      if(canonicalTicket(localTicket, deps) === canonicalTicket(parsed.ticket, deps)){
+      if(canonicalTicket(localTicket, deps, parsed.legacyMissingMasters) === canonicalTicket(parsed.ticket, deps, parsed.legacyMissingMasters)){
         stats.matchCount++; items.push({kind:'match', id});
       }else{
         stats.conflictCount++; items.push({kind:'conflict', id, local:localTicket, cloud:parsed.ticket});

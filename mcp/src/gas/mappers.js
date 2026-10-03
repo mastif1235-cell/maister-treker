@@ -12,6 +12,23 @@ export const DATE_RE = /^\d{2}\.\d{2}\.\d{4}$/;
 
 /* Private marker lines of the app's own backup note (UA + RU variants). */
 const PRIVATE_NOTE_LINE_RE = /^(?:Логін|Логин|Пароль|Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера|ПовніДаніJSON)\s*:/i;
+const MASTER_NOTE_SECTION_RE = /^(?:Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера)\s*:/i;
+const BACKUP_SECTION_RE = /^(?:Геолокація|Геолокация|Логін|Логин|Пароль|ПовніДаніJSON|Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера)\s*:/i;
+export function publicBackupText(value, knownMasterNote){
+  let privateSection=false;
+  let source=String(value||'').replace(/\r\n?/g,'\n');
+  // Structured private textarea may itself contain marker-looking lines.
+  // Remove its exact serialized value first, so those cannot reopen indexing.
+  if(typeof knownMasterNote==='string'&&knownMasterNote){
+    const privateText=knownMasterNote.replace(/\r\n?/g,'\n');
+    for(const marker of ['Приватна примітка майстра: ','Приватная заметка мастера: '])source=source.replace(marker+privateText,marker);
+  }
+  return source.split('\n').filter(line=>{
+    const text=line.trim();
+    if(BACKUP_SECTION_RE.test(text))privateSection=MASTER_NOTE_SECTION_RE.test(text);
+    return !privateSection&&!PRIVATE_NOTE_LINE_RE.test(text);
+  }).join('\n');
+}
 export const TIME_RE = /^\d{2}:\d{2}$/;
 
 /* Exact mirror of the app's normalizeOnuSignal (js/ticket-form-domain.js). */
@@ -36,11 +53,7 @@ export function searchableTextFromGasRow(row, fullData){
      by design) is no longer indexed. Structured fields from that JSON line
      still reach the tools through the normal mapper path, so legacy address
      matching is unaffected; only private notes stop being searchable. */
-  const publicBackupNote = String(row && row.backupNote || '')
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .filter(function(line){ return !PRIVATE_NOTE_LINE_RE.test(line.trim()); })
-    .join('\n');
+  const publicBackupNote = publicBackupText(row && row.backupNote, f.masterNote);
   return [row && row.content, publicBackupNote, f.note, f.abonentNote, f.otherNote]
     .map(function(value){ return String(value == null ? '' : value).trim(); }).filter(Boolean).join('\\n');
 }

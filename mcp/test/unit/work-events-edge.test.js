@@ -70,7 +70,7 @@ test('review: both evidence follow-ups keep exact semantic/date/coworker filters
   const calls=[];
   const ctx={tickets:[{...ticket,connectMasters:['Петя','Саша']}],shifts:[],searchIndex:[{id:ticket.id,text:'поставил ONU'}]};
   const orch=createAskOrchestrator({groq:{chat(){throw new Error('No approximate calculation');}},toolDefs:TOOL_DEFINITIONS,tools:{query_tickets:async p=>{calls.push(p);return runSmartQuery(ctx,p);}}});
-  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12)});
+  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12),coworkerRoster:['Петя','Саша']});
   for(const question of ['Показать заявки','Почему так посчитано?']){
     const result=await orch.handle(question,{queryContext:JSON.parse(JSON.stringify(first.queryContext))});
     assert.equal(result.total,1);

@@ -16,6 +16,7 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
     const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
     if(route.request().method()==='OPTIONS') return route.fulfill({status:204,headers});
     const body=route.request().postDataJSON();
+    expect(body.context.coworkerRoster).toContain('Петя');
     const result=await orch.handle(body.question,{now:new Date(2026,9,2,12),...body.context});
     await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
   });
@@ -29,7 +30,7 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('поставили ONU');
   const exactFilters=query=>Object.fromEntries(['semantic','date_from','date_to','coworker'].map(key=>[key,query[key]]));
   expect(exactFilters(queries[1])).toEqual(exactFilters(queries[0]));
-  expect(queries[1].coworker).toBe('петей');
+    expect(queries[1].coworker).toBe('Петя');
   expect(queries[1].semantic.profile).toBe('onu_physical');
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('direct_ticket');
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('legacy_master_tag');

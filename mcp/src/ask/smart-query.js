@@ -24,6 +24,7 @@ import {parseDateKey, DATE_RE} from '../gas/mappers.js';
 import {validateTicketId} from './ticket-id.js';
 import {validateSemantic, workEvents, semanticMatches, semanticSignal, aggregateWork, directCoworkers} from './work-events.js';
 import {projectQueryFilters} from './query-context.js';
+import {exactDirectCoworker} from './coworker-names.js';
 import {isDirectoryIndex, resolveDirectoryCity, resolveDirectoryStreet, isResolvedStatus, knownTicketIds, attributeLegacyRow, directoryCityName, directoryStreetName, directoryNames} from './directory-index.js';
 
 const DIRECTORY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -365,14 +366,7 @@ function aliasOf(token){
   return null;
 }
 
-function semanticCoworkerNameMatches(storedName,query){
-  const normalize=name=>normItem(name).split(' ').map(token=>{
-    if(aliasOf(token))return token;
-    const base=token.replace(/е[ию]$/,'я');
-    return aliasOf(base)?base:token;
-  }).join(' ');
-  return !!String(storedName||'').trim() && coworkerNameMatches(normalize(storedName),normalize(query));
-}
+function semanticCoworkerNameMatches(storedName,query){return exactDirectCoworker(storedName,query);}
 // Specific-query historical rule: normalize query case forms, never fuzzy-match
 // or substring-match stored tags. No historical roster/grouping is inferred.
 function historicalCoworkerTagMatches(tag,query){

@@ -98,6 +98,15 @@ const liveTicket = Object.assign(app.blankTicketObject(), {
   diagnosticHistory:[{id:'d1', timestamp:'2026-09-01T10:00:00.000Z', profileId:'p1', summaryStatus:'ok', result:{}}]
 });
 const baseRow = sheetRow(liveTicket);
+const withMasters=Object.assign({},liveTicket,{connectMasters:[{name:'Петя',letter:'П'}]});
+const oldMastersRow=dropFullDataKeys(sheetRow(withMasters),['connectMasters']);
+// v91.79 wrote neither fullDataJson nor its backupNote copy with this key.
+const oldFull=JSON.parse(oldMastersRow.fullDataJson);
+oldMastersRow.backupNote=oldMastersRow.backupNote.replace(/^ПовніДаніJSON:.*$/m,'ПовніДаніJSON: '+JSON.stringify(oldFull));
+assertMatch('M2 legacy cloud absent connectMasters is not a data conflict',withMasters,oldMastersRow);
+assertConflict('M2 other legacy differences still conflict',withMasters,withFullData(oldMastersRow,full=>{full.address='Інша 7';}));
+assertConflict('M2 explicit empty masters in new cloud remain meaningful',withMasters,withFullData(sheetRow(withMasters),full=>{full.connectMasters=[];}));
+assert.equal(withMasters.connectMasters[0].name,'Петя','comparison does not backfill/mutate local ticket');
 
 /* ---------- формат: має бути match ---------- */
 

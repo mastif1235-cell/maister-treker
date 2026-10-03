@@ -74,7 +74,7 @@ function renderTicketCard(t, opts={}){
   if(getScriptUrl()){
     const conflict = getEntityConflict('ticket',t.id);
     syncBadge = conflict
-      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${t.id}" title="Оберіть, яку версію зберегти" style="border:none; cursor:pointer;">⚠️ Конфлікт</button>`
+      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${t.id}" title="${conflict.code==='INVALID_INPUT'?'Виправте дані заявки':'Оберіть, яку версію зберегти'}" style="border:none; cursor:pointer;">⚠️ ${conflict.code==='INVALID_INPUT'?'Помилка даних':'Конфлікт'}</button>`
       : isEntitySynced('ticket',t.id)
       ? `<span class="tc-sync-badge tc-sync-ok" title="Підтверджено сервером">✅ Таблиця</span>`
       : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;

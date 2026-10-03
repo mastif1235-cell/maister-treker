@@ -75,6 +75,7 @@ flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())
           try{
             if(!result.ok){
               const error=result.result;
+              if(item.entity==='ticket'&&error&&error.code==='INVALID_INPUT'){await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,null,'INVALID_INPUT'));failedEntities.add(key);return;}
               if(error&&error.code==='CONFLICT'){await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));failedEntities.add(key);return;}
               if(error&&error.code==='TOMBSTONED'){await this.persistTransition(s=>this.core.markConflict(s,item.entity,item.id,error.state));failedEntities.add(key);return;}
               if(error&&error.code==='REVISION_GAP'&&this.core.recoverUncommittedAddTicketGap){
