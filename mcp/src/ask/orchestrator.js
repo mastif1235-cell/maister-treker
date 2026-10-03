@@ -35,6 +35,7 @@ import {hygieneArgs} from './arg-hygiene.js';
    result items are re-ordered to the list the user actually sees. */
 import {alignRowsToAnswer} from './answer-order.js';
 import {workIntent,workAnswer} from './work-intent.js';
+import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
   maxQuestionChars: 2000,
@@ -772,6 +773,11 @@ export function createAskOrchestrator(options){
        helpers (address.js) and never guesses: an ambiguous value is passed on
        exactly as the model sent it. */
     args = hygieneArgs(def.name, args);
+    if(def.name==='query_tickets'&&args.semantic&&args.coworker&&capture?.coworkerRoster){
+      const name=resolveRosterCoworker(args.coworker,capture.coworkerRoster);
+      if(!name)return JSON.stringify({isError:true,error:'INVALID_ARGUMENTS',details:['coworker must uniquely match settings.masters']});
+      args={...args,coworker:name};
+    }
     let outcome;
     try{ outcome = await tools[def.name](args); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
@@ -931,7 +937,9 @@ export function createAskOrchestrator(options){
        deterministically for inherit_previous_filters calls. */
     const queryContext = sanitizeIncomingQueryContext(options && options.queryContext);
     const workFollowUp=queryContext?.resolved_filters?.semantic && /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText);
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : workIntent(questionText,now);
+    const coworkerRoster=sanitizeCoworkerRoster(options?.coworkerRoster);
+    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : workIntent(questionText,now,coworkerRoster);
+    if(semanticIntent?.clarification)return {ok:true,answer:semanticIntent.question,meta:{rounds:0,toolCallsMade:0,total:0,semantic:true,clarification:true},total:0,shown:0,tickets:[],referentTickets:[],queryContext:null,resultSet:null,resultItems:[],resultSetStatus:{created:false,reason:'clarification',subjectChanged:true}};
     if(semanticIntent && typeof tools.query_tickets==='function' && allowedDef('query_tickets')){
       const validation=validateAgainstSchema(allowedDef('query_tickets').inputSchema,semanticIntent);
       if(!validation.ok) return {ok:false,code:'INVALID_ARGUMENTS'};
@@ -1224,6 +1232,7 @@ export function createAskOrchestrator(options){
           const resultText = await executeTool(call, collectedTickets, toolTotals, {
             setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
             queryContext: queryContext,
+            coworkerRoster,
             authoritativeFollowUp: authoritativeFollowUp,
             authoritativeText: authoritativeText,
             activeResultSet,

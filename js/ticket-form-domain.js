@@ -21,6 +21,16 @@ function blankTicketObject(){
 }
 
 const ONU_SIGNAL_PRESETS = Array.from({length:16},(_,index)=>String(-15-index));
+function normalizeEditableMasters(value, roster){
+  const out=[];
+  for(const item of Array.isArray(value)?value:[]){
+    const name=String(typeof item==='string'?item:item?.name||'').trim();
+    if(!name || out.some(master=>master.name===name)) continue;
+    const known=(roster||[]).find(master=>master.name===name);
+    out.push({name,letter:String((typeof item==='object'&&item?.letter)||known?.letter||'')});
+  }
+  return out;
+}
 function normalizeOnuSignal(value){
   const text=String(value ?? '').trim().replace(',','.');
   if(!text) return '';

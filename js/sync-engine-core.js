@@ -25,6 +25,12 @@
     const current = state.records[recordKey] || {entity:input.entity, id:String(input.id), committedRevision:0, tombstone:false, head:null, tail:null};
     if(current.tombstone) throw new Error('TOMBSTONED');
     const deleting = !!input.delete;
+    // INVALID_INPUT was rejected before CAS/writes. A real user edit can
+    // replace that rejected head at the SAME revision, without dropping data
+    // or pretending the server committed it. Other conflicts stay parked.
+    if(current.conflict?.code==='INVALID_INPUT' && current.head){
+      current.head.attempted=false;current.tail=null;current.conflict=null;
+    }
     const pending = current.tail || current.head;
     if(pending && isDelete(pending.action)) return state;
     const revision = pending ? pending.revision + (current.head && current.tail ? 0 : 1) : current.committedRevision + 1;
@@ -74,10 +80,10 @@
     }
     return state;
   }
-  function markConflict(state, entity, id, server){
+  function markConflict(state, entity, id, server, code){
     state = copy(state); const record = state.records[key(entity,id)];
     if(!record || !record.head) return state;
-    record.conflict = {code:'CONFLICT', requestId:record.head.requestId, server:copy(server||{})};
+    record.conflict = {code:code==='INVALID_INPUT'?'INVALID_INPUT':'CONFLICT', requestId:record.head.requestId, server:copy(server||{})};
     return state;
   }
   function conflictFor(state, entity, id){

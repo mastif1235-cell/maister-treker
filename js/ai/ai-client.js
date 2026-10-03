@@ -327,6 +327,9 @@ MTAI.createClient = function(options){
       body.context = body.context || {};
       body.context.selectedTicketId = ctxSelected;
     }
+    // Names from current settings only; never persisted in chat/queryContext.
+    const roster=context&&Array.isArray(context.coworkerRoster)?context.coworkerRoster.slice(0,50).filter(name=>typeof name==='string'&&name.length<=60&&/^[\p{L}ʼ' -]+$/u.test(name)).map(name=>name.trim()).filter(Boolean):[];
+    if(roster.length){body.context=body.context||{};body.context.coworkerRoster=[...new Set(roster)];}
     while(body.history.length && JSON.stringify(body).length > maxRequestChars) body.history.shift();
     if(JSON.stringify(body).length > maxRequestChars){
       clearTimeout(timer);

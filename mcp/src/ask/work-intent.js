@@ -2,6 +2,7 @@
    LLM tool parser. Do not silently discard address/price/unknown constraints. */
 import {ENTITIES,ACTIONS} from './work-events.js';
 import {resolveDateRanges} from './date-resolver.js';
+import {resolveRosterCoworker} from './coworker-names.js';
 function concepts(text,defs){
   const found=[];
   for(const def of defs){
@@ -11,7 +12,7 @@ function concepts(text,defs){
   }
   return found.filter(f=>!found.some(p=>p.id!==f.id && p.start<=f.start && p.end>=f.end && p.end-p.start>f.end-f.start));
 }
-export function workIntent(question,now){
+export function workIntent(question,now,roster){
   const q=String(question||'').toLowerCase();
   if(!/(сколько|скільки|покаж|показать|средн|середн|худш|найгір|лучш|найкращ|чаще|найчаст|більше|больше)/u.test(q)) return null;
   const entities=concepts(q,ENTITIES), actions=concepts(q,ACTIONS);
@@ -33,7 +34,12 @@ export function workIntent(question,now){
   if(/по\s+напарник|кожн.*напарник|с\s+кем|з\s+ким/iu.test(q)){params.mode='group';params.group_by='coworker';}
   if(equipmentQuestion){params.mode='group';params.group_by='entity';}
   const coworker=/(?:^|\s)(?:с|со|з|із)\s+([\p{L}ʼ'-]+)/iu.exec(q);
-  if(coworker && !['кем','ким','каждым','кожним'].includes(coworker[1])) params.coworker=coworker[1];
+  const nonPerson=coworker&&(['кем','ким','каждым','кожним'].includes(coworker[1])||/^сигнал[\p{L}]*$/iu.test(coworker[1]));
+  if(coworker && !nonPerson){
+    const name=resolveRosterCoworker(coworker[1],roster);
+    if(!name)return {clarification:true,question:'Уточніть період датами або напарника з переліку в Налаштуваннях. Невідоме слово після «с/з» не вважається імʼям майстра.'};
+    params.coworker=name;
+  }
   const ranges=resolveDateRanges(q,now);
   if(ranges.length>1) return null;
   if(ranges.length){params.date_from=ranges[0].from;params.date_to=ranges[0].to;}
@@ -50,7 +56,7 @@ export function workIntent(question,now){
   // existing LLM schema parser, never to a silently broader fast-path query.
   let residual=q;
   for(const def of ENTITIES.concat(ACTIONS)) residual=residual.replace(new RegExp('(?<![\\p{L}\\p{N}])(?:'+def.pattern.replaceAll('[а-я]','[а-яіїєґ]')+')(?![\\p{L}\\p{N}])','giu'),' ');
-  if(coworker) residual=residual.replace(coworker[0],' ');
+  if(params.coworker || (coworker&&nonPerson)) residual=residual.replace(coworker[0],' ');
   if(threshold) residual=residual.replace(threshold[0],' ');
   if(semantic.entity==='connection')residual=residual.replace(/(?<![\p{L}])(?:пров[её]л[аи]?|пров[іе]в|виконав)(?![\p{L}])/giu,' ');
   residual=residual.replace(/[\d.,:?!-]+/g,' ');

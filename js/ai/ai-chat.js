@@ -159,7 +159,7 @@ MTAI.createChatController = function(deps){
        failures ignored) so the answer never uses a directory older than the
        phone's. Optional hook — the controller works without it. */
     if(typeof deps.beforeAsk === 'function'){ try{ await deps.beforeAsk(); }catch(_e){} }
-    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId });
+    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId, coworkerRoster:typeof deps.coworkerRoster==='function'?deps.coworkerRoster():[] });
     busy = false;
     emit('busy', false);
     if(outcome.ok){

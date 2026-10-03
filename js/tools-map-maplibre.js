@@ -196,7 +196,7 @@ export function createMapLibreAdapter(gl,root=globalThis){
     const generation=++styleGeneration;
     if(kind==='offline'){
       try{const prepared=await offlineStyle();if(generation!==styleGeneration)return false;currentBase='offline';map.setMaxZoom?.(prepared.displayMaxZoom);map.setStyle(prepared.style);if(options.fit!==false)map.fitBounds?.([[prepared.header.minLon,prepared.header.minLat],[prepared.header.maxLon,prepared.header.maxLat]],{padding:24,maxZoom:Math.min(16,Number(prepared.header.maxZoom)||16)});}
-      catch(error){if(generation!==styleGeneration)return false;root.MTSafeError?.reportError?.(error,{scope:'map-offline-style'});setEmptyState(true);setStatus(statusNode,'Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.');restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
+      catch(error){if(generation!==styleGeneration)return false;root.MTSafeError?.reportError?.(error,{scope:'map-offline-style'});styleStatusMessage='Офлайн-карта не встановлена. Імпортуйте файл .pmtiles у Налаштуваннях.';setEmptyState(true);setStatus(statusNode,styleStatusMessage);restoreUserLocation();restoreObjects(currentOptions);restoreSelection();return false;}
     }else if(kind==='satellite'){
       if(root.navigator?.onLine===false){setStatus(statusNode,'Супутникова карта доступна лише онлайн.');return false;}
       const key=root.MTMapTilerLocal?.getKey?.();if(!key){setStatus(statusNode,'Для супутникової карти додайте власний MapTiler API key у Налаштуваннях.');return false;}
@@ -252,7 +252,8 @@ export function createMapLibreAdapter(gl,root=globalThis){
     map.touchZoomRotate?.enableRotation?.();
     map.on('style.load',handleStyleLifecycle);map.on('styledata',handleStyleLifecycle);map.on('idle',handleStyleLifecycle);
     map.on('moveend',()=>{captureView();updateOfflineCoverage();});
-    map.on('load',()=>{if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');scheduleOverlayRestore(styleGeneration);}});
+    const mountedMap=map,initialGeneration=styleGeneration;
+    map.on('load',()=>{if(map!==mountedMap)return;if(styleGeneration!==initialGeneration){scheduleOverlayRestore(styleGeneration);return;}if(useOffline)switchBaseLayer('offline',options.statusNode,{remember:false});else{setEmptyState(false);setStatus(options.statusNode,'');scheduleOverlayRestore(styleGeneration);}});
     map.on('contextmenu',event=>options.onAddHere?.({lat:event.lngLat.lat,lng:event.lngLat.lng}));
     // Той самий long-press, що й у Leaflet: один обробник на обидва рушії.
     if(typeof options.onAddHere==='function'&&typeof root.MTToolsMap?.bindMapLongPress==='function'){

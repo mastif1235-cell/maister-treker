@@ -313,6 +313,7 @@ function build(){
   }
   chat = MTAI.createChatController({
     client: MTAI.client,
+    coworkerRoster: function(){ return typeof settings!=='undefined'&&Array.isArray(settings.masters)?settings.masters.map(master=>typeof master==='string'?master:master?.name):[]; },
     attachments: attachments,
     /* Stage 2D: push a changed AddressBook to the backend before asking */
     beforeAsk: function(){ return typeof mtDirectorySyncBeforeAsk === 'function' ? mtDirectorySyncBeforeAsk() : null; },

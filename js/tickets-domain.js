@@ -159,7 +159,12 @@ async function keepLocalTicketConflict(id){
 }
 
 function showTicketConflictResolution(id){
-  if(!getEntityConflict('ticket',id)) return;
+  const conflict=getEntityConflict('ticket',id);
+  if(!conflict) return;
+  if(conflict.code==='INVALID_INPUT'){
+    openModal('⚠️ Помилка синхронізації', '<div>Таблиця відхилила дані заявки (INVALID_INPUT). Локальна заявка збережена. Перевірте поля та довжину приватної примітки; після редагування синхронізація повториться.</div>');
+    return;
+  }
   openModal('⚠️ Конфлікт заявки', `
     <div style="font-size:14px; line-height:1.5; margin-bottom:12px;">Цю заявку змінили на іншому пристрої. Оберіть версію — автоматично дані не перезаписуються.</div>
     <button type="button" class="btn btn-block" id="acceptServerConflictBtn">Прийняти версію з Таблиці</button>

@@ -1,0 +1,31 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const {createServer,createDevice}=require('./helpers/sync-gas-harness.js');
+test('M4 UTF-8 oversized masterNote is permanently parked, independent queue continues, edit recovers',async()=>{
+ const server=createServer(),device=await createDevice({server,online:true});
+ const source=fs.readFileSync('app.js','utf8');vm.runInContext(source.slice(source.indexOf('function ticketToSyncPayload('),source.indexOf('function shiftToSyncPayload(')),device.ctx);
+ device.engine.payload=(_entity,item)=>device.ctx.ticketToSyncPayload(item);
+ let timers=0;device.engine.setTimer=()=>{timers++;return 0;};
+ const large='😀'.repeat(6000);assert.equal(Buffer.byteLength(large,'utf8'),24000);
+ await device.addTicket({id:'oversized',date:'03.10.2026',time:'10:00',masterNote:large});
+ assert.equal(device.sendLog.at(-1).outcome,'INVALID_INPUT');
+ assert.equal(device.conflict('ticket','oversized')?.code,'INVALID_INPUT');
+ assert.equal(timers,0,'permanent rejection schedules no retry');assert.equal(server.ticketRow('oversized'),null,'rejection commits no row');
+ const calls=device.sendLog.length;await device.flush();assert.equal(device.sendLog.length,calls,'manual/startup flush does not retry rejected body');
+ await device.addTicket({id:'valid',date:'03.10.2026',time:'10:01',masterNote:'звичайна нотатка'});
+ assert.ok(device.isSynced('ticket','valid'));assert.ok(device.ticket('oversized'),'local ticket preserved');
+ await device.editTicket('oversized',{masterNote:'скорочено'});
+ assert.ok(device.isSynced('ticket','oversized'),'a real edit replaces only rejected mutation, correct CAS revision');
+ assert.equal(server.ticketRow('oversized').id,'oversized');
+});
+test('M6 opening string/object legacy masters normalizes editable state, not original ticket',()=>{
+ const node=()=>({textContent:'',classList:{remove(){}}});
+ const ctx={console,document:{getElementById:node},settings:{masters:[{name:'Петя',letter:'П'}],tags:['Петя']},formSessionId:0,saveSettings(){},fillFormFromState(){},getEquipmentConfig:()=>[],getWorkTypesConfig:()=>[],getCableTypesConfig:()=>[],calcOriginalPhotoKeys:[]};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync('js/ticket-form-domain.js','utf8')+'\nfunction safeNonNegativeNumber(n){return Math.max(0,Number(n)||0);}',ctx);
+ const source=fs.readFileSync('js/ticket-editor-domain.js','utf8');vm.runInContext(source.slice(source.indexOf('function loadTicketIntoForm('),source.indexOf('function updateCredParsedHint(')),ctx);
+ const original={id:'legacy',connectMasters:['Петя',{name:'Петя',letter:'П'}],tags:['Петя'],cables:[]};
+ ctx.loadTicketIntoForm(original);
+ assert.equal(ctx.calcState.connectMasters.length,1);assert.equal(ctx.calcState.connectMasters[0].name,'Петя');assert.equal(ctx.calcState.connectMasters[0].letter,'П');
+ assert.equal(original.connectMasters.length,2);assert.equal(original.connectMasters[0],'Петя');
+ const idx=ctx.calcState.connectMasters.findIndex(m=>m.name==='Петя');ctx.calcState.connectMasters.splice(idx,1);assert.equal(ctx.calcState.connectMasters.length,0,'existing chip handler removes selection instead of adding duplicate');
+});

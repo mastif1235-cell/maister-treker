@@ -214,6 +214,7 @@ function loadTicketIntoForm(t){
       ? [{name: calcState.masterName || '', letter: calcState.masterLetter || ''}]
       : [];
   }
+  calcState.connectMasters=normalizeEditableMasters(calcState.connectMasters,settings.masters);
   // Ранні версії під час збереження ремонту могли стерти connectMasters,
   // але ім'я напарника лишалось у тегах. Відновлюємо такий вибір і для вже
   // наявних заявок, щоб він знову був видимим у формі.

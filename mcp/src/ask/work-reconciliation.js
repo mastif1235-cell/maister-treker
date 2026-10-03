@@ -1,8 +1,8 @@
 /* Opt-in computed reconciliation. Never mutates a ticket or writes storage.
    Structured business rules are entity-specific, not hardware selection rules. */
 export const CONTEXT_PATTERNS = {
-  customer_owned_onu: /(?:onu|ону|ont|онушк[\p{L}]*)\s+(?:абонент[\p{L}]*|клиент[\p{L}]*|клієнт[\p{L}]*)|(?:сво[яєійю]|власн[\p{L}]*)\s+(?:onu|ону|ont|онушк[\p{L}]*)|(?:оборудован[\p{L}]*|обладнан[\p{L}]*)\s+(?:абонент[\p{L}]*|клієнт[\p{L}]*|клиент[\p{L}]*)/iu,
-  reused_onu_transfer: /перенос|перенес[\p{L}]*|перен[іе]с[\p{L}]*|(?:стар[\p{L}]*|існуюч[\p{L}]*|existing|reused)\s+(?:onu|ону|ont|онушк[\p{L}]*|обладнан[\p{L}]*|оборудован[\p{L}]*)|(?:onu|ону|ont)\s+(?:стар[\p{L}]*|reused|existing)/iu
+  customer_owned_onu: /(?:onu|ону|ont|онушк[\p{L}]*)\s+(?:абонент[\p{L}]*|клиент[\p{L}]*|клієнт[\p{L}]*)|(?:сво[яєійю]|власн[\p{L}]*|клиентск[\p{L}]*|клієнтськ[\p{L}]*|абонентск[\p{L}]*|абонентськ[\p{L}]*)\s+(?:onu|ону|ont|онушк[\p{L}]*)|(?:оборудован[\p{L}]*|обладнан[\p{L}]*)\s+(?:абонент[\p{L}]*|клієнт[\p{L}]*|клиент[\p{L}]*)/iu,
+  reused_onu_transfer: /(?:перенос[\p{L}]*|перенес[\p{L}]*|перен[іе]с[\p{L}]*|reuse|reused)\s+(?:(?:стар[\p{L}]*|існуюч[\p{L}]*|существующ[\p{L}]*|existing)\s+){0,2}(?:onu|ону|ont|онушк[\p{L}]*)|(?:стар[\p{L}]*|існуюч[\p{L}]*|existing|reused)\s+(?:onu|ону|ont|онушк[\p{L}]*|обладнан[\p{L}]*|оборудован[\p{L}]*)|(?:onu|ону|ont)\s+(?:стар[\p{L}]*|reuse|reused|existing|перенос[\p{L}]*|перенес[\p{L}]*|перен[іе]с[\p{L}]*)/iu
 };
 const NEW_ONU = /(?:постав[\p{L}]*|установ[\p{L}]*|встанов[\p{L}]*|замен[\p{L}]*|зам[іи]н[\p{L}]*)\s+(?:(?:на|нов[\p{L}]*|новеньк[\p{L}]*)\s+){1,3}(?:onu|ону|ont|онушк[\p{L}]*)|(?:постав[\p{L}]*|установ[\p{L}]*|встанов[\p{L}]*|замен[\p{L}]*|зам[іи]н[\p{L}]*)\s+(?:onu|ону|ont)\s+(?:на\s+)?нов[\p{L}]*/iu;
 export function reconcileWork(ticket, analysis, texts){
@@ -10,9 +10,10 @@ export function reconcileWork(ticket, analysis, texts){
   const text=texts.join('\n');
   // Ownership of a PSU is not ownership of a separate ONU beside it.
   const contextText=text.replace(/(?:бп|блок\s+(?:питания|живлення))\s+(?:onu|ону|ont)\s+(?:абонент[\p{L}]*|клиент[\p{L}]*|клієнт[\p{L}]*)/giu,' ');
-  const customer=CONTEXT_PATTERNS.customer_owned_onu.test(contextText),reuse=CONTEXT_PATTERNS.reused_onu_transfer.test(contextText);
+  const clauses=contextText.split(/[\n;,.!?]+/);
+  const customer=clauses.some(clause=>CONTEXT_PATTERNS.customer_owned_onu.test(clause)),reuse=clauses.some(clause=>CONTEXT_PATTERNS.reused_onu_transfer.test(clause));
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||'').trim());
-  const macPresent=!!String(ticket.macAddress||'').trim();
+  const macPresent=/^(?:[\da-f]{12}|(?:[\da-f]{2}:){5}[\da-f]{2}|(?:[\da-f]{2}-){5}[\da-f]{2}|(?:[\da-f]{4}\.){2}[\da-f]{4})$/iu.test(String(ticket.macAddress||'').trim());
   const newActions=new Set();
   for(const clause of text.split(/[\n;,.!?]+/)){
     const match=NEW_ONU.exec(clause);

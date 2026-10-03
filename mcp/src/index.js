@@ -288,8 +288,9 @@ export function createApp(env, deps){
     const chatSessionId = body && body.context ? body.context.chatSessionId : null;
     const resultSet = body && body.context ? body.context.resultSet : null;
     const selectedTicketId = body && body.context ? body.context.selectedTicketId : null;
+    const coworkerRoster=body?.context?.coworkerRoster;
     let outcome;
-    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets, queryContext, chatSessionId, resultSet, selectedTicketId}); }
+    try{ outcome = await targetAsk.handle(question, {history: history, contextTickets, queryContext, chatSessionId, resultSet, selectedTicketId, coworkerRoster}); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(!outcome.ok){
       const code = String(outcome.code || 'INTERNAL');

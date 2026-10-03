@@ -3,6 +3,7 @@
    NOT proof of installation. Evidence exposes only matched vocabulary, never
    the surrounding note (which may contain customer information). */
 import {reconcileWork} from './work-reconciliation.js';
+import {publicBackupText} from '../gas/mappers.js';
 export const ENTITIES = [
   {id:'onu_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:onu|ont|ону|онушк[а-я]*)'},
   {id:'router_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:роутер[а-я]*|маршрутизатор[а-я]*|router)'},
@@ -69,9 +70,8 @@ export function validateSemantic(raw){
   }
   return out;
 }
-const PRIVATE_LINE = /^\s*(?:Пароль|Лог[іи]н|Приватна\s+примітка\s+майстра|Приватная\s+заметка\s+мастера|ПовніДаніJSON)\s*:/i;
 function publicText(value){
-  return String(value || '').replace(/\\n|\r\n?/g,'\n').split('\n').filter(l => !PRIVATE_LINE.test(l)).join('\n');
+  return publicBackupText(String(value || '').replace(/\\n|\r\n?/g,'\n'));
 }
 
 /* Optical subscriber and input readings never collapse into one value.
