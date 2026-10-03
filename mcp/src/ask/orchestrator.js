@@ -34,7 +34,7 @@ import {hygieneArgs} from './arg-hygiene.js';
 /* v91.60: the visible numbering of the answer IS the ordinal — referents and
    result items are re-ordered to the list the user actually sees. */
 import {alignRowsToAnswer} from './answer-order.js';
-import {workIntent,workAnswer} from './work-intent.js';
+import {workIntent,workAnswer,temporalWorkIntent} from './work-intent.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -944,7 +944,17 @@ export function createAskOrchestrator(options){
     const detailKind=/^(?:показати|показать|покажи|покажіть)\s+(замены|заміни|исключ[её]нные|виключені)[.!?\s]*$/iu.exec(questionText)?.[1];
     const workFollowUp=queryContext?.resolved_filters?.semantic && (detailKind || /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText));
     const coworkerRoster=sanitizeCoworkerRoster(options?.coworkerRoster);
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : workIntent(questionText,now,coworkerRoster);
+    let temporalContext=queryContext;
+    // Older clients omitted mode. Recover COUNT only when the immediately
+    // preceding user question deterministically proves the EXACT same filters.
+    // Do not reconstruct/widen filters or change persisted history/schema.
+    if(queryContext && options?.queryContext?.mode==null && Array.isArray(options?.history)){
+      const previousUser=options.history.filter(m=>m?.role==='user').at(-1);
+      const prior=previousUser&&workIntent(previousUser.content||previousUser.text,now,coworkerRoster);
+      const priorContext=prior?.mode==='count'&&!prior.clarification?projectQueryContext({resolved_filters:prior,mode:'count'}):null;
+      if(priorContext&&stableFiltersKey(priorContext.resolved_filters)===stableFiltersKey(queryContext.resolved_filters))temporalContext={...queryContext,mode:'count'};
+    }
+    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : temporalWorkIntent(questionText,now,temporalContext) || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';

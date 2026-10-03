@@ -699,6 +699,9 @@ export function runSmartQuery(ctx, params){
     if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) continue;
     if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) continue;
 
+    // A specific semantic coworker cannot match a shift-only/other-master row.
+    // Reject it before expensive event extraction; keep the legacy path intact.
+    if(semantic && coworkerQuery && !directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) && !(t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,coworkerQuery))) continue;
     const analysis = semantic ? workEvents(t, legacyText, semantic) : null;
     if(analysis) workById.set(t.id, analysis);
     const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);

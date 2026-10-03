@@ -194,6 +194,7 @@ function build(){
      очищається, тому старі кнопки стають мертвими — прибираємо їх, щоб
      тап по кнопці НІКОЛИ не був silent no-op. */
   let retryButtons = [];
+  let errorBubbles = [];
   /* Токен активного відліку: старий таймер не має права керувати Send
      після того, як прийшов новий 429 з іншим часом. */
   let cooldownRun = 0;
@@ -338,6 +339,8 @@ function build(){
         const sb = $('aiSendBtn'); if(sb) sb.disabled = false;
         retryButtons.forEach(function(x){ try{ x.remove(); }catch(_e){} });
         retryButtons = [];
+        errorBubbles.forEach(function(x){ try{ x.remove(); }catch(_e){} });
+        errorBubbles = [];
         const b = msgBubble('assistant'); renderer.renderAnswer(b, out.text);
         if(out.meta && out.meta.semantic === true && out.meta.intent !== 'list' && !out.meta.clarification){
           const actions=doc.createElement('div');actions.className='ai-work-evidence-actions';
@@ -398,6 +401,7 @@ function build(){
       },
       error: function(err){
         const b = msgBubble('error');
+        errorBubbles.push(b);
         b.textContent = (err.kind === 'rate_limit' ? '⏳ ' : err.kind === 'auth' ? '🔑 ' : '⚠️ ') + err.message;
         if(chat.canRetry()){
           const rb = doc.createElement('button');
@@ -509,7 +513,7 @@ function build(){
       cleared: function(){
         if(voiceAutoSend) voiceAutoSend.onCleared();
         if(voiceTts) voiceTts.stop();
-        retryButtons = []; cooldownRun++; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick();
+        retryButtons = []; errorBubbles = []; cooldownRun++; while(messages.firstChild) messages.removeChild(messages.firstChild); renderQuick();
       }
     }
   });

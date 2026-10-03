@@ -2,6 +2,41 @@
 const {test,expect,gotoApp}=require('./app-test');
 const {pathToFileURL}=require('node:url');
 const path=require('node:path');
+test('AI network error is cleared by a successful ordinary send, without duplicate asks',async({page,appEnv})=>{
+ let calls=0;
+ await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'}});
+  calls++;
+  if(calls===1)return route.abort('failed');
+  return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify({ok:true,answer:'Успішна відповідь.',meta:{}})});
+ });
+ await gotoApp(page,appEnv.url);
+ await page.evaluate(async()=>{MTAI.storage.update({enabled:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
+ const send=async text=>{await page.locator('#aiInput').fill(text);await page.locator('#aiSendBtn').click();await expect(page.locator('#aiSendBtn')).toBeEnabled();};
+ await send('Перший запит');await expect(page.locator('.ai-msg-error')).toContainText('Немає з’єднання');
+ await send('Наступний запит');await expect(page.locator('.ai-msg-assistant').last()).toContainText('Успішна відповідь');
+ await expect(page.locator('.ai-msg-error')).toHaveCount(0);expect(calls).toBe(2);
+});
+test('AI September -> August after reload keeps ONU all-install scope, coworker and both work types',async({page,appEnv})=>{
+ const load=p=>import(pathToFileURL(path.join(__dirname,'../mcp/src/ask',p)).href);
+ const {createAskOrchestrator}=await load('orchestrator.js'),{runSmartQuery}=await load('smart-query.js');
+ const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
+ const tickets=[['SEPT','15.09.2026','Підключення'],['AUG_CONNECTION','15.08.2026','Підключення'],['AUG_REPAIR','18.08.2026','Ремонт']].map(([id,date,type])=>({id,date,type,tags:['Женя'],connectMasters:[],equipment:[{label:'ONU',qty:1}],note:'',cables:[]})),queries=[];
+ const orch=createAskOrchestrator({toolDefs:TOOL_DEFINITIONS,groq:{chat(){throw new Error('No LLM reconstruction');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery({tickets,shifts:[],searchIndex:[]},p);}}});
+ await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
+  const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+  const body=route.request().postDataJSON(),result=await orch.handle(body.question,{now:new Date('2026-10-03'),...body.context});
+  return route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+ });
+ await gotoApp(page,appEnv.url);
+ await page.evaluate(async()=>{MTAI.storage.update({enabled:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
+ await page.locator('#aiInput').fill('Сколько ONU я поставил с Женей за сентябрь?');await page.locator('#aiSendBtn').click();await expect(page.locator('.ai-msg-assistant').last()).toContainText('1 ONU');
+ await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await page.evaluate(()=>MTAI.ui.open());
+ await page.locator('#aiInput').fill('А в августе?');await page.locator('#aiSendBtn').click();await expect(page.locator('.ai-msg-assistant').last()).toContainText('2 ONU');
+ const q=queries.at(-1);expect(q.coworker).toBe('Женя');expect(q.semantic).toEqual(queries[0].semantic);expect(q.type).toBeUndefined();expect(q.date_from).toBe('01.08.2026');expect(q.date_to).toBe('31.08.2026');expect(q.mode).toBe('count');
+ await expect(page.locator('.ai-msg-error')).toHaveCount(0);
+});
 test('AI work analytics: real deterministic Worker modules, count -> evidence -> reload preserves filter',async({page,appEnv})=>{
   const load=p=>import(pathToFileURL(path.join(__dirname,'../mcp/src/ask',p)).href);
   const {createAskOrchestrator}=await load('orchestrator.js');
