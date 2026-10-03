@@ -85,7 +85,7 @@ test('mixed job query counts all quantities and work type filter narrows physica
  const tickets=[{...base,id:'A',type:'Підключення',equipment:[{label:'ONU',qty:1}]},{...base,id:'B',equipment:[{label:'ONU',qty:2,price:0}]}];
  const ctx={tickets,shifts:[],searchIndex:[]};
  const params=workIntent('Сколько ONU поставил за сентябрь?',new Date('2026-10-03'),[]),all=runSmartQuery(ctx,params).data;
- assert.equal(all.work_totals.quantity_sum,3);assert.equal(all.work_totals.onu_breakdown.total_physical_placements,3);assert.match(workAnswer(all,params),/3 шт/);
+  assert.equal(all.work_totals.quantity_sum,3);assert.equal(all.work_totals.onu_breakdown.total_physical_placements,3);assert.match(workAnswer(all,params),/3 ONU/);
  const repair=runSmartQuery(ctx,workIntent('Сколько ONU заменил на ремонтах за сентябрь?',new Date('2026-10-03'),[])).data;
  assert.equal(repair.work_totals.quantity_sum,2);assert.equal(repair.matched,1);
 });
@@ -130,7 +130,7 @@ test('meters require real units; work quantity and conflicting length claims do 
 });
 test('generic component consumption uses shared entity dictionary for ownership/reuse/new priority',()=>{
  assert.equal(count({equipment:[{label:'БП ONU',qty:1}]},'БП ONU клиента','onu_power_supply'),0);
- assert.equal(count({equipment:[{label:'Коннектор',qty:1}]},'старый коннектор','connector'),0);
+  assert.equal(count({equipment:[{label:'Коннектор',qty:1}]},'старый коннектор','connector'),0);
  assert.equal(count({equipment:[{label:'Коннектор',qty:1}]},'коннектор клиента, поставил новый коннектор','connector'),1);
  assert.equal(count({type:'Підключення',macAddress:'001122334455'},'заменил БП ONU клиента'),1,'component ownership does not mask separate derived ONU');
 });

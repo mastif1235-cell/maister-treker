@@ -351,7 +351,7 @@ test('explicit card request WITH a target returns only the structured card proje
   const groq = scriptedGroq([toolResponse('list_tickets', '{}'), finalResponse('Показую картку заявки.')]);
   const tools = stubTools([]); tools.list_tickets = async function(){ return {ok:true, data:{tickets:[{id:'t-1', date:'01.08.2026'}], total_matched:1}}; };
   const outcome = await createAskOrchestrator({groq, tools, toolDefs:TOOL_DEFINITIONS}).handle('Покажи картку заявки на Садовій 21', {history:[]});
-  assert.equal(outcome.total,1); assert.equal(outcome.tickets.length,1); assert.equal(outcome.tickets[0].id,'t-1');
+  assert.equal(outcome.total,1); assert.deepEqual(outcome.tickets,[]); assert.deepEqual(outcome.presentation,{kind:'single_ticket',ticket_id:'t-1'});
 });
 
 test('target-less card request is code-owned: no model round-trip and no invented card', async () => {

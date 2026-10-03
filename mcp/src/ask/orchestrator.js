@@ -25,7 +25,7 @@ import {validateTicketId} from './ticket-id.js';
 import {createResultSet, sanitizeIncomingResultSet, validChatSessionId} from './result-set.js';
 /* F4 reuses the address normalization the READ tools themselves use — the same
    street identity, the same house normalization. No new fuzzy system. */
-import {normalizeHouse, matchScore, placeIdentity, cleanStr, buildAddressLine, ordinalToDigit} from './address.js';
+import {normalizeHouse, normalizeApartment, matchScore, placeIdentity, cleanStr, buildAddressLine, ordinalToDigit} from './address.js';
 import {cityFilterAccepts} from './canonical.js';
 /* v91.51 hygiene: the model fills structured arguments in "human" shape
    («Привокзальная 3Б», «кв. 1», «посёлок Шевченко»). Normalised here, on the
@@ -401,7 +401,8 @@ export function structuredFromAddressLine(line){
     const m = /^(.+?)\s+(\d{1,4}[а-яіїєґa-z]?(?:\/\d{1,4})?)$/iu.exec(parts[i]);
     if(!m) continue;
     if(/^(?:кв|квартира|кв\.)\s/i.test(parts[i])) continue;
-    return {street:m[1], house:m[2], city:i > 0 ? parts[i - 1] : ''};
+    const apartment=/(?<![\p{L}\d])(?:квартира|кв\.?)(?!\p{L})\s*([\p{L}\d/-]+)/iu.exec(String(line))?.[1]||'';
+    return {street:m[1], house:m[2], city:i > 0 ? parts[i - 1] : '',apartment};
   }
   return null;
 }
@@ -411,16 +412,18 @@ function structuredRow(row){
   const id = validateTicketId(row.id);
   if(!id) return null;
   let street = cleanStr(row.street), house = cleanStr(row.house);
-  if(street && house) return {id:id, street:row.street, house:row.house, city:cleanStr(row.city)};
+  if(street && house) return {id:id, street:row.street, house:row.house, city:cleanStr(row.city),date:cleanStr(row.date),apartment:cleanStr(row.apartment)||structuredFromAddressLine(row.address)?.apartment||''};
   if(street || house) return null;               /* half-structured: never guess */
   const parsed = structuredFromAddressLine(row.address);
   if(!parsed) return null;
-  return {id:id, street:parsed.street, house:parsed.house, city:cleanStr(parsed.city)};
+  return {id:id, street:parsed.street, house:parsed.house, city:cleanStr(parsed.city),date:cleanStr(row.date),apartment:parsed.apartment};
 }
 
 export function exactAddressCandidateId(question, rows){
-  const list = Array.isArray(rows) ? rows.map(structuredRow).filter(Boolean) : [];
-  if(list.length < 2) return null;
+  const apartment=/(?<![\p{L}\d])(?:квартира|кв\.?)(?!\p{L})\s*([\p{L}\d/-]+)/iu.exec(question)?.[1];
+  const date=/(?<!\d)(\d{2}\.\d{2}\.\d{4})(?!\d)/u.exec(question)?.[1];
+  const list = Array.isArray(rows) ? rows.map(structuredRow).filter(r=>r&&(!apartment||normalizeApartment(r.apartment)===normalizeApartment(apartment))&&(!date||r.date===date)) : [];
+  if(!list.length) return null;
   const words = questionWords(question);
   if(!words.length) return null;
   /* Street + house pairs: the number must follow a street candidate. */
@@ -801,7 +804,8 @@ export function createAskOrchestrator(options){
       capture.setQueryEnvelope({
         resolved_filters: outcome.data.resolved_filters || {},
         mode: outcome.data.mode,
-        total_matched: outcome.data.total_matched
+        total_matched: outcome.data.total_matched,
+        work_totals: outcome.data.work_totals
       });
       if(outcome.data.mode === 'list' && Array.isArray(outcome.data.tickets) && Array.isArray(capture.listCandidates)){
         capture.listCandidates.push({
@@ -937,9 +941,15 @@ export function createAskOrchestrator(options){
        only (no notes/phones/PII); injected for the model and enforced
        deterministically for inherit_previous_filters calls. */
     const queryContext = sanitizeIncomingQueryContext(options && options.queryContext);
-    const workFollowUp=queryContext?.resolved_filters?.semantic && /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText);
+    const detailKind=/^(?:показати|показать|покажи|покажіть)\s+(замены|заміни|исключ[её]нные|виключені)[.!?\s]*$/iu.exec(questionText)?.[1];
+    const workFollowUp=queryContext?.resolved_filters?.semantic && (detailKind || /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText));
     const coworkerRoster=sanitizeCoworkerRoster(options?.coworkerRoster);
     const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : workIntent(questionText,now,coworkerRoster);
+    if(detailKind&&semanticIntent){
+      semanticIntent.semantic={...semanticIntent.semantic};
+      if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';
+      else{semanticIntent.semantic.action='replace';semanticIntent.semantic.profile='physical_consumption';}
+    }
     if(semanticIntent?.clarification)return {ok:true,answer:semanticIntent.question,meta:{rounds:0,toolCallsMade:0,total:0,semantic:true,clarification:true},total:0,shown:0,tickets:[],referentTickets:[],queryContext:null,resultSet:null,resultItems:[],resultSetStatus:{created:false,reason:'clarification',subjectChanged:true}};
     if(semanticIntent && typeof tools.query_tickets==='function' && allowedDef('query_tickets')){
       const validation=validateAgainstSchema(allowedDef('query_tickets').inputSchema,semanticIntent);
@@ -947,7 +957,7 @@ export function createAskOrchestrator(options){
       let found;
       try{found=await tools.query_tickets(semanticIntent);}catch(_err){return {ok:false,code:'INTERNAL'};}
       if(!found?.ok) return found;
-      const answer=workAnswer(found.data,semanticIntent);
+      const answer=workAnswer(found.data,semanticIntent,{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)});
       if(answer!==null){
         const rows=found.data.tickets||[];
         const total=found.data.total_matched||0;
@@ -1254,7 +1264,8 @@ export function createAskOrchestrator(options){
       /* v91.45: deterministic backstop for list numbering — the model may
          repeat «1.» for every item; the formatter restores 1..N without ever
          introducing technical ids. */
-      const answer = renumberSequentialLists(String(response.content || '').trim().slice(0, limits.maxAnswerChars));
+      const aggregateAnswer=lastQueryEnvelope?.work_totals&&['count','group'].includes(lastQueryEnvelope.mode)&&!cardIntentFor(questionText)?workAnswer(lastQueryEnvelope,{...lastQueryEnvelope.resolved_filters,mode:lastQueryEnvelope.mode},{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)}):null;
+      const answer = renumberSequentialLists(String(aggregateAnswer??response.content??'').trim().slice(0, limits.maxAnswerChars));
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
       const intent = cardIntentFor(questionText);
       const uniqueCandidates = [];
@@ -1322,15 +1333,23 @@ export function createAskOrchestrator(options){
       /* v91.60: when the turn brought no rows of its own (the model answered
          from the conversation), the exact address is looked up in the previous
          answer's referents — the same one-row-only rule, nothing guessed. */
-      const f4Rows = authoritative ? authoritative.rows : (collectedTickets.length ? collectedTickets : contextTickets);
+      let f4Rows = authoritative ? authoritative.rows : (collectedTickets.length ? collectedTickets : contextTickets);
+      // A referent-only address selection stays inside its existing period.
+      // A fresh READ or an explicitly new date never inherits the old period.
+      if(!authoritative&&!collectedTickets.length&&!/\d{2}\.\d{2}\.\d{4}/u.test(questionText)&&queryContext){
+        const rank=value=>{const m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value||'');return m?Number(m[3]+m[2]+m[1]):null;};
+        const from=rank(queryContext.resolved_filters.date_from),to=rank(queryContext.resolved_filters.date_to);
+        if(from!==null||to!==null)f4Rows=f4Rows.filter(row=>{const date=rank(row.date);return date!==null&&(from===null||date>=from)&&(to===null||date<=to);});
+      }
       let exactAddressId = null;
       if(!ordinalLock && selectedIds.size !== 1 && (intent === 'open' || intent === 'cards')){
-        if(f4Rows.length > 1) exactAddressId = exactAddressCandidateId(questionText, f4Rows);
+        if(f4Rows.length) exactAddressId = exactAddressCandidateId(questionText, f4Rows);
       }
       let selectedTicketId = null;
       let presentation = null;
-      if((!authoritative && selectedIds.size === 1) || exactAddressId){
-        selectedTicketId = exactAddressId || Array.from(selectedIds)[0];
+      const uniqueOpenId=(intent==='open'||intent==='cards')&&total===1&&activeSource.length===1&&(authoritative||collectedTickets.length)?validateTicketId(activeSource[0].id):null;
+      if((!authoritative && selectedIds.size === 1) || exactAddressId || uniqueOpenId){
+        selectedTicketId = exactAddressId || Array.from(selectedIds)[0] || uniqueOpenId;
         presentation = {kind:'single_ticket', ticket_id:selectedTicketId};
         cards = [];
         referentTickets = [];

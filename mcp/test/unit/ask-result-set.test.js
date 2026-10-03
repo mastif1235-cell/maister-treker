@@ -519,19 +519,20 @@ test('F4/T6+T7: numbers that are not an address are never a house', async () => 
   assert.deepEqual(withSet.presentation, {kind:'single_ticket', ticket_id:'t-05'});
 });
 
-test('F4: nothing is opened when there is no exact row, and a single row needs no F4', async () => {
+test('F4: no incorrect row opens; a single exact address can select the card', async () => {
   /* zero exact matches → the safe current behaviour is kept */
   const g = groq([call('search_tickets',{query:'Садовая 19'}), done('Точного збігу немає.')]);
   const out = await createAskOrchestrator({groq:g, tools:searchRows([SAD_SIMILAR, {id:'t-sad24', date:'04.09.2026', city:'Миколаївка 1', street:'Вул Садова', house:'24'}]), toolDefs:TOOL_DEFINITIONS})
     .handle('Открой заявку Садовая 19', {chatSessionId:'chat-session-1', now:new Date('2026-09-20T12:00:00Z')});
   assert.equal(out.presentation, null);
   assert.equal(out.selectedTicketId, null);
-  /* the helper itself never invents a candidate from a single row */
-  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [SAD_EXACT]), null);
+  /* a single row with an actual exact address is no longer lost */
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [SAD_EXACT]), 't-sad19');
   /* and a target-less phrase produces no address target at all */
   assert.equal(exactAddressCandidateId('Дай карточку', [SAD_EXACT, SAD_SIMILAR]), null);
   /* rows without structured street/house cannot be matched at all */
-  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [{id:'a', address:'Миколаївка 1, Вул Садова 19'}, {id:'b'}]), null);
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [{id:'a', address:'Миколаївка 1, Вул Садова 19'}, {id:'b'}]), null,'invalid technical IDs are never selected');
+  assert.equal(exactAddressCandidateId('Открой заявку Садовая 19', [{id:'b',address:'unknown'}]),null);
 });
 
 /* ---------- public /mcp contract + LLM-visible toolset ---------- */

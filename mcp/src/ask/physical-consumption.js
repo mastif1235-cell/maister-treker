@@ -10,12 +10,16 @@ function exclusions(entity,text,patternFor){
   const own='(?:абонент[\\p{L}]*|клиент[\\p{L}]*|клієнт[\\p{L}]*)';
   const adjectives='(?:сво[яєійю]|власн[\\p{L}]*|клиентск[\\p{L}]*|клієнтськ[\\p{L}]*|абонентск[\\p{L}]*|абонентськ[\\p{L}]*)';
   const old='(?:стар[\\p{L}]*|існуюч[\\p{L}]*|существующ[\\p{L}]*|existing|reused)';
-  const move='(?:перенос[\\p{L}]*|перенес[\\p{L}]*|перен[іе]с[\\p{L}]*|reuse|reused)';
+  const move='(?:перенос[\\p{L}]*|перенес[\\p{L}]*|перен[іе]с[\\p{L}]*|reuse|reused|повторно\\s+(?:использ[\\p{L}]*|використ[\\p{L}]*))';
   const owned=new RegExp(noun+'\\s+'+own+'|'+adjectives+'\\s+'+noun,'iu');
-  const reused=new RegExp('(?:'+old+'|'+move+')\\s+(?:'+old+'\\s+)?'+noun+'|'+noun+'\\s+(?:'+old+'|'+move+')','iu');
+  // An old-unit fault is not proof that the old unit was retained/reused.
+  const reused=new RegExp(move+'\\s+(?:(?:эту\\s+же|цю\\s+ж|ту\\s+же|той\\s+самий)\\s+)?(?:'+old+'\\s+)?'+noun+'|(?:оставил[\\p{L}]*|оставили|залиш[\\p{L}]*|использовал[\\p{L}]*|использовали|використав[\\p{L}]*|використали)\\s+'+old+'\\s+'+noun+'|reused\\s+'+noun+'|'+noun+'\\s+(?:reuse|reused|повторно\\s+(?:использ[\\p{L}]*|використ[\\p{L}]*))','iu');
   // Component ownership cannot mask a separate physical ONU/router.
   const safe=['onu','router'].includes(entity)?text.replace(/(?:(?:бп|psu|блок\s+(?:питания|живлення))\s+(?:onu|ону|ont|роутер[\p{L}]*|router)|(?:onu|ont|router)\s+psu)\s+(?:абонент[\p{L}]*|клиент[\p{L}]*|клієнт[\p{L}]*)/giu,' '):text;
-  return owned.test(safe)?'customer_owned_'+entity:reused.test(safe)?'reused_'+entity+'_transfer':null;
+  const legacyMove='(?:перенос[\\p{L}]*|перенес[\\p{L}]*|перен[іе]с[\\p{L}]*|reuse|reused)';
+  const legacyReuse=new RegExp('(?:'+old+'|'+legacyMove+')\\s+(?:'+old+'\\s+)?'+noun+'|'+noun+'\\s+(?:'+old+'|'+legacyMove+')','iu');
+  const explicitReuse=entity==='onu'?safe.split(/[\n;,.!?]+/).some(c=>!/(?:^|\s)(?:не|ні|надо|нужно|треба|будем|будемо|завтра)\s/iu.test(c)&&reused.test(c)):legacyReuse.test(safe);
+  return owned.test(safe)?'customer_owned_'+entity:explicitReuse?'reused_'+entity+'_transfer':null;
 }
 function newAction(entity,text,patternFor){
   const pattern=entity==='onu'?'(?:onu|ону|ont)':entity==='router'?'(?:router|роутер[\\p{L}]*|маршрутизатор[\\p{L}]*)':patternFor?.(entity),noun=pattern?'(?:'+pattern+')':null;

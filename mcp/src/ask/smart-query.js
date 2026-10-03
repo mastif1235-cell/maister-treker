@@ -768,7 +768,9 @@ export function runSmartQuery(ctx, params){
       const relevant=analysis.events.filter(e => !semantic.entity || e.entity===semantic.entity);
       if(relevant.some(e => e.category==='ambiguous' && (!semantic.action || e.action===semantic.action || e.action==='mention'))) ambiguousWork.add(t.id);
       if(relevant.some(e => e.category==='excluded' && (!semantic.action || e.action===semantic.action))) excludedWork.add(t.id);
-      if(!analysis.events.some(e => semanticMatches(e,semantic))) continue;
+      const excludedContext=semantic.category==='excluded'&&['onu_physical','physical_consumption'].includes(semantic.profile)&&(analysis.contexts||[]).some(e=>!semantic.entity||e.entity===semantic.entity);
+      if(excludedContext)excludedWork.add(t.id);
+      if(!analysis.events.some(e => semanticMatches(e,semantic))&&!excludedContext) continue;
       reasons.push('робота:явний обʼєкт + дія (' + semantic.category + ')');
     }
 
@@ -1047,7 +1049,9 @@ export function runSmartQuery(ctx, params){
       base.evidence=list.slice(offset,offset+limit).map(t=>({ticket_id:validateTicketId(t.id)||'',date:t.date,coworkers:directCoworkers(t).slice(0,10),events:(workById.get(t.id)?.events||[]).filter(e=>semanticMatches(e,semantic)).slice(0,20)}));
       if(coworkerQuery)base.evidence.forEach(row=>{row.coworker_reason=coworkerProof.get(row.ticket_id);});
       if(semantic.profile){
-        base.exclusion_evidence=physicalScope.filter(t=>!workById.get(t.id).events.some(e=>e.category==='definite'&&semanticMatches(e,semantic))).flatMap(t=>(workById.get(t.id).contexts||[]).map(e=>({ticket_id:validateTicketId(t.id)||'',date:t.date,reason:e.reason,category:'excluded',evidence:e.evidence}))).slice(offset,offset+limit);
+        const excludedScope=semantic.category==='excluded'?list.slice(offset,offset+limit):physicalScope;
+        base.exclusion_evidence=excludedScope.filter(t=>!workById.get(t.id).events.some(e=>e.category==='definite'&&semanticMatches(e,semantic))).flatMap(t=>(workById.get(t.id).contexts||[]).filter(e=>!semantic.entity||e.entity===semantic.entity).map(e=>({ticket_id:validateTicketId(t.id)||'',date:t.date,reason:e.reason,category:'excluded',evidence:e.evidence})));
+        if(semantic.category!=='excluded')base.exclusion_evidence=base.exclusion_evidence.slice(offset,offset+limit);
       }
     }
     /* full-set analytics (independent of the page above); city spellings are
