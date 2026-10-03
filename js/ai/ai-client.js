@@ -212,7 +212,7 @@ MTAI.createClient = function(options){
         if(v.action!==undefined){if(!actions.includes(v.action)) return null;sem.action=v.action;}
         if(v.category!==undefined){if(!['definite','ambiguous','excluded','all'].includes(v.category)) return null;sem.category=v.category;}
         if(v.signal_context!==undefined){if(!['subscriber','input','any'].includes(v.signal_context)) return null;sem.signal_context=v.signal_context;}
-        if(v.profile!==undefined){if(!['work_v2','onu_physical'].includes(v.profile))return null;if(v.profile==='onu_physical'&&(sem.entity!=='onu'||sem.action!=='install'))return null;sem.profile=v.profile;}
+        if(v.profile!==undefined){if(!['work_v2','onu_physical','physical_consumption'].includes(v.profile))return null;if(v.profile==='onu_physical'&&(sem.entity!=='onu'||sem.action!=='install'))return null;sem.profile=v.profile;}
         out.semantic=sem;
       }else if(key === 'tags'){
         if(Array.isArray(v)) out[key] = v.slice(0,20).map(function(t){ return String(t == null ? '' : t).slice(0,60); }).filter(Boolean);

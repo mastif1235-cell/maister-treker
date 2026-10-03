@@ -110,12 +110,12 @@ test('connection+replacement deduplicates physical placement and keeps provenanc
  for(const text of ['не поставил ONU','завтра поставим ONU','надо заменить ONU','завтра подключим абонента'])assert.equal(placed(analyze({},text)).length,0,text);
  assert.ok(!analyze().events.some(e=>e.entity==='router'));
 });
-test('physical breakdown, no invented replacement quantity, all-set totals before paging',()=>{
+test('physical breakdown, approved single-unit action fallback, all-set totals before paging',()=>{
  const texts=['','поставил ONU','заменил ONU','ONU абонента','перенос, старая ONU','поставил ONU'];
  const tickets=texts.map((_,i)=>({...base,id:'CASE'+i,type:i===2||i===5?'Ремонт':'Підключення'}));
  const data=runSmartQuery(context(tickets,texts),{mode:'list',limit:1,semantic:profile}).data;
  assert.deepEqual(data.work_totals.onu_breakdown,{new_connections:2,standalone_installs:1,replacements:1,total_physical_placements:4,customer_owned_excluded:1,reused_excluded:1});
- assert.equal(data.work_totals.quantity_sum,2);assert.equal(data.work_totals.quantity_unknown_events,2);
+  assert.equal(data.work_totals.quantity_sum,4);assert.equal(data.work_totals.quantity_unknown_events,0);
  assert.equal(data.work_totals.business_derived_quantity_events,2);assert.equal(data.evidence.length,1);
  assert.match(workAnswer(data,{mode:'list'}),/business-derived/);assertNoForbidden(data);
 });

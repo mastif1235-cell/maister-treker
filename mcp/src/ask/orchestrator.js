@@ -50,6 +50,7 @@ export const ASK_LIMITS = {
 export const ASK_SYSTEM_PROMPT = [
   'Ти — асистент «Майстер-Трекера»: допомагаєш майстру з даними про заявки, зміни та звіти.',
   'Правила даних:',
+  'Фізична витрата: semantic.profile=physical_consumption (ONU також onu_physical), category=definite; загальний install включає заміни. Тип — params.type (Ремонт/Підключення). structured > explicit > ONU fallback, без double count; price=0 не виключає. Числа/units/work-type breakdown — work_totals.consumption_totals; не додавай метри до штук. MasterNote не використовуй.',
   'Для виконаних робіт застосовуй query_tickets.semantic: entity + action, не items/пошук слова. Установка != заміна != перевірка != згадка. БП ONU — onu_power_supply, НЕ onu. Рахуй лише definite; work_totals.events/tickets/quantity_sum — різні одиниці. Не домислюй кількість. Для питання без дії уточни її. Для сигналів semantic={} відрізняє subscriber/input/unknown. Числа бери з work_totals; докази — evidence; неоднозначні заявки окремо. Не використовуй same-day shift для точного підрахунку з напарником.',
   'Для нового computed аналізу задавай semantic.profile=work_v2. Для «скільки ONU фізично поставив» задавай entity=onu, action=install, profile=onu_physical: включає окремо установки й заміни та business-derived ONU з Підключення + MAC present. Бери breakdown з work_totals.onu_breakdown; не плутай події з відомою кількістю одиниць. Для конкретного напарника exact historical ticket tag — definite legacy_master_tag; прямий connectMasters — direct_ticket з вищим provenance. Зміна не доводить участь у заявці. Загальна групировка напарників — лише direct connectMasters, не roster з усіх тегів. ONU абонента й reused/transfer виключені, крім явно нової ONU. MAC-значення ніколи не цитуй, лише MAC present=yes/no. Follow-up зберігає exact profile і всі фільтри. Не застосовуй ONU business rule до роутерів.',
   '1) Дані отримуй ЛИШЕ через надані інструменти читання. Нічого не вигадуй: чого немає у відповіді інструменту — того не існує. Ніколи не придумуй числа, дати, адреси, суми або рівні сигналу.',
@@ -702,7 +703,7 @@ export function createAskOrchestrator(options){
       type: 'function',
       function: {
         name: def.name,
-        description: def.name==='query_tickets' ? 'Фільтри й точні агрегати ДО pagination. Роботи: semantic entity+action; згадка != дія.' : String(def.description || ''),
+        description: def.name==='query_tickets' ? 'Витрата: physical_consumption; згадка != дія. Повні агрегати.' : String(def.description || ''),
         parameters: def.inputSchema || {type:'object', properties:{}}
       }
     };
