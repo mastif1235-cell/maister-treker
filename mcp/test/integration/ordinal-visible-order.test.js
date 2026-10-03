@@ -234,8 +234,8 @@ test('alignRowsToAnswer: strict matching — unmatched, partial or ambiguous lis
 });
 
 test('structuredFromAddressLine parses only the Worker\'s own one-line address format', () => {
-  assert.deepEqual(structuredFromAddressLine('Дніпро, Вул Матроська 22, кв. 4'), {street:'Вул Матроська', house:'22', city:'Дніпро'});
-  assert.deepEqual(structuredFromAddressLine('Вул Садова 2а'), {street:'Вул Садова', house:'2а', city:''});
+  assert.deepEqual(structuredFromAddressLine('Дніпро, Вул Матроська 22, кв. 4'), {street:'Вул Матроська', house:'22', city:'Дніпро',apartment:'4'});
+  assert.deepEqual(structuredFromAddressLine('Вул Садова 2а'), {street:'Вул Садова', house:'2а', city:'',apartment:''});
   assert.equal(structuredFromAddressLine('Дніпро'), null);
   assert.equal(structuredFromAddressLine(''), null);
   assert.equal(structuredFromAddressLine('кв. 4'), null);

@@ -78,12 +78,60 @@ export function workIntent(question,now,roster){
   return params;
 }
 
-export function workAnswer(data,params){
+export function workAnswer(data,params,options={}){
   if(data.clarification) return data.question;
   const totals=data.work_totals;
   if(!totals) return null;
   const period=params.date_from||params.date_to ? (params.date_from||'…')+'–'+(params.date_to||'…') : 'увесь час';
   const sem=data.resolved_filters.semantic;
+  const russian=/сколько|поставил|заменил|почему|покажи|списать|оборудован/iu.test(options.question||'');
+  const diagnostic=options.diagnostic===true;
+  const labels={onu:'ONU',router:russian?'Роутер':'Роутер',onu_power_supply:'БП ONU',router_power_supply:russian?'БП роутера':'БП роутера',cable:russian?'Кабель':'Кабель',fiber:russian?'Оптический кабель':'Оптичний кабель'};
+  const entityName=e=>labels[e]||e.replace(/^material:/,'');
+  const unit=u=>u==='m'?'м':'шт.';
+  let humanPeriod=period;
+  const from=/^01\.(\d{2})\.(\d{4})$/.exec(params.date_from||''),to=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(params.date_to||'');
+  if(from&&to&&from[1]===to[2]&&from[2]===to[3]&&Number(to[1])===new Date(Date.UTC(Number(from[2]),Number(from[1]),0)).getUTCDate())humanPeriod=new Intl.DateTimeFormat(russian?'ru':'uk',{month:'long',timeZone:'UTC'}).format(new Date(Date.UTC(Number(from[2]),Number(from[1])-1,1)));
+  const named=/(?:^|\s)(?:с|со|з|із)\s+([\p{L}ʼ'-]+)/iu.exec(options.question||'');
+  const person=named&&params.coworker&&resolveRosterCoworker(named[1],[params.coworker])===params.coworker?named[1]:params.coworker;
+  const withPerson=person?(russian?' вместе с ':' разом з ')+person:'';
+  if(!diagnostic&&['count','group'].includes(params.mode)){
+    const prefix=(russian?'За ':'За ')+humanPeriod+withPerson;
+    if(params.mode==='group'&&params.group_by!=='entity'){
+      const actions={install:russian?'Установки':'Установки',replace:russian?'Замены':'Заміни',check:russian?'Проверки':'Перевірки',complete:russian?'Подключения':'Підключення'};
+      return [prefix+':',...(totals.groups||[]).map(g=>(params.group_by==='action'?actions[g.key]||g.key:g.key)+': '+(totals.consumption_totals&&g.quantity_sum!=null?g.quantity_sum+' '+unit(g.unit):g.events+(russian?' выполненных работ.':' виконаних робіт.')))].join('\n');
+    }
+    if(totals.consumption_totals){
+      const items=totals.consumption_totals;
+      if(sem.entity==='onu'){
+        const item=items.find(e=>e.entity==='onu')||{quantity:0,connection:0,repair:0,other:0};
+        const lines=[prefix+(russian?' установлено ':' встановлено ')+item.quantity+' ONU:'];
+        lines.push(item.connection+(russian?' на подключениях,':' на підключеннях,'));
+        lines.push(item.repair+(russian?' на ремонтах/заменах.':' на ремонтах/замінах.'));
+        if(item.other)lines.push(item.other+(russian?' на других работах.':' на інших роботах.'));
+        return lines.join('\n');
+      }
+      return items.length?[prefix+':',...items.map(e=>entityName(e.entity)+' — '+e.quantity+' '+unit(e.unit))].join('\n'):(russian?'Подтверждённого расхода оборудования нет.':'Підтвердженої витрати обладнання немає.');
+    }
+    if(params.mode==='group')return [prefix+':',...(totals.groups||[]).map(g=>(params.group_by==='entity'?entityName(g.key):g.key)+': '+g.events+(russian?' выполненных работ.':' виконаних робіт.'))].join('\n');
+    return prefix+': '+totals.events+(russian?' выполненных работ.':' виконаних робіт.');
+  }
+  if(!diagnostic&&params.mode==='list'){
+    const reasons={structured_consumption:russian?'Оборудование указано в заявке':'Обладнання вказано в заявці',derived_from_connection:russian?'Подключение с подтверждённым оборудованием':'Підключення з підтвердженим обладнанням',explicit_install:russian?'Указана установка':'Вказана установка',explicit_replace:russian?'Указана замена':'Вказана заміна',customer_owned_onu:russian?'ONU клиента':'ONU абонента',reused_onu_transfer:russian?'Повторно использована/перенесена существующая ONU':'Повторно використана/перенесена наявна ONU'};
+    const lines=[];
+    if(sem.category==='excluded'){
+      for(const [i,t] of (data.tickets||[]).entries()){const why=(data.exclusion_evidence||[]).find(e=>e.ticket_id===t.id);lines.push((i+1)+'. '+t.date+' · '+(t.address||'')+' — '+(reasons[why?.reason]||(russian?'Не новое оборудование':'Не нове обладнання'))+'.');}
+    }else for(const [i,row] of (data.evidence||[]).entries()){
+      const why=(row.events||[]).slice(0,3).map(e=>entityName(e.entity)+(e.quantity!=null?' — '+e.quantity+' '+unit(e.unit):'')+' · '+(reasons[e.reason]||(russian?'Подтверждённая работа':'Підтверджена робота'))).join('; ');
+      const coworker=row.coworker_reason==='legacy_master_tag'?(russian?'Мастер указан в историческом теге самой заявки':'Майстер вказаний в історичному тезі самої заявки'):row.coworker_reason==='direct_ticket'?(russian?'Мастер прямо указан в заявке':'Майстер прямо вказаний у заявці'):'';
+      lines.push((i+1)+'. '+row.date+' · '+(data.tickets?.[i]?.address||'')+' — '+why+(coworker?'. '+coworker:'')+'.');
+    }
+    return lines.length?lines.join('\n'):(russian?'Подходящих заявок не найдено.':'Відповідних заявок не знайдено.');
+  }
+  if(!diagnostic&&params.mode==='stats'){
+    const s=totals.signal;
+    return (russian?'За ':'За ')+humanPeriod+withPerson+': '+(russian?'средний сигнал ':'середній сигнал ')+(s.average??'—')+' dBm; '+(russian?'минимальный ':'мінімальний ')+(s.min??'—')+'; '+(russian?'максимальный ':'максимальний ')+(s.max??'—')+'.';
+  }
   const lines=['Період: '+period+'.', 'Знайдено '+totals.tickets+' заявок; '+totals.events+' подій ('+(sem.entity||'усі обʼєкти')+' / '+(sem.action||'аналіз сигналу')+').'];
    if(totals.onu_breakdown){
      const b=totals.onu_breakdown;

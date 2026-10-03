@@ -112,7 +112,7 @@ test('/ask count -> evidence: fresh same filter, no LLM guess or raw data exposu
   assert.equal(first.ok,true);assert.equal(first.total,1);
   const follow=await orch.handle('Показать заявки',{now,queryContext:first.queryContext});
   assert.equal(follow.ok,true);assert.equal(follow.total,1);
-  assert.match(follow.answer,/G/);assert.match(follow.answer,/поставили ONU/);
+  assert.equal(follow.referentTickets[0].id,'G');assert.match(follow.answer,/установка/iu);assert.doesNotMatch(follow.answer,/explicit_install|business-derived/);
   assert.deepEqual(calls[0].semantic.entity,calls[1].semantic.entity);
   const clarification=await orch.handle('Сколько ONU было в сентябре?',{now});
   assert.match(clarification.answer,/Що рахувати/);

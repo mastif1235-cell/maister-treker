@@ -111,13 +111,13 @@ test('connection+replacement deduplicates physical placement and keeps provenanc
  assert.ok(!analyze().events.some(e=>e.entity==='router'));
 });
 test('physical breakdown, approved single-unit action fallback, all-set totals before paging',()=>{
- const texts=['','поставил ONU','заменил ONU','ONU абонента','перенос, старая ONU','поставил ONU'];
+  const texts=['','поставил ONU','заменил ONU','ONU абонента','перенесли старую ONU','поставил ONU'];
  const tickets=texts.map((_,i)=>({...base,id:'CASE'+i,type:i===2||i===5?'Ремонт':'Підключення'}));
  const data=runSmartQuery(context(tickets,texts),{mode:'list',limit:1,semantic:profile}).data;
  assert.deepEqual(data.work_totals.onu_breakdown,{new_connections:2,standalone_installs:1,replacements:1,total_physical_placements:4,customer_owned_excluded:1,reused_excluded:1});
   assert.equal(data.work_totals.quantity_sum,4);assert.equal(data.work_totals.quantity_unknown_events,0);
  assert.equal(data.work_totals.business_derived_quantity_events,2);assert.equal(data.evidence.length,1);
- assert.match(workAnswer(data,{mode:'list'}),/business-derived/);assertNoForbidden(data);
+  assert.match(workAnswer(data,{mode:'list'}, {diagnostic:true}),/business-derived/);assertNoForbidden(data);
 });
 test('profile opt-in preserves v91.79 explicit events, fails closed on wrong/unknown profile',()=>{
  assert.equal(workEvents(base,'').events.length,0);
@@ -150,11 +150,12 @@ test('count -> both evidence follow-ups survive serialized context, preserve pro
  const orch=createAskOrchestrator({groq:{chat(){throw new Error('no LLM arithmetic');}},toolDefs:TOOL_DEFINITIONS,tools:{query_tickets:async p=>{calls.push(p);return runSmartQuery(context(tickets),p);}}});
  const first=await orch.handle('Сколько ONU поставил с Петей в сентябре?',{now:new Date(2026,9,2,12),coworkerRoster:['Петя']});
  assert.equal(first.queryContext.resolved_filters.semantic.profile,'onu_physical');assert.equal(first.total,2);
- assert.match(first.answer,/legacy_master_tag/);
+  assert.match(first.answer,/2 ONU/);assert.doesNotMatch(first.answer,/legacy_master_tag/);
  for(const question of ['Показать заявки','Почему так посчитано?']){
   const follow=await orch.handle(question,{queryContext:JSON.parse(JSON.stringify(first.queryContext))});
   for(const key of ['semantic','date_from','date_to','coworker'])assert.deepEqual(calls.at(-1)[key],calls[0][key]);
-  assert.match(follow.answer,/derived_from_connection/);assert.match(follow.answer,/direct_ticket/);assert.match(follow.answer,/legacy_master_tag/);
+   assert.match(follow.answer,/подключение|підключення/iu);assert.match(follow.answer,/прямо указан|прямо вказаний/iu);assert.match(follow.answer,/историческом теге|історичному тезі/iu);
+   assert.doesNotMatch(follow.answer,/derived_from_connection|direct_ticket|legacy_master_tag/);
   assert.ok(!follow.answer.includes(base.macAddress));
  }
  assert.equal(workIntent('Сколько ONU было в сентябре?',new Date(2026,9,2)).semantic.action,undefined);

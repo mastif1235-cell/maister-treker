@@ -99,8 +99,8 @@ test('explicit card request after tool search returns structured card metadata',
   const outcome = await orch.handle('Покажи заявку Садовая 19. Дай карточку', {});
   assert.equal(outcome.ok, true);
   assert.equal(outcome.meta.intent, 'cards');
-  assert.equal(outcome.tickets.length, 1);
-  assert.equal(outcome.tickets[0].id, 't-101');
+  assert.deepEqual(outcome.tickets, []);
+  assert.deepEqual(outcome.presentation,{kind:'single_ticket',ticket_id:'t-101'});
 });
 
 test('ordinary search/count questions never produce cards', async () => {
@@ -288,8 +288,9 @@ test('explicit card turn with a NEW target: fresh result wins over the old refer
   const orch = createAskOrchestrator({groq, tools:queryToolsStub([ROW_B]), toolDefs:TOOL_DEFINITIONS});
   const outcome = await orch.handle('Покажи карточку заявки на Садовій 21', {contextTickets:[ROW_A]});
   assert.equal(outcome.ok, true);
-  assert.deepEqual(outcome.tickets.map(function(t){ return t.id; }), ['t-202'], 'new result B wins, old referent A dropped');
-  assert.deepEqual(outcome.referentTickets.map(function(t){ return t.id; }), ['t-202'], 'next-turn referent is B too');
+  assert.deepEqual(outcome.tickets, [], 'single presentation replaces the old list');
+  assert.deepEqual(outcome.presentation,{kind:'single_ticket',ticket_id:'t-202'},'fresh B wins, never A');
+  assert.equal(outcome.selectedTicketId,'t-202','next-turn selection is B');
 });
 
 test('v91.50: an anaphoric card request is resolved from the chat state by the code', async () => {
@@ -353,8 +354,8 @@ test('intent trio: show=search, navigation verb=open with fresh READ, anaphora=o
   const g2 = scriptedGroq([toolResponse('query_tickets', '{"mode":"list","street":"Садова","house":"19"}'), finalResponse('Відкриваю знайдену заявку.')]);
   const o2 = await createAskOrchestrator({groq:g2, tools:queryToolsStub([ROW_SAD]), toolDefs:TOOL_DEFINITIONS}).handle('Открой заявку Садовая 19', {});
   assert.equal(o2.meta.intent, 'open');
-  assert.equal(o2.tickets.length, 1, 'card for the freshly found ticket');
-  assert.equal(o2.tickets[0].id, 't-sad19', 'real id reaches the open action');
+  assert.deepEqual(o2.tickets, [], 'one presentation, not another list');
+  assert.deepEqual(o2.presentation,{kind:'single_ticket',ticket_id:'t-sad19'},'real id reaches the open action');
 
   /* 3) «Открой эту заявку» right after a one-result search: the single referent
         ticket is opened deterministically (no model, no guessing). */
