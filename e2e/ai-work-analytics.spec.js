@@ -52,3 +52,34 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
   await page.locator('#aiInput').fill('Сколько ONU было в сентябре?');await page.locator('#aiSendBtn').click();
   await expect(page.locator('.ai-msg-assistant').last()).toContainText('Що рахувати');
 });
+
+test('AI physical consumption: free structured router, work-type filter and reload retain exact profile',async({page,appEnv})=>{
+  const load=p=>import(pathToFileURL(path.join(__dirname,'../mcp/src/ask',p)).href);
+  const {createAskOrchestrator}=await load('orchestrator.js'),{runSmartQuery}=await load('smart-query.js');
+  const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
+  const tickets=[{id:'FREE_REPAIR',date:'15.09.2026',type:'Ремонт',sum:0,equipment:[{label:'Роутер',qty:1,price:0}],cables:[],tags:[],connectMasters:[]},{id:'CONNECTION',date:'15.09.2026',type:'Підключення',sum:100,equipment:[{label:'Роутер',qty:1,price:100}],cables:[{label:'UTP',meters:35}],tags:[],connectMasters:[]}];
+  const ctx={tickets,shifts:[],searchIndex:[]},queries=[];
+  const orch=createAskOrchestrator({groq:{chat(){throw new Error('No LLM counts');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery(ctx,p);}},toolDefs:TOOL_DEFINITIONS});
+  await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
+    const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
+    if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+    const body=route.request().postDataJSON(),result=await orch.handle(body.question,{now:new Date('2026-10-03T12:00:00Z'),...body.context});
+    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  });
+  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
+  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
+  await page.locator('#aiInput').fill('Сколько роутеров поставил на ремонтах за сентябрь?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Роутер — 1 шт.');
+  expect(queries[0].type).toBe('Ремонт');expect(queries[0].semantic.profile).toBe('physical_consumption');
+  await page.getByRole('button',{name:'Показати заявки',exact:true}).click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('structured_consumption');
+  const exact=q=>Object.fromEntries(['type','semantic','date_from','date_to'].map(k=>[k,q[k]]));expect(exact(queries[1])).toEqual(exact(queries[0]));
+  await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await page.evaluate(()=>MTAI.ui.open());
+  await page.locator('#aiInput').fill('Почему так посчитано?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Роутер — 1 шт.');expect(exact(queries[2])).toEqual(exact(queries[0]));
+  await page.locator('#aiInput').fill('Сколько всего материалов списать за сентябрь?');await page.locator('#aiSendBtn').click();
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Роутер — 2 шт.');
+  await expect(page.locator('.ai-msg-assistant').last()).toContainText('Кабель — 35 м');
+  expect(queries[3].mode).toBe('group');expect(queries[3].group_by).toBe('entity');expect(queries[3].type).toBeUndefined();
+  await expect(page.locator('#aiSendBtn')).toBeEnabled();
+});

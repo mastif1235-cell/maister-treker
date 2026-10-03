@@ -4,9 +4,10 @@
    the surrounding note (which may contain customer information). */
 import {reconcileWork} from './work-reconciliation.js';
 import {publicBackupText} from '../gas/mappers.js';
+import {physicalConsumption} from './physical-consumption.js';
 export const ENTITIES = [
-  {id:'onu_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:onu|ont|ону|онушк[а-я]*)'},
-  {id:'router_power_supply', pattern:'(?:бп|блок\\s+(?:питания|живлення))\\s+(?:роутер[а-я]*|маршрутизатор[а-я]*|router)'},
+  {id:'onu_power_supply', pattern:'(?:бп|psu|блок\\s+(?:питания|живлення))\\s+(?:onu|ont|ону|онушк[а-я]*|оптичн[а-я]*\\s+термінал[а-я]*|оптическ[а-я]*\\s+терминал[а-я]*)|(?:onu|ont)\\s+psu'},
+  {id:'router_power_supply', pattern:'(?:бп|psu|блок\\s+(?:питания|живлення))\\s+(?:роутер[а-я]*|маршрутизатор[а-я]*|router)|router\\s+psu'},
   {id:'power_supply', pattern:'бп|блок\\s+(?:питания|живлення)'},
   {id:'onu', pattern:'onu|ont|ону|онушк[а-я]*'},
   {id:'router', pattern:'router|роутер[а-я]*|маршрутизатор[а-я]*'},
@@ -64,8 +65,9 @@ export function validateSemantic(raw){
   if(raw.signal_context!==undefined && !['subscriber','input','any'].includes(raw.signal_context)) return null;
   out.signal_context=raw.signal_context || 'subscriber';
   if(raw.profile!==undefined){
-    if(!['work_v2','onu_physical'].includes(raw.profile))return null;
+    if(!['work_v2','onu_physical','physical_consumption'].includes(raw.profile))return null;
     if(raw.profile==='onu_physical'&&(out.entity!=='onu'||out.action!=='install'))return null;
+    if(raw.profile==='physical_consumption'&&(out.entity==='connection'||(out.action&&!['install','replace','lay'].includes(out.action))))return null;
     out.profile=raw.profile;
   }
   return out;
@@ -181,13 +183,23 @@ export function workEvents(ticket, legacyText, options={}){
   // without timing/context proof. Ticket-level statistics still use it.
   if(metric.length===1 && metricTargets.length===1) metricTargets[0].metric=metric[0];
   const analysis={events,signals};
-  return options.profile?reconcileWork(ticket,analysis,sources.map(s=>publicText(s.text))):analysis;
+  if(!options.profile)return analysis;
+  const explicit=events.map(e=>({...e})),texts=sources.map(s=>publicText(s.text));
+  reconcileWork(ticket,analysis,texts);
+  if(['onu_physical','physical_consumption'].includes(options.profile)){
+    const physical=physicalConsumption(ticket,explicit,analysis,texts,label=>{const found=hits(label,ENTITIES);return found.length===1?found[0].id:null;},normalizeEntity,id=>ENTITIES.find(e=>e.id===id)?.pattern.replaceAll('[а-я]','[а-яіїєґ]'));
+    analysis.events=physical.events;analysis.contexts=physical.contexts;
+  }
+  return analysis;
 }
 
 export function semanticMatches(event, filter){
-  if(filter.entity && event.entity!==filter.entity) return false;
+  if(filter.entity && event.entity!==filter.entity && !(filter.profile==='physical_consumption'&&filter.entity==='cable'&&event.entity==='fiber')) return false;
   if(filter.profile==='onu_physical'){
     if(!['install','replace'].includes(event.action))return false;
+  }else if(filter.profile==='physical_consumption'){
+    if(!event.physical_consumption)return false;
+    if(filter.action==='replace'&&event.action!=='replace'&&event.work_type!=='repair')return false;
   }else if(filter.action && filter.action!=='mention' && event.action!==filter.action) return false;
   return filter.category==='all' || event.category===filter.category;
 }
@@ -200,6 +212,7 @@ export function aggregateWork(rows, byId, filter, groupBy){
   const numbers=rows.map(t=>semanticSignal(byId.get(t.id),filter)).filter(n=>n!==null);
   const quantity=events.filter(e=>e.quantity!==null);
   const groups=new Map();
+  const physical=['onu_physical','physical_consumption'].includes(filter.profile),groupUnits=new Map();
   for(const t of rows){
     const matched=(byId.get(t.id)?.events||[]).filter(e=>semanticMatches(e,filter));
     let keys=[];
@@ -215,8 +228,21 @@ export function aggregateWork(rows, byId, filter, groupBy){
       if(!groups.has(key)) groups.set(key,{key,tickets:0,events:0,quantity_sum:0,quantity_known_events:0,quantity_unknown_events:0,money_sum:0});
       const group=groups.get(key), scoped=matched.filter(e=>groupBy==='entity'?e.entity===key:groupBy==='action'?e.action===key:true);
       group.tickets++;group.events+=scoped.length;group.money_sum+=Number(t.sum)||0;
+      if(physical){if(!groupUnits.has(key))groupUnits.set(key,new Set());for(const e of scoped)if(e.quantity!==null)groupUnits.get(key).add(e.unit);}
       for(const e of scoped){if(e.quantity===null)group.quantity_unknown_events++;else{group.quantity_known_events++;group.quantity_sum+=e.quantity;}}
     }
   }
-  return {tickets:rows.length,events:events.length,quantity_sum:quantity.reduce((s,e)=>s+e.quantity,0),quantity_known_events:quantity.length,quantity_unknown_events:events.length-quantity.length,money_sum:rows.reduce((s,t)=>s+(Number(t.sum)||0),0),signal:{count:numbers.length,min:numbers.length?Math.min(...numbers):null,max:numbers.length?Math.max(...numbers):null,average:numbers.length?numbers.reduce((s,n)=>s+n,0)/numbers.length:null},groups:Array.from(groups.values()).sort((a,b)=>b.tickets-a.tickets||a.key.localeCompare(b.key)).slice(0,100)};
+  const out={tickets:rows.length,events:events.length,quantity_sum:quantity.reduce((s,e)=>s+e.quantity,0),quantity_known_events:quantity.length,quantity_unknown_events:events.length-quantity.length,money_sum:rows.reduce((s,t)=>s+(Number(t.sum)||0),0),signal:{count:numbers.length,min:numbers.length?Math.min(...numbers):null,max:numbers.length?Math.max(...numbers):null,average:numbers.length?numbers.reduce((s,n)=>s+n,0)/numbers.length:null},groups:Array.from(groups.values()).sort((a,b)=>b.tickets-a.tickets||a.key.localeCompare(b.key)).slice(0,100)};
+  if(physical){
+    const totals=new Map(),units=new Set();
+    for(const e of quantity){
+      const key=e.entity+'|'+e.unit;units.add(e.unit);
+      if(!totals.has(key))totals.set(key,{entity:e.entity,unit:e.unit,quantity:0,connection:0,repair:0,other:0});
+      const total=totals.get(key);total.quantity+=e.quantity;total[e.work_type||'other']+=e.quantity;
+    }
+    out.consumption_totals=[...totals.values()].sort((a,b)=>a.entity.localeCompare(b.entity)||a.unit.localeCompare(b.unit));
+    if(units.size>1)out.quantity_sum=null; // meters and pieces are not summable
+    for(const group of out.groups){const scopedUnits=groupUnits.get(group.key)||new Set();if(scopedUnits.size>1)group.quantity_sum=null;else group.unit=[...scopedUnits][0]||null;}
+  }
+  return out;
 }

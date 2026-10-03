@@ -979,10 +979,12 @@ export function runSmartQuery(ctx, params){
         base.work_totals.legacy_coworker_tickets=list.filter(t=>coworkerQuery&&coworkerProof.get(t.id)==='legacy_master_tag').length;
         base.work_totals.business_derived_quantity_events=list.flatMap(t=>workById.get(t.id).events.filter(e=>semanticMatches(e,semantic)&&e.quantity_source==='business_derived')).length;
         base.work_totals.count_policy='definite_direct_or_exact_specific_coworker_tag; explicit_or_business_derived_quantity; general_coworker_groups_direct_only';
+        if(['onu_physical','physical_consumption'].includes(semantic.profile))base.work_totals.count_policy='physical_consumption; structured > explicit > business_derived; deduplicated_per_ticket_entity; units_separate; exact_specific_coworker_tags; general_coworker_groups_direct_only';
         if(semantic.profile==='onu_physical'){
           const placements=list.flatMap(t=>workById.get(t.id).events.filter(e=>e.category==='definite'&&semanticMatches(e,semantic)));
           const excludedContexts=physicalScope.filter(t=>!placements.some(e=>e.ticket_id===String(t.id))).flatMap(t=>workById.get(t.id).contexts||[]);
-          base.work_totals.onu_breakdown={new_connections:placements.filter(e=>e.install_origin==='connection').length,standalone_installs:placements.filter(e=>e.action==='install'&&e.install_origin!=='connection').length,replacements:placements.filter(e=>e.action==='replace').length,total_physical_placements:placements.length,customer_owned_excluded:excludedContexts.filter(e=>e.reason==='customer_owned_onu').length,reused_excluded:excludedContexts.filter(e=>e.reason==='reused_onu_transfer').length};
+          const units=rows=>rows.reduce((sum,e)=>sum+(Number(e.quantity)||0),0);
+          base.work_totals.onu_breakdown={new_connections:units(placements.filter(e=>e.install_origin==='connection'&&e.action!=='replace')),standalone_installs:units(placements.filter(e=>e.action==='install'&&e.install_origin!=='connection')),replacements:units(placements.filter(e=>e.action==='replace')),total_physical_placements:units(placements),customer_owned_excluded:excludedContexts.filter(e=>e.reason==='customer_owned_onu').length,reused_excluded:excludedContexts.filter(e=>e.reason==='reused_onu_transfer').length};
         }
       }
     }

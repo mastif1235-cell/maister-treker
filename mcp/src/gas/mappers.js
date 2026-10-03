@@ -265,7 +265,9 @@ export function redactTicket(t){
       /* Saved equipment rows carry no native quantity in the app data model;
          qty falls back to 1 and is explicitly flagged as DERIVED so smart
          search never reports it as an original database quantity. */
-      return {label: str(e && e.label), price: num(e && e.price), qty: qty || 1, total: num(e && e.price) * (qty || 1), qty_derived: !qty};
+      const nativeQty=e&&Object.prototype.hasOwnProperty.call(e,'qty');
+      return {label: str(e && e.label), price: num(e && e.price), qty: qty || 1, total: num(e && e.price) * (qty || 1), qty_derived: !qty,
+        consumption_qty:e&&e.checked===false?0:nativeQty?Math.max(0,qty):1};
     }).filter(function(e){ return e.label; }) : [],
     cables: Array.isArray(f.cables) ? f.cables.map(function(c){
       return {label: str(c && c.label), meters: num(c && c.meters), pricePerMeter: num(c && c.pricePerMeter)};

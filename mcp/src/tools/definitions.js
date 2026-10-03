@@ -62,13 +62,13 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'query_tickets',
-    description: 'Універсальний структурований пошук по всій базі заявок: дата, адреса (місто/вулиця/будинок), тип, оплата, сума, сигнал (суворі порівняння), матеріали/роботи з привʼязкою ціни до самої позиції, телефон/договір/MAC, напарник, режим існує/кількість/список/групи/статистика. Усі агрегати рахуються по повному результату ДО сторінкового обмеження.',
+    description: 'Універсальний структурований пошук по всій базі заявок: дата, адреса (місто/вулиця/будинок), тип, оплата, сума, сигнал (суворі порівняння), матеріали/роботи з привʼязкою ціни до самої позиції, телефон/договір/MAC, напарник, режим існує/кількість/список/групи/статистика. Агрегати — по повному результату до пагінації.',
     inputSchema: {
       type:'object', additionalProperties:false,
       properties:{
         mode: {type:'string', enum:['exists','count','list','group','stats'], description:'exists=чи був; count=кількість(+підсумок позицій); list=сторінка заявок; group=групування; stats=гроші/сигнал/тип/оплата.'},
         group_by: {type:'string', enum:['city','street','house','date','month','type','payment','item','coworker','entity','action']},
-        semantic: {type:'object',additionalProperties:false,properties:{profile:{type:'string',enum:['work_v2','onu_physical']},entity:{type:'string',minLength:1,maxLength:60,description:'onu,onu_power_supply,router,router_power_supply,power_supply,cable,fiber,splice,splitter,patchcord,connector,box,connection'},action:{type:'string',enum:['install','replace','remove','check','configure','repair','restore','lay','weld','move','connect','measure','complete','mention','fault','measurement']},category:{type:'string',enum:['definite','ambiguous','excluded','all']},signal_context:{type:'string',enum:['subscriber','input','any']}}},
+        semantic: {type:'object',additionalProperties:false,properties:{profile:{type:'string',enum:['work_v2','onu_physical','physical_consumption']},entity:{type:'string',minLength:1,maxLength:60,description:'onu,onu_power_supply,router,router_power_supply,power_supply,cable,fiber,splice,splitter,patchcord,connector,box,connection'},action:{type:'string',enum:['install','replace','remove','check','configure','repair','restore','lay','weld','move','connect','measure','complete','mention','fault','measurement']},category:{type:'string',enum:['definite','ambiguous','excluded','all']},signal_context:{type:'string',enum:['subscriber','input','any']}}},
         date_from: Object.assign({}, DATE_ARG, {description:'Початок діапазону (включно).'}),
         date_to: Object.assign({}, DATE_ARG, {description:'Кінець діапазону (включно).'}),
         city: {type:'string', maxLength:100, description:'Населений пункт (розуміє UA/RU, відмінки, «в/у»).'},

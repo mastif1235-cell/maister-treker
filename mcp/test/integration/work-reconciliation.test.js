@@ -9,7 +9,7 @@ test('raw MCP schema/call accepts opt-in physical profile after GAS JSON project
  const app=await makeApp(null,fetch);
  const defs=await (await rpc(app,'tools/list',{})).json();
  const schema=defs.result.tools.find(t=>t.name==='query_tickets').inputSchema.properties.semantic.properties;
- assert.deepEqual(schema.profile.enum,['work_v2','onu_physical']);
+  assert.deepEqual(schema.profile.enum,['work_v2','onu_physical','physical_consumption']);
  const result=await toolCall(app,'query_tickets',{mode:'list',coworker:'Петей',semantic:{entity:'onu',action:'install',profile:'onu_physical'}});
  assert.equal(result.response.status,200);assert.ok(result.result&&!result.result.isError);
  const data=toolData(result.result);

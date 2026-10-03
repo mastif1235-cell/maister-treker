@@ -13,7 +13,10 @@ function concepts(text,defs){
   return found.filter(f=>!found.some(p=>p.id!==f.id && p.start<=f.start && p.end>=f.end && p.end-p.start>f.end-f.start));
 }
 export function workIntent(question,now,roster){
-  const q=String(question||'').toLowerCase();
+  const original=String(question||'').toLowerCase();
+  const repairType=/(?:на|при)\s+ремонт[\p{L}]*/iu.test(original),connectionType=/(?:на|при)\s+(?:подключен|підключен)[\p{L}]*/iu.test(original);
+  if(repairType&&connectionType)return null;
+  const q=original.replace(/(?:на|при)\s+(?:ремонт|подключен|підключен)[\p{L}]*/giu,' ');
   if(!/(сколько|скільки|покаж|показать|средн|середн|худш|найгір|лучш|найкращ|чаще|найчаст|більше|больше)/u.test(q)) return null;
   const entities=concepts(q,ENTITIES), actions=concepts(q,ACTIONS);
   if(entities.length>1 || actions.length>1) return null;
@@ -21,7 +24,8 @@ export function workIntent(question,now,roster){
   if(/(?:улиц|вулиц|адрес|город|міст|село|грн|договор|договір|телефон|mac|на\s+[\p{L}]+|в\s+днепр|у\s+дніпр)/iu.test(q)) return null;
   const signalQuestion=/сигнал|d\s*bm|д\s*бм/iu.test(q);
   if(/по\s+\d/iu.test(q) && !/(?:с|з)\s+\d+\s+по\s+\d+/iu.test(q)) return null;
-  const equipmentQuestion=/оборудован|обладнан/iu.test(q);
+  const equipmentQuestion=/оборудован|обладнан|материал|матеріал/iu.test(q);
+  const consumptionQuestion=/ушло|пішло|списать|списати|использовал|використав|використали/iu.test(q);
   if(!entities.length && !signalQuestion && !equipmentQuestion) return null;
   const semantic={};
   if(entities.length) semantic.entity=entities[0].id;
@@ -30,6 +34,8 @@ export function workIntent(question,now,roster){
   if(/упоминан|згадк/iu.test(q)){semantic.action='mention';semantic.category='all';}
   if(signalQuestion && semantic.entity==='onu' && !semantic.action) delete semantic.entity;
   const params={mode:/покаж|показать/iu.test(q)?'list':/средн|середн|худш|найгір|лучш|найкращ/iu.test(q)?'stats':'count',semantic};
+  if(repairType)params.type='Ремонт';
+  if(connectionType)params.type='Підключення';
   if(params.mode==='list') params.limit=8;
   if(/по\s+напарник|кожн.*напарник|с\s+кем|з\s+ким/iu.test(q)){params.mode='group';params.group_by='coworker';}
   if(equipmentQuestion){params.mode='group';params.group_by='entity';}
@@ -55,6 +61,8 @@ export function workIntent(question,now,roster){
   // This shortcut is intentionally closed: unknown constraints go to the
   // existing LLM schema parser, never to a silently broader fast-path query.
   let residual=q;
+  if(equipmentQuestion)residual=residual.replace(/материал[\p{L}]*|матеріал[\p{L}]*/giu,' ');
+  if(consumptionQuestion)residual=residual.replace(/ушло|пішло|списать|списати|использовал[\p{L}]*|використав[\p{L}]*|використали/giu,' ');
   for(const def of ENTITIES.concat(ACTIONS)) residual=residual.replace(new RegExp('(?<![\\p{L}\\p{N}])(?:'+def.pattern.replaceAll('[а-я]','[а-яіїєґ]')+')(?![\\p{L}\\p{N}])','giu'),' ');
   if(params.coworker || (coworker&&nonPerson)) residual=residual.replace(coworker[0],' ');
   if(threshold) residual=residual.replace(threshold[0],' ');
@@ -64,7 +72,9 @@ export function workIntent(question,now,roster){
   if(residual.split(/[^\p{L}]+/u).filter(Boolean).some(t=>!filler.test(t))) return null;
   semantic.category=semantic.category||'definite';
    semantic.signal_context=semantic.signal_context||'subscriber';
-   semantic.profile=semantic.entity==='onu'&&semantic.action==='install'?'onu_physical':'work_v2';
+   const physical=!signalQuestion&&semantic.action!=='mention'&&(consumptionQuestion||['install','replace','lay'].includes(semantic.action)||((repairType||connectionType)&&semantic.entity&&semantic.entity!=='connection'));
+   if(physical&&!semantic.action)semantic.action='install';
+   semantic.profile=physical?(semantic.entity==='onu'&&semantic.action==='install'?'onu_physical':'physical_consumption'):'work_v2';
   return params;
 }
 
@@ -78,9 +88,14 @@ export function workAnswer(data,params){
    if(totals.onu_breakdown){
      const b=totals.onu_breakdown;
      lines.push('Нові підключення: '+b.new_connections+'; окремі установки: '+b.standalone_installs+'; заміни: '+b.replacements+'.');
-     lines.push('Всього фізичних встановлень ONU (подій): '+b.total_physical_placements+'. ONU абонента виключено: '+b.customer_owned_excluded+'; перенос/повторне використання: '+b.reused_excluded+'.');
+     lines.push('Всього фізично використано ONU (шт.): '+b.total_physical_placements+'. ONU абонента виключено: '+b.customer_owned_excluded+'; перенос/повторне використання: '+b.reused_excluded+'.');
    }
-   if(totals.quantity_known_events) lines.push((totals.business_derived_quantity_events?'Відома кількість (включає business-derived з підключень): ':'Явно вказана кількість: ')+totals.quantity_sum+'; подій без кількості: '+totals.quantity_unknown_events+'.');
+   if(totals.consumption_totals){
+     if(totals.business_derived_quantity_events)lines.push('Частина кількості — business-derived з підтверджених підключень, не явно записане число.');
+     const labels={onu:'ONU',router:'Роутер',onu_power_supply:'БП ONU',router_power_supply:'БП роутера',cable:'Кабель',fiber:'Оптичний кабель'};
+     for(const item of totals.consumption_totals)lines.push((labels[item.entity]||item.entity.replace(/^material:/,''))+' — '+item.quantity+' '+(item.unit==='m'?'м':'шт.')+' (підключення: '+item.connection+'; ремонт/заміна: '+item.repair+'; інше: '+item.other+').');
+     if(totals.quantity_unknown_events)lines.push('Без доведеної кількості: '+totals.quantity_unknown_events+' подій; у витрату не включено.');
+   }else if(totals.quantity_known_events) lines.push((totals.business_derived_quantity_events?'Відома кількість (включає business-derived з підключень): ':'Явно вказана кількість: ')+totals.quantity_sum+'; подій без кількості: '+totals.quantity_unknown_events+'.');
     if(totals.legacy_coworker_tickets)lines.push('У '+totals.legacy_coworker_tickets+' заявках майстер вказаний в історичному тезі самої заявки (legacy_master_tag); включено в definite підрахунок, не за зміною.');
   if(totals.ambiguous_tickets) lines.push('Ще '+totals.ambiguous_tickets+' заявок неоднозначні — не включені в основний підрахунок.');
   if(params.mode==='stats') lines.push('Сума заявок: '+totals.money_sum+' грн. Сигнал: середній '+(totals.signal.average??'не вказано')+', найгірший '+(totals.signal.min??'не вказано')+', найкращий '+(totals.signal.max??'не вказано')+' dBm.');
