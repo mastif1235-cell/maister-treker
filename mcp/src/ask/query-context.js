@@ -20,7 +20,7 @@ const INHERITABLE_KEYS = [
   'date_from', 'date_to', 'city', 'street', 'city_id', 'street_id', 'house', 'apartment',
   'type', 'tags', 'payment', 'sum_min', 'sum_max',
   'signal_worse_than', 'signal_worse_or_equal', 'signal_better_than',
-  'has_signal', 'coworker', 'items', 'semantic'
+  'has_signal', 'coworker', 'coworker_exclude', 'items', 'semantic'
 ];
 
 /* Stage 2D: directory identity of a resolved place — carried between turns
@@ -75,6 +75,8 @@ function projectItems(raw){
    context (client → server), so both directions share one definition. */
 export function projectQueryFilters(filters){
   if(!isPlainObject(filters)) return {};
+  if(filters.coworker_exclude!==undefined && (typeof filters.coworker_exclude!=='string' ||
+    !filters.coworker_exclude.trim() || filters.coworker_exclude.length>60 || filters.coworker!==undefined || !filters.semantic))return null;
   const out = {};
   for(const key of INHERITABLE_KEYS){
     const v = filters[key];
@@ -97,6 +99,7 @@ export function projectQueryFilters(filters){
       case 'type': out.type = clip(v, 80); break;
       case 'payment': out.payment = clip(v, 80); break;
       case 'coworker': out.coworker = clip(v, 60); break;
+      case 'coworker_exclude': out.coworker_exclude = v.trim(); break;
       case 'tags':
         if(Array.isArray(v)) out.tags = v.slice(0, 20).map(function(t){ return clip(t, 60); }).filter(Boolean);
         break;
@@ -136,6 +139,7 @@ export function projectQueryContext(envelope){
   return {
     resolved_filters: filters,
     mode: typeof envelope.mode === 'string' ? clip(envelope.mode, 12) : 'list',
+    ...(envelope.mode==='group' && typeof envelope.group_by==='string'?{group_by:clip(envelope.group_by,16)}:{}),
     total_matched: Number.isFinite(Number(envelope.total_matched)) ? Number(envelope.total_matched) : null
   };
 }
@@ -148,6 +152,7 @@ export function sanitizeIncomingQueryContext(raw){
   return {
     resolved_filters: filters,
     mode: typeof raw.mode === 'string' ? clip(raw.mode, 12) : 'list',
+    ...(raw.mode==='group' && typeof raw.group_by==='string'?{group_by:clip(raw.group_by,16)}:{}),
     total_matched: Number.isFinite(Number(raw.total_matched)) ? Number(raw.total_matched) : null
   };
 }
