@@ -126,7 +126,7 @@ test('profile opt-in preserves v91.79 explicit events, fails closed on wrong/unk
  assert.equal(runSmartQuery(context([base]),{semantic:{...profile,profile:'unsafe'}}).ok,false);
 });
 test('new ONU priority is action-scoped; excluded events never become physical totals',()=>{
- const a=analyze({},'заменил старую ONU, поставил новую ONU');
+ const a=analyze({},'заменил ONU, оставили старую ONU, поставил новую ONU');
  assert.equal(placed(a).length,1);assert.equal(placed(a)[0].action,'install');
  assert.ok(a.events.some(e=>e.action==='replace'&&e.reason==='reused_onu_transfer'));
  const data=runSmartQuery(context([base],['ONU абонента']),{mode:'list',semantic:{...profile,category:'all'}}).data;

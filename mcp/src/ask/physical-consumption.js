@@ -26,9 +26,15 @@ function exclusions(entity,text,patternFor){
   if(entity==='onu')safe=safe.replace(USED_ABBREVIATION,'б/у').replace(USED_ONU_COMPONENT,' ');
   const legacyMove='(?:перенос[\\p{L}]*|перенес[\\p{L}]*|перен[іе]с[\\p{L}]*|reuse|reused)';
   const legacyReuse=new RegExp('(?:'+old+'|'+legacyMove+')\\s+(?:'+old+'\\s+)?'+noun+'|'+noun+'\\s+(?:'+old+'|'+legacyMove+')','iu');
-  const explicitReuse=entity==='onu'?safe.split(/[\n;,.!?]+/).some(c=>!/(?:^|\s)(?:не|ні|надо|нужно|треба|будем|будемо|завтра)\s/iu.test(c)&&(reused.test(c)||USED_ONU.test(c))):legacyReuse.test(safe);
+  // Explicit address transfer plus an adjacent old ONU clause is evidence;
+  // an old ONU fault alone or transfer of other hardware is not.
+  const addressTransfer=/(?:перенос|перенесли|перенес[\p{L}]*|перен[іе]с[\p{L}]*)\s+(?:с|з)\s+(?:(?:другого|іншого|іншої)\s+)?адрес[\p{L}]*\s*,?\s*(?:стар[\p{L}]*\s+(?:onu|ону|ont)|(?:onu|ону|ont)\s+стар[\p{L}]*)/iu;
+  const planned=c=>/(?:^|\s)(?:не|ні|надо|нужно|треба|будем|будемо|завтра)\s/iu.test(c);
+  const explicitReuse=entity==='onu'?safe.split(/[\n;.!?]+/).some(c=>(!planned(c)&&addressTransfer.test(c))||c.split(',').some(part=>!planned(part)&&(reused.test(part)||USED_ONU.test(part)))):legacyReuse.test(safe);
   return owned.test(safe)?'customer_owned_'+entity:explicitReuse?'reused_'+entity+'_transfer':null;
 }
+// Reconciliation and physical fallback must agree on explicit ONU reuse.
+export function onuReuseContext(text){return exclusions('onu',text)==='reused_onu_transfer';}
 function newAction(entity,text,patternFor){
   const pattern=entity==='onu'?'(?:onu|ону|ont)':entity==='router'?'(?:router|роутер[\\p{L}]*|маршрутизатор[\\p{L}]*)':patternFor?.(entity),noun=pattern?'(?:'+pattern+')':null;
   const actions=new Set();if(!noun)return actions;
