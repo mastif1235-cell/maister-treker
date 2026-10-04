@@ -82,7 +82,7 @@ function boot(){
         if(wait!=null) body.retryAfterSeconds = wait;
         return new Response(JSON.stringify(body),{status:429});
       }
-      return new Response(JSON.stringify({ok:true,answer:'Знайдено 8 заявок у Таромському за серпень 2026.',meta:{rounds:2,tool_calls:1},tickets:EIGHT_TICKETS}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Знайдено 8 заявок у Таромському за серпень 2026.',meta:{rounds:2,tool_calls:1},tickets:EIGHT_TICKETS}),{status:200});
     } };
   sandbox.fetchCalls=[];
   sandbox.globalThis=sandbox; sandbox.window=sandbox;

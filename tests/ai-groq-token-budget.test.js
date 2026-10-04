@@ -102,7 +102,7 @@ const TPM_TEXT='Request too large for model `openai/gpt-oss-120b` service tier `
   {
     const doc=makeDoc();
     const seen=[];
-    const sb=load(CORE.concat(UI_EXTRA), async function(url,init){ seen.push(JSON.parse(init.body)); return new Response(JSON.stringify({ok:true,answer:'Сьогодні неділя.',meta:{rounds:1,tool_calls:0}}),{status:200}); }, doc);
+    const sb=load(CORE.concat(UI_EXTRA), async function(url,init){ seen.push(JSON.parse(init.body)); return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Сьогодні неділя.',meta:{rounds:1,tool_calls:0}}),{status:200}); }, doc);
     const M=sb.MTAI;
     M.ui.build();
     const line=doc.getElementById('aiStatusLine');

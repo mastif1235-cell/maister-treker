@@ -22,7 +22,7 @@ test('Phase 2A: browser reload preserves coworker/all-ONU count; one query per p
   const body=route.request().postDataJSON();requests.push(body);
   paths.push(resolvePeriodFollowUp(body.question,now,body.context?.queryContext).path);
   const result=await orch.handle(body.question,{now,coworkerRoster:['Женя'],...body.context});
-  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
