@@ -22,7 +22,13 @@ export function sanitizeCoworkerRoster(value){
 }
 export function resolveRosterCoworker(query, roster){
   const target=normalizeCoworkerName(query);
-  const candidates=sanitizeCoworkerRoster(roster).filter(name=>coworkerForms(name).has(target));
+  const candidates=sanitizeCoworkerRoster(roster).filter(name=>{
+    const forms=coworkerForms(name),base=normalizeCoworkerName(name);
+    // Genitive for «без Жени/Пети/Паши» belongs ONLY to trusted roster
+    // query resolution. Do not broaden stored-name/event matching.
+    if(/^[а-яіїєґ]+[ая]$/u.test(base))forms.add(base.slice(0,-1)+'и');
+    return forms.has(target);
+  });
   return candidates.length===1?candidates[0]:null;
 }
 export function exactDirectCoworker(stored,query){

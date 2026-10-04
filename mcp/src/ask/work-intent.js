@@ -114,7 +114,8 @@ export function workAnswer(data,params,options={}){
   if(from&&to&&from[1]===to[2]&&from[2]===to[3]&&Number(to[1])===new Date(Date.UTC(Number(from[2]),Number(from[1]),0)).getUTCDate())humanPeriod=new Intl.DateTimeFormat(russian?'ru':'uk',{month:'long',timeZone:'UTC'}).format(new Date(Date.UTC(Number(from[2]),Number(from[1])-1,1)));
   const named=/(?:^|\s)(?:с|со|з|із)\s+([\p{L}ʼ'-]+)/iu.exec(options.question||'');
   const person=named&&params.coworker&&resolveRosterCoworker(named[1],[params.coworker])===params.coworker?named[1]:params.coworker;
-  const withPerson=person?(russian?' вместе с ':' разом з ')+person:'';
+  const excludedName=/(?:^|\s)без\s+([\p{L}ʼ'-]+)/iu.exec(options.question||'')?.[1];
+  const withPerson=params.coworker_exclude?' без '+(excludedName||params.coworker_exclude):person?(russian?' вместе с ':' разом з ')+person:'';
   if(!diagnostic&&['count','group'].includes(params.mode)){
     const prefix=(russian?'За ':'За ')+humanPeriod+withPerson;
     if(params.mode==='group'&&params.group_by!=='entity'){

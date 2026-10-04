@@ -456,6 +456,9 @@ export function runSmartQuery(ctx, params){
   params = params || {};
   const semantic = params.semantic === undefined ? null : validateSemantic(params.semantic);
   if(params.semantic !== undefined && !semantic) return {ok:false,code:'INVALID_INPUT',message:'Некоректний semantic intent; невідомі entity/action не підтримуються.'};
+  if(params.coworker_exclude!==undefined && (!semantic || params.coworker!==undefined ||
+    typeof params.coworker_exclude!=='string' || !params.coworker_exclude.trim() || params.coworker_exclude.length>60))
+    return {ok:false,code:'INVALID_INPUT',message:'Invalid coworker exclusion'};
   if(semantic && semantic.entity && !semantic.action){
     return {ok:true,data:{tool:'query_tickets',clarification:true,question:'Що рахувати: установки, заміни, зняття чи всі згадки?',choices:['install','replace','remove','mention'],resolved_filters:projectQueryFilters({...params,semantic})}};
   }
@@ -590,6 +593,7 @@ export function runSmartQuery(ctx, params){
   });
 
   const coworkerQuery = params.coworker ? String(params.coworker).trim() : null;
+  const excludedCoworker=params.coworker_exclude?.trim()||null;
   const coworkerShiftDates = new Map(); /* date -> hours with that coworker */
   if(coworkerQuery){
     for(const s of shifts){
@@ -702,6 +706,10 @@ export function runSmartQuery(ctx, params){
     // A specific semantic coworker cannot match a shift-only/other-master row.
     // Reject it before expensive event extraction; keep the legacy path intact.
     if(semantic && coworkerQuery && !directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) && !(t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,coworkerQuery))) continue;
+    // The complement of definite specific matching, never same-day shifts.
+    // Apply before extraction so exclusion does not analyse discarded rows.
+    if(excludedCoworker && (directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,excludedCoworker)) ||
+      (t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,excludedCoworker))))continue;
     const analysis = semantic ? workEvents(t, legacyText, semantic) : null;
     if(analysis) workById.set(t.id, analysis);
     const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);
@@ -889,6 +897,7 @@ export function runSmartQuery(ctx, params){
     if(contractQuery) rf.contract = true;
     if(macQuery) rf.mac = true;
     if(coworkerQuery) rf.coworker = coworkerQuery;
+    if(excludedCoworker) rf.coworker_exclude = excludedCoworker;
     if(semantic) rf.semantic = {...semantic};
     if(resolvedItems.length){
       rf.items = resolvedItems.map(function(entry){

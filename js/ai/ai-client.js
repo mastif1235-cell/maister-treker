@@ -181,7 +181,7 @@ MTAI.createClient = function(options){
      фільтри попереднього query_tickets) — строга біла проєкція, дзеркало
      серверного mcp/src/ask/query-context.js. Ніяких нотаток/телефонів/ПІБ:
      невідомі ключі відкидаються. */
-  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items','semantic'];
+  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','coworker_exclude','items','semantic'];
   /* Stage 2D: directory identity of a resolved place (UUID shape only) — the
      follow-up re-runs by UUID, mirror of the server whitelist. */
   const QC_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -189,6 +189,8 @@ MTAI.createClient = function(options){
     if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const rf = raw.resolved_filters;
     if(!rf || typeof rf !== 'object' || Array.isArray(rf)) return null;
+    if(rf.coworker_exclude!==undefined && (typeof rf.coworker_exclude!=='string' || !rf.coworker_exclude.trim() ||
+      rf.coworker_exclude.length>60 || rf.coworker!==undefined || !rf.semantic))return null;
     const out = {};
     for(const key of QC_INHERITABLE){
       const v = rf[key];
@@ -234,12 +236,13 @@ MTAI.createClient = function(options){
           if(items.length) out[key] = items;
         }
       }else{
-        out[key] = String(v).slice(0, key === 'coworker' ? 60 : 100);
+        out[key] = String(v).slice(0, key === 'coworker' || key === 'coworker_exclude' ? 60 : 100);
       }
     }
     if(!Object.keys(out).length) return null;
     const context={resolved_filters:out};
     if(['count','list','group','stats','sum','unique'].includes(raw.mode)) context.mode=raw.mode;
+    if(raw.mode==='group' && typeof raw.group_by==='string')context.group_by=raw.group_by.slice(0,16);
     return context;
   }
 
