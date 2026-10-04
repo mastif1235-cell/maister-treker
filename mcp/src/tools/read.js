@@ -877,8 +877,8 @@ export function createReadTools(options){
   /* Universal deterministic smart-search engine (v91.44). Filtering,
      intersections, normalization, grouping, aggregation and pagination all
      happen HERE over the full dataset; the model only formats the result. */
-  async function query_tickets(params){
-    const data = await loadRedacted();
+  async function query_tickets(params, execution){
+    const data = await (execution ? execution.load(loadRedacted) : loadRedacted());
     if(!data.ok) return data;
     const ctx = {
       tickets: data.tickets,
@@ -888,7 +888,7 @@ export function createReadTools(options){
       snapshot_cache: data.snapshotCache,
       directory: data.directory
     };
-    return runSmartQuery(ctx, params);
+    return runSmartQuery(ctx, params, execution);
   }
 
   /* Compact catalog derived from ACTUAL ticket data (what was really used),

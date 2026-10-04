@@ -452,7 +452,7 @@ export function sortNewestFirst(list){
    `directory` (Stage 2D) is the phone's AddressBook index; when present the
    city/street filters are UUID-first (see below), otherwise every path is the
    Stage 1 text path unchanged. */
-export function runSmartQuery(ctx, params){
+export function runSmartQuery(ctx, params, execution){
   params = params || {};
   const semantic = params.semantic === undefined ? null : validateSemantic(params.semantic);
   if(params.semantic !== undefined && !semantic) return {ok:false,code:'INVALID_INPUT',message:'Некоректний semantic intent; невідомі entity/action не підтримуються.'};
@@ -702,7 +702,9 @@ export function runSmartQuery(ctx, params){
     // A specific semantic coworker cannot match a shift-only/other-master row.
     // Reject it before expensive event extraction; keep the legacy path intact.
     if(semantic && coworkerQuery && !directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) && !(t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,coworkerQuery))) continue;
-    const analysis = semantic ? workEvents(t, legacyText, semantic) : null;
+    const analysis = semantic ? (execution
+      ? execution.analyze(t, searchIndex, semantic.profile, ()=>workEvents(t, legacyText, semantic))
+      : workEvents(t, legacyText, semantic)) : null;
     if(analysis) workById.set(t.id, analysis);
     const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);
     let signalAccepts=true;

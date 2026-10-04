@@ -18,6 +18,7 @@
      redacted projections; errors carry stable codes only. */
 
 import {validateAgainstSchema} from '../tools/validate.js';
+import {createRequestAnalysis} from './request-analysis.js';
 import {dateHintsLine, resolveDateRanges} from './date-resolver.js';
 import {renumberSequentialLists} from './format.js';
 import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters, isAnaphoricListFollowUp} from './query-context.js';
@@ -719,7 +720,7 @@ export function createAskOrchestrator(options){
 
   const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1, find_tickets_by_address:1, query_tickets:1 };
 
-  async function executeTool(call, collectedTickets, totals, capture){
+  async function executeTool(call, collectedTickets, totals, capture, execution){
     const def = allowedDef(call.name);
     if(!def) return JSON.stringify({isError:true, error:'UNKNOWN_TOOL'});
     let args = null;
@@ -784,7 +785,7 @@ export function createAskOrchestrator(options){
       args={...args,coworker:name};
     }
     let outcome;
-    try{ outcome = await tools[def.name](args); }
+    try{ outcome = await (def.name==='query_tickets' ? tools[def.name](args,execution) : tools[def.name](args)); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(def.name === 'get_ticket' && outcome && outcome.ok && outcome.data){
       const selected = validateTicketId(args.ticket_id);
@@ -867,6 +868,12 @@ export function createAskOrchestrator(options){
   }
 
   async function handle(question, options){
+    const execution=createRequestAnalysis();
+    try{return await handleWithAnalysis(question,options,execution);}
+    finally{execution.dispose();}
+  }
+
+  async function handleWithAnalysis(question, options, execution){
     const now = options && options.now instanceof Date ? options.now : new Date();
     const nowMs = now.getTime();
     const history = sanitizeHistory(options && options.history);
@@ -966,7 +973,7 @@ export function createAskOrchestrator(options){
       const validation=validateAgainstSchema(allowedDef('query_tickets').inputSchema,semanticIntent);
       if(!validation.ok) return {ok:false,code:'INVALID_ARGUMENTS'};
       let found;
-      try{found=await tools.query_tickets(semanticIntent);}catch(_err){return {ok:false,code:'INTERNAL'};}
+      try{found=await tools.query_tickets(semanticIntent,execution);}catch(_err){return {ok:false,code:'INTERNAL'};}
       if(!found?.ok) return found;
       const answer=workAnswer(found.data,semanticIntent,{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)});
       if(answer!==null){
@@ -1019,7 +1026,7 @@ export function createAskOrchestrator(options){
         selectedIds,
         selectedErrors
       };
-      const forcedText = await executeTool(forcedCall, collectedTickets, toolTotals, capture);
+      const forcedText = await executeTool(forcedCall, collectedTickets, toolTotals, capture, execution);
       try{
         const parsed = JSON.parse(forcedText);
         if(parsed && parsed.result){
@@ -1269,7 +1276,7 @@ export function createAskOrchestrator(options){
             selectedIds,
             selectedErrors,
             ordinalLock: ordinalLock
-          });
+          }, execution);
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
         let totalChars = 0;
