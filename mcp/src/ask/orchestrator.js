@@ -34,7 +34,7 @@ import {hygieneArgs} from './arg-hygiene.js';
 /* v91.60: the visible numbering of the answer IS the ordinal — referents and
    result items are re-ordered to the list the user actually sees. */
 import {alignRowsToAnswer} from './answer-order.js';
-import {workIntent,workAnswer} from './work-intent.js';
+import {workIntent,workAnswer,temporalWorkIntent} from './work-intent.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -944,7 +944,17 @@ export function createAskOrchestrator(options){
     const detailKind=/^(?:показати|показать|покажи|покажіть)\s+(замены|заміни|исключ[её]нные|виключені)[.!?\s]*$/iu.exec(questionText)?.[1];
     const workFollowUp=queryContext?.resolved_filters?.semantic && (detailKind || /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText));
     const coworkerRoster=sanitizeCoworkerRoster(options?.coworkerRoster);
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : workIntent(questionText,now,coworkerRoster);
+    let temporalContext=queryContext;
+    // Older clients omitted mode. Recover COUNT only when the immediately
+    // preceding user question deterministically proves the EXACT same filters.
+    // Do not reconstruct/widen filters or change persisted history/schema.
+    if(queryContext && options?.queryContext?.mode==null && Array.isArray(options?.history)){
+      const previousUser=options.history.filter(m=>m?.role==='user').at(-1);
+      const prior=previousUser&&workIntent(previousUser.content||previousUser.text,now,coworkerRoster);
+      const priorContext=prior?.mode==='count'&&!prior.clarification?projectQueryContext({resolved_filters:prior,mode:'count'}):null;
+      if(priorContext&&stableFiltersKey(priorContext.resolved_filters)===stableFiltersKey(queryContext.resolved_filters))temporalContext={...queryContext,mode:'count'};
+    }
+    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : temporalWorkIntent(questionText,now,temporalContext) || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';
@@ -979,6 +989,13 @@ export function createAskOrchestrator(options){
         ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
     }
     let lastQueryEnvelope = null;
+    let aggregateEnvelopeCount=0;
+    function captureQueryEnvelope(env){
+      lastQueryEnvelope=env;
+      // Multiple aggregates can differ in period or dimensions not represented
+      // in resolved_filters. Fail safe: never replace their combined answer.
+      if(['count','group','stats','sum','unique'].includes(env?.mode))aggregateEnvelopeCount++;
+    }
     /* v91.47: AUTHORITATIVE anaphoric follow-up. For an explicit «покажи их»
        turn with a valid immediate queryContext the result must NOT depend on
        which tool the model picks (production bypass: search_tickets /
@@ -993,7 +1010,7 @@ export function createAskOrchestrator(options){
       const forcedArgs = mergeInheritedFilters({mode:'list', limit:50}, queryContext.resolved_filters);
       const forcedCall = {name:'query_tickets', argsRaw: JSON.stringify(forcedArgs)};
       const capture = {
-        setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
+        setQueryEnvelope: captureQueryEnvelope,
         queryContext: null,
         authoritativeText: null,
         activeResultSet,
@@ -1241,7 +1258,7 @@ export function createAskOrchestrator(options){
           }
           toolCallsMade++;
           const resultText = await executeTool(call, collectedTickets, toolTotals, {
-            setQueryEnvelope: function(env){ lastQueryEnvelope = env; },
+            setQueryEnvelope: captureQueryEnvelope,
             queryContext: queryContext,
             coworkerRoster,
             authoritativeFollowUp: authoritativeFollowUp,
@@ -1264,7 +1281,7 @@ export function createAskOrchestrator(options){
       /* v91.45: deterministic backstop for list numbering — the model may
          repeat «1.» for every item; the formatter restores 1..N without ever
          introducing technical ids. */
-      const aggregateAnswer=lastQueryEnvelope?.work_totals&&['count','group'].includes(lastQueryEnvelope.mode)&&!cardIntentFor(questionText)?workAnswer(lastQueryEnvelope,{...lastQueryEnvelope.resolved_filters,mode:lastQueryEnvelope.mode},{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)}):null;
+      const aggregateAnswer=aggregateEnvelopeCount<=1&&lastQueryEnvelope?.work_totals&&['count','group'].includes(lastQueryEnvelope.mode)&&!cardIntentFor(questionText)?workAnswer(lastQueryEnvelope,{...lastQueryEnvelope.resolved_filters,mode:lastQueryEnvelope.mode},{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)}):null;
       const answer = renumberSequentialLists(String(aggregateAnswer??response.content??'').trim().slice(0, limits.maxAnswerChars));
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
       const intent = cardIntentFor(questionText);

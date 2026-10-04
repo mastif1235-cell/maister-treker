@@ -8,8 +8,8 @@ export function coworkerForms(name){
   // Controlled case endings of a single roster name, not arbitrary stemming.
   if(/^[а-яіїєґ]+$/u.test(base)){
     const stem=base.slice(0,-1);
-    if(base.endsWith('я'))for(const ending of ['ей','е','ю','і','єю'])forms.add(stem+ending);
-    else if(base.endsWith('а'))for(const ending of ['ей','ой','ою','е','у','і'])forms.add(stem+ending);
+    if(base.endsWith('я'))for(const ending of ['ей','е','ю','і',/[аеєиіїоуюя]я$/u.test(base)?'єю':'ею'])forms.add(stem+ending);
+    else if(base.endsWith('а'))for(const ending of ['ей','ой','ою','е','у','і',/[жчшщ]а$/u.test(base)?'ею':'ою'])forms.add(stem+ending);
     else if(base.endsWith('ь'))for(const ending of ['я','ю','ем','я'])forms.add(stem+ending);
     else if(/[бвгґджзклмнпрстфхцчшщ]$/u.test(base))for(const ending of ['а','у','ом','ем','е'])forms.add(base+ending);
   }

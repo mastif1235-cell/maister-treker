@@ -103,7 +103,7 @@ MTAI.createClient = function(options){
           : 'Ліміт запитів AI-провайдера ще не відновився. Спробуйте пізніше.',
         detail: detail, retryAfterSec: retryAfterSec };
     }
-    if(status === 503) return { kind:'not_configured',
+    if(status === 503 && payload && ['ask_not_configured','deepseek_not_configured','groq_not_configured','server_configuration'].includes(payload.error || code)) return { kind:'not_configured',
       message:'AI на цьому backend не налаштований або провайдера вимкнено (' + ((payload && (payload.error || code)) || 'ask_not_configured') + '). Перевірте, що провайдер увімкнено на Worker і ключ додано як Secret (див. «Як підключити AI» у налаштуваннях).',
       detail: detail };
     if(status === 400) return { kind:'bad_request', message:'Некоректний запит (' + code + ').', detail: detail };
@@ -238,7 +238,9 @@ MTAI.createClient = function(options){
       }
     }
     if(!Object.keys(out).length) return null;
-    return {resolved_filters:out};
+    const context={resolved_filters:out};
+    if(['count','list','group','stats','sum','unique'].includes(raw.mode)) context.mode=raw.mode;
+    return context;
   }
 
   /* Структурований контекст попередньої відповіді (референт для «відкрий
@@ -342,7 +344,10 @@ MTAI.createClient = function(options){
         body: JSON.stringify(body),
         signal: ctrl.signal
       });
-      const payload = await res.json().catch(function(){ return null; });
+      const payload = await res.json().catch(function(err){
+        if(err && err.name === 'SyntaxError') return null;
+        throw err; // body-stream failure/abort is transport, not a successful 200
+      });
       if(res.ok && payload && payload.ok){
         return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), shown:Number.isFinite(Number(payload.shown))?Number(payload.shown):0, tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery), resultSet:sanitizeResultSet(payload.resultSet), resultItems:sanitizeResultItems(payload.resultItems), selectedTicketId:validateTicketId(payload.selectedTicketId), presentation:sanitizePresentation(payload.presentation), resultSetStatus:(payload.resultSetStatus&&typeof payload.resultSetStatus==='object')?payload.resultSetStatus:null };
       }

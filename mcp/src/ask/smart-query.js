@@ -699,6 +699,9 @@ export function runSmartQuery(ctx, params){
     if(params.sum_min != null && Number(t.sum) < Number(params.sum_min)) continue;
     if(params.sum_max != null && Number(t.sum) > Number(params.sum_max)) continue;
 
+    // A specific semantic coworker cannot match a shift-only/other-master row.
+    // Reject it before expensive event extraction; keep the legacy path intact.
+    if(semantic && coworkerQuery && !directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) && !(t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,coworkerQuery))) continue;
     const analysis = semantic ? workEvents(t, legacyText, semantic) : null;
     if(analysis) workById.set(t.id, analysis);
     const sigNum = semantic ? semanticSignal(analysis, semantic) : ticketSignalNumber(t);
@@ -984,7 +987,8 @@ export function runSmartQuery(ctx, params){
         if(['onu_physical','physical_consumption'].includes(semantic.profile))base.work_totals.count_policy='physical_consumption; structured > explicit > business_derived; deduplicated_per_ticket_entity; units_separate; exact_specific_coworker_tags; general_coworker_groups_direct_only';
         if(semantic.profile==='onu_physical'){
           const placements=list.flatMap(t=>workById.get(t.id).events.filter(e=>e.category==='definite'&&semanticMatches(e,semantic)));
-          const excludedContexts=physicalScope.filter(t=>!placements.some(e=>e.ticket_id===String(t.id))).flatMap(t=>workById.get(t.id).contexts||[]);
+          const placementIds=new Set(placements.map(e=>e.ticket_id));
+          const excludedContexts=physicalScope.filter(t=>!placementIds.has(String(t.id))).flatMap(t=>workById.get(t.id).contexts||[]);
           const units=rows=>rows.reduce((sum,e)=>sum+(Number(e.quantity)||0),0);
           base.work_totals.onu_breakdown={new_connections:units(placements.filter(e=>e.install_origin==='connection'&&e.action!=='replace')),standalone_installs:units(placements.filter(e=>e.action==='install'&&e.install_origin!=='connection')),replacements:units(placements.filter(e=>e.action==='replace')),total_physical_placements:units(placements),customer_owned_excluded:excludedContexts.filter(e=>e.reason==='customer_owned_onu').length,reused_excluded:excludedContexts.filter(e=>e.reason==='reused_onu_transfer').length};
         }

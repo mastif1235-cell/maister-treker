@@ -12,6 +12,19 @@ function concepts(text,defs){
   }
   return found.filter(f=>!found.some(p=>p.id!==f.id && p.start<=f.start && p.end>=f.end && p.end-p.start>f.end-f.start));
 }
+// A date-only continuation changes dates, never lets an LLM reconstruct the
+// equipment/action/coworker filters from the wording of a previous breakdown.
+// Closed grammar: additional constraints remain on the ordinary parser path.
+export function temporalWorkIntent(question,now,queryContext){
+  if(!queryContext?.resolved_filters?.semantic || !['count','list'].includes(queryContext.mode)) return null;
+  const month='(?:январ(?:ь|я|е)|феврал(?:ь|я|е)|март(?:а|е)?|апрел(?:ь|я|е)|ма[йяе]|июн(?:ь|я|е)|июл(?:ь|я|е)|август(?:а|е)?|сентябр(?:ь|я|е)|октябр(?:ь|я|е)|ноябр(?:ь|я|е)|декабр(?:ь|я|е)|січ(?:ень|ня|ні)|лют(?:ий|ого|ому)|берез(?:ень|ня|ні)|квіт(?:ень|ня|ні)|трав(?:ень|ня|ні)|черв(?:ень|ня|ні)|лип(?:ень|ня|ні)|серп(?:ень|ня|ні)|верес(?:ень|ня|ні)|жовт(?:ень|ня|ні)|листопад(?:а|і)?|груд(?:ень|ня|ні))';
+  if(!new RegExp('^(?:а\\s+)?(?:(?:в|у|за|на|з)\\s+)?'+month+'(?:\\s+20\\d{2}(?:\\s+(?:году|рік|року))?)?[.!?\\s]*$','iu').test(String(question||'').trim())) return null;
+  const year=/\.(20\d{2})$/.exec(queryContext.resolved_filters.date_from||'')?.[1];
+  const sameYear=year&&String(queryContext.resolved_filters.date_to||'').endsWith('.'+year);
+  const ranges=resolveDateRanges(String(question)+(!/20\d{2}/.test(question)&&sameYear?' '+year:''),now);
+  if(ranges.length!==1 || ranges[0].approximate) return null;
+  return {...queryContext.resolved_filters,mode:queryContext.mode==='list'?'list':'count',...(queryContext.mode==='list'?{limit:8}:{}),date_from:ranges[0].from,date_to:ranges[0].to};
+}
 export function workIntent(question,now,roster){
   const original=String(question||'').toLowerCase();
   const repairType=/(?:на|при)\s+ремонт[\p{L}]*/iu.test(original),connectionType=/(?:на|при)\s+(?:подключен|підключен)[\p{L}]*/iu.test(original);
@@ -84,7 +97,7 @@ export function workAnswer(data,params,options={}){
   if(!totals) return null;
   const period=params.date_from||params.date_to ? (params.date_from||'…')+'–'+(params.date_to||'…') : 'увесь час';
   const sem=data.resolved_filters.semantic;
-  const russian=/сколько|поставил|заменил|почему|покажи|списать|оборудован/iu.test(options.question||'');
+  const russian=/сколько|поставил|заменил|почему|покажи|списать|оборудован|январ|феврал|март|апрел|ма[йяе](?![\p{L}])|июн|июл|август|сентябр|октябр|ноябр|декабр/iu.test(options.question||'');
   const diagnostic=options.diagnostic===true;
   const labels={onu:'ONU',router:russian?'Роутер':'Роутер',onu_power_supply:'БП ONU',router_power_supply:russian?'БП роутера':'БП роутера',cable:russian?'Кабель':'Кабель',fiber:russian?'Оптический кабель':'Оптичний кабель'};
   const entityName=e=>labels[e]||e.replace(/^material:/,'');

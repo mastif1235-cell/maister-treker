@@ -38,11 +38,12 @@ export const EVENT_ACTIONS = ACTIONS.map(a => a.id).concat(['complete','mention'
 export const CATEGORIES = ['definite','ambiguous','excluded','all'];
 const BOUND_LEFT = '(?<![\\p{L}\\p{N}_])';
 const BOUND_RIGHT = '(?![\\p{L}\\p{N}_])';
+// Fixed dictionaries: compile once, not for every clause/item of every ticket.
+const HIT_PATTERNS=new Map([ENTITIES,ACTIONS].map(defs=>[defs,defs.map(def=>({id:def.id,re:new RegExp(BOUND_LEFT+'(?:'+def.pattern.replaceAll('[а-я]','[а-яіїєґ]')+')'+BOUND_RIGHT,'giu')}))]));
 function hits(text, defs){
   const out = [];
-  for(const def of defs){
-    const re = new RegExp(BOUND_LEFT + '(?:' + def.pattern.replaceAll('[а-я]', '[а-яіїєґ]') + ')' + BOUND_RIGHT, 'giu');
-    for(const m of text.matchAll(re)) out.push({id:def.id,start:m.index,end:m.index+m[0].length,text:m[0]});
+  for(const def of HIT_PATTERNS.get(defs)){
+    for(const m of text.matchAll(def.re)) out.push({id:def.id,start:m.index,end:m.index+m[0].length,text:m[0]});
   }
   // Long compound wins over its components; no ONU event from «БП ONU».
   out.sort((a,b) => a.start-b.start || (b.end-b.start)-(a.end-a.start));
@@ -166,12 +167,10 @@ export function workEvents(ticket, legacyText, options={}){
     const uncertain=textSignals.some(s=>s.context==='subscriber' && s.category==='ambiguous') && textSignals.some(s=>s.value===Number(structured) && s.category==='ambiguous');
     if(!inputOnly) signals.push({value:Number(structured),unit:'dBm',context:'subscriber',category:uncertain?'ambiguous':'definite',source:'structured_signal'});
   }
-  for(const source of sources){
-    for(const metric of extractSignals(source.text)){
-      if(signals.some(s => s.value===metric.value && s.context===metric.context)) continue;
-      if(signals.some(s=>s.source==='structured_signal') && metric.context==='subscriber') continue; // structured wins
-      signals.push({...metric,source:source.kind});
-    }
+  for(const metric of textSignals){
+    if(signals.some(s => s.value===metric.value && s.context===metric.context)) continue;
+    if(signals.some(s=>s.source==='structured_signal') && metric.context==='subscriber') continue; // structured wins
+    signals.push({...metric});
   }
   // Multiple conflicting subscriber readings have no safe event association.
   if(new Set(signals.filter(s=>s.context==='subscriber').map(s=>s.value)).size>1){

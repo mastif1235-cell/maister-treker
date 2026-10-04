@@ -56,7 +56,7 @@ test('structured private textarea cannot reopen indexing with marker-looking tex
  for(const value of ['SECRET','001122334455','перенос ONU','0501234567','ФИО тест','hidden'])assert.ok(!mapped.searchableText.includes(value));assert.ok(mapped.searchableText.includes('публічна робота'));
 });
 for(const text of ['клиентская ONU','абонентская ONU','клієнтська ONU','абонентська ONU'])test('customer-owned adjective excludes derived ONU: '+text,()=>assert.equal(placements(text).length,0));
-for(const text of ['перенос ONU абонента','перенесли старую ONU','reuse ONU','старая ONU'])test('ONU-owned/reuse context still excludes: '+text,()=>assert.equal(placements(text).length,0));
+for(const text of ['перенос ONU абонента','перенесли старую ONU','reuse ONU','оставили старую ONU'])test('ONU-owned/reuse context still excludes: '+text,()=>assert.equal(placements(text).length,0));
 test('H1 real sync chain removes entire multiline masterNote from index and analytics',()=>{
  const source=fs.readFileSync(new URL('../../../app.js',import.meta.url),'utf8');const sandbox={};vm.createContext(sandbox);vm.runInContext(source.slice(source.indexOf('function ticketToSyncPayload('),source.indexOf('function shiftToSyncPayload(')),sandbox);
  const ticket={...base,masterNote:'Wi-Fi пароль: SECRET\nперенос ONU абонента\nтелефон 0501234567',login:'LOGIN_SENTINEL',note:'публічна примітка'};
