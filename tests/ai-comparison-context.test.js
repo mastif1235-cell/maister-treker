@@ -7,11 +7,11 @@ const qc={mode:'count',resolved_filters:{coworker:'Женя',semantic:{entity:'o
  const memory=new Map(),storage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};let calls=0;
  const client=sb.MTAI.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic-only'}),fetchImpl:async(u,init)=>{
   const body=JSON.parse(init.body);if(calls++)assert.deepEqual(body.context.queryContext,qc);
-  return new Response(JSON.stringify({ok:true,answer:'20 ONU / 27 ONU',queryContext:{...qc,comparison:{...qc.comparison,masterNote:'NEVER'},password:'NEVER'}}),{status:200});
+  return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'20 ONU / 27 ONU',queryContext:{...qc,comparison:{...qc.comparison,masterNote:'NEVER'},password:'NEVER'}}),{status:200});
  }});
  await sb.MTAI.createChatController({client,storage}).send('Сравни сентябрь и август');
  await sb.MTAI.createChatController({client,storage}).send('А только ремонты?');assert.equal(calls,2);
- let body;const invalid=sb.MTAI.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic-only'}),fetchImpl:async(u,init)=>{body=JSON.parse(init.body);return new Response(JSON.stringify({ok:true,answer:'ok'}),{status:200})}});
- await invalid.ask('q',[],{queryContext:{...qc,comparison:{periods:[{from:'31.02.2026',to:'30.09.2026'},qc.comparison.periods[1]]}}});assert.equal(body.context?.queryContext,undefined);
+ let body;const invalid=sb.MTAI.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic-only'}),fetchImpl:async(u,init)=>{body=JSON.parse(init.body);return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'ok'}),{status:200})}});
+ const rejected=await invalid.ask('q',[],{queryContext:{...qc,comparison:{periods:[{from:'31.02.2026',to:'30.09.2026'},qc.comparison.periods[1]]}}});assert.equal(rejected.error.kind,'compatibility');assert.equal(body,undefined,'invalid context never reaches transport');
  console.log('PASS comparison context whitelist, client echo, controller reload, invalid comparison rejected');
 })().catch(e=>{console.error(e);process.exitCode=1;});

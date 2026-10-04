@@ -14,13 +14,13 @@ function boot(){const sb={console,setTimeout,clearTimeout,AbortController,Respon
  await M.createChatController({client,storage}).send('А со всеми?');assert.equal(calls,2);
  let body;
  const transport=M.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic'}),
-  fetchImpl:async(url,init)=>{body=JSON.parse(init.body);return new Response(JSON.stringify({ok:true,answer:'ok'}),{status:200});}});
+  fetchImpl:async(url,init)=>{body=JSON.parse(init.body);return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'ok'}),{status:200});}});
  await transport.ask('А в августе?',[],{queryContext:qc});
  assert.deepEqual(body.context.queryContext,qc);
  const group={...qc,mode:'group',group_by:'coworker'};
  await transport.ask('А со всеми?',[],{queryContext:group});assert.equal(body.context.queryContext.group_by,'coworker');
- await transport.ask('А со всеми?',[],{queryContext:{...qc,resolved_filters:{...qc.resolved_filters,coworker:'Петя'}}});
- assert.equal(body.context?.queryContext,undefined,'contradictory include/exclude fails closed');
+ body=undefined;const rejected=await transport.ask('А со всеми?',[],{queryContext:{...qc,resolved_filters:{...qc.resolved_filters,coworker:'Петя'}}});
+ assert.equal(rejected.error.kind,'compatibility');assert.equal(body,undefined,'contradictory include/exclude never reaches transport');
  assert.ok(!JSON.stringify(memory).includes('masterNote'));
  console.log('PASS coworker EXCLUDE reload + client request whitelist + group dimension + conflicting predicates rejected');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -17,7 +17,7 @@ test('combined month+trusted coworker keeps count/profile through real reload an
   const body=route.request().postDataJSON();requests.push(body);
   const result=await orch.handle(body.question,{now,...body.context,coworkerRoster:['Женя','Петя']});
   expect(result.meta.rounds).toBe(0);expect(result.meta.toolCallsMade).toBe(1);
-  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});

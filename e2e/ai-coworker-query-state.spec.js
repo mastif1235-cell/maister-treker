@@ -17,7 +17,7 @@ test('coworker-only transitions preserve September/count before and after browse
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
   const body=route.request().postDataJSON();requests.push(body);
   const result=await orch.handle(body.question,{now,coworkerRoster:['Артем','Петя','Женя','Паша'],...body.context});
-  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{settings.masters=['Артем','Петя','Женя','Паша'];await saveSettings();

@@ -12,7 +12,7 @@ test('D2/D4: actual browser reload keeps two periods and repairs; no provider',a
   const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
   const body=route.request().postDataJSON();requests.push(body);const result=await orch.handle(body.question,{now,coworkerRoster:['Женя'],...body.context});
-  await route.fulfill({status:200,headers,contentType:'application/json',body:JSON.stringify(result)});
+  await route.fulfill({status:200,headers,contentType:'application/json',body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-only');await mtSettingsSecretsFlushPending();MTAI.ui.open()});
