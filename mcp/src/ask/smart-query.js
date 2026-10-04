@@ -706,8 +706,7 @@ export function runSmartQuery(ctx, params, execution){
     // A specific semantic coworker cannot match a shift-only/other-master row.
     // Reject it before expensive event extraction; keep the legacy path intact.
     if(semantic && coworkerQuery && !directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,coworkerQuery)) && !(t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,coworkerQuery))) continue;
-    // The complement of definite specific matching, never same-day shifts.
-    // Apply before extraction so exclusion does not analyse discarded rows.
+    // Exclude definite coworkers before cached event extraction.
     if(excludedCoworker && (directCoworkers(t).some(name=>semanticCoworkerNameMatches(name,excludedCoworker)) ||
       (t.tags||[]).some(tag=>historicalCoworkerTagMatches(tag,excludedCoworker))))continue;
     const analysis = semantic ? (execution

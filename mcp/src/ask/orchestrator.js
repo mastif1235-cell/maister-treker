@@ -38,6 +38,7 @@ import {alignRowsToAnswer} from './answer-order.js';
 import {workIntent,workAnswer} from './work-intent.js';
 import {resolvePeriodFollowUp,resolveCoworkerFollowUp} from './period-query-state.js';
 import {resolveAnalyticsFollowUp} from './worktype-comparison-state.js';
+import {resolveCombinedFollowUp} from './combined-query-state.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -987,7 +988,10 @@ export function createAskOrchestrator(options){
     // Unsupported follow-ups must not turn two explicit periods into all-time
     // common filters. Keep the existing comparison until the user disambiguates.
     if(queryContext?.comparison&&!transition&&!workIntent(questionText,now,coworkerRoster))return {ok:true,answer:'Уточніть один період або сформулюйте нове порівняння. Для обох періодів можна запитати «А тільки ремонти?».',meta:{rounds:0,toolCallsMade:0,clarification:true},shown:0,tickets:[],referentTickets:[],queryContext,resultSet:null,resultItems:[]};
-    const semanticIntent=transition?.plans.length===1?transition.plans[0]:workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : resolveCoworkerFollowUp(questionText,temporalContext,coworkerRoster).intent || resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
+    const semanticIntent=transition?.plans.length===1?transition.plans[0]:workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} :
+      resolveCoworkerFollowUp(questionText,temporalContext,coworkerRoster).intent ||
+      resolveCombinedFollowUp(questionText,now,temporalContext,coworkerRoster).intent ||
+      resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';
