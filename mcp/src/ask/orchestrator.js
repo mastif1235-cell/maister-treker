@@ -34,7 +34,8 @@ import {hygieneArgs} from './arg-hygiene.js';
 /* v91.60: the visible numbering of the answer IS the ordinal — referents and
    result items are re-ordered to the list the user actually sees. */
 import {alignRowsToAnswer} from './answer-order.js';
-import {workIntent,workAnswer,temporalWorkIntent} from './work-intent.js';
+import {workIntent,workAnswer} from './work-intent.js';
+import {resolvePeriodFollowUp} from './period-query-state.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -954,7 +955,7 @@ export function createAskOrchestrator(options){
       const priorContext=prior?.mode==='count'&&!prior.clarification?projectQueryContext({resolved_filters:prior,mode:'count'}):null;
       if(priorContext&&stableFiltersKey(priorContext.resolved_filters)===stableFiltersKey(queryContext.resolved_filters))temporalContext={...queryContext,mode:'count'};
     }
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : temporalWorkIntent(questionText,now,temporalContext) || workIntent(questionText,now,coworkerRoster);
+    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';
