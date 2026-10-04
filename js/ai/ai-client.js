@@ -240,6 +240,20 @@ MTAI.createClient = function(options){
     if(!Object.keys(out).length) return null;
     const context={resolved_filters:out};
     if(['count','list','group','stats','sum','unique'].includes(raw.mode)) context.mode=raw.mode;
+    if(Object.prototype.hasOwnProperty.call(raw,'comparison')){
+      const periods=raw.comparison&&raw.comparison.periods;
+      if(context.mode!=='count'||!out.semantic||out.date_from||out.date_to||!Array.isArray(periods)||periods.length!==2)return null;
+      const calendar=function(d){
+        if(typeof d!=='string'||!/^\d{2}\.\d{2}\.\d{4}$/.test(d))return false;
+        const parts=d.split('.').map(Number),date=new Date(Date.UTC(parts[2],parts[1]-1,parts[0]));
+        return date.getUTCFullYear()===parts[2]&&date.getUTCMonth()===parts[1]-1&&date.getUTCDate()===parts[0];
+      };
+      for(const p of periods){
+        if(!p||!calendar(p.from)||!calendar(p.to)||p.from.split('.').reverse().join('-')>p.to.split('.').reverse().join('-'))return null;
+      }
+      if(periods[0].from===periods[1].from&&periods[0].to===periods[1].to)return null;
+      context.comparison={periods:periods.map(function(p){return {from:p.from,to:p.to};})};
+    }
     return context;
   }
 
