@@ -1,5 +1,9 @@
 # Analytics query state — Phase 1 foundation
 
+Historical Phase 1 boundary below was disconnected. Phase 2A connects only the
+period bridge; see [Phase 2A contract](ai-query-state-phase2a.md). Other paths
+remain unchanged; the original foundation schema/invariants still apply.
+
 Frozen baseline: merge `4904ef33ce213777b95af32128e9695d5393a4e9`,
 v91.84 · 2026-10-04 / runtime-128. No version bump or deployment in this PR.
 

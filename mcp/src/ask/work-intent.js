@@ -15,7 +15,7 @@ function concepts(text,defs){
 // A date-only continuation changes dates, never lets an LLM reconstruct the
 // equipment/action/coworker filters from the wording of a previous breakdown.
 // Closed grammar: additional constraints remain on the ordinary parser path.
-export function temporalWorkIntent(question,now,queryContext){
+export function parseTemporalWorkPeriod(question,now,queryContext){
   if(!queryContext?.resolved_filters?.semantic || !['count','list'].includes(queryContext.mode)) return null;
   const month='(?:январ(?:ь|я|е)|феврал(?:ь|я|е)|март(?:а|е)?|апрел(?:ь|я|е)|ма[йяе]|июн(?:ь|я|е)|июл(?:ь|я|е)|август(?:а|е)?|сентябр(?:ь|я|е)|октябр(?:ь|я|е)|ноябр(?:ь|я|е)|декабр(?:ь|я|е)|січ(?:ень|ня|ні)|лют(?:ий|ого|ому)|берез(?:ень|ня|ні)|квіт(?:ень|ня|ні)|трав(?:ень|ня|ні)|черв(?:ень|ня|ні)|лип(?:ень|ня|ні)|серп(?:ень|ня|ні)|верес(?:ень|ня|ні)|жовт(?:ень|ня|ні)|листопад(?:а|і)?|груд(?:ень|ня|ні))';
   if(!new RegExp('^(?:а\\s+)?(?:(?:в|у|за|на|з)\\s+)?'+month+'(?:\\s+20\\d{2}(?:\\s+(?:году|рік|року))?)?[.!?\\s]*$','iu').test(String(question||'').trim())) return null;
@@ -23,7 +23,14 @@ export function temporalWorkIntent(question,now,queryContext){
   const sameYear=year&&String(queryContext.resolved_filters.date_to||'').endsWith('.'+year);
   const ranges=resolveDateRanges(String(question)+(!/20\d{2}/.test(question)&&sameYear?' '+year:''),now);
   if(ranges.length!==1 || ranges[0].approximate) return null;
-  return {...queryContext.resolved_filters,mode:queryContext.mode==='list'?'list':'count',...(queryContext.mode==='list'?{limit:8}:{}),date_from:ranges[0].from,date_to:ranges[0].to};
+  return {from:ranges[0].from,to:ranges[0].to};
+}
+// Legacy fallback/compiler. The period grammar and resolver are shared with
+// QueryState; supplying a parsed period avoids parsing twice on fallback.
+export function temporalWorkIntent(question,now,queryContext,parsedPeriod){
+  const period=parsedPeriod===undefined?parseTemporalWorkPeriod(question,now,queryContext):parsedPeriod;
+  if(!period) return null;
+  return {...queryContext.resolved_filters,mode:queryContext.mode==='list'?'list':'count',...(queryContext.mode==='list'?{limit:8}:{}),date_from:period.from,date_to:period.to};
 }
 export function workIntent(question,now,roster){
   const original=String(question||'').toLowerCase();
