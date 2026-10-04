@@ -56,6 +56,7 @@ MTAI.createClient = function(options){
         detail: '' };
     }
     const code = payload && payload.code ? String(payload.code) : '';
+    if(code === 'AI_CLIENT_UPDATE_REQUIRED' || code === 'AI_CONTEXT_RESET_REQUIRED') return compatibilityError();
     const detail = payload && typeof payload.detail === 'string' ? payload.detail : '';
     if(status === 401) return { kind:'auth', message:'Невірний токен AI-бекенда. Перевірте його в Налаштуваннях → 🤖 AI.', detail:'' };
     if(status === 402 || code === 'HTTP_402' || code === 'insufficient_balance' || /insufficient balance/i.test(detail)){
@@ -109,6 +110,22 @@ MTAI.createClient = function(options){
     if(status === 400) return { kind:'bad_request', message:'Некоректний запит (' + code + ').', detail: detail };
     if(status >= 500) return { kind:'server', message:'Помилка сервера (' + status + (code ? ' ' + code : '') + ').', detail: detail };
     return { kind:'http', message:'Помилка ' + status + (code ? ' ' + code : '') + '.', detail: detail };
+  }
+
+  function compatibilityError(){
+    return {kind:'compatibility',code:'AI_CLIENT_UPDATE_REQUIRED',message:MTAI.config.AI_COMPATIBILITY_MESSAGE,detail:''};
+  }
+
+  // Guard-only rollback clients must not project away newer critical state.
+  function preservesContractContext(raw, projected){
+    if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return true;
+    if(Object.prototype.hasOwnProperty.call(raw.resolved_filters || {}, 'coworker_exclude') &&
+       raw.resolved_filters.coworker_exclude !== (projected && projected.resolved_filters && projected.resolved_filters.coworker_exclude)) return false;
+    if(Object.prototype.hasOwnProperty.call(raw,'comparison') && (!(projected && projected.comparison) || JSON.stringify(raw.comparison && raw.comparison.periods) !== JSON.stringify(projected.comparison.periods))) return false;
+    for(const key of ['group_by']){
+      if(Object.prototype.hasOwnProperty.call(raw,key) && JSON.stringify(raw[key]) !== JSON.stringify(projected && projected[key])) return false;
+    }
+    return true;
   }
 
   /* Структуровані заявки від /ask (кнопки «Відкрити заявку»). Лише сувора
@@ -299,17 +316,22 @@ MTAI.createClient = function(options){
     const ctrl = new AbortController();
     const timer = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
     const body = {
+      ai_contract_version: MTAI.config.AI_CONTRACT_VERSION,
       question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
       history: sanitizeHistory(history),
       provider: cfg.provider || MTAI.config.DEFAULT_PROVIDER,
       model: cfg.model || MTAI.config.DEFAULT_MODEL
     };
-    /* Контекст додається ЛИШЕ коли він є — перше питання сесії лишає
-       тіло запиту байт-в-байт таким самим, як раніше. */
+    /* Контекст додається ЛИШЕ коли він є; обов'язковий contract marker
+       залишається поза контекстом навіть для першого питання сесії. */
     const ctxTickets = context && Array.isArray(context.tickets) ? normalizeReferentTickets(context.tickets) : [];
     if(ctxTickets.length) body.context = { tickets: ctxTickets };
     /* v91.46: follow-up контекст додається ЛИШЕ коли він є. */
     const ctxQuery = sanitizeQueryContext(context && context.queryContext);
+    if(!preservesContractContext(context && context.queryContext,ctxQuery)){
+      clearTimeout(timer);
+      return {ok:false,error:compatibilityError()};
+    }
     if(ctxQuery){
       body.context = body.context || {};
       body.context.queryContext = ctxQuery;
@@ -349,6 +371,10 @@ MTAI.createClient = function(options){
         throw err; // body-stream failure/abort is transport, not a successful 200
       });
       if(res.ok && payload && payload.ok){
+        if(payload.ai_contract_version !== MTAI.config.AI_CONTRACT_VERSION ||
+           !preservesContractContext(payload.queryContext,sanitizeQueryContext(payload.queryContext))){
+          return {ok:false,error:compatibilityError()};
+        }
         return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), shown:Number.isFinite(Number(payload.shown))?Number(payload.shown):0, tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery), resultSet:sanitizeResultSet(payload.resultSet), resultItems:sanitizeResultItems(payload.resultItems), selectedTicketId:validateTicketId(payload.selectedTicketId), presentation:sanitizePresentation(payload.presentation), resultSetStatus:(payload.resultSetStatus&&typeof payload.resultSetStatus==='object')?payload.resultSetStatus:null };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };

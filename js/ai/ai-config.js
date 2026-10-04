@@ -6,6 +6,8 @@ const globalRef = typeof globalThis !== 'undefined' ? globalThis : window;
 const MTAI = globalRef.MTAI = globalRef.MTAI || {};
 
 MTAI.config = {
+  AI_CONTRACT_VERSION: 1,
+  AI_COMPATIBILITY_MESSAGE: 'AI-модуль оновився. Оновіть застосунок і повторіть початкове питання.',
   /* Fresh install: бекенд НЕ налаштований, AI вимкнений, жодних запитів.
      Спільний backend пропонується лише в онбордингу й без власного
      access-токена користувача не працює (ліміти власника не витрачаються). */

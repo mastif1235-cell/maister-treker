@@ -82,7 +82,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   {
     const {sandbox, doc, errors}=boot(baseSettings(), async function(url){
       if(String(url).endsWith('/ai/config')) return new Response(JSON.stringify(OK_CONFIG),{status:200});
-      return new Response(JSON.stringify({ok:true,service:'mt',read_only:true}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,service:'mt',read_only:true}),{status:200});
     });
     doc.getElementById('aiTokenInput').value='dev-name:devtoken1234567890abcdef:read';
     doc.getElementById('aiOnboardBtn')._handlers['click'][0]({target:doc.getElementById('aiOnboardBtn')});
@@ -103,7 +103,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   {
     const {sandbox, doc, errors}=boot(baseSettings(), async function(url){
       if(String(url).endsWith('/ai/config')) return new Response(JSON.stringify({error:'unauthorized'}),{status:401});
-      return new Response(JSON.stringify({ok:true}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200});
     });
     doc.getElementById('aiTokenInput').value='bad:tok1234567890abcdef:read';
     doc.getElementById('aiOnboardBtn')._handlers['click'][0]({target:doc.getElementById('aiOnboardBtn')});
@@ -141,7 +141,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
 
   /* 5) порожній токен і vault порожній -> видима помилка */
   {
-    const {doc}=boot(baseSettings(), async function(){ return new Response(JSON.stringify({ok:true}),{status:200}); });
+    const {doc}=boot(baseSettings(), async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200}); });
     doc.getElementById('aiOnboardBtn')._handlers['click'][0]({target:doc.getElementById('aiOnboardBtn')});
     await tick();
     assert.match(doc.getElementById('aiOnboardStatus').textContent,/Вставте ваш персональний access-токен/,'empty token message');
@@ -152,7 +152,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   {
     const {sandbox, doc}=boot(baseSettings(), async function(url){
       if(String(url).endsWith('/ai/config')) return new Response(JSON.stringify(OK_CONFIG),{status:200});
-      return new Response(JSON.stringify({ok:true}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200});
     });
     sandbox.settings.aiBearerToken='dev-name:devtoken1234567890abcdef:read'; // збережено раніше
     doc.getElementById('aiOnboardBtn')._handlers['click'][0]({target:doc.getElementById('aiOnboardBtn')});
@@ -165,7 +165,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   /* 7) будь-який виняток у ланцюжку -> ВИДиме повідомлення (не silent) */
   {
     const {sandbox, doc, errors}=boot(baseSettings(), async function(url){
-      return new Response(JSON.stringify({ok:true}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200});
     });
     sandbox.MTAI.client.config=function(){ throw new Error('boom'); }; // зламали крок 3
     doc.getElementById('aiTokenInput').value='n:tok1234567890abcdef:read';

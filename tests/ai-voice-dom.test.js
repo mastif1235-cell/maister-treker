@@ -78,7 +78,7 @@ function makeSandbox(doc, opts){
   const sandbox={ console, setTimeout, clearTimeout, Promise, Date, Math, JSON,
     document:doc, AbortController, Response, Headers,
     navigator:{ userAgent: opts.userAgent||'Mozilla/5.0 (Linux; Android 13) Chrome/120 Mobile Safari/537.36' },
-    fetch:async function(){ return new Response(JSON.stringify({ok:true}),{status:200}); } };
+    fetch:async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200}); } };
   if(opts.navigator) Object.assign(sandbox.navigator, opts.navigator);
   if(opts.noNavigator) delete sandbox.navigator;
   sandbox.recognitionInstances=recognitionInstances;

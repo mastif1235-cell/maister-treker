@@ -39,9 +39,9 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     const body=JSON.parse(init.body); requests.push(body);
     if(requests.length===1){
       /* Звичайний пошук: видимих карток нема, прихований referent — є. */
-      return new Response(JSON.stringify({ok:true,answer:'Знайдено 1 заявку: №1, Миколаївка 1, Вул Садова 19.',meta:{},tickets:[],referentTickets:[SAD]}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Знайдено 1 заявку: №1, Миколаївка 1, Вул Садова 19.',meta:{},tickets:[],referentTickets:[SAD]}),{status:200});
     }
-    return new Response(JSON.stringify({ok:true,answer:'Відкриваю заявку №1.',meta:{intent:'open'},tickets:[SAD],referentTickets:[SAD]}),{status:200});
+    return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Відкриваю заявку №1.',meta:{intent:'open'},tickets:[SAD],referentTickets:[SAD]}),{status:200});
   };
   const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   const assistant=[];
@@ -77,9 +77,9 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
   const requests=[];
   const fetchImpl=async function(url,init){
     const body=JSON.parse(init.body); requests.push(body);
-    if(requests.length===1) return new Response(JSON.stringify({ok:true,answer:'Знайдено 1 заявку.',meta:{},tickets:[],referentTickets:[ROW_A]}),{status:200});
-    if(requests.length===2) return new Response(JSON.stringify({ok:true,answer:'Карточка №1.',meta:{intent:'cards'},tickets:[ROW_B],referentTickets:[ROW_B]}),{status:200});
-    return new Response(JSON.stringify({ok:true,answer:'ok',meta:{}}),{status:200});
+    if(requests.length===1) return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Знайдено 1 заявку.',meta:{},tickets:[],referentTickets:[ROW_A]}),{status:200});
+    if(requests.length===2) return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Карточка №1.',meta:{intent:'cards'},tickets:[ROW_B],referentTickets:[ROW_B]}),{status:200});
+    return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'ok',meta:{}}),{status:200});
   };
   const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   const assistant=[];
@@ -115,7 +115,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
 {
   const sb=load('js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'); const M=sb.MTAI;
   sb.settings=JSON.parse(JSON.stringify(SETTINGS));
-  const client=M.createClient({fetchImpl:async function(){ return new Response(JSON.stringify({ok:true,answer:'a',meta:{},tickets:[],referentTickets:[SAD,{id:'<bad!>'}]}),{status:200}); },getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  const client=M.createClient({fetchImpl:async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'a',meta:{},tickets:[],referentTickets:[SAD,{id:'<bad!>'}]}),{status:200}); },getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   (async function(){
     const out=await client.ask('q');
     assert.equal(out.referentTickets.length,1,'client sanitizes referentTickets like tickets');
@@ -130,15 +130,15 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
   sb.settings=JSON.parse(JSON.stringify(SETTINGS));
   const store=memStorage();
   /* Симулюємо СТАРУ збережену сесію, де referent ще містив приватні поля. */
-  store.setItem('mtAiChatHistoryV1', JSON.stringify([
+  store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[
     {role:'user', text:'Покажи мне заявку Лісна 74', ts:1},
     {role:'assistant', text:'Знайдено 1 заявку.', ts:2, tickets:[],
      referentTickets:[{id:'t-priv1', date:'14.09.2026', time:'12:00', address:'Дніпро, Лісна 74', type:'Ремонт', sum:'750', signal:'-24', note:'секретна нотатка', phone:'0671234567'}]}
-  ]));
+  ]}));
   const requests=[];
   const fetchImpl=async function(url,init){
     const body=JSON.parse(init.body); requests.push(body);
-    return new Response(JSON.stringify({ok:true,answer:'ok',meta:{}}),{status:200});
+    return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'ok',meta:{}}),{status:200});
   };
   const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   const chat=M.createChatController({client:client,hooks:{},storage:store});
@@ -160,7 +160,7 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
 {
   const sb=load('js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'); const M=sb.MTAI;
   sb.settings=JSON.parse(JSON.stringify(SETTINGS));
-  const client=M.createClient({fetchImpl:async function(){ return new Response(JSON.stringify({ok:true,answer:'a',meta:{},tickets:[],referentTickets:[{id:'t-priv1',date:'14.09.2026',address:'Дніпро, Лісна 74',note:'секретна',phone:'0671234567',clientName:'Іван',macAddress:'AA:BB'}]}),{status:200}); },getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
+  const client=M.createClient({fetchImpl:async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'a',meta:{},tickets:[],referentTickets:[{id:'t-priv1',date:'14.09.2026',address:'Дніпро, Лісна 74',note:'секретна',phone:'0671234567',clientName:'Іван',macAddress:'AA:BB'}]}),{status:200}); },getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   (async function(){
     const out=await client.ask('q');
     assert.equal(out.referentTickets[0].id,'t-priv1');
@@ -182,9 +182,9 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
     if(requests.length===1){
       /* Сервер повертає авторитетні структуровані фільтри попереднього
          запиту; спроба пронести приватні ключі відсікається клієнтом. */
-      return new Response(JSON.stringify({ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1', masterNote:'ЗЛОВМИСНА-НОТАТКА', phone:'0671234567'},mode:'count',total_matched:8}}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1', masterNote:'ЗЛОВМИСНА-НОТАТКА', phone:'0671234567'},mode:'count',total_matched:8}}),{status:200});
     }
-    return new Response(JSON.stringify({ok:true,answer:'Ось заявки.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'list',total_matched:8}}),{status:200});
+    return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Ось заявки.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'list',total_matched:8}}),{status:200});
   };
   const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   const assistant=[];
@@ -220,13 +220,13 @@ const ROW_B={id:'t-202',date:'13.09.2026',time:'09:00',address:'Миколаїв
   const fetchImpl=async function(url,init){
     const body=JSON.parse(init.body); requests.push(body);
     if(requests.length===1){
-      return new Response(JSON.stringify({ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'count',total_matched:8}}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'У Миколаївці 1 всього 8 заявок.',meta:{},queryContext:{resolved_filters:{city:'Миколаївка 1'},mode:'count',total_matched:8}}),{status:200});
     }
     if(requests.length===2){
       /* Інше питання (зміни/години) — відповідь БЕЗ queryContext. */
-      return new Response(JSON.stringify({ok:true,answer:'За серпень 160 годин.',meta:{}}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'За серпень 160 годин.',meta:{}}),{status:200});
     }
-    return new Response(JSON.stringify({ok:true,answer:'Ось.',meta:{}}),{status:200});
+    return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Ось.',meta:{}}),{status:200});
   };
   const client=M.createClient({fetchImpl:fetchImpl,getConfig:function(){ return {backendUrl:sb.settings.ai.backendUrl,bearer:M.storage.bearer(),provider:sb.settings.ai.provider,model:sb.settings.ai.model}; },timeoutMs:200});
   const chat=M.createChatController({client:client,hooks:{assistant:function(){}},storage:store});

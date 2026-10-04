@@ -34,7 +34,7 @@ function load(files, fetchImpl, extra){
   /* 2) ask() возвращает tickets из /ask */
   {
     const sb=load(CORE, async function(url,init){
-      return new Response(JSON.stringify({ok:true,answer:'Знайдено №123',meta:{rounds:2,tool_calls:1},
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'Знайдено №123',meta:{rounds:2,tool_calls:1},
         tickets:[{id:'123',date:'01.08.2026',address:'вул. Шевченка, 1',type:'ремонт'},{id:'hack;drop',address:'x'}]}),{status:200});
     });
     sb.settings={ai:{enabled:true,backendUrl:'https://maister-tracker-mcp-dev.mastif1235.workers.dev',backendMode:'shared'},aiBearerToken:'n:tok1234567890abcdef:read'};

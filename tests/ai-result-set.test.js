@@ -21,7 +21,7 @@ function validSet(overrides){
   return Object.assign({version:1,id:'rs-1',chatSessionId:'chat-session-1',createdAt:now-1000,expiresAt:now+12*HOUR,total:2,filtersKey:'{"city":"X"}',ticketIds:['A:1','B.2']},overrides||{});
 }
 function okResponse(extra){
-  return Object.assign({ok:true,answer:'ok',meta:{},total:0,shown:0,tickets:[],referentTickets:[],resultSet:null,resultItems:[],selectedTicketId:null,presentation:null,resultSetStatus:null},extra||{});
+  return Object.assign({ai_contract_version:1,ok:true,answer:'ok',meta:{},total:0,shown:0,tickets:[],referentTickets:[],resultSet:null,resultItems:[],selectedTicketId:null,presentation:null,resultSetStatus:null},extra||{});
 }
 const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',model:'m'}; };
 
@@ -65,7 +65,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
   /* 4) L: expired stored set is dropped on load → the referent path stays alive */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,
       messages:[{role:'assistant',text:'Знайдено 1 заявку: №1, Вул Садова 19.',ts:Date.now()-2*HOUR,
         referentTickets:[{id:'t-sad19',address:'Миколаївка 1, Вул Садова 19',type:'Ремонт'}]}],
       chatSessionId:'chat-session-1',
@@ -85,7 +85,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
      turn neither sends it nor loses the referent path. */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,
       messages:[{role:'assistant',text:'Знайдено 1 заявку: №1, Вул Садова 19.',ts:Date.now()-2*HOUR,
         referentTickets:[{id:'t-sad19',address:'Миколаївка 1, Вул Садова 19'}]}],
       chatSessionId:'chat-session-1',
@@ -107,7 +107,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
   /* 5) §7: a turn with a different ticket context drops the stored list */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet({filtersKey:'{"city":"A"}'}),selectedTicketId:'A:1'}));
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet({filtersKey:'{"city":"A"}'}),selectedTicketId:'A:1'}));
     const reqs=[];
     const answers=[
       okResponse({answer:'1',resultSetStatus:{created:false,reason:'non_list_mode',subjectChanged:true,filtersKey:'{"city":"B"}'}}),
@@ -125,7 +125,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
   /* 6) …but the same context (simple follow-up) keeps the list selectable */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet({filtersKey:'{"city":"A"}'}),selectedTicketId:null}));
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet({filtersKey:'{"city":"A"}'}),selectedTicketId:null}));
     const reqs=[];
     const answers=[
       okResponse({answer:'7',resultSetStatus:{created:false,reason:'non_list_mode',subjectChanged:true,filtersKey:'{"city":"A"}'}}),
@@ -141,7 +141,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
   /* 7) …and a turn that SELECTS from the stored state keeps it too */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet(),selectedTicketId:null}));
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[],chatSessionId:'chat-session-1',activeResultSet:validSet(),selectedTicketId:null}));
     const reqs=[];
     const answers=[
       okResponse({answer:'ok',selectedTicketId:'B.2',presentation:{kind:'single_ticket',ticket_id:'B.2'},resultSetStatus:{created:false,reason:'selected_ticket'}}),
@@ -158,7 +158,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
   /* 8) an active list is not duplicated by the 8-ticket referent in one request */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,
       messages:[{role:'assistant',text:'Знайдено 3 заявки.',ts:1,referentTickets:[{id:'A:1'},{id:'B.2'}]}],
       chatSessionId:'chat-session-1',activeResultSet:validSet(),selectedTicketId:null
     }));
@@ -225,7 +225,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
     ];
     for(const c of resets){
       const store=memStorage();
-      store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
+      store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
       const scripted=[okResponse({answer:'—',resultSetStatus:c.status}), okResponse({answer:'ok'})];
       const reqs=[];
       const client8=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(scripted.shift()),{status:200}); },getConfig:CFG,timeoutMs:1000});
@@ -242,7 +242,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
      subjectChanged=true and no filtersKey). */
   {
     const store=memStorage();
-    store.setItem('mtAiChatHistoryV1', JSON.stringify({messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
+    store.setItem('mtAiChatHistoryV1', JSON.stringify({ai_contract_version:1,messages:[],chatSessionId:'chat-session-1',activeResultSet:null,selectedTicketId:'t-r3'}));
     const scripted=[okResponse({answer:'Знайшов 3 схожі.',resultSetStatus:{created:false,reason:'legacy_tool',subjectChanged:true,filtersKey:null}})];
     const reqs=[];
     const client9=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(scripted.shift()),{status:200}); },getConfig:CFG,timeoutMs:1000});

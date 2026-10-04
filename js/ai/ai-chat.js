@@ -18,7 +18,13 @@ MTAI.createChatController = function(deps){
   function loadPersisted(){
     if(!historyStorage) return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null};
     try{
-      const raw = JSON.parse(historyStorage.getItem(HISTORY_KEY) || '[]');
+      const saved = historyStorage.getItem(HISTORY_KEY);
+      if(!saved) return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null};
+      const raw = JSON.parse(saved);
+      if(!raw || Array.isArray(raw) || raw.ai_contract_version !== MTAI.config.AI_CONTRACT_VERSION){
+        try{ historyStorage.removeItem(HISTORY_KEY); }catch(_ignored){}
+        return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null,incompatible:true};
+      }
       const list = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.messages) ? raw.messages : []);
       const messages = list.slice(-40).filter(function(m){ return m && (m.role === 'user' || m.role === 'assistant') && safeHistoryText(m.text); }).map(function(m){
         return {role:m.role, text:safeHistoryText(m.text), ts:Number(m.ts)||Date.now(), tickets:safeTickets(m.tickets), referentTickets:safeReferent(m.referentTickets), queryContext:(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) ? m.queryContext : null};
@@ -27,7 +33,10 @@ MTAI.createChatController = function(deps){
       const resultSet = raw && !Array.isArray(raw) && client.sanitizeResultSet ? client.sanitizeResultSet(raw.activeResultSet) : null;
       const selected = validateTicketId(raw && !Array.isArray(raw) ? raw.selectedTicketId : null);
       return {messages:messages,chatSessionId:sid,activeResultSet:resultSet,selectedTicketId:selected};
-    }catch(_e){ return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null}; }
+    }catch(_e){
+      try{ historyStorage.removeItem(HISTORY_KEY); }catch(_ignored){}
+      return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null,incompatible:true};
+    }
   }
   function newSessionId(){
     try{ if(globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') return globalThis.crypto.randomUUID(); }catch(_e){}
@@ -38,6 +47,7 @@ MTAI.createChatController = function(deps){
   let chatSessionId = loaded.chatSessionId;
   let activeResultSet = loaded.activeResultSet;
   let selectedTicketId = loaded.selectedTicketId;
+  let sessionNeedsRestart = loaded.incompatible === true;
   function safeTickets(raw){
     if(!Array.isArray(raw)) return [];
     return raw.slice(0,8).map(function(t){
@@ -61,7 +71,7 @@ MTAI.createChatController = function(deps){
   function persist(){
     if(!historyStorage) return true;
     try{
-      historyStorage.setItem(HISTORY_KEY, JSON.stringify({messages:messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40),chatSessionId:chatSessionId,activeResultSet:activeResultSet,selectedTicketId:selectedTicketId}));
+      historyStorage.setItem(HISTORY_KEY, JSON.stringify({ai_contract_version:MTAI.config.AI_CONTRACT_VERSION,messages:messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40),chatSessionId:chatSessionId,activeResultSet:activeResultSet,selectedTicketId:selectedTicketId}));
       return true;
     }catch(_e){ return false; }
   }
@@ -89,6 +99,12 @@ MTAI.createChatController = function(deps){
   async function send(text, opts){
     const question = String(text == null ? '' : text).trim().slice(0, MTAI.config.LIMITS.questionMaxChars);
     if(!question || busy) return { ok:false, skipped:true };
+    if(sessionNeedsRestart){
+      sessionNeedsRestart=false;
+      const error={kind:'compatibility',code:'AI_CLIENT_UPDATE_REQUIRED',message:MTAI.config.AI_COMPATIBILITY_MESSAGE,detail:''};
+      emit('error',error);
+      return {ok:false,error:error};
+    }
     const cd = cooldownRemainingSec();
     if(cd > 0){ emit('cooldown_block', { sec: cd }); return { ok:false, skipped:'cooldown', remainingSec: cd }; }
     const isRetry = !!(opts && opts.isRetry);
@@ -212,6 +228,11 @@ MTAI.createChatController = function(deps){
       emit('assistant', { text:outcome.answer, meta:outcome.meta, total:outcome.total, shown:outcome.shown, tickets:outcome.tickets || [], referentTickets:outcome.referentTickets || [], localQuery:outcome.localQuery || null, resultItems:emittedResultItems, presentation:emittedPresentation });
       return { ok:true };
     }
+    if(outcome.error && outcome.error.kind === 'compatibility'){
+      clear();
+      emit('error',outcome.error);
+      return {ok:false,error:outcome.error};
+    }
     lastFailed = question;
     /* 429/TPM: cooldown виставляється ДО emit('error'), щоб UI одразу
        заблокував Send/Retry. Ніяких автоматичних повторних відправок;
@@ -235,6 +256,7 @@ MTAI.createChatController = function(deps){
   }
   async function retry(){ return lastFailed ? send(lastFailed, { isRetry:true }) : { ok:false, skipped:true }; }
   function clear(){
+    sessionNeedsRestart=false;
     messages = []; lastFailed = null; cooldownUntil = 0; activeResultSet = null; selectedTicketId = null; chatSessionId = newSessionId();
     if(historyStorage){ try{ historyStorage.removeItem(HISTORY_KEY); }catch(_e){} }
     emit('cleared');

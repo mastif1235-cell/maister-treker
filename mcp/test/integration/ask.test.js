@@ -55,7 +55,7 @@ async function makeAskApp(env, groqHandler){
 
 test('an oversized /ask body is rejected with 413 payload_too_large before any upstream call', async () => {
   const {app, fetchImpl} = await makeAskApp();
-  const oversized = JSON.stringify({question:'x'.repeat(32769)});
+  const oversized = JSON.stringify({ai_contract_version:1,question:'x'.repeat(32769)});
   const res = await postAsk(app, oversized);
   assert.equal(res.status, 413);
   assert.deepEqual(await res.json(), {error:'payload_too_large'});
@@ -70,7 +70,7 @@ async function postAsk(app, bodyText, headers){
   }));
 }
 
-const ASK_BODY = JSON.stringify({question:'Скільки заявок зараз у базі?'});
+const ASK_BODY = JSON.stringify({ai_contract_version:1,question:'Скільки заявок зараз у базі?'});
 
 /* v91.45 regression: list numbering must be fixed deterministically by the
    Worker, not by trusting the LLM. The model returns repeated «1.» markers
@@ -242,7 +242,7 @@ test('model requesting an unknown/WRITE tool never executes it and the loop reco
     return new Response(JSON.stringify({choices:[{message:{role:'assistant', content:'Записати заявки я не можу — сервер лише читає.'}}]}), {status:200});
   };
   const {app, fetchImpl} = await makeAskApp(askEnv(), handler);
-  const response = await postAsk(app, JSON.stringify({question:'створи заявку'}));
+  const response = await postAsk(app, JSON.stringify({ai_contract_version:1,question:'створи заявку'}));
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
@@ -254,8 +254,8 @@ test('question validation: bad JSON / missing / oversized question -> 400', asyn
   const {app} = await makeAskApp();
   assert.equal((await postAsk(app, 'not json')).status, 400);
   assert.equal((await postAsk(app, '{}')).status, 400);
-  assert.equal((await postAsk(app, JSON.stringify({question:''}))).status, 400);
-  assert.equal((await postAsk(app, JSON.stringify({question:'x'.repeat(2500)}))).status, 400);
+  assert.equal((await postAsk(app, JSON.stringify({ai_contract_version:1,question:''}))).status, 400);
+  assert.equal((await postAsk(app, JSON.stringify({ai_contract_version:1,question:'x'.repeat(2500)}))).status, 400);
 });
 
 test('GET /ask -> 405', async () => {

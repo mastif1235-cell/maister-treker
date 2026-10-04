@@ -57,7 +57,7 @@ function makeSandbox(opts){
   const sandbox={ console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, Date, Math, JSON, Event:function(type){ this.type=type; this.isTrusted=false; },
     document:doc, AbortController, Response, Headers,
     navigator:{ userAgent:'Mozilla/5.0 (Linux; Android 13) Chrome/120 Mobile Safari/537.36' },
-    fetch:async function(url,init){ if(sandbox.fetchOverride) return sandbox.fetchOverride(url,init); const b=JSON.parse(init.body); sent.push(b); const a=answers[Math.min(sent.length-1,answers.length-1)]; return new Response(JSON.stringify({ok:true,answer:a,meta:{rounds:1,tool_calls:0}}),{status:200}); } };
+    fetch:async function(url,init){ if(sandbox.fetchOverride) return sandbox.fetchOverride(url,init); const b=JSON.parse(init.body); sent.push(b); const a=answers[Math.min(sent.length-1,answers.length-1)]; return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:a,meta:{rounds:1,tool_calls:0}}),{status:200}); } };
   sandbox.globalThis=sandbox; sandbox.window=sandbox;
   sandbox.webkitSpeechRecognition=FakeRecognition;
   if(!opts.noTts){ sandbox.speechSynthesis=synth; sandbox.SpeechSynthesisUtterance=Utt; }
@@ -218,7 +218,7 @@ function speakButtons(doc){ return findAll(doc.getElementById('aiMessages'), el=
   }
   /* Voice 13: restored history is never read and gets no automatic speech */
   {
-    const hist={messages:[{role:'user',text:'Скільки заявок',ts:1},{role:'assistant',text:'Було 5 заявок.',ts:2}],chatSessionId:'chat-session-restored-1'};
+    const hist={ai_contract_version:1,messages:[{role:'user',text:'Скільки заявок',ts:1},{role:'assistant',text:'Було 5 заявок.',ts:2}],chatSessionId:'chat-session-restored-1'};
     const ctx=makeSandbox({ai:{voiceAutoRead:true},history:hist}); ctx.sb.MTAI.ui.build(); ctx.sb.MTAI.ui.restoreFromNavigation();
     await tick(40);
     assert.equal(ctx.spoken.length,0,'restored history is not read');
