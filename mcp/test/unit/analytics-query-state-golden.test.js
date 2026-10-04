@@ -61,14 +61,14 @@ for(const [name,fields,note,quantity] of [
  const analysis=workEvents({...row,...fields,note},'',semantic);
  assert.equal(analysis.events.filter(e=>e.entity==='onu'&&e.category==='definite').reduce((s,e)=>s+(e.quantity||0),0),quantity);
 });
-test('QueryState runtime ownership limited to period bridge; READ-ONLY contract stays frozen',()=>{
+test('QueryState runtime ownership limited to period/combined bridges; READ-ONLY contract stays frozen',()=>{
  const root=new URL('../../src/',import.meta.url);
  function scan(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
   const path=new URL(entry.name+(entry.isDirectory()?'/':''),dir);
   if(entry.isDirectory()) scan(path);
   else if(entry.name.endsWith('.js')&&entry.name!=='analytics-query-state.js'){
-   if(entry.name!=='period-query-state.js')
-    assert.doesNotMatch(fs.readFileSync(path,'utf8'),/analytics-query-state/,'only the period bridge may import QueryState');
+   if(!['period-query-state.js','combined-query-state.js'].includes(entry.name))
+    assert.doesNotMatch(fs.readFileSync(path,'utf8'),/analytics-query-state/,'only approved pure planning bridges may import QueryState');
   }
  }}scan(root);
  assert.equal(TOOL_DEFINITIONS.length,12);
