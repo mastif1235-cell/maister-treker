@@ -37,6 +37,7 @@ import {hygieneArgs} from './arg-hygiene.js';
 import {alignRowsToAnswer} from './answer-order.js';
 import {workIntent,workAnswer} from './work-intent.js';
 import {resolvePeriodFollowUp,resolveCoworkerFollowUp} from './period-query-state.js';
+import {resolveAnalyticsFollowUp} from './worktype-comparison-state.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -963,9 +964,30 @@ export function createAskOrchestrator(options){
       const priorContext=prior?.mode==='count'&&!prior.clarification?projectQueryContext({resolved_filters:prior,mode:'count'}):null;
       if(priorContext&&stableFiltersKey(priorContext.resolved_filters)===stableFiltersKey(queryContext.resolved_filters))temporalContext={...queryContext,mode:'count'};
     }
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} :
-      resolveCoworkerFollowUp(questionText,temporalContext,coworkerRoster).intent ||
-      resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
+    const transition=resolveAnalyticsFollowUp(questionText,now,temporalContext);
+    if(transition?.plans.length===2 && typeof tools.query_tickets==='function' && allowedDef('query_tickets')){
+      // Validate ALL plans first; execute without publishing intermediate state.
+      const plans=transition.plans;
+      if(plans.some(p=>!validateAgainstSchema(allowedDef('query_tickets').inputSchema,p).ok))return {ok:false,code:'INVALID_ARGUMENTS'};
+      const envelopes=[];
+      for(const plan of plans){
+        let found;try{found=await tools.query_tickets(plan,execution);}catch(_error){return {ok:false,code:'INTERNAL'};}
+        if(!found?.ok)return found;
+        if(found.data?.clarification||!found.data?.work_totals)return {ok:false,code:'INVALID_COMPARISON_RESULT'};
+        envelopes.push(found.data);
+      }
+      const results=envelopes.map((data,i)=>({period:transition.state.periods[i],total:data.total_matched||0,work_totals:data.work_totals}));
+      const answer=envelopes.map((data,i)=>workAnswer(data,plans[i],{question:questionText}));
+      if(answer.some(a=>typeof a!=='string'||!a))return {ok:false,code:'INVALID_COMPARISON_RESULT'};
+      const {date_from,date_to,...common}=envelopes[0].resolved_filters;
+      const nextContext=sanitizeIncomingQueryContext({mode:'count',resolved_filters:common,comparison:{periods:transition.state.periods}});
+      if(!nextContext)return {ok:false,code:'INVALID_COMPARISON_CONTEXT'};
+      return {ok:true,answer:answer.join('\n\n').slice(0,limits.maxAnswerChars),meta:{rounds:0,toolCallsMade:2,intent:'count',semantic:true,comparison:true},shown:0,tickets:[],referentTickets:[],queryContext:nextContext,comparison:{results},resultSet:null,resultItems:[],resultSetStatus:{created:false,reason:'comparison',subjectChanged:true}};
+    }
+    // Unsupported follow-ups must not turn two explicit periods into all-time
+    // common filters. Keep the existing comparison until the user disambiguates.
+    if(queryContext?.comparison&&!transition&&!workIntent(questionText,now,coworkerRoster))return {ok:true,answer:'Уточніть один період або сформулюйте нове порівняння. Для обох періодів можна запитати «А тільки ремонти?».',meta:{rounds:0,toolCallsMade:0,clarification:true},shown:0,tickets:[],referentTickets:[],queryContext,resultSet:null,resultItems:[]};
+    const semanticIntent=transition?.plans.length===1?transition.plans[0]:workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : resolveCoworkerFollowUp(questionText,temporalContext,coworkerRoster).intent || resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';

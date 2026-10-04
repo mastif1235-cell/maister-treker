@@ -147,6 +147,7 @@ export function projectQueryContext(envelope){
 /* Validate what the client echoes back on the NEXT turn. */
 export function sanitizeIncomingQueryContext(raw){
   if(!isPlainObject(raw)) return null;
+  if(Object.hasOwn(raw,'comparison')) return projectComparisonContext(raw);
   const filters = projectQueryFilters(raw.resolved_filters);
   if(!filters || !Object.keys(filters).length) return null;
   return {
@@ -155,6 +156,27 @@ export function sanitizeIncomingQueryContext(raw){
     ...(raw.mode==='group' && typeof raw.group_by==='string'?{group_by:clip(raw.group_by,16)}:{}),
     total_matched: Number.isFinite(Number(raw.total_matched)) ? Number(raw.total_matched) : null
   };
+}
+
+/* Additive count-comparison context: common filters + TWO ordered periods.
+ * No rows, totals, navigation or arbitrary serialized QueryState. Invalid
+ * comparison intake is rejected as a whole, never reduced to one period. */
+export function projectComparisonContext(raw){
+  if(!isPlainObject(raw)||raw.mode!=='count'||!isPlainObject(raw.comparison))return null;
+  const filters=projectQueryFilters(raw.resolved_filters);
+  if(!filters?.semantic||filters.date_from||filters.date_to)return null;
+  const periods=raw.comparison.periods;
+  if(!Array.isArray(periods)||periods.length!==2)return null;
+  const calendar=d=>{
+    if(typeof d!=='string'||!validDate(d))return false;
+    const [day,month,year]=d.split('.').map(Number),v=new Date(Date.UTC(year,month-1,day));
+    return v.getUTCFullYear()===year&&v.getUTCMonth()===month-1&&v.getUTCDate()===day;
+  };
+  for(const p of periods){
+    if(!isPlainObject(p)||!calendar(p.from)||!calendar(p.to)||p.from.split('.').reverse().join('-')>p.to.split('.').reverse().join('-'))return null;
+  }
+  if(periods[0].from===periods[1].from&&periods[0].to===periods[1].to)return null;
+  return {mode:'count',resolved_filters:filters,comparison:{periods:periods.map(p=>({from:p.from,to:p.to}))}};
 }
 
 /* ---------- explicit anaphoric follow-up detection (v91.46) ----------
