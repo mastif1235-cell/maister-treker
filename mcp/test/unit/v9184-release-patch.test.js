@@ -35,6 +35,12 @@ test('one-period aggregate still gets the compact deterministic backstop',async(
  const result=await scripted([p],'business-derived technical explanation').handle('Посчитай установленные ONU за указанный период');
  assert.match(result.answer,/1 ONU/);assert.doesNotMatch(result.answer,/technical|business-derived/);
 });
+test('independent group dimensions with the same resolved filters also preserve comparison',async()=>{
+ const p={mode:'group',date_from:'01.09.2026',date_to:'30.09.2026',semantic};
+ const answer='По городам: 1 ONU. По датам: 1 ONU. Это две разные группировки.';
+ const result=await scripted([{...p,group_by:'city'},{...p,group_by:'date'}],answer).handle('Сравни группировки за сентябрь');
+ assert.equal(result.answer,answer);
+});
 test('trusted roster accepts RU/UA instrumental forms, without fuzzy or ambiguous resolution',()=>{
  for(const [name,ru,ua] of [['Женя','Женей','Женею'],['Петя','Петей','Петею'],['Паша','Пашей','Пашею']]){
   for(const form of [ru,ua]){

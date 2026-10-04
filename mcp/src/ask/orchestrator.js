@@ -989,10 +989,12 @@ export function createAskOrchestrator(options){
         ' Для продовження («покажи їх/ці», «перечисли», «які саме?») виклич query_tickets з inherit_previous_filters=true і новим mode (свіжий READ). Для самостійного нового питання прапорець не став.';
     }
     let lastQueryEnvelope = null;
-    const aggregateEnvelopeKeys=new Set();
+    let aggregateEnvelopeCount=0;
     function captureQueryEnvelope(env){
       lastQueryEnvelope=env;
-      if(['count','group','stats','sum','unique'].includes(env?.mode))aggregateEnvelopeKeys.add(env.mode+':'+stableFiltersKey(env.resolved_filters||{}));
+      // Multiple aggregates can differ in period or dimensions not represented
+      // in resolved_filters. Fail safe: never replace their combined answer.
+      if(['count','group','stats','sum','unique'].includes(env?.mode))aggregateEnvelopeCount++;
     }
     /* v91.47: AUTHORITATIVE anaphoric follow-up. For an explicit «покажи их»
        turn with a valid immediate queryContext the result must NOT depend on
@@ -1279,7 +1281,7 @@ export function createAskOrchestrator(options){
       /* v91.45: deterministic backstop for list numbering — the model may
          repeat «1.» for every item; the formatter restores 1..N without ever
          introducing technical ids. */
-      const aggregateAnswer=aggregateEnvelopeKeys.size<=1&&lastQueryEnvelope?.work_totals&&['count','group'].includes(lastQueryEnvelope.mode)&&!cardIntentFor(questionText)?workAnswer(lastQueryEnvelope,{...lastQueryEnvelope.resolved_filters,mode:lastQueryEnvelope.mode},{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)}):null;
+      const aggregateAnswer=aggregateEnvelopeCount<=1&&lastQueryEnvelope?.work_totals&&['count','group'].includes(lastQueryEnvelope.mode)&&!cardIntentFor(questionText)?workAnswer(lastQueryEnvelope,{...lastQueryEnvelope.resolved_filters,mode:lastQueryEnvelope.mode},{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)}):null;
       const answer = renumberSequentialLists(String(aggregateAnswer??response.content??'').trim().slice(0, limits.maxAnswerChars));
       if(!answer) return {ok:false, code:'EMPTY_ANSWER', meta:{rounds, toolCallsMade}};
       const intent = cardIntentFor(questionText);
