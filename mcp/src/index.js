@@ -43,6 +43,8 @@ import {createDeepSeekClient} from './ask/deepseek.js';
 import {createAskOrchestrator} from './ask/orchestrator.js';
 import {TOOL_DEFINITIONS} from './tools/definitions.js';
 import {createMapGrantHandler} from './offline-map/grant.js';
+import {AI_CONTRACT_VERSION, AI_COMPATIBILITY_MESSAGE, acceptsAIContract, preservesAIContext} from './ask/contract.js';
+import {sanitizeIncomingQueryContext} from './ask/query-context.js';
 
 const SECURITY_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -84,6 +86,7 @@ function publicAiConfig(app){
     ask_configured: anyConfigured,
     default_provider: defaultProvider,
     version: 2,
+    ai_contract_version: AI_CONTRACT_VERSION,
     providers: [
       {
         id: 'deepseek',
@@ -247,6 +250,14 @@ export function createApp(env, deps){
     if(!question || question.length > 2000){
       return jsonResponse(400, {error:'invalid_question', hint:'question must be a non-empty string of at most 2000 chars'});
     }
+    if(!acceptsAIContract(body?.ai_contract_version)){
+      return jsonResponse(409, {ok:false,error:'ai_contract_mismatch',code:'AI_CLIENT_UPDATE_REQUIRED',
+        ai_contract_version:AI_CONTRACT_VERSION,message:AI_COMPATIBILITY_MESSAGE});
+    }
+    if(!preservesAIContext(body?.context?.queryContext,sanitizeIncomingQueryContext(body?.context?.queryContext))){
+      return jsonResponse(409, {ok:false,error:'ai_context_incompatible',code:'AI_CONTEXT_RESET_REQUIRED',
+        ai_contract_version:AI_CONTRACT_VERSION,message:AI_COMPATIBILITY_MESSAGE});
+    }
 
     // Determine target provider with strict allowlist
     const requestedProvider = String((body && body.provider) || '').trim().toLowerCase() || (app.deepseekAsk ? 'deepseek' : 'groq');
@@ -365,7 +376,7 @@ export function createApp(env, deps){
        на пристрої, тож Worker повертає структурований запит, а PWA виконує
        його по власних локальних даних і показує дію «На карті». */
     if(outcome.localQuery && typeof outcome.localQuery === 'object') okPayload.localQuery = outcome.localQuery;
-    return jsonResponse(200, okPayload);
+    return jsonResponse(200, {...okPayload,ai_contract_version:AI_CONTRACT_VERSION});
   }
 
   async function handler(request){

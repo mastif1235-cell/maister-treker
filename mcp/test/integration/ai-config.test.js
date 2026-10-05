@@ -16,7 +16,7 @@ function makeApp(env){
   const calls = [];
   const fetchImpl = async function(url, init){
     calls.push({ url: String(url), init });
-    return new Response(JSON.stringify({ ok: true, data: { list: [] } }), { status: 200 });
+    return new Response(JSON.stringify({ai_contract_version:1, ok: true, data: { list: [] } }), { status: 200 });
   };
   return { app: createApp(env, { fetchImpl }), calls };
 }
@@ -87,7 +87,7 @@ test('CORS: /healthz, /ai/config and /ask carry ACAO; OPTIONS preflight 204', as
   assert.equal(pre.headers.get('Access-Control-Allow-Origin'), '*');
   assert.match(pre.headers.get('Access-Control-Allow-Headers'), /Authorization/);
   const ask = await app.fetch(new Request('https://worker.test/ask', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'тест' })
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ai_contract_version:1, question: 'тест' })
   }));
   assert.equal(ask.status, 401);
   assert.equal(ask.headers.get('Access-Control-Allow-Origin'), '*', '/ask responses carry ACAO');

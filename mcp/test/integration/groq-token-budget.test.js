@@ -51,7 +51,7 @@ function makeApp(upstream){
 }
 async function ask(app, body){
   const res = await app.fetch(new Request('https://mcp.example.test/ask', {method:'POST',
-    headers:{'Content-Type':'application/json', Authorization:'Bearer ' + BEARER_TOKEN}, body:JSON.stringify(body)}));
+    headers:{'Content-Type':'application/json', Authorization:'Bearer ' + BEARER_TOKEN}, body:JSON.stringify({ai_contract_version:1,...body})}));
   return {status:res.status, headers:res.headers, body:await res.json()};
 }
 const CLEAN_CHAT = {question:'Какой сегодня день', history:[]};
