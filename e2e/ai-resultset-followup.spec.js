@@ -23,3 +23,26 @@ test('shown resultSet resolves voice address locally, preserves filters and surv
  await expect(page.locator('.ai-msg-assistant').last().getByRole('button',{name:'👤 Відкрити профіль',exact:true})).toBeVisible();
  saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('mtAiChatHistoryV1')));expect(saved.messages.at(-1).meta.rounds).toBe(0);expect(saved.messages.at(-1).meta.toolCallsMade).toBe(0);expect(saved.messages.at(-1).queryContext).toEqual(qc);expect(errors).toEqual([]);
 });
+test('explicit ID survives reload and voice ambiguity clarifies locally before house suffix selection',async({page,appEnv})=>{
+ let asks=0;await page.route('**/ask',route=>{asks++;return route.abort();});
+ const errors=await gotoApp(page,appEnv.url);
+ const seed=async rows=>{
+  await page.evaluate(async rows=>{
+   tickets=rows;await saveTicketsLocalOnly();MTAI.storage.update({enabled:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-test');await mtSettingsSecretsFlushPending();
+   const now=Date.now(),qc={mode:'list',resolved_filters:{type:'Ремонт',coworker_exclude:'Женя',semantic:{entity:'onu',action:'install',profile:'onu_physical',category:'definite'}}};
+   localStorage.setItem('mtAiChatHistoryV1',JSON.stringify({ai_contract_version:MTAI.config.AI_CONTRACT_VERSION,chatSessionId:'browser-resultset-session',messages:[{role:'assistant',text:'Synthetic list',queryContext:qc}],activeResultSet:{version:1,id:'synthetic-list',chatSessionId:'browser-resultset-session',createdAt:now,expiresAt:now+600000,total:rows.length,ticketIds:rows.map(r=>r.id)},activeResultItems:rows.map(r=>({ticket_id:r.id,address:r.address})),selectedTicketId:null}));
+  },rows);
+  await page.reload();await page.waitForFunction(()=>__mtAppInitDone===true);await page.evaluate(()=>MTAI.ui.open());
+ };
+ const send=async q=>{await page.locator('#aiInput').fill(q);await page.locator('#aiSendBtn').click();await expect(page.locator('#aiSendBtn')).toBeEnabled();};
+ await seed([{id:'2',address:'Адрес один',type:'Ремонт'},{id:'other',address:'Адрес два',type:'Ремонт'}]);
+ await send('открой заявку id 2');await expect(page.locator('.ai-msg-assistant').last().locator('[data-ai-ticket-card="2"]')).toHaveCount(1);
+ await send('открой номер 2 из списка');await expect(page.locator('.ai-msg-assistant').last().locator('[data-ai-ticket-card="other"]')).toHaveCount(1);
+ for(const other of ["Пам'ятна 13","Пам'ятна 3А"]){
+  await seed([{id:'A',address:"Пам'ятна 3",type:'Ремонт'},{id:'B',address:other,type:'Ремонт'}]);
+  await send('Открой память на три');await expect(page.locator('.ai-msg-assistant').last().locator('[data-ai-ticket-card]')).toHaveCount(0);
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('mtAiChatHistoryV1')));expect(saved.messages.at(-1).meta.clarification).toBe(true);expect(saved.messages.at(-1).meta.rounds).toBe(0);expect(saved.messages.at(-1).meta.toolCallsMade).toBe(0);expect(saved.messages.at(-1).queryContext).toEqual({mode:'list',resolved_filters:{type:'Ремонт',coworker_exclude:'Женя',semantic:{entity:'onu',action:'install',profile:'onu_physical',category:'definite'}}});expect(saved.activeResultSet.ticketIds).toEqual(['A','B']);
+  if(other.endsWith('3А')){await send('3А');await expect(page.locator('.ai-msg-assistant').last().locator('[data-ai-ticket-card="B"]')).toHaveCount(1);}
+ }
+ expect(asks).toBe(0);expect(errors).toEqual([]);
+});

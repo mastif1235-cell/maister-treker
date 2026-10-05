@@ -353,9 +353,14 @@ MTAI.createClient = function(options){
         queryContext:query,resultSet:null,resultItems:[],selectedTicketId:id||null,presentation:id?{kind:'single_ticket',ticket_id:id}:null,
         resultSetStatus:{created:false,reason:id?'selected_ticket':'result_set_clarification',subjectChanged:false,selectionChanged:ambiguous}};
     };
+    // Explicit ID syntax is case-sensitive and precedes list positions.
+    const explicitId=/^(?:открой|открыть|покажи|показать|выбери|відкрий|відкрити|показати|обери)\s+(?:(?:заявку|заявка|ticket)\s+)?id\s+(\S+)$/iu.exec(String(question).trim());
+    if(explicitId)return allowed.has(explicitId[1])?reply(explicitId[1],[],'id'):reply(null,ids,'unknown_id');
     const ordinalWords={первую:1,первая:1,першу:1,перша:1,вторую:2,вторая:2,другу:2,друга:2,третью:3,третья:3,третю:3,третя:3};
-    const ordinal=/^(\d+)(?:\s*(?:ю|я|у|й|ую))?$/u.exec(stripped);
+    const listPosition=/^(\d+)\s+(?:из списка|зі списку|з списку)$/u.exec(stripped);
+    const ordinal=listPosition||/^(\d+)(?:\s*(?:ю|я|у|й|ую))?$/u.exec(stripped);
     const index=ordinal?Number(ordinal[1]):ordinalWords[stripped];
+    if(ordinal&&!listPosition&&allowed.has(stripped)&&ids[index-1]!==stripped)return reply(null,ids,'ambiguous');
     if(ordinal||index)return index>=1&&index<=ids.length?reply(ids[index-1],[],'ordinal'):reply(null,ids,'index_out_of_range');
     if(verb && !stripped){
       const selected=validateTicketId(context.selectedTicketId);
@@ -369,12 +374,19 @@ MTAI.createClient = function(options){
     const numbers={один:'1',одна:'1',два:'2',две:'2',дви:'2',три:'3',четыре:'4',чотири:'4',пят:'5',шест:'6',шист:'6',сим:'7',сем:'7',восем:'8',висим:'8',девят:'9',десят:'10'};
     const words=function(s){return normalize(s).split(' ').map(w=>numbers[w]||w).filter(w=>w&&!['вул','улица','вулиця','ул','в','на','у','кв','квартира','будинок','дом','адрес','адреса'].includes(w));};
     const tokens=words(stripped),numeric=tokens.filter(w=>/^\d+[\p{L}]?$/u.test(w)),letters=tokens.filter(w=>/\p{L}/u.test(w)&&!/^\d/u.test(w));
-    if(!letters.length)return null;
+    const rows=[...previews.values()];
+    const complete=ids.every(id=>previews.get(id)?.address);
+    // A house suffix can disambiguate the preserved current list locally.
+    if(!letters.length){
+      if(!/^\d+\p{L}$/u.test(stripped))return null;
+      const houses=rows.filter(item=>words(item.address).includes(stripped));
+      if(!houses.length)return null;
+      return houses.length===1&&complete?reply(houses[0].ticket_id,[],'house'):reply(null,complete?houses.map(i=>i.ticket_id):ids,'ambiguous');
+    }
     const stem=function(w){return w.length>=5?w.replace(/(?:ая|ій|ий|а)$/u,''):w;};
     const edit=function(a,b){if(Math.abs(a.length-b.length)>2)return 3;let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const next=[i];for(let j=1;j<=b.length;j++)next[j]=Math.min(next[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=next;}return prev[b.length];};
     const match=function(item,fuzzy){
       const address=words(item.address);
-      if(!numeric.every(w=>address.includes(w)))return false; // house/apartment are exact, never substring/fuzzy
       return letters.every(w=>address.some(a=>{
         const x=stem(w),y=stem(a);if(x===y || (x.length>=4&&y.startsWith(x)))return true;
         if(!fuzzy||Math.min(x.length,y.length)<4)return false;
@@ -383,13 +395,13 @@ MTAI.createClient = function(options){
         return (numeric.length>0||letters.length>1)&&consonants(x).length>=3&&consonants(x)===consonants(y);
       }));
     };
-    const rows=[...previews.values()];
     let candidates=rows.filter(item=>normalize(item.address)===normalize(stripped));
-    if(!candidates.length)candidates=rows.filter(item=>match(item,false));
+    // Gather street/locality alternatives before considering house numbers.
+    // Fuzzy/voice spelling must not hide a nearby 13 or 3А behind an exact 3.
     if(!candidates.length)candidates=rows.filter(item=>match(item,true));
     if(!candidates.length)return null; // genuine no-match may use the existing legacy path
-    const complete=ids.every(id=>previews.get(id)?.address);
     if(candidates.length!==1||!complete)return reply(null,complete?candidates.map(i=>i.ticket_id):ids,'ambiguous');
+    if(!numeric.every(w=>words(candidates[0].address).includes(w)))return null;
     return reply(candidates[0].ticket_id,[],'address');
   }
 

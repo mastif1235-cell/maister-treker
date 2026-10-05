@@ -8,12 +8,16 @@ model-driven search.
 
 Resolution uses the current unexpired, same-chat resultSet only:
 
-1. Explicit list ordinal (out of range clarifies); exact explicit ticket ID.
+1. Explicit ticket ID (`открой id 2`, `открой заявку id 2`), then list
+   ordinal (`открой вторую`, `открой номер 2 из списка`). A bare number
+   conflicting with a different ticket ID clarifies instead of guessing.
 2. Exact/normalized address.
 3. Locality/street/house tokens, then a unique partial address.
-4. Bounded spelling/RU-UA and voice tolerance within that list only. House and
-   apartment numbers are exact. Multiple candidates or incomplete previews
-   clarify instead of guessing or searching globally.
+4. Bounded spelling/RU-UA and voice tolerance within that list only. Gather
+   street/locality alternatives before checking numbers: fuzzy/voice house 3
+   cannot hide a nearby 13 or 3А. Multiple candidates or incomplete previews
+   clarify without changing the list/filters or searching globally. A unique
+   exact house suffix such as `3А` can resolve the preserved list locally.
 5. A genuine no-match can use the unchanged legacy path. Analytics/temporal/
    coworker follow-ups do not enter this navigation resolver.
 
