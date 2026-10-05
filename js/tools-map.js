@@ -25,6 +25,8 @@
   let selectionLayer=null;
   let placement=null;
   let unbindLongPress=null;
+  let ruler=null;
+  let boundsSelecting=false;
   const baseStates=new WeakMap();
   const mapRuntimeLoads=new Map();
 
@@ -290,6 +292,7 @@
     return savedView;
   }
   function destroyMap(){
+    ruler?.destroy();ruler=null;boundsSelecting=false;
     if(root.MTToolsMapLibreAdapter?.isMounted?.()){
       const view=root.MTToolsMapLibreAdapter.captureView();
       if(view)savedView={lat:view.lat,lng:view.lng,zoom:view.zoom};
@@ -322,6 +325,7 @@
   function startPointPlacement(options={}){
     if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.startPointPlacement(options);
     if(!map)return null;
+    ruler?.exit();
     cancelPointPlacement();
     const layer=root.L.layerGroup().addTo(map);
     let marker=null,onChange=null,opened=false;
@@ -358,12 +362,13 @@
   function selectBounds(onDone){
     if(root.MTToolsMapLibreAdapter?.isMounted?.())return root.MTToolsMapLibreAdapter.selectBounds(onDone);
     if(!map)return false;
+    ruler?.exit();boundsSelecting=true;
     if(selectionLayer){selectionLayer.remove();selectionLayer=null;}
     let first=null;
     const click=event=>{
       if(!first){first=event.latlng;selectionLayer=root.L.circleMarker(first,{radius:6,color:'#ff9f1a'}).addTo(map);return;}
       selectionLayer.remove();const bounds=root.L.latLngBounds(first,event.latlng);selectionLayer=root.L.rectangle(bounds,{color:'#ff9f1a',weight:2,fillOpacity:.12}).addTo(map);map.off('click',click);
-      onDone?.({minLat:bounds.getSouth(),minLng:bounds.getWest(),maxLat:bounds.getNorth(),maxLng:bounds.getEast()});
+      boundsSelecting=false;onDone?.({minLat:bounds.getSouth(),minLng:bounds.getWest(),maxLat:bounds.getNorth(),maxLng:bounds.getEast()});
     };
     map.on('click',click);return true;
   }
@@ -429,6 +434,7 @@
       return null;
     }
     map=root.L.map(container,{zoomControl:true,tap:true,worldCopyJump:true});
+    ruler=root.MTMapRuler?.attach(map,'leaflet',root,{canActivate:()=>!placement&&!boundsSelecting});
     const mountedMap=map;
     addBaseLayer(mountedMap,statusNode,options.baseMode,options.emptyStateNode||null).then(layer=>{
       if(map===mountedMap){tileLayer=layer;addLayerSwitcher(mountedMap,statusNode);}
@@ -440,7 +446,7 @@
       const point=validPoint(item);if(!point)return;
       const category=categoryFor(item),marker=root.L.marker([point.lat,point.lng],{icon:iconFor(category,false,options.markerPreset,options.markerPreferences),keyboard:true,title:markerLabel(item)});
       marker.bindTooltip(markerLabel(item),{direction:'top',offset:[0,-25]});
-      marker.on('click',()=>options.onSelect?.(item));
+      marker.on('click',()=>{if(ruler?.isActive())ruler.add(point);else options.onSelect?.(item);});
       marker.addTo(groups.get(category));
       bounds.push([point.lat,point.lng]);
     });
@@ -451,17 +457,17 @@
     else if(bounds.length>1)map.fitBounds(bounds,{padding:[24,24],maxZoom:17});
     else map.setView(DEFAULT_CENTER,6);
     map.on('moveend zoomend',captureView);
-    map.on('contextmenu',event=>options.onAddHere?.({lat:event.latlng.lat,lng:event.latlng.lng}));
+    map.on('contextmenu',event=>{if(!ruler?.isActive())options.onAddHere?.({lat:event.latlng.lat,lng:event.latlng.lng});});
     // Довге натискання = той самий сценарій, що й «＋» → клік по карті.
     if(typeof options.onAddHere==='function'){
       unbindLongPress?.();
       const container=map.getContainer();
       unbindLongPress=bindMapLongPress(container,(clientX,clientY)=>{
-        if(placement)return; // у режимі розміщення працює звичайний клік
+        if(placement||ruler?.isActive())return; // measurement must not create a real object
         const rect=container.getBoundingClientRect();
         const point=map.containerPointToLatLng([clientX-rect.left,clientY-rect.top]);
         options.onAddHere({lat:point.lat,lng:point.lng});
-      },{ignore:()=>!!placement});
+      },{ignore:()=>!!placement||ruler?.isActive()});
     }
     setTimeout(()=>map?.invalidateSize(),0);
     return map;
@@ -540,6 +546,7 @@
     return picker;
   }
   function handleConnectivityChange(){return root.MTToolsMapLibreAdapter?.isMounted?.()?root.MTToolsMapLibreAdapter.handleConnectivityChange?.()||false:false;}
+  root.MTToolsMapRulerController=()=>root.MTToolsMapLibreAdapter?.isMounted?.()?root.MTToolsMapLibreAdapter.getRuler?.():ruler;
   root.addEventListener?.('online',()=>{tileLayer?.redraw();picker?.tileLayer?.redraw();});
   root.MTToolsMap={TILE_URL,MAPTILER_TILE_URL,CATEGORY_META,mount,invalidateSize,captureView,currentCenter,showUserLocation,startPointPlacement,cancelPointPlacement,isPointPlacementActive,focusPoint,selectBounds,drawBounds,destroyMap,mountPicker,destroyPicker,addBaseLayer,switchBaseLayer,handleConnectivityChange,bindMapLongPress};
 })(typeof window!=='undefined'?window:globalThis);

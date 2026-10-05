@@ -488,3 +488,10 @@ details.instructions pre{white-space:pre-wrap; font-size:12px; background:var(--
 .tools-offline-download-actions .btn{min-height:44px;flex:1 1 120px;white-space:normal;}
 .tools-offline-download progress{display:block;width:100%;height:14px;margin:10px 0 6px;}
 #toolsOfflineDownloadBytes{font-size:13px;font-variant-numeric:tabular-nums;min-height:20px;}
+/* Measurement is a temporary control, not a network object or persistent card. */
+.tools-map-ruler-control{background:var(--surface,#fff);color:var(--text,#222);border:1px solid var(--border,#ccc);border-radius:8px;padding:3px;max-width:calc(100vw - 48px);box-shadow:0 1px 5px #0003;}
+.tools-map-ruler-control button{font:inherit;font-size:13px;min-height:36px;padding:4px 8px;border:0;border-radius:5px;background:transparent;color:inherit;cursor:pointer;}
+.tools-map-ruler-control button[aria-pressed="true"]{background:#e66c1626;}
+.tools-map-ruler-control [data-ruler="panel"]:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:2px;}
+.tools-map-ruler-control output{font-size:13px;font-weight:700;padding:4px 8px;}
+.tools-map-ruler-control button:disabled{opacity:.45;cursor:default;}

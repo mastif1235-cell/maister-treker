@@ -92,6 +92,7 @@ const domainSource=fs.readFileSync(path.join(REPO,'js','reports-domain.js'),'utf
   };
   vm.createContext(context);
   vm.runInContext(utilsSource,context);
+  vm.runInContext(fs.readFileSync('js/share-domain.js','utf8'),context);
   vm.runInContext(domainSource,context);
   context.openModal=(title,html,opts)=>{context.__modalHtml=html;opts.onOpen({querySelectorAll:(sel)=>sel==='[data-rep]'?context.__repButtons:[]});};
   // Фейкові кнопки періодів

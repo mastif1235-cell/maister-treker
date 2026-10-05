@@ -549,10 +549,11 @@ async function retrySyncTicket(id){
 
 async function copyTicketCardText(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return; // NEW
-  try{ await navigator.clipboard.writeText(t.content); showToast('Текст заявки скопійовано'); }
+  const text = dispatcherForwardText(t.content);
+  try{ await navigator.clipboard.writeText(text); showToast('Текст заявки скопійовано'); }
   catch(e){
     const ta = document.createElement('textarea');
-    ta.value = t.content; document.body.appendChild(ta); ta.select();
+    ta.value = text; document.body.appendChild(ta); ta.select();
     try{ document.execCommand('copy'); showToast('Текст заявки скопійовано'); }
     catch(e2){ showToast('Не вдалося скопіювати текст'); }
     ta.remove();

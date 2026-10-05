@@ -3,8 +3,20 @@
 /* Canonical Web Share, photo picker and clipboard workflows. */
 
 function dispatcherForwardText(text){
-  const internal=/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
-  return String(text||'').split('\n').filter(line=>!internal.test(line)).join('\n').trim();
+  // Output boundary only: canonical ticket.content and structured data stay intact.
+  const geo=/^[^\p{L}\p{N}]*(?:geo(?:Lat|Lng|Link|Accuracy|Timestamp|Source)?|location(?:Accuracy|Timestamp|Source)?|latitude|longitude|lat|lng|lon|GPS|Геолокац(?:ія|ия)|Координат[иы]|Geolocation|Coordinates|Посилання\s+на\s+карту|Ссылка\s+на\s+карту|Map\s+link)\s*[:：=]/iu;
+  const signal=/^[^\p{L}\p{N}]*(?:onuSignal(?:Before|After)?|signal(?:Before|After)?|optical(?:Level|Power)?|rxPower|txPower|(?:Сигнал|Рівень|Уровень)\s*(?:ONU|ОНУ)?\s*(?:до|після|после)?|(?:ONU\s*)?(?:signal|optical\s+level)(?:\s+(?:before|after))?)\s*[:：=]/iu;
+  const internal=/(?:^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
+  const mapUrl=/https?:\/\/(?:www\.)?(?:google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps|openstreetmap\.org|yandex\.[a-z.]+\/maps|waze\.com)[^\s<>"']*/gi;
+  let signalContinuation=false;
+  return String(text||'').split(/\r?\n/).map(line=>{
+    if(signal.test(line)){signalContinuation=true;return '';}
+    if(signalContinuation&&/^\s*-?\d+(?:[.,]\d+)?\s*(?:dBm)?\s*$/i.test(line))return '';
+    signalContinuation=false;
+    if(geo.test(line)||internal.test(line)||/^\s*-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+\s*$/.test(line))return '';
+    // Preserve work text when a technical reading/link was embedded in a note.
+    return line.replace(mapUrl,'').replace(/(?:Сигнал\s*(?:ONU|ОНУ)?|ONU\s*signal|optical\s+level)\s*[:=]?\s*-?\d+(?:[.,]\d+)?\s*(?:dBm)?/giu,'').replace(/-?\d+(?:[.,]\d+)?\s*dBm\b/gi,'').trimEnd();
+  }).filter(line=>line.trim()).join('\n').trim();
 }
 
 async function sharePickerBuildItems(ticket){
@@ -56,6 +68,7 @@ function shareMultiClose(items){
 }
 
 async function openTicketSharePicker(text, ticket){
+  text = dispatcherForwardText(text);
   if(!text){ showToast('Немає що надсилати'); return; }
   if(typeof navigator.share !== 'function'){
     await sharePickerTextOnly(text);
@@ -178,7 +191,7 @@ async function shareTicket(id){
 
 async function copyTicketText(){
   syncFormToState();
-  const text = getCurrentTicketText(); // NEW: враховує raw-режим
+  const text = dispatcherForwardText(getCurrentTicketText()); // raw-mode uses the same output boundary
   try{
     await navigator.clipboard.writeText(text);
     showToast('Текст заявки скопійовано');
