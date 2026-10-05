@@ -7,7 +7,7 @@ Runtime-130 is reserved by the previous release's rollback artifact; this candid
 
 `dispatcherForwardText` in `js/share-domain.js` is the single shared output filter.
 It removes the canonical ticket geolocation and ONU-signal rows, recognized field variants,
-map URLs, standalone decimal coordinate pairs, and embedded optical readings.
+map URLs, explicitly geo/location-marked coordinate pairs, and embedded optical readings.
 Work descriptions, postal addresses, subscriber fields, MAC, equipment and financial lines remain.
 The pre-existing internal diagnostics/debug exclusions remain.
 
@@ -26,6 +26,12 @@ Report comments pass through the same filter. Telegram delegates to it without a
 Canonical `ticket.content`, structured geo/signal fields, ticket editor, technical details,
 search, personal TXT/MD export, private Telegram backup/JSON restore and sync serialization are unchanged.
 The regression test executes the real `ticketToSyncPayload` and verifies geo/signal fullDataJson round-trip.
+The inline blocker follow-up removes labelled geo/signal fragments wherever they occur,
+including before/after chains, while retaining the rest of a useful note/comment.
+Removal-local separator cleanup preserves addresses, house numbers, money and ordinary negative values.
+Unmarked numeric pairs are intentionally retained: the sanitizer must not infer geolocation from arbitrary numbers.
+Twenty-two targeted inline/retention/idempotence cases supplement the field and eight-channel boundary tests;
+the browser dispatcher case also verifies inline notes/comments and their original value retention.
 This is a text-output boundary, not image/EXIF processing or a general natural-language anonymizer.
 Network-object Telegram exports and contract/QR transfer are separate non-dispatcher workflows and are unchanged.
 
@@ -48,9 +54,13 @@ Object picker, GPS, offline style/download/OPFS/A-B and satellite implementation
 
 - MCP: 716/716 PASS (unchanged Worker source).
 - Frontend AI: 32/32 PASS.
-- Full E2E: 54/54 PASS; three new browser cases cover both real engines and dispatcher output.
+- Initial candidate full E2E: 54/54 PASS; three new browser cases cover both real engines and dispatcher output.
+  Inline-fix full regression: 53/54, with only the unchanged Ping monitor/Globalping scenario at
+  `e2e/network-tools.spec.js:166` failing on response timing. Its isolated repeat passed 1/1 with
+  no code, assertion or timeout changes. Both ruler cases and the expanded privacy browser case passed.
 - Root: 212/213; only known `tests/network-tools-monitor.test.js:81` timing flaky,
-  observed 47 ms versus 38–46 ms. Its isolated repeat also observed 47 ms.
+  observed 47 ms versus 38–46 ms in the initial candidate, 48 ms in the inline-fix regression run.
+  Its initial isolated repeat also observed 47 ms.
   An earlier full run passed Ping but exposed version-pin/test-fixture integration expectations;
   those were corrected without weakening assertions. Ping code/test/threshold are unchanged.
 - Ruler unit: distance/total/units/validation/activation/undo/clear/exit,

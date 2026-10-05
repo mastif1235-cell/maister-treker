@@ -4,18 +4,42 @@
 
 function dispatcherForwardText(text){
   // Output boundary only: canonical ticket.content and structured data stay intact.
-  const geo=/^[^\p{L}\p{N}]*(?:geo(?:Lat|Lng|Link|Accuracy|Timestamp|Source)?|location(?:Accuracy|Timestamp|Source)?|latitude|longitude|lat|lng|lon|GPS|Геолокац(?:ія|ия)|Координат[иы]|Geolocation|Coordinates|Посилання\s+на\s+карту|Ссылка\s+на\s+карту|Map\s+link)\s*[:：=]/iu;
-  const signal=/^[^\p{L}\p{N}]*(?:onuSignal(?:Before|After)?|signal(?:Before|After)?|optical(?:Level|Power)?|rxPower|txPower|(?:Сигнал|Рівень|Уровень)\s*(?:ONU|ОНУ)?\s*(?:до|після|после)?|(?:ONU\s*)?(?:signal|optical\s+level)(?:\s+(?:before|after))?)\s*[:：=]/iu;
   const internal=/(?:^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
   const mapUrl=/https?:\/\/(?:www\.)?(?:google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps|openstreetmap\.org|yandex\.[a-z.]+\/maps|waze\.com)[^\s<>"']*/gi;
-  let signalContinuation=false;
+  const number='[-+]?\\d+(?:[.,]\\d+)?',boundary='(?<![\\p{L}\\p{N}_])';
+  const separator='(?:\\s*[:：=]\\s*|\\s+)';
+  const geoLabel='(?:geo(?:location)?|location|GPS|Geolocation|Coordinates|Геолокац(?:ія|ия)|Координат[иы]|lat\\s*/\\s*(?:lng|lon))';
+  const geoPair=new RegExp(boundary+geoLabel+separator+number+'\\s*[,;/]\\s*'+number,'giu');
+  const geoUrl=new RegExp(boundary+'(?:'+geoLabel+'|geoLink|Map\\s+link|Coordinates\\s+link|Посилання\\s+на\\s+карту|Ссылка\\s+на\\s+карту)'+separator+'https?://[^\\s<>"\']*','giu');
+  const geoField=new RegExp(boundary+'(?:geo(?:Lat|Lng|Accuracy|Timestamp)|location(?:Accuracy|Timestamp)|latitude|longitude|lat|lng|lon)'+separator+number,'giu');
+  const geoLink=new RegExp(boundary+'(?:geoLink|geoSource|locationSource)'+separator+'[^\\s,;]+','giu');
+  const timing='(?:before|after|до|после|після)';
+  const signalLabel='(?:onuSignal(?:Before|After)?|signal(?:Before|After)?|optical(?:Level|Power)|rxPower|txPower|(?:ONU|ОНУ)\\s*(?:signal|сигнал)|(?:Сигнал|Рівень|Уровень)\\s*(?:ONU|ОНУ)?|optical\\s+(?:level|signal|power))';
+  const reading=number+'(?:\\s*dBm\\b)?';
+  const signalFragment=new RegExp(boundary+signalLabel+'(?:\\s*'+timing+')?'+separator+reading+'(?:\\s*(?:[,;→/]|->|—|–)\\s*'+timing+separator+reading+')*','giu');
+  const signalHeader=new RegExp('^[^\\p{L}\\p{N}]*'+signalLabel+'(?:\\s*'+timing+')?\\s*[:：=]\\s*$','iu');
+  const geoHeader=new RegExp('^[^\\p{L}\\p{N}]*'+geoLabel+'\\s*[:：=]\\s*$','iu');
+  const bareSignal=new RegExp('^\\s*'+reading+'\\s*$','iu');
+  const barePair=new RegExp('^\\s*'+number+'\\s*[,;/]\\s*'+number+'\\s*$','u');
+  const dbm=new RegExp(boundary+number+'\\s*dBm\\b','giu');
+  // A marker lets us clean only separators left by removed fragments, not
+  // arbitrary house numbers, negative values, money or unmarked numeric pairs.
+  const removed='\uE000';
+  let continuation='';
   return String(text||'').split(/\r?\n/).map(line=>{
-    if(signal.test(line)){signalContinuation=true;return '';}
-    if(signalContinuation&&/^\s*-?\d+(?:[.,]\d+)?\s*(?:dBm)?\s*$/i.test(line))return '';
-    signalContinuation=false;
-    if(geo.test(line)||internal.test(line)||/^\s*-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+\s*$/.test(line))return '';
-    // Preserve work text when a technical reading/link was embedded in a note.
-    return line.replace(mapUrl,'').replace(/(?:Сигнал\s*(?:ONU|ОНУ)?|ONU\s*signal|optical\s+level)\s*[:=]?\s*-?\d+(?:[.,]\d+)?\s*(?:dBm)?/giu,'').replace(/-?\d+(?:[.,]\d+)?\s*dBm\b/gi,'').trimEnd();
+    if(internal.test(line))return '';
+    if(signalHeader.test(line)){continuation='signal';return '';}
+    if(geoHeader.test(line)){continuation='geo';return '';}
+    if(continuation==='signal'&&bareSignal.test(line)||continuation==='geo'&&barePair.test(line))return '';
+    continuation='';
+    const removeUrl=url=>removed+(/[;,]$/.test(url)?url.slice(-1):'');
+    const cleaned=line.replace(geoUrl,removeUrl).replace(mapUrl,removeUrl)
+      .replace(geoPair,removed).replace(geoField,removed).replace(geoLink,removed).replace(signalFragment,removed).replace(dbm,removed);
+    if(cleaned===line)return line.trimEnd();
+    const result=cleaned.replace(/(?:\s*[,;—–]\s*)?\uE000(?:\s*[,;—–]\s*\uE000)*/g,'')
+      .replace(/^\s*[,;—–]\s*|\s*[,;—–]\s*$/g,'').replace(/:\s*[,;]\s*/g,': ')
+      .replace(/[ \t]{2,}/g,' ').replace(/\s+([,;])/g,'$1').trim();
+    return /[\p{L}\p{N}]/u.test(result)?result:'';
   }).filter(line=>line.trim()).join('\n').trim();
 }
 
