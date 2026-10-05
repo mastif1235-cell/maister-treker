@@ -328,6 +328,83 @@ MTAI.createClient = function(options){
     return id ? {kind:'single_ticket',ticket_id:id} : null;
   }
 
+  /* Navigation only, bounded to the displayed list. No database/roster fuzzy
+     search and no model-issued identity. Missing/uncertain previews clarify. */
+  function resolveResultSetFollowUp(question, context){
+    const set=sanitizeResultSet(context && context.resultSet);
+    if(!set || set.chatSessionId!==context.chatSessionId)return null;
+    const query=sanitizeQueryContext(context.queryContext);
+    if(!preservesContractContext(context.queryContext,query))return null;
+    const normalize=function(s){return String(s||'').normalize('NFKC').toLowerCase().replace(/ё/g,'е').replace(/[ії]/g,'и').replace(/є/g,'е').replace(/ґ/g,'г').replace(/[ьʼ’']/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();};
+    const q=normalize(question);
+    if(!q || q.length>200 || /^(?:а|с|со|з|зі|без|за|в|у)\s/u.test(q) || /(?:сколько|скільки|сравни|порівняй|почему|чому|сигнал|заміни|замены|ремонты|ремонти|август|серп|сентябр|верес|без|со всеми|зі всіма)/u.test(q))return null;
+    const verb=/^(?:открой|открыть|покажи|показать|выбери|видкрий|видкрити|показати|обери)(?:\s|$)/u.test(q);
+    const navigationWords=new Set(['заявку','заявка','карточку','карточка','картку','профил','номер','будь','ласка','пожалуйста','эту','цю','мне','мени','ее','его','ии','ticket','id']);
+    const stripped=q.replace(/^(?:открой|открыть|покажи|показать|выбери|видкрий|видкрити|показати|обери)\s*/u,'').split(' ').filter(w=>w&&!navigationWords.has(w)).join(' ');
+    const ids=set.ticketIds,allowed=new Set(ids);
+    const previews=new Map();
+    for(const item of sanitizeResultItems(context.resultItems))if(allowed.has(item.ticket_id)&&!previews.has(item.ticket_id))previews.set(item.ticket_id,item);
+    const reply=function(id,candidates,reason){
+      const ambiguous=!id;
+      return {ok:true,answer:ambiguous
+        ? (reason==='index_out_of_range'?'Такого номера немає в поточному списку. ':'Уточніть заявку з поточного списку. ')+candidates.map(i=>String(ids.indexOf(i)+1)+') '+(previews.get(i)?.address||'Заявка')).join('\n')
+        : 'Відкриваю вибрану заявку.',
+        meta:{rounds:0,toolCallsMade:0,intent:'open',local:true,clarification:ambiguous},total:id?1:0,shown:0,tickets:[],referentTickets:[],
+        queryContext:query,resultSet:null,resultItems:[],selectedTicketId:id||null,presentation:id?{kind:'single_ticket',ticket_id:id}:null,
+        resultSetStatus:{created:false,reason:id?'selected_ticket':'result_set_clarification',subjectChanged:false,selectionChanged:ambiguous}};
+    };
+    // Explicit ID syntax is case-sensitive and precedes list positions.
+    const explicitId=/^(?:открой|открыть|покажи|показать|выбери|відкрий|відкрити|показати|обери)\s+(?:(?:заявку|заявка|ticket)\s+)?id\s+(\S+)$/iu.exec(String(question).trim());
+    if(explicitId)return allowed.has(explicitId[1])?reply(explicitId[1],[],'id'):reply(null,ids,'unknown_id');
+    const ordinalWords={первую:1,первая:1,першу:1,перша:1,вторую:2,вторая:2,другу:2,друга:2,третью:3,третья:3,третю:3,третя:3};
+    const listPosition=/^(\d+)\s+(?:из списка|зі списку|з списку)$/u.exec(stripped);
+    const ordinal=listPosition||/^(\d+)(?:\s*(?:ю|я|у|й|ую))?$/u.exec(stripped);
+    const index=ordinal?Number(ordinal[1]):ordinalWords[stripped];
+    if(ordinal&&!listPosition&&allowed.has(stripped)&&ids[index-1]!==stripped)return reply(null,ids,'ambiguous');
+    if(ordinal||index)return index>=1&&index<=ids.length?reply(ids[index-1],[],'ordinal'):reply(null,ids,'index_out_of_range');
+    if(verb && !stripped){
+      const selected=validateTicketId(context.selectedTicketId);
+      if(selected)return allowed.has(selected)?reply(selected,[],'selected'):null;
+      return ids.length===1?reply(ids[0],[],'single'):reply(null,ids,'ambiguous');
+    }
+    // An explicit id is exact, case-sensitive; it is never guessed from text.
+    const rawId=String(question).trim().replace(/^(?:открой|відкрий|покажи|выбери)\s+(?:(?:заявку|ticket|id)\s+)?/iu,'');
+    if(verb&&allowed.has(rawId))return reply(rawId,[],'id');
+    if(!stripped)return null;
+    const numbers={один:'1',одна:'1',два:'2',две:'2',дви:'2',три:'3',четыре:'4',чотири:'4',пят:'5',шест:'6',шист:'6',сим:'7',сем:'7',восем:'8',висим:'8',девят:'9',десят:'10'};
+    const words=function(s){return normalize(s).split(' ').map(w=>numbers[w]||w).filter(w=>w&&!['вул','улица','вулиця','ул','в','на','у','кв','квартира','будинок','дом','адрес','адреса'].includes(w));};
+    const tokens=words(stripped),numeric=tokens.filter(w=>/^\d+[\p{L}]?$/u.test(w)),letters=tokens.filter(w=>/\p{L}/u.test(w)&&!/^\d/u.test(w));
+    const rows=[...previews.values()];
+    const complete=ids.every(id=>previews.get(id)?.address);
+    // A house suffix can disambiguate the preserved current list locally.
+    if(!letters.length){
+      if(!/^\d+\p{L}$/u.test(stripped))return null;
+      const houses=rows.filter(item=>words(item.address).includes(stripped));
+      if(!houses.length)return null;
+      return houses.length===1&&complete?reply(houses[0].ticket_id,[],'house'):reply(null,complete?houses.map(i=>i.ticket_id):ids,'ambiguous');
+    }
+    const stem=function(w){return w.length>=5?w.replace(/(?:ая|ій|ий|а)$/u,''):w;};
+    const edit=function(a,b){if(Math.abs(a.length-b.length)>2)return 3;let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const next=[i];for(let j=1;j<=b.length;j++)next[j]=Math.min(next[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=next;}return prev[b.length];};
+    const match=function(item,fuzzy){
+      const address=words(item.address);
+      return letters.every(w=>address.some(a=>{
+        const x=stem(w),y=stem(a);if(x===y || (x.length>=4&&y.startsWith(x)))return true;
+        if(!fuzzy||Math.min(x.length,y.length)<4)return false;
+        if(edit(x,y)<=(Math.min(x.length,y.length)>=6?2:1))return true;
+        const consonants=s=>s.replace(/[аеёиоуыэюяіїє]/gu,'');
+        return (numeric.length>0||letters.length>1)&&consonants(x).length>=3&&consonants(x)===consonants(y);
+      }));
+    };
+    let candidates=rows.filter(item=>normalize(item.address)===normalize(stripped));
+    // Gather street/locality alternatives before considering house numbers.
+    // Fuzzy/voice spelling must not hide a nearby 13 or 3А behind an exact 3.
+    if(!candidates.length)candidates=rows.filter(item=>match(item,true));
+    if(!candidates.length)return null; // genuine no-match may use the existing legacy path
+    if(candidates.length!==1||!complete)return reply(null,complete?candidates.map(i=>i.ticket_id):ids,'ambiguous');
+    if(!numeric.every(w=>words(candidates[0].address).includes(w)))return null;
+    return reply(candidates[0].ticket_id,[],'address');
+  }
+
   async function ask(question, history, context){
     const cfg = getConfig();
     const ctrl = new AbortController();
@@ -430,7 +507,7 @@ MTAI.createClient = function(options){
     }
   }
 
-  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, normalizeReferentTickets: normalizeReferentTickets, sanitizeHistory: sanitizeHistory, sanitizeLocalQuery: sanitizeLocalQuery, sanitizeResultSet:sanitizeResultSet, sanitizeResultItems:sanitizeResultItems };
+  return { ask: ask, health: health, config: config, normalizeTickets: normalizeTickets, normalizeReferentTickets: normalizeReferentTickets, sanitizeHistory: sanitizeHistory, sanitizeLocalQuery: sanitizeLocalQuery, sanitizeResultSet:sanitizeResultSet, sanitizeResultItems:sanitizeResultItems, resolveResultSetFollowUp:resolveResultSetFollowUp };
 };
 
 /* Инстанс приложения: конфиг читается лениво (backendUrl/токен могут

@@ -135,7 +135,10 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
     const chat4=chatSb.MTAI.createChatController({client:client4,hooks:{},storage:store});
     await chat4.send('Сколько их всего?');
     await chat4.send('Покажи 2-ю');
-    assert.ok(reqs[1].context.resultSet,'same filters → the list survives for the ordinal');
+    assert.equal(reqs.length,1,'known ordinal is now local: no second /ask');
+    const state=JSON.parse(store.getItem('mtAiChatHistoryV1'));
+    assert.equal(state.selectedTicketId,'B.2');
+    assert.ok(state.activeResultSet,'same filters → the list survives for the ordinal');
   }
 
   /* 7) …and a turn that SELECTS from the stored state keeps it too */
@@ -151,8 +154,11 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
     const chat5=chatSb.MTAI.createChatController({client:client5,hooks:{},storage:store});
     await chat5.send('Покажи 2-ю');
     await chat5.send('Открой её карточку');
-    assert.ok(reqs[1].context.resultSet,'selection turns keep the list they selected from');
-    assert.equal(reqs[1].context.selectedTicketId,'B.2','the selection travels back');
+    assert.equal(reqs.length,0,'ordinal and selected-card turns need no backend');
+    assert.equal(JSON.parse(store.getItem('mtAiChatHistoryV1')).selectedTicketId,'B.2');
+    await chat5.send('Какой адрес?');
+    assert.ok(reqs[0].context.resultSet,'selection turns keep the list they selected from');
+    assert.equal(reqs[0].context.selectedTicketId,'B.2','the selection travels back on subsequent non-navigation requests');
   }
 
   /* 8) an active list is not duplicated by the 8-ticket referent in one request */
@@ -165,7 +171,7 @@ const CFG=function(){ return {backendUrl:'https://x',bearer:'t',provider:'groq',
     const reqs=[];
     const client6=sb.MTAI.createClient({fetchImpl:async function(_u,init){ reqs.push(JSON.parse(init.body)); return new Response(JSON.stringify(okResponse()),{status:200}); },getConfig:CFG,timeoutMs:1000});
     const chat6=chatSb.MTAI.createChatController({client:client6,hooks:{},storage:store});
-    await chat6.send('Покажи 2-ю');
+    await chat6.send('Сколько их всего?');
     assert.ok(reqs[0].context.resultSet,'list present');
     assert.equal(reqs[0].context.tickets,undefined,'no duplicate 8-ticket referent while the list covers the context');
   }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-131';
+const CACHE_NAME = 'maister-treker-v67-runtime-132';
 const CORE_ASSETS = [
   './js/offline-map-catalog.js','./js/offline-map-download-provider.js','./js/offline-map-download-core.js','./js/offline-map-downloader.js','./js/offline-map-download-worker.js','./js/offline-map-sha256.js','./js/tools-offline-download-ui.js',
   './js/tools-speedtest-edge.js',
