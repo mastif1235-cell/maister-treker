@@ -129,7 +129,9 @@ const CORE=['js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'];
   assert.ok(indexHtml.includes('js/ai/ai-local-actions.js'),'module is loaded by index.html');
   assert.ok(indexHtml.indexOf('ai-result-cards.js') < indexHtml.indexOf('ai-local-actions.js') && indexHtml.indexOf('ai-local-actions.js') < indexHtml.indexOf('ai-ui.js'),'load order: after cards, before ui');
   assert.ok(swSource.includes('./js/ai/ai-local-actions.js'),'module is precached by the service worker');
-  assert.match(chatSource,/client\.ask\(question, history, \{ tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId, coworkerRoster:typeof deps\.coworkerRoster==='function'\?deps\.coworkerRoster\(\):\[\] \}\)/,'chat passes referent, structured filters, active result-set state and current request-only roster');
+  assert.match(chatSource,/const askContext=\{tickets:referent,queryContext:followUpQueryContext,chatSessionId:chatSessionId,resultSet:activeResultSet,resultItems:activeResultItems,selectedTicketId:selectedTicketId\}/,'chat keeps referents, exact filters and local result previews in one context');
+  assert.match(chatSource,/askContext\.coworkerRoster=typeof deps\.coworkerRoster==='function'\?deps\.coworkerRoster\(\):\[\]/,'roster remains current and request-only');
+  assert.match(chatSource,/outcome=await client\.ask\(question,history,askContext\)/,'unresolved/non-navigation turns preserve the backend context path');
   assert.match(uiSource,/MTAI\.localActions\.renderResults\(b, out\.localQuery\)/,'UI executes local network queries');
   console.log('PASS static wiring: local actions module loaded, precached and called');
 }

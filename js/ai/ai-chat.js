@@ -32,7 +32,8 @@ MTAI.createChatController = function(deps){
       const sid = raw && !Array.isArray(raw) && /^[A-Za-z0-9._:-]{8,128}$/.test(String(raw.chatSessionId||'')) ? String(raw.chatSessionId) : newSessionId();
       const resultSet = raw && !Array.isArray(raw) && client.sanitizeResultSet ? client.sanitizeResultSet(raw.activeResultSet) : null;
       const selected = validateTicketId(raw && !Array.isArray(raw) ? raw.selectedTicketId : null);
-      return {messages:messages,chatSessionId:sid,activeResultSet:resultSet,selectedTicketId:selected};
+      const resultItems=resultSet&&client.sanitizeResultItems?client.sanitizeResultItems(raw.activeResultItems).filter(function(item){return resultSet.ticketIds.includes(item.ticket_id);}):[];
+      return {messages:messages,chatSessionId:sid,activeResultSet:resultSet,activeResultItems:resultItems,selectedTicketId:selected};
     }catch(_e){
       try{ historyStorage.removeItem(HISTORY_KEY); }catch(_ignored){}
       return {messages:[],chatSessionId:newSessionId(),activeResultSet:null,selectedTicketId:null,incompatible:true};
@@ -46,6 +47,7 @@ MTAI.createChatController = function(deps){
   let messages = loaded.messages;
   let chatSessionId = loaded.chatSessionId;
   let activeResultSet = loaded.activeResultSet;
+  let activeResultItems = loaded.activeResultItems || [];
   let selectedTicketId = loaded.selectedTicketId;
   let sessionNeedsRestart = loaded.incompatible === true;
   function safeTickets(raw){
@@ -71,7 +73,7 @@ MTAI.createChatController = function(deps){
   function persist(){
     if(!historyStorage) return true;
     try{
-      historyStorage.setItem(HISTORY_KEY, JSON.stringify({ai_contract_version:MTAI.config.AI_CONTRACT_VERSION,messages:messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40),chatSessionId:chatSessionId,activeResultSet:activeResultSet,selectedTicketId:selectedTicketId}));
+      historyStorage.setItem(HISTORY_KEY, JSON.stringify({ai_contract_version:MTAI.config.AI_CONTRACT_VERSION,messages:messages.filter(function(m){ return m.role === 'user' || m.role === 'assistant'; }).slice(-40),chatSessionId:chatSessionId,activeResultSet:activeResultSet,activeResultItems:activeResultItems,selectedTicketId:selectedTicketId}));
       return true;
     }catch(_e){ return false; }
   }
@@ -136,6 +138,7 @@ MTAI.createChatController = function(deps){
        назавжди глушив би «відкрий її» після звичайного пошуку). */
     if(activeResultSet && !(Number(activeResultSet.expiresAt) > Date.now())){
       activeResultSet = null;
+      activeResultItems = [];
       selectedTicketId = null;
       persist();
     }
@@ -160,10 +163,23 @@ MTAI.createChatController = function(deps){
       if(m.queryContext && typeof m.queryContext === 'object' && !Array.isArray(m.queryContext)) followUpQueryContext = m.queryContext;
       break;
     }
+    // Older sessions may have only the safe referents of this exact list.
+    // Never borrow previews from another result set or fabricate their order.
+    if(activeResultSet&&!activeResultItems.length&&client.sanitizeResultItems){
+      for(let i=messages.length-1;i>=0;i--){
+        if(messages[i].role!=='assistant')continue;
+        const rows=messages[i].referentTickets||[];
+        if(rows.length&&rows.every(function(t){return activeResultSet.ticketIds.includes(t.id);})){
+          activeResultItems=client.sanitizeResultItems(rows.map(function(t){return {...t,ticket_id:t.id};}));
+        }
+        break;
+      }
+    }
     if(!isRetry){
       messages.push({ role:'user', text:safeHistoryText(question), ts:Date.now() });
       if(!persist()){
         activeResultSet = null;
+        activeResultItems = [];
         selectedTicketId = null;
         emit('state_degraded');
       }
@@ -174,8 +190,13 @@ MTAI.createChatController = function(deps){
     /* Stage 2D: a pending AddressBook push is flushed first (bounded wait,
        failures ignored) so the answer never uses a directory older than the
        phone's. Optional hook — the controller works without it. */
-    if(typeof deps.beforeAsk === 'function'){ try{ await deps.beforeAsk(); }catch(_e){} }
-    let outcome = await client.ask(question, history, { tickets: referent, queryContext: followUpQueryContext, chatSessionId:chatSessionId, resultSet:activeResultSet, selectedTicketId:selectedTicketId, coworkerRoster:typeof deps.coworkerRoster==='function'?deps.coworkerRoster():[] });
+    const askContext={tickets:referent,queryContext:followUpQueryContext,chatSessionId:chatSessionId,resultSet:activeResultSet,resultItems:activeResultItems,selectedTicketId:selectedTicketId};
+    let outcome=typeof client.resolveResultSetFollowUp==='function'?client.resolveResultSetFollowUp(question,askContext):null;
+    if(!outcome){
+      if(typeof deps.beforeAsk === 'function'){ try{ await deps.beforeAsk(); }catch(_e){} }
+      askContext.coworkerRoster=typeof deps.coworkerRoster==='function'?deps.coworkerRoster():[];
+      outcome=await client.ask(question,history,askContext);
+    }
     busy = false;
     emit('busy', false);
     if(outcome.ok){
@@ -186,6 +207,7 @@ MTAI.createChatController = function(deps){
       const resultStatus = outcome.resultSetStatus && typeof outcome.resultSetStatus === 'object' ? outcome.resultSetStatus : null;
       if(outcome.resultSet){
         activeResultSet = outcome.resultSet;
+        activeResultItems = client.sanitizeResultItems?client.sanitizeResultItems(outcome.resultItems).filter(function(item){return activeResultSet.ticketIds.includes(item.ticket_id);}):[];
         selectedTicketId = null;
       }else{
         if(outcome.selectedTicketId){
@@ -213,6 +235,7 @@ MTAI.createChatController = function(deps){
         if(activeResultSet && resultStatus && resultStatus.subjectChanged === true && resultStatus.reason !== 'selected_ticket'
            && (resultStatus.filtersKey == null || resultStatus.filtersKey !== activeResultSet.filtersKey)){
           activeResultSet = null;
+          activeResultItems = [];
         }
       }
       messages.push({ role:'assistant', text:safeHistoryText(outcome.answer), ts:Date.now(), meta:outcome.meta, total:outcome.total, tickets:safeTickets(outcome.tickets), referentTickets:safeReferent(outcome.referentTickets), queryContext:(outcome.queryContext && typeof outcome.queryContext === 'object' && !Array.isArray(outcome.queryContext)) ? outcome.queryContext : null });
@@ -220,6 +243,7 @@ MTAI.createChatController = function(deps){
       let emittedPresentation = outcome.presentation || null;
       if(!persist()){
         activeResultSet = null;
+        activeResultItems = [];
         selectedTicketId = null;
         emittedResultItems = [];
         emittedPresentation = null;
@@ -257,7 +281,7 @@ MTAI.createChatController = function(deps){
   async function retry(){ return lastFailed ? send(lastFailed, { isRetry:true }) : { ok:false, skipped:true }; }
   function clear(){
     sessionNeedsRestart=false;
-    messages = []; lastFailed = null; cooldownUntil = 0; activeResultSet = null; selectedTicketId = null; chatSessionId = newSessionId();
+    messages = []; lastFailed = null; cooldownUntil = 0; activeResultSet = null; activeResultItems = []; selectedTicketId = null; chatSessionId = newSessionId();
     if(historyStorage){ try{ historyStorage.removeItem(HISTORY_KEY); }catch(_e){} }
     emit('cleared');
   }
