@@ -85,7 +85,7 @@ const CORE = [
     const client = M.createClient({
       fetchImpl: async function(url, init){
         seen = { url, init, body: JSON.parse(init.body) };
-        return new Response(JSON.stringify({ ok: true, answer: 'Відповідь DeepSeek' }), { status: 200 });
+        return new Response(JSON.stringify({ai_contract_version:1, ok: true, answer: 'Відповідь DeepSeek' }), { status: 200 });
       },
       getConfig: function(){
         return {
@@ -145,7 +145,7 @@ const CORE = [
     const client = M.createClient({
       fetchImpl: async function(url, init){
         seen = { url, init, body: JSON.parse(init.body) };
-        return new Response(JSON.stringify({ ok: true, answer: 'Відповідь Groq' }), { status: 200 });
+        return new Response(JSON.stringify({ai_contract_version:1, ok: true, answer: 'Відповідь Groq' }), { status: 200 });
       },
       getConfig: function(){
         return {

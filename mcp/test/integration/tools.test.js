@@ -173,7 +173,7 @@ test('analytics aggregates use the complete set, not the returned page', async (
   assert.equal(result.data.returned, 8);
   assert.equal(result.data.analytics.unique_cities.find(function(x){ return x.name === 'Таромське'; }).count, 37);
   assert.equal(result.data.analytics.unique_streets.reduce(function(s,x){ return s+x.count; },0), 37);
-  assert.ok(!JSON.stringify(result).includes('private note'));
+  assert.ok(!JSON.stringify({...result,ai_contract_version:1}).includes('private note'));
 });
 
 test('list_tickets composes city, signal and date filters including legacy rows', async () => {
@@ -223,7 +223,7 @@ test('universal search intersects equipment terms and price without leaking priv
   assert.equal(intersection.data.total_matched,1);
   const negative = await createReadTools({data:pipeline}).search_tickets({query:'Таромське',item_conditions:[{text:'роутер',unit_price:1200}]});
   assert.equal(negative.data.total_matched,0);
-  assert.ok(!JSON.stringify(result).includes('PRIVATE_MASTER_NOTE_SECRET'));
+  assert.ok(!JSON.stringify({...result,ai_contract_version:1}).includes('PRIVATE_MASTER_NOTE_SECRET'));
 });
 
 test('get_shifts: coworker filtering and by_coworker aggregate', async () => {

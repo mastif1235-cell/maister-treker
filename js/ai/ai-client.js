@@ -56,6 +56,7 @@ MTAI.createClient = function(options){
         detail: '' };
     }
     const code = payload && payload.code ? String(payload.code) : '';
+    if(code === 'AI_CLIENT_UPDATE_REQUIRED' || code === 'AI_CONTEXT_RESET_REQUIRED') return compatibilityError();
     const detail = payload && typeof payload.detail === 'string' ? payload.detail : '';
     if(status === 401) return { kind:'auth', message:'Невірний токен AI-бекенда. Перевірте його в Налаштуваннях → 🤖 AI.', detail:'' };
     if(status === 402 || code === 'HTTP_402' || code === 'insufficient_balance' || /insufficient balance/i.test(detail)){
@@ -109,6 +110,22 @@ MTAI.createClient = function(options){
     if(status === 400) return { kind:'bad_request', message:'Некоректний запит (' + code + ').', detail: detail };
     if(status >= 500) return { kind:'server', message:'Помилка сервера (' + status + (code ? ' ' + code : '') + ').', detail: detail };
     return { kind:'http', message:'Помилка ' + status + (code ? ' ' + code : '') + '.', detail: detail };
+  }
+
+  function compatibilityError(){
+    return {kind:'compatibility',code:'AI_CLIENT_UPDATE_REQUIRED',message:MTAI.config.AI_COMPATIBILITY_MESSAGE,detail:''};
+  }
+
+  // Guard-only rollback clients must not project away newer critical state.
+  function preservesContractContext(raw, projected){
+    if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return true;
+    if(Object.prototype.hasOwnProperty.call(raw.resolved_filters || {}, 'coworker_exclude') &&
+       raw.resolved_filters.coworker_exclude !== (projected && projected.resolved_filters && projected.resolved_filters.coworker_exclude)) return false;
+    if(Object.prototype.hasOwnProperty.call(raw,'comparison') && (!(projected && projected.comparison) || JSON.stringify(raw.comparison && raw.comparison.periods) !== JSON.stringify(projected.comparison.periods))) return false;
+    for(const key of ['group_by']){
+      if(Object.prototype.hasOwnProperty.call(raw,key) && JSON.stringify(raw[key]) !== JSON.stringify(projected && projected[key])) return false;
+    }
+    return true;
   }
 
   /* Структуровані заявки від /ask (кнопки «Відкрити заявку»). Лише сувора
@@ -181,7 +198,7 @@ MTAI.createClient = function(options){
      фільтри попереднього query_tickets) — строга біла проєкція, дзеркало
      серверного mcp/src/ask/query-context.js. Ніяких нотаток/телефонів/ПІБ:
      невідомі ключі відкидаються. */
-  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','items','semantic'];
+  const QC_INHERITABLE = ['date_from','date_to','city','street','city_id','street_id','house','apartment','type','tags','payment','sum_min','sum_max','signal_worse_than','signal_worse_or_equal','signal_better_than','has_signal','coworker','coworker_exclude','items','semantic'];
   /* Stage 2D: directory identity of a resolved place (UUID shape only) — the
      follow-up re-runs by UUID, mirror of the server whitelist. */
   const QC_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -189,6 +206,8 @@ MTAI.createClient = function(options){
     if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const rf = raw.resolved_filters;
     if(!rf || typeof rf !== 'object' || Array.isArray(rf)) return null;
+    if(rf.coworker_exclude!==undefined && (typeof rf.coworker_exclude!=='string' || !rf.coworker_exclude.trim() ||
+      rf.coworker_exclude.length>60 || rf.coworker!==undefined || !rf.semantic))return null;
     const out = {};
     for(const key of QC_INHERITABLE){
       const v = rf[key];
@@ -234,12 +253,27 @@ MTAI.createClient = function(options){
           if(items.length) out[key] = items;
         }
       }else{
-        out[key] = String(v).slice(0, key === 'coworker' ? 60 : 100);
+        out[key] = String(v).slice(0, key === 'coworker' || key === 'coworker_exclude' ? 60 : 100);
       }
     }
     if(!Object.keys(out).length) return null;
     const context={resolved_filters:out};
     if(['count','list','group','stats','sum','unique'].includes(raw.mode)) context.mode=raw.mode;
+    if(raw.mode==='group' && typeof raw.group_by==='string')context.group_by=raw.group_by.slice(0,16);
+    if(Object.prototype.hasOwnProperty.call(raw,'comparison')){
+      const periods=raw.comparison&&raw.comparison.periods;
+      if(context.mode!=='count'||!out.semantic||out.date_from||out.date_to||!Array.isArray(periods)||periods.length!==2)return null;
+      const calendar=function(d){
+        if(typeof d!=='string'||!/^\d{2}\.\d{2}\.\d{4}$/.test(d))return false;
+        const parts=d.split('.').map(Number),date=new Date(Date.UTC(parts[2],parts[1]-1,parts[0]));
+        return date.getUTCFullYear()===parts[2]&&date.getUTCMonth()===parts[1]-1&&date.getUTCDate()===parts[0];
+      };
+      for(const p of periods){
+        if(!p||!calendar(p.from)||!calendar(p.to)||p.from.split('.').reverse().join('-')>p.to.split('.').reverse().join('-'))return null;
+      }
+      if(periods[0].from===periods[1].from&&periods[0].to===periods[1].to)return null;
+      context.comparison={periods:periods.map(function(p){return {from:p.from,to:p.to};})};
+    }
     return context;
   }
 
@@ -299,17 +333,22 @@ MTAI.createClient = function(options){
     const ctrl = new AbortController();
     const timer = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
     const body = {
+      ai_contract_version: MTAI.config.AI_CONTRACT_VERSION,
       question: String(question).slice(0, MTAI.config.LIMITS.questionMaxChars),
       history: sanitizeHistory(history),
       provider: cfg.provider || MTAI.config.DEFAULT_PROVIDER,
       model: cfg.model || MTAI.config.DEFAULT_MODEL
     };
-    /* Контекст додається ЛИШЕ коли він є — перше питання сесії лишає
-       тіло запиту байт-в-байт таким самим, як раніше. */
+    /* Контекст додається ЛИШЕ коли він є; обов'язковий contract marker
+       залишається поза контекстом навіть для першого питання сесії. */
     const ctxTickets = context && Array.isArray(context.tickets) ? normalizeReferentTickets(context.tickets) : [];
     if(ctxTickets.length) body.context = { tickets: ctxTickets };
     /* v91.46: follow-up контекст додається ЛИШЕ коли він є. */
     const ctxQuery = sanitizeQueryContext(context && context.queryContext);
+    if(!preservesContractContext(context && context.queryContext,ctxQuery)){
+      clearTimeout(timer);
+      return {ok:false,error:compatibilityError()};
+    }
     if(ctxQuery){
       body.context = body.context || {};
       body.context.queryContext = ctxQuery;
@@ -349,6 +388,10 @@ MTAI.createClient = function(options){
         throw err; // body-stream failure/abort is transport, not a successful 200
       });
       if(res.ok && payload && payload.ok){
+        if(payload.ai_contract_version !== MTAI.config.AI_CONTRACT_VERSION ||
+           !preservesContractContext(payload.queryContext,sanitizeQueryContext(payload.queryContext))){
+          return {ok:false,error:compatibilityError()};
+        }
         return { ok:true, answer:String(payload.answer || ''), meta: payload.meta || {}, total: Number.isFinite(Number(payload.total)) ? Number(payload.total) : (payload.meta && Number.isFinite(Number(payload.meta.total)) ? Number(payload.meta.total) : null), shown:Number.isFinite(Number(payload.shown))?Number(payload.shown):0, tickets: normalizeTickets(payload.tickets), referentTickets: normalizeReferentTickets(payload.referentTickets), queryContext: sanitizeQueryContext(payload.queryContext), localQuery: sanitizeLocalQuery(payload.localQuery), resultSet:sanitizeResultSet(payload.resultSet), resultItems:sanitizeResultItems(payload.resultItems), selectedTicketId:validateTicketId(payload.selectedTicketId), presentation:sanitizePresentation(payload.presentation), resultSetStatus:(payload.resultSetStatus&&typeof payload.resultSetStatus==='object')?payload.resultSetStatus:null };
       }
       return { ok:false, error: normalizeError(res.status, payload, null) };

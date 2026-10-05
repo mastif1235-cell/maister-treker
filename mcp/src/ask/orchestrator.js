@@ -18,6 +18,7 @@
      redacted projections; errors carry stable codes only. */
 
 import {validateAgainstSchema} from '../tools/validate.js';
+import {createRequestAnalysis} from './request-analysis.js';
 import {dateHintsLine, resolveDateRanges} from './date-resolver.js';
 import {renumberSequentialLists} from './format.js';
 import {sanitizeIncomingQueryContext, projectQueryContext, mergeInheritedFilters, isAnaphoricListFollowUp} from './query-context.js';
@@ -35,7 +36,9 @@ import {hygieneArgs} from './arg-hygiene.js';
    result items are re-ordered to the list the user actually sees. */
 import {alignRowsToAnswer} from './answer-order.js';
 import {workIntent,workAnswer} from './work-intent.js';
-import {resolvePeriodFollowUp} from './period-query-state.js';
+import {resolvePeriodFollowUp,resolveCoworkerFollowUp} from './period-query-state.js';
+import {resolveAnalyticsFollowUp} from './worktype-comparison-state.js';
+import {resolveCombinedFollowUp} from './combined-query-state.js';
 import {sanitizeCoworkerRoster,resolveRosterCoworker} from './coworker-names.js';
 
 export const ASK_LIMITS = {
@@ -719,7 +722,7 @@ export function createAskOrchestrator(options){
 
   const TICKET_TOOLS = { list_tickets:1, search_tickets:1, get_tickets_by_date:1, get_ticket:1, find_tickets_by_address:1, query_tickets:1 };
 
-  async function executeTool(call, collectedTickets, totals, capture){
+  async function executeTool(call, collectedTickets, totals, capture, execution){
     const def = allowedDef(call.name);
     if(!def) return JSON.stringify({isError:true, error:'UNKNOWN_TOOL'});
     let args = null;
@@ -784,7 +787,7 @@ export function createAskOrchestrator(options){
       args={...args,coworker:name};
     }
     let outcome;
-    try{ outcome = await tools[def.name](args); }
+    try{ outcome = await (def.name==='query_tickets' ? tools[def.name](args,execution) : tools[def.name](args)); }
     catch(_err){ outcome = {ok:false, code:'INTERNAL'}; }
     if(def.name === 'get_ticket' && outcome && outcome.ok && outcome.data){
       const selected = validateTicketId(args.ticket_id);
@@ -867,6 +870,12 @@ export function createAskOrchestrator(options){
   }
 
   async function handle(question, options){
+    const execution=createRequestAnalysis();
+    try{return await handleWithAnalysis(question,options,execution);}
+    finally{execution.dispose();}
+  }
+
+  async function handleWithAnalysis(question, options, execution){
     const now = options && options.now instanceof Date ? options.now : new Date();
     const nowMs = now.getTime();
     const history = sanitizeHistory(options && options.history);
@@ -943,7 +952,8 @@ export function createAskOrchestrator(options){
        deterministically for inherit_previous_filters calls. */
     const queryContext = sanitizeIncomingQueryContext(options && options.queryContext);
     const detailKind=/^(?:показати|показать|покажи|покажіть)\s+(замены|заміни|исключ[её]нные|виключені)[.!?\s]*$/iu.exec(questionText)?.[1];
-    const workFollowUp=queryContext?.resolved_filters?.semantic && (detailKind || /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText));
+    const workFollowUp=queryContext?.resolved_filters?.semantic && (detailKind || /^(?:показати|показать|покажи|покажіть)\s+(?:ці\s+|эти\s+|їх\s+|их\s+)?(?:заявки|їх|их)[.!?\s]*$|^(?:чому\s+так\s+пораховано|почему\s+так\s+посчитано)[.!?\s]*$/iu.test(questionText) ||
+      (queryContext.resolved_filters.coworker_exclude && isAnaphoricListFollowUp(questionText)));
     const coworkerRoster=sanitizeCoworkerRoster(options?.coworkerRoster);
     let temporalContext=queryContext;
     // Older clients omitted mode. Recover COUNT only when the immediately
@@ -955,7 +965,33 @@ export function createAskOrchestrator(options){
       const priorContext=prior?.mode==='count'&&!prior.clarification?projectQueryContext({resolved_filters:prior,mode:'count'}):null;
       if(priorContext&&stableFiltersKey(priorContext.resolved_filters)===stableFiltersKey(queryContext.resolved_filters))temporalContext={...queryContext,mode:'count'};
     }
-    const semanticIntent=workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} : resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
+    const transition=resolveAnalyticsFollowUp(questionText,now,temporalContext);
+    if(transition?.plans.length===2 && typeof tools.query_tickets==='function' && allowedDef('query_tickets')){
+      // Validate ALL plans first; execute without publishing intermediate state.
+      const plans=transition.plans;
+      if(plans.some(p=>!validateAgainstSchema(allowedDef('query_tickets').inputSchema,p).ok))return {ok:false,code:'INVALID_ARGUMENTS'};
+      const envelopes=[];
+      for(const plan of plans){
+        let found;try{found=await tools.query_tickets(plan,execution);}catch(_error){return {ok:false,code:'INTERNAL'};}
+        if(!found?.ok)return found;
+        if(found.data?.clarification||!found.data?.work_totals)return {ok:false,code:'INVALID_COMPARISON_RESULT'};
+        envelopes.push(found.data);
+      }
+      const results=envelopes.map((data,i)=>({period:transition.state.periods[i],total:data.total_matched||0,work_totals:data.work_totals}));
+      const answer=envelopes.map((data,i)=>workAnswer(data,plans[i],{question:questionText}));
+      if(answer.some(a=>typeof a!=='string'||!a))return {ok:false,code:'INVALID_COMPARISON_RESULT'};
+      const {date_from,date_to,...common}=envelopes[0].resolved_filters;
+      const nextContext=sanitizeIncomingQueryContext({mode:'count',resolved_filters:common,comparison:{periods:transition.state.periods}});
+      if(!nextContext)return {ok:false,code:'INVALID_COMPARISON_CONTEXT'};
+      return {ok:true,answer:answer.join('\n\n').slice(0,limits.maxAnswerChars),meta:{rounds:0,toolCallsMade:2,intent:'count',semantic:true,comparison:true},shown:0,tickets:[],referentTickets:[],queryContext:nextContext,comparison:{results},resultSet:null,resultItems:[],resultSetStatus:{created:false,reason:'comparison',subjectChanged:true}};
+    }
+    // Unsupported follow-ups must not turn two explicit periods into all-time
+    // common filters. Keep the existing comparison until the user disambiguates.
+    if(queryContext?.comparison&&!transition&&!workIntent(questionText,now,coworkerRoster))return {ok:true,answer:'Уточніть один період або сформулюйте нове порівняння. Для обох періодів можна запитати «А тільки ремонти?».',meta:{rounds:0,toolCallsMade:0,clarification:true},shown:0,tickets:[],referentTickets:[],queryContext,resultSet:null,resultItems:[]};
+    const semanticIntent=transition?.plans.length===1?transition.plans[0]:workFollowUp ? {...queryContext.resolved_filters,mode:'list',limit:8} :
+      resolveCoworkerFollowUp(questionText,temporalContext,coworkerRoster).intent ||
+      resolveCombinedFollowUp(questionText,now,temporalContext,coworkerRoster).intent ||
+      resolvePeriodFollowUp(questionText,now,temporalContext).intent || workIntent(questionText,now,coworkerRoster);
     if(detailKind&&semanticIntent){
       semanticIntent.semantic={...semanticIntent.semantic};
       if(/исключ|виключ/iu.test(detailKind))semanticIntent.semantic.category='excluded';
@@ -963,10 +999,13 @@ export function createAskOrchestrator(options){
     }
     if(semanticIntent?.clarification)return {ok:true,answer:semanticIntent.question,meta:{rounds:0,toolCallsMade:0,total:0,semantic:true,clarification:true},total:0,shown:0,tickets:[],referentTickets:[],queryContext:null,resultSet:null,resultItems:[],resultSetStatus:{created:false,reason:'clarification',subjectChanged:true}};
     if(semanticIntent && typeof tools.query_tickets==='function' && allowedDef('query_tickets')){
-      const validation=validateAgainstSchema(allowedDef('query_tickets').inputSchema,semanticIntent);
+      // Internal deterministic EXCLUDE is not exposed to the model's tool schema.
+      const publicSchema=allowedDef('query_tickets').inputSchema;
+      const executionSchema={...publicSchema,properties:{...publicSchema.properties,coworker_exclude:{type:'string',minLength:1,maxLength:60}}};
+      const validation=validateAgainstSchema(executionSchema,semanticIntent);
       if(!validation.ok) return {ok:false,code:'INVALID_ARGUMENTS'};
       let found;
-      try{found=await tools.query_tickets(semanticIntent);}catch(_err){return {ok:false,code:'INTERNAL'};}
+      try{found=await tools.query_tickets(semanticIntent,execution);}catch(_err){return {ok:false,code:'INTERNAL'};}
       if(!found?.ok) return found;
       const answer=workAnswer(found.data,semanticIntent,{question:questionText,diagnostic:/диагност|діагност|debug|technical|техническ|технічн/iu.test(questionText)});
       if(answer!==null){
@@ -1019,7 +1058,7 @@ export function createAskOrchestrator(options){
         selectedIds,
         selectedErrors
       };
-      const forcedText = await executeTool(forcedCall, collectedTickets, toolTotals, capture);
+      const forcedText = await executeTool(forcedCall, collectedTickets, toolTotals, capture, execution);
       try{
         const parsed = JSON.parse(forcedText);
         if(parsed && parsed.result){
@@ -1269,7 +1308,7 @@ export function createAskOrchestrator(options){
             selectedIds,
             selectedErrors,
             ordinalLock: ordinalLock
-          });
+          }, execution);
           messages.push({role:'tool', tool_call_id:call.id, content:resultText});
         }
         let totalChars = 0;

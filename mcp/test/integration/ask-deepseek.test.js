@@ -85,7 +85,7 @@ test('happy path DeepSeek: tool-call list_tickets executed locally, final answer
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + MCP_TOKEN
     },
-    body: JSON.stringify({
+    body: JSON.stringify({ai_contract_version:1,
       question: 'Покажи картки заявок сьогодні',
       provider: 'deepseek',
       model: 'deepseek-flash'
@@ -120,7 +120,7 @@ test('invalid provider rejected with 400 invalid_provider', async () => {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + MCP_TOKEN
     },
-    body: JSON.stringify({
+    body: JSON.stringify({ai_contract_version:1,
       question: 'тест',
       provider: 'unsupported-provider'
     })
@@ -149,7 +149,7 @@ test('DeepSeek 402 Insufficient Balance translates to HTTP 402 billing error', a
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + MCP_TOKEN
     },
-    body: JSON.stringify({
+    body: JSON.stringify({ai_contract_version:1,
       question: 'тест',
       provider: 'deepseek'
     })

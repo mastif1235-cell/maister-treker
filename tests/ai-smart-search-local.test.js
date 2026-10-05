@@ -24,14 +24,14 @@ const CORE=['js/ai/ai-config.js','js/ai/ai-storage.js','js/ai/ai-client.js'];
   sb.settings={ai:{enabled:true,provider:'groq',model:'openai/gpt-oss-120b',backendUrl:'https://w.example.dev'},aiBearerToken:'n:tok1234567890abcdef:read'};
   const seen=[];
   const client=M.createClient({ fetchImpl: async function(url,init){ seen.push({url,init});
-      if(seen.length===1) return new Response(JSON.stringify({ok:true,answer:'1',meta:{}}),{status:200});
-      if(seen.length===2) return new Response(JSON.stringify({ok:true,answer:'2',meta:{},tickets:[{id:'t-101',date:'28.08.2026',time:'11:59',address:'Таромське, Футбольна 39',type:'Ремонт',sum:'1600'}]}),{status:200});
-      return new Response(JSON.stringify({ok:true,answer:'3',meta:{},localQuery:{kind:'network_points',type:'FOB',text:'ФОБ в посадке на Таромском',date_from:'01.08.2026',date_to:'31.08.2026',period_note:'розширено ±3 дні',evil:'<script>'}}),{status:200});
+      if(seen.length===1) return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'1',meta:{}}),{status:200});
+      if(seen.length===2) return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'2',meta:{},tickets:[{id:'t-101',date:'28.08.2026',time:'11:59',address:'Таромське, Футбольна 39',type:'Ремонт',sum:'1600'}]}),{status:200});
+      return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'3',meta:{},localQuery:{kind:'network_points',type:'FOB',text:'ФОБ в посадке на Таромском',date_from:'01.08.2026',date_to:'31.08.2026',period_note:'розширено ±3 дні',evil:'<script>'}}),{status:200});
     }, getConfig: function(){ return { backendUrl:sb.settings.ai.backendUrl, bearer:M.storage.bearer(), provider:sb.settings.ai.provider, model:sb.settings.ai.model }; }, timeoutMs:80 });
   (async function(){
     // Перше питання: тіло запиту БЕЗ контексту (сумісність байт-в-байт)
     await client.ask('Скільки заявок?');
-    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?',history:[],provider:'groq',model:'openai/gpt-oss-120b'},'first ask keeps the legacy body shape');
+    assert.deepEqual(JSON.parse(seen[0].init.body),{ai_contract_version:1,question:'Скільки заявок?',history:[],provider:'groq',model:'openai/gpt-oss-120b'},'first ask adds only the contract marker to the legacy body shape');
     // Друге питання з контекстом попередньої відповіді
     await client.ask('Відкрий цю заявку', [], {tickets:[{id:'t-101',date:'28.08.2026',address:'Таромське, Футбольна 39'},{id:'<bad id!>'}]});
     const body2=JSON.parse(seen[1].init.body);

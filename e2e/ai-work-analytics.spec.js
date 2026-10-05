@@ -8,7 +8,7 @@ test('AI network error is cleared by a successful ordinary send, without duplica
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'}});
   calls++;
   if(calls===1)return route.abort('failed');
-  return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify({ok:true,answer:'Успішна відповідь.',meta:{}})});
+  return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify({ai_contract_version:1,ok:true,answer:'Успішна відповідь.',meta:{}})});
  });
  await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
@@ -27,7 +27,7 @@ test('AI September -> August after reload keeps ONU all-install scope, coworker 
   const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
   const body=route.request().postDataJSON(),result=await orch.handle(body.question,{now:new Date('2026-10-03'),...body.context});
-  return route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  return route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await gotoApp(page,appEnv.url);
  await page.evaluate(async()=>{MTAI.storage.update({enabled:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
@@ -53,7 +53,7 @@ test('AI work analytics: real deterministic Worker modules, count -> evidence ->
     const body=route.request().postDataJSON();
     expect(body.context.coworkerRoster).toContain('Петя');
     const result=await orch.handle(body.question,{now:new Date(2026,9,2,12),...body.context});
-    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
   });
   await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
   // localhost deliberately chooses the dev shared backend on boot. Pin only
@@ -100,7 +100,7 @@ test('AI physical consumption: free structured router, work-type filter and relo
     const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
     if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
     const body=route.request().postDataJSON(),result=await orch.handle(body.question,{now:new Date('2026-10-03T12:00:00Z'),...body.context});
-    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+    await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
   });
   await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
   await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
@@ -132,7 +132,7 @@ test('AI v91.83: fresh date selection -> card -> reload -> same profile card, ne
   if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
   const body=route.request().postDataJSON();requests.push(body);
   const result=await orch.handle(body.question,{now:new Date('2026-10-03'),...body.context});
-  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify(result)});
+  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
  });
  await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
  const localTicket=async()=>page.evaluate(t=>{tickets.push(t);},ticket);

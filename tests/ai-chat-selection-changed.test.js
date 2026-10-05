@@ -24,7 +24,7 @@ const SETTINGS={ai:{enabled:true,provider:'deepseek',model:'deepseek-flash',back
 const A={id:'t-ukr-12',date:'15.06.2026',time:'10:00',address:'Шевченко, Вул Українська 12',type:'Підключення',sum:'900',signal:'-19'};
 const B={id:'t-ukr-31',date:'01.06.2026',time:'15:56',address:'Шевченко, Вул Українська 31',type:'Ремонт',sum:'600',signal:'-21'};
 const K={id:'t-k15',date:'03.06.2026',time:'17:54',address:'Таромське, Вул Кобзаря 15',type:'Підключення',sum:'1200',signal:'-18'};
-const ok=(payload)=>new Response(JSON.stringify(Object.assign({ok:true,meta:{}},payload)),{status:200});
+const ok=(payload)=>new Response(JSON.stringify(Object.assign({ai_contract_version:1,ok:true,meta:{}},payload)),{status:200});
 
 (async function(){
   const sb=load(...CHAT_MODULES); const M=sb.MTAI;

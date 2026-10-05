@@ -58,7 +58,7 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
   sb.settings={ai:{enabled:true,provider:'groq',model:'openai/gpt-oss-120b',backendUrl:'https://w.example.dev'},aiBearerToken:'n:tok1234567890abcdef:read'};
   const seen=[];
   const client=M.createClient({ fetchImpl: async function(url,init){ seen.push({url,init});
-      if(seen.length===1) return new Response(JSON.stringify({ok:true,answer:'389',meta:{rounds:2,tool_calls:1}}),{status:200});
+      if(seen.length===1) return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'389',meta:{rounds:2,tool_calls:1}}),{status:200});
       if(seen.length===2) return new Response(JSON.stringify({error:'unauthorized'}),{status:401});
       if(seen.length===3) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_429',detail:'Rate limit reached. Retry за 20 сек.'}),{status:429});
       if(seen.length===4) return new Response(JSON.stringify({error:'ask_failed',code:'HTTP_500'}),{status:500});
@@ -72,7 +72,7 @@ const CORE=['js/ai/ai-config.js','js/ai/providers/provider-registry.js','js/ai/p
     assert.equal(seen[0].url,'https://w.example.dev/ask','exact /ask url');
     assert.equal(seen[0].init.method,'POST');
     assert.equal(seen[0].init.headers.Authorization,'Bearer tok1234567890abcdef','mid-token in header');
-    assert.deepEqual(JSON.parse(seen[0].init.body),{question:'Скільки заявок?',history:[],provider:'groq',model:'openai/gpt-oss-120b'},'/ask body: question + empty history on first ask');
+    assert.deepEqual(JSON.parse(seen[0].init.body),{ai_contract_version:1,question:'Скільки заявок?',history:[],provider:'groq',model:'openai/gpt-oss-120b'},'/ask body: contract + question + empty history on first ask');
     const e401=await client.ask('x'); assert.equal(e401.error.kind,'auth');
     const e429=await client.ask('x'); assert.equal(e429.error.kind,'rate_limit'); assert.equal(e429.error.retryAfterSec,20,'retry-after parsed from Ukrainian detail');
     const e500=await client.ask('x'); assert.equal(e500.error.kind,'server');

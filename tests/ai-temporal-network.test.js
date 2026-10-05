@@ -10,7 +10,7 @@ function boot(fetchImpl){const sb={console,setTimeout,clearTimeout,AbortControll
  await M.createChatController({client,storage}).send('А в августе?');assert.equal(calls,2);
  console.log('PASS reload retains exact aggregate semantic/date/coworker context');
  let fetchCalls=0,release;
- const N=boot(),real=N.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic-only'}),fetchImpl:async()=>{fetchCalls++;if(fetchCalls===1)throw new TypeError('Failed to fetch');return new Response(JSON.stringify({ok:true,answer:'ok'}),{status:200});}});
+ const N=boot(),real=N.createClient({getConfig:()=>({backendUrl:'https://synthetic.invalid',bearer:'synthetic-only'}),fetchImpl:async()=>{fetchCalls++;if(fetchCalls===1)throw new TypeError('Failed to fetch');return new Response(JSON.stringify({ai_contract_version:1,ok:true,answer:'ok'}),{status:200});}});
  const c=N.createChatController({client:real});assert.equal((await c.send('first')).error.kind,'network');assert.equal(c.canRetry(),true);assert.equal((await c.send('second')).ok,true);assert.equal(c.canRetry(),false);assert.equal(fetchCalls,2);
  const busy=N.createChatController({client:{ask:()=>new Promise(r=>release=r)}});const pending=busy.send('one');assert.equal((await busy.send('two')).skipped,true);release({ok:true,answer:'ok'});await pending;
  console.log('PASS successful send clears failed/retry state; no automatic retry or parallel duplicate');

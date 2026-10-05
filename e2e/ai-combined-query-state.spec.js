@@ -1,0 +1,33 @@
+'use strict';
+const {test,expect,gotoApp}=require('./app-test');
+const {pathToFileURL}=require('node:url');
+const path=require('node:path');
+test('combined month+trusted coworker keeps count/profile through real reload and next month',async({page,appEnv})=>{
+ const load=p=>import(pathToFileURL(path.join(__dirname,'../mcp/src/ask',p)).href);
+ const {createAskOrchestrator}=await load('orchestrator.js'),{runSmartQuery}=await load('smart-query.js');
+ const {TOOL_DEFINITIONS}=await import(pathToFileURL(path.join(__dirname,'../mcp/src/tools/definitions.js')).href);
+ const tickets=[];
+ for(let i=0;i<20;i++)tickets.push({id:'SYNTHETIC_ZHENYA_'+i,date:'15.09.2026',type:'Ремонт',equipment:[{label:'ONU',qty:1}],connectMasters:['Женя'],tags:[],cables:[]});
+ for(const [month,qty] of [[8,1],[9,2]])tickets.push({id:'SYNTHETIC_PETYA_'+month,date:`15.0${month}.2026`,type:'Ремонт',equipment:[{label:'ONU',qty}],connectMasters:['Петя'],tags:[],cables:[]});
+ const queries=[],requests=[],now=new Date('2026-10-04T12:00:00Z');
+ const orch=createAskOrchestrator({toolDefs:TOOL_DEFINITIONS,groq:{chat(){throw Error('Combined path must not call provider');}},tools:{query_tickets:async p=>{queries.push(p);return runSmartQuery({tickets,shifts:[],searchIndex:[]},p);}}});
+ await page.route('https://maister-tracker-mcp.mastif1235.workers.dev/ask',async route=>{
+  const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Authorization,Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'};
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+  const body=route.request().postDataJSON();requests.push(body);
+  const result=await orch.handle(body.question,{now,...body.context,coworkerRoster:['Женя','Петя']});
+  expect(result.meta.rounds).toBe(0);expect(result.meta.toolCallsMade).toBe(1);
+  await route.fulfill({status:200,contentType:'application/json',headers,body:JSON.stringify({...result,ai_contract_version:1})});
+ });
+ await page.setViewportSize({width:320,height:740});await gotoApp(page,appEnv.url);
+ await page.evaluate(async()=>{MTAI.storage.update({enabled:true,showInTools:true,backendMode:'custom',backendUrl:MTAI.config.SHARED_BACKEND});MTAI.storage.setToken('synthetic-ai-test');await mtSettingsSecretsFlushPending();MTAI.ui.open();});
+ const send=async q=>{await page.locator('#aiInput').fill(q);await page.locator('#aiSendBtn').click();await expect(page.locator('#aiSendBtn')).toBeEnabled();};
+ await send('Сколько ONU я поставил с Женей за сентябрь?');await expect(page.locator('.ai-msg-assistant').last()).toContainText('20 ONU');
+ await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await page.evaluate(()=>MTAI.ui.open());
+ await send('А в августе с Петей?');await expect(page.locator('.ai-msg-assistant').last()).toContainText('1 ONU');
+ expect(queries[1].coworker).toBe('Петя');expect(queries[1].date_from).toBe('01.08.2026');expect(queries[1].mode).toBe('count');expect(queries[1].semantic).toEqual(queries[0].semantic);
+ await page.reload();await page.waitForFunction(()=>window.__mtAppInitDone===true);await page.evaluate(()=>MTAI.ui.open());
+ await send('А в сентябре?');await expect(page.locator('.ai-msg-assistant').last()).toContainText('2 ONU');
+ expect(queries).toHaveLength(3);expect(requests).toHaveLength(3);expect(queries[2].coworker).toBe('Петя');expect(queries[2].mode).toBe('count');expect(queries[2].semantic).toEqual(queries[1].semantic);
+ expect(requests[2].context.queryContext.resolved_filters.coworker).toBe('Петя');
+});

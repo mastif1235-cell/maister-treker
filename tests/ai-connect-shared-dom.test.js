@@ -92,7 +92,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
       async function(url,init){
         calls.push({url:String(url), headers:((init||{}).headers||{})});
         if(String(url).endsWith('/ai/config')) return new Response(JSON.stringify(OK_CONFIG),{status:200});
-        return new Response(JSON.stringify({ok:true,service:'maister-tracker-mcp',read_only:true}),{status:200});
+        return new Response(JSON.stringify({ai_contract_version:1,ok:true,service:'maister-tracker-mcp',read_only:true}),{status:200});
       },
       {hostname:'localhost', port:'8094', protocol:'http:'}
     );
@@ -119,7 +119,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   {
     const {sandbox, doc}=boot(
       {ai:{enabled:true,showInTools:true,backendUrl:'',backendMode:''},aiBearerToken:''},
-      async function(){ return new Response(JSON.stringify({ok:true}),{status:200}); },
+      async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200}); },
       {hostname:'pwa.example.com', port:'', protocol:'https:'}
     );
     const inp=doc.getElementById('aiBackendUrlInput');
@@ -152,7 +152,7 @@ const tick=()=>new Promise(r=>setTimeout(r,10));
   {
     const {sandbox, doc}=boot(
       {ai:{enabled:true,showInTools:true,backendUrl:DEV_HOST,backendMode:'shared'},aiBearerToken:''},
-      async function(){ return new Response(JSON.stringify({ok:true}),{status:200}); },
+      async function(){ return new Response(JSON.stringify({ai_contract_version:1,ok:true}),{status:200}); },
       {hostname:'localhost', port:'8094', protocol:'http:'}
     );
     const inp=doc.getElementById('aiBackendUrlInput');

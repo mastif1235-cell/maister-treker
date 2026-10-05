@@ -20,7 +20,7 @@ const INHERITABLE_KEYS = [
   'date_from', 'date_to', 'city', 'street', 'city_id', 'street_id', 'house', 'apartment',
   'type', 'tags', 'payment', 'sum_min', 'sum_max',
   'signal_worse_than', 'signal_worse_or_equal', 'signal_better_than',
-  'has_signal', 'coworker', 'items', 'semantic'
+  'has_signal', 'coworker', 'coworker_exclude', 'items', 'semantic'
 ];
 
 /* Stage 2D: directory identity of a resolved place — carried between turns
@@ -75,6 +75,8 @@ function projectItems(raw){
    context (client → server), so both directions share one definition. */
 export function projectQueryFilters(filters){
   if(!isPlainObject(filters)) return {};
+  if(filters.coworker_exclude!==undefined && (typeof filters.coworker_exclude!=='string' ||
+    !filters.coworker_exclude.trim() || filters.coworker_exclude.length>60 || filters.coworker!==undefined || !filters.semantic))return null;
   const out = {};
   for(const key of INHERITABLE_KEYS){
     const v = filters[key];
@@ -97,6 +99,7 @@ export function projectQueryFilters(filters){
       case 'type': out.type = clip(v, 80); break;
       case 'payment': out.payment = clip(v, 80); break;
       case 'coworker': out.coworker = clip(v, 60); break;
+      case 'coworker_exclude': out.coworker_exclude = v.trim(); break;
       case 'tags':
         if(Array.isArray(v)) out.tags = v.slice(0, 20).map(function(t){ return clip(t, 60); }).filter(Boolean);
         break;
@@ -136,6 +139,7 @@ export function projectQueryContext(envelope){
   return {
     resolved_filters: filters,
     mode: typeof envelope.mode === 'string' ? clip(envelope.mode, 12) : 'list',
+    ...(envelope.mode==='group' && typeof envelope.group_by==='string'?{group_by:clip(envelope.group_by,16)}:{}),
     total_matched: Number.isFinite(Number(envelope.total_matched)) ? Number(envelope.total_matched) : null
   };
 }
@@ -143,13 +147,36 @@ export function projectQueryContext(envelope){
 /* Validate what the client echoes back on the NEXT turn. */
 export function sanitizeIncomingQueryContext(raw){
   if(!isPlainObject(raw)) return null;
+  if(Object.hasOwn(raw,'comparison')) return projectComparisonContext(raw);
   const filters = projectQueryFilters(raw.resolved_filters);
   if(!filters || !Object.keys(filters).length) return null;
   return {
     resolved_filters: filters,
     mode: typeof raw.mode === 'string' ? clip(raw.mode, 12) : 'list',
+    ...(raw.mode==='group' && typeof raw.group_by==='string'?{group_by:clip(raw.group_by,16)}:{}),
     total_matched: Number.isFinite(Number(raw.total_matched)) ? Number(raw.total_matched) : null
   };
+}
+
+/* Additive count-comparison context: common filters + TWO ordered periods.
+ * No rows, totals, navigation or arbitrary serialized QueryState. Invalid
+ * comparison intake is rejected as a whole, never reduced to one period. */
+export function projectComparisonContext(raw){
+  if(!isPlainObject(raw)||raw.mode!=='count'||!isPlainObject(raw.comparison))return null;
+  const filters=projectQueryFilters(raw.resolved_filters);
+  if(!filters?.semantic||filters.date_from||filters.date_to)return null;
+  const periods=raw.comparison.periods;
+  if(!Array.isArray(periods)||periods.length!==2)return null;
+  const calendar=d=>{
+    if(typeof d!=='string'||!validDate(d))return false;
+    const [day,month,year]=d.split('.').map(Number),v=new Date(Date.UTC(year,month-1,day));
+    return v.getUTCFullYear()===year&&v.getUTCMonth()===month-1&&v.getUTCDate()===day;
+  };
+  for(const p of periods){
+    if(!isPlainObject(p)||!calendar(p.from)||!calendar(p.to)||p.from.split('.').reverse().join('-')>p.to.split('.').reverse().join('-'))return null;
+  }
+  if(periods[0].from===periods[1].from&&periods[0].to===periods[1].to)return null;
+  return {mode:'count',resolved_filters:filters,comparison:{periods:periods.map(p=>({from:p.from,to:p.to}))}};
 }
 
 /* ---------- explicit anaphoric follow-up detection (v91.46) ----------
