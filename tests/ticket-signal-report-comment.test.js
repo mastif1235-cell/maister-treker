@@ -60,6 +60,7 @@ assert.match(app,/signal:t\.signal/,'ticket sync fullDataJson payload retains si
 
 const telegramContext={console};
 vm.createContext(telegramContext);
+vm.runInContext(fs.readFileSync(path.join(root,'js','share-domain.js'),'utf8'),telegramContext);
 const telegramSource=fs.readFileSync(path.join(root,'js','photo-telegram-domain.js'),'utf8');
 vm.runInContext(telegramSource,telegramContext);
 const dispatcherText=telegramContext.dispatcherTicketText('Заявка\nMAC: AA:BB\n📶 Сигнал ONU: -23 dBm\nsignal: -23\nonuSignal: -23\nРоботи виконано');

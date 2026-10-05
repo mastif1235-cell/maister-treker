@@ -3,8 +3,44 @@
 /* Canonical Web Share, photo picker and clipboard workflows. */
 
 function dispatcherForwardText(text){
-  const internal=/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
-  return String(text||'').split('\n').filter(line=>!internal.test(line)).join('\n').trim();
+  // Output boundary only: canonical ticket.content and structured data stay intact.
+  const internal=/(?:^\s*(?:Технічна\s+діагностика|Історія\s+діагностик(?:и)?|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i;
+  const mapUrl=/https?:\/\/(?:www\.)?(?:google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps|openstreetmap\.org|yandex\.[a-z.]+\/maps|waze\.com)[^\s<>"']*/gi;
+  const number='[-+]?\\d+(?:[.,]\\d+)?',boundary='(?<![\\p{L}\\p{N}_])';
+  const separator='(?:\\s*[:：=]\\s*|\\s+)';
+  const geoLabel='(?:geo(?:location)?|location|GPS|Geolocation|Coordinates|Геолокац(?:ія|ия)|Координат[иы]|lat\\s*/\\s*(?:lng|lon))';
+  const geoPair=new RegExp(boundary+geoLabel+separator+number+'\\s*[,;/]\\s*'+number,'giu');
+  const geoUrl=new RegExp(boundary+'(?:'+geoLabel+'|geoLink|Map\\s+link|Coordinates\\s+link|Посилання\\s+на\\s+карту|Ссылка\\s+на\\s+карту)'+separator+'https?://[^\\s<>"\']*','giu');
+  const geoField=new RegExp(boundary+'(?:geo(?:Lat|Lng|Accuracy|Timestamp)|location(?:Accuracy|Timestamp)|latitude|longitude|lat|lng|lon)'+separator+number,'giu');
+  const geoLink=new RegExp(boundary+'(?:geoLink|geoSource|locationSource)'+separator+'[^\\s,;]+','giu');
+  const timing='(?:before|after|до|после|після)';
+  const signalLabel='(?:onuSignal(?:Before|After)?|signal(?:Before|After)?|optical(?:Level|Power)|rxPower|txPower|(?:ONU|ОНУ)\\s*(?:signal|сигнал)|(?:Сигнал|Рівень|Уровень)\\s*(?:ONU|ОНУ)?|optical\\s+(?:level|signal|power))';
+  const reading=number+'(?:\\s*dBm\\b)?';
+  const signalFragment=new RegExp(boundary+signalLabel+'(?:\\s*'+timing+')?'+separator+reading+'(?:\\s*(?:[,;→/]|->|—|–)\\s*'+timing+separator+reading+')*','giu');
+  const signalHeader=new RegExp('^[^\\p{L}\\p{N}]*'+signalLabel+'(?:\\s*'+timing+')?\\s*[:：=]\\s*$','iu');
+  const geoHeader=new RegExp('^[^\\p{L}\\p{N}]*'+geoLabel+'\\s*[:：=]\\s*$','iu');
+  const bareSignal=new RegExp('^\\s*'+reading+'\\s*$','iu');
+  const barePair=new RegExp('^\\s*'+number+'\\s*[,;/]\\s*'+number+'\\s*$','u');
+  const dbm=new RegExp(boundary+number+'\\s*dBm\\b','giu');
+  // A marker lets us clean only separators left by removed fragments, not
+  // arbitrary house numbers, negative values, money or unmarked numeric pairs.
+  const removed='\uE000';
+  let continuation='';
+  return String(text||'').split(/\r?\n/).map(line=>{
+    if(internal.test(line))return '';
+    if(signalHeader.test(line)){continuation='signal';return '';}
+    if(geoHeader.test(line)){continuation='geo';return '';}
+    if(continuation==='signal'&&bareSignal.test(line)||continuation==='geo'&&barePair.test(line))return '';
+    continuation='';
+    const removeUrl=url=>removed+(/[;,]$/.test(url)?url.slice(-1):'');
+    const cleaned=line.replace(geoUrl,removeUrl).replace(mapUrl,removeUrl)
+      .replace(geoPair,removed).replace(geoField,removed).replace(geoLink,removed).replace(signalFragment,removed).replace(dbm,removed);
+    if(cleaned===line)return line.trimEnd();
+    const result=cleaned.replace(/(?:\s*[,;—–]\s*)?\uE000(?:\s*[,;—–]\s*\uE000)*/g,'')
+      .replace(/^\s*[,;—–]\s*|\s*[,;—–]\s*$/g,'').replace(/:\s*[,;]\s*/g,': ')
+      .replace(/[ \t]{2,}/g,' ').replace(/\s+([,;])/g,'$1').trim();
+    return /[\p{L}\p{N}]/u.test(result)?result:'';
+  }).filter(line=>line.trim()).join('\n').trim();
 }
 
 async function sharePickerBuildItems(ticket){
@@ -56,6 +92,7 @@ function shareMultiClose(items){
 }
 
 async function openTicketSharePicker(text, ticket){
+  text = dispatcherForwardText(text);
   if(!text){ showToast('Немає що надсилати'); return; }
   if(typeof navigator.share !== 'function'){
     await sharePickerTextOnly(text);
@@ -178,7 +215,7 @@ async function shareTicket(id){
 
 async function copyTicketText(){
   syncFormToState();
-  const text = getCurrentTicketText(); // NEW: враховує raw-режим
+  const text = dispatcherForwardText(getCurrentTicketText()); // raw-mode uses the same output boundary
   try{
     await navigator.clipboard.writeText(text);
     showToast('Текст заявки скопійовано');

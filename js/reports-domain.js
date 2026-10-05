@@ -303,7 +303,7 @@ function renderReport(range){
   // збігалася б із сумою готівки та безготівки.
   const full = document.getElementById('reportFullToggle')?.checked;
   let text = buildTicketReportText({list, title, full, totals:{count, total, cashTotal, cardTotal}, formatMoney:fmtMoney});
-  text = appendTicketReportComment(text,document.getElementById('reportCommentInput')?.value);
+  text = dispatcherForwardText(appendTicketReportComment(text,document.getElementById('reportCommentInput')?.value));
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.
   const out = document.getElementById('reportOutput');

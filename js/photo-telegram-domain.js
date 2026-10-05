@@ -253,8 +253,8 @@ function chooseDispatcherAndSend(sendFn){
   }});
 }
 function dispatcherTicketText(text){
-  if(typeof dispatcherForwardText==='function')return dispatcherForwardText(text);
-  return String(text||'').split('\n').filter(line=>!/(?:\bgeo(?:Lat|Lng|Link)\b|\bonuSignal\b|\bsignal\b|dBm|Сигнал\s+ONU|^\s*(?:🗺️?|📍)?\s*(?:Геолокація|Координати|Geolocation|Coordinates)\s*[:：=]|^\s*(?:Технічна\s+діагностика|Історія\s+діагностики|Technical\s+diagnostics|Diagnostic\s+history|diagnostic(?:s|History))\s*[:：=]|\b(?:mapDebug|debugData|internalMap|fullDataJson|committedRevision)\b)/i.test(line)).join('\n').trim();
+  // share-domain loads before this script. Fail closed if that contract breaks.
+  return typeof dispatcherForwardText==='function' ? dispatcherForwardText(text) : '';
 }
 async function sendTicketToDispatcher(id){
   const t = tickets.find(x=>String(x.id)===String(id)); if(!t) return;
