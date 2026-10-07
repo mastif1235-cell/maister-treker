@@ -70,7 +70,7 @@ async function asyncTests(){
   result={ok:false,code:'REPORT_NETWORK_ERROR'};q.enqueueUpsert(ticket);for(let i=0;i<5;i++){now+=180000;await q.flush();}assert.equal(q.status().failed,1);assert.equal(sends,4);count++;
   const restored=createOutbox(deps);assert.equal(restored.status().failed,1);await restored.flush();assert.equal(sends,4);count++;
   result={ok:false,code:'PRIVACY_REJECTED'};restored.retry();await restored.flush();assert.equal(restored.status().failed,1);await restored.flush();assert.equal(sends,5);count++;
-  cfg.dispatcherReportEndpoint='https://script.google.com/macros/s/another/exec';q.enqueueDelete('synthetic-2');const metadata=JSON.parse(store.get('mtDispatcherReportOutboxV1'));assert.equal(metadata.operations.length,1);assert.equal(metadata.operations[0].id,'synthetic-2');count++;
+  cfg.dispatcherReportEndpoint='https://script.google.com/macros/s/another/exec';q.enqueueDelete('synthetic-2');const metadata=JSON.parse(store.get('mtDispatcherReportOutboxV1'));assert.equal(metadata.operations.length,2,'endpoint edit must not discard pending work');assert.equal(metadata.operations[1].id,'synthetic-2');count++;
   const original=fs.readFileSync(path.join(root,'Code.gs'),'utf8');assert(!original.includes('report_upsert'));assert(!fs.readFileSync(path.join(root,'js/sync-contract.js'),'utf8').includes('report_upsert'));count++;
   console.log('Dispatcher contract/projection/outbox: '+count+' PASS');
 }

@@ -1,5 +1,19 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
+function ticketDeliveryBadges(t){
+  let legacy;
+  if(!getScriptUrl())legacy='<span class="tc-sync-badge">☁️ Стара таблиця: ⚙ Не налаштовано</span>';
+  else{
+    const conflict=getEntityConflict('ticket',t.id);
+    legacy=conflict
+      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${escapeHtml(t.id)}" title="${conflict.code==='INVALID_INPUT'?'Виправте дані заявки':'Оберіть, яку версію зберегти'}">☁️ Стара таблиця: ❌ ${conflict.code==='INVALID_INPUT'?'Помилка даних':'Конфлікт'}</button>`
+      : isEntitySynced('ticket',t.id)
+      ? '<span class="tc-sync-badge tc-sync-ok" title="Підтверджено старим сервером">☁️ Стара таблиця: ✅ Надіслано</span>'
+      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${escapeHtml(t.id)}">☁️ Стара таблиця: ⏳ Очікує</button>`;
+  }
+  const report=globalThis.MTDispatcherReport,d=report?.delivery?.(t.id)||{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};
+  return legacy+`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'📊 Таблиця Д: ⚙ Не налаштовано')}</span>`;
+}
 function renderDateNavVisibility(){
   const inSpecialMode = searchQuery.trim().length>0 || activeFilterTags.size>0;
   document.getElementById('dateNavBlock').classList.toggle('hidden', inSpecialMode);
@@ -70,15 +84,7 @@ function renderTicketCard(t, opts={}){
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
   // ✅ означає, що canonical sync engine отримав читабельне підтвердження
   // або відновив його через підписаний getEntityState після втраченої відповіді.
-  let syncBadge = '';
-  if(getScriptUrl()){
-    const conflict = getEntityConflict('ticket',t.id);
-    syncBadge = conflict
-      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${t.id}" title="${conflict.code==='INVALID_INPUT'?'Виправте дані заявки':'Оберіть, яку версію зберегти'}" style="border:none; cursor:pointer;">⚠️ ${conflict.code==='INVALID_INPUT'?'Помилка даних':'Конфлікт'}</button>`
-      : isEntitySynced('ticket',t.id)
-      ? `<span class="tc-sync-badge tc-sync-ok" title="Підтверджено сервером">✅ Таблиця</span>`
-      : `<span class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу">⏳ Таблиця</span>`;
-  }
+  const syncBadge = ticketDeliveryBadges(t);
   // NEW: та сама логіка для бекапу в Telegram-групу, що й вище для Google
   // Таблиці — показуємо статус, і якщо ще не надіслано, даємо кнопку "повторити"
   // прямо на картці (а не мовчки ховаємо індикатор, як було раніше).
