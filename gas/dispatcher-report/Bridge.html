@@ -1,0 +1,27 @@
+<!doctype html><html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><p id="status">Захищене підключення звіту…</p><script>
+'use strict';
+const config=<?!= bridgeConfig ?>;
+// Google authenticates the user; this channel is only message correlation,
+// NOT a bearer credential. No tickets are sent to arbitrary windows/origins.
+let caller=null;
+const send=(target,message)=>target.postMessage({...message,channel:config.channel},config.origin);
+window.addEventListener('message',event=>{
+  if(event.origin!==config.origin||event.data?.channel!==config.channel)return;
+  if(event.data.type==='MT_REPORT_HELLO'){
+    caller=event.source;send(caller,{type:'MT_REPORT_READY'});document.getElementById('status').textContent='Підключено. Можна повернутися до Майстер-Трекера.';return;
+  }
+  if(!caller||event.source!==caller||event.data.type!=='MT_REPORT_REQUEST')return;
+  const id=event.data.id;
+  google.script.run.withSuccessHandler(result=>send(caller,{type:'MT_REPORT_RESPONSE',id,result}))
+    .withFailureHandler(()=>send(caller,{type:'MT_REPORT_RESPONSE',id,result:{ok:false,code:'REPORT_NETWORK_ERROR'}})).reportDispatch(event.data.request);
+});
+// HtmlService runs in a Google iframe. Broadcast only the safe handshake to
+// ancestors; the PWA responds to this exact window and pins source+origin.
+for(let target=window.parent,depth=0;depth<4;depth++){
+  send(target,{type:'MT_REPORT_BOOT'});if(target===target.parent)break;target=target.parent;
+}
+// First-party Google popup avoids relying on third-party embedded login.
+// Cross-origin Window.opener is readable, but no DOM/storage is accessed.
+try{const opener=window.top.opener;if(opener)send(opener,{type:'MT_REPORT_BOOT'});}catch(_){/* fail closed */}
+</script></body></html>

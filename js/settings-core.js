@@ -163,6 +163,8 @@ function loadSettings(){
     appLockEnabled:false, appLockPasswordHash:'', appLockBiometricEnabled:false, appLockCredentialId:'', mapMarkerPreset:'classic',mapMarkerPreferences:null};
   const merged = migrateSyncSettingsV66(s, s ? Object.assign(base, s) : base);
   if(!Object.prototype.hasOwnProperty.call(merged,'addressBook'))merged.addressBook=null;
+  if(typeof merged.dispatcherReportEndpoint!=='string')merged.dispatcherReportEndpoint='';
+  merged.dispatcherReportEnabled=merged.dispatcherReportEnabled===true;
   if(!['classic','large','compact','contrast'].includes(merged.mapMarkerPreset))merged.mapMarkerPreset='classic';
   merged.mapMarkerPreferences=normalizeMapMarkerPreferences(merged.mapMarkerPreferences,merged.mapMarkerPreset);
   // NEW: міграція зі старих окремих налаштувань utpPriceDefault/opticPriceDefault —

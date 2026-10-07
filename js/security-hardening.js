@@ -105,6 +105,16 @@ function securityValidateBackupEnvelope(data){
 // Referrer на зовнішній сайт. Поточні виклики програми повернене вікно не використовують.
 try{
   const securityNativeOpen = window.open.bind(window);
+  // Narrow authenticated dispatcher RPC exception. Never expose a generic
+  // native opener: require the saved endpoint and exactly the bridge nonce.
+  Object.defineProperty(window, 'MTDispatcherReportOpen', {value:function(value){
+    const u=new URL(String(value)),saved=new URL(String(settings.dispatcherReportEndpoint||''));
+    if(saved.protocol!=='https:'||saved.hostname!=='script.google.com'||saved.username||saved.password||saved.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(saved.pathname)||saved.search||saved.hash||
+       u.origin!==saved.origin||u.pathname!==saved.pathname||u.username||u.password||u.port||u.hash||
+       u.searchParams.get('origin')!==location.origin||! /^[a-f0-9]{32}$/.test(u.searchParams.get('channel')||'')||
+       [...u.searchParams.keys()].length!==2)throw new Error('INVALID_REPORT_WINDOW');
+    return securityNativeOpen(u.href,'_blank');
+  },writable:false,configurable:false});
   window.open = function(url, target, features){
     const extra = String(features || '').trim();
     const safeFeatures = [extra, 'noopener', 'noreferrer'].filter(Boolean).join(',');
