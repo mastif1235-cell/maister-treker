@@ -1,0 +1,50 @@
+'use strict';
+const {test,expect,gotoApp}=require('./app-test');
+test('report enqueue uses browser timers with the correct receiver',async({page,appEnv})=>{
+  await gotoApp(page,appEnv.url);
+  const result=await page.evaluate(()=>{
+    settings.dispatcherReportEndpoint='https://script.google.com/macros/s/synthetic/exec';
+    settings.dispatcherReportEnabled=true;
+    let nativeError='';try{window.setTimeout.call({},()=>{},0);}catch(e){nativeError=e.name+': '+e.message;}
+    const queued=MTDispatcherReport.enqueueUpsert({id:'report-native-timer-test'});
+    const state=MTDispatcherReport.status();settings.dispatcherReportEnabled=false;
+    return {queued,pending:state.pending,lastError:state.lastError,nativeError};
+  });
+  expect(result.nativeError).toContain('Illegal invocation');
+  expect({queued:result.queued,pending:result.pending,lastError:result.lastError}).toEqual({queued:true,pending:1,lastError:''});
+});
+test('parallel dispatcher settings: endpoint validation, no secrets, legacy unchanged',async({page,appEnv})=>{
+  const errors=await gotoApp(page,appEnv.url);
+  await page.click('.tab-btn[data-tab="settings"]');
+  await page.locator('[data-settings-hub="sync"]').click();
+  // Settings hub can collapse category groups; inspect actual control instead
+  // of depending on a particular group title in the navigation.
+  await page.evaluate(()=>{const e=document.getElementById('dispatcherReportEndpoint');for(let p=e.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;});
+  const legacy=await page.evaluate(()=>({url:settings.scriptUrl,shift:settings.shiftsScriptUrl,secret:settings.syncHmacSecret}));
+  await page.locator('#dispatcherReportEndpoint').fill('https://example.com/exec');
+  await page.locator('[data-dispatcher-action="save"]').click();await expect(page.locator('#dispatcherReportResult')).toContainText('INVALID_ENDPOINT');
+  await page.locator('#dispatcherReportEndpoint').fill('https://script.google.com/macros/s/synthetic/exec');
+  await page.locator('[data-dispatcher-action="save"]').click();await expect(page.locator('#dispatcherReportResult')).toContainText('налаштування збережено');
+  expect(await page.evaluate(()=>({url:settings.scriptUrl,shift:settings.shiftsScriptUrl,secret:settings.syncHmacSecret}))).toEqual(legacy);
+  await page.reload();await page.waitForFunction(()=>typeof settings==='object'&&!!window.MTDispatcherReport);
+  expect(await page.evaluate(()=>settings.dispatcherReportEndpoint)).toBe('https://script.google.com/macros/s/synthetic/exec');
+  expect(await page.evaluate(()=>settings.dispatcherReportEnabled)).toBe(false);
+  expect(errors).toEqual([]);
+});
+test('browser DTO is privacy whitelist, local data unchanged, independent of legacy sync',async({page,appEnv})=>{
+  await gotoApp(page,appEnv.url);
+  const result=await page.evaluate(async()=>{
+    const t={id:'report-e2e',date:'06.10.2026',time:'12:10',type:'Ремонт',city:'Тест',address:'Тестова 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',note:'Замінено ONU, geoLat: 48.45, geoLng: 35.05, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY',geoLat:48.45,geoLng:35.05,signal:'-18'};
+    const before=JSON.stringify(t),{buildDTO}=await import('/js/dispatcher-report-projection.mjs'),dto=await buildDTO(t,MTDispatcherReportCore);
+    return{unchanged:JSON.stringify(t)===before,dto,fields:MTDispatcherReportCore.FIELDS};
+  });
+  expect(result.unchanged).toBe(true);expect(Object.keys(result.dto)).toEqual(result.fields);expect(result.dto.onu_used).toBe(1);expect(result.dto.onu_replacement).toBe(1);expect(result.dto.mac_onu).toBe('AA:BB:CC:DD:EE:FF');
+  expect(result.dto.dispatcher_comment).toBe('Замінено ONU, працює');
+  const payload=JSON.stringify(result.dto);for(const value of ['PRIVATE-CANARY','PHONE-CANARY','geoLat','geoLng','48.45','35.05','dBm'])expect(payload).not.toContain(value);
+});
+test('offline boot retains new modules and local save without report backend',async({page,context,appEnv})=>{
+  await gotoApp(page,appEnv.url);await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
+  await page.waitForFunction(()=>!!navigator.serviceWorker.controller);await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!window.MTDispatcherReportCore);
+  const result=await page.evaluate(async()=>{const {buildDTO}=await import('/js/dispatcher-report-projection.mjs');const dto=await buildDTO({id:'offline-test',date:'06.10.2026',type:'Підключення',macAddress:'AA:BB:CC:DD:EE:FF',payment:'Безкоштовно',sum:0},MTDispatcherReportCore);return{quantity:dto.onu_used,enabled:settings.dispatcherReportEnabled};});
+  expect(result.quantity).toBe(1);expect(result.enabled).toBe(false);
+});

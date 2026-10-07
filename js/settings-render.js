@@ -42,6 +42,7 @@ function renderSettingsScreen(){
   if(mapTilerStatus)mapTilerStatus.textContent=window.MTMapTilerLocal?.hasKey?.()?'✅ MapTiler API key збережено на цьому пристрої':'Ключ ще не збережено';
   if(mapTilerClear)mapTilerClear.disabled=!window.MTMapTilerLocal?.hasKey?.();
   void renderBackupPasswordStatus();
+  globalThis.MTDispatcherReport?.renderSettings?.();
 }
 
 function renderMapMarkerPreferences(){
@@ -205,7 +206,7 @@ const SETTINGS_HUB_SECTIONS = [
   {key:'address', icon:'📍', title:'Адреси', sub:'Міста та вулиці', match:['Міста','Вулиці']},
   {key:'calculator', icon:'🧮', title:'Калькулятор і ціни', sub:'Теги, матеріали, роботи, кабелі та тарифи', match:['Теги','Матеріали','Роботи з переліку','Типи кабелів','Ціни за замовчуванням','Ціни']},
   {key:'people', icon:'👷', title:'Люди і контакти', sub:'Майстри, напарники, швидкий набір, візитка й договір', match:['Напарники','Майстри','Візитка та договір','Швидкий набір']},
-  {key:'sync', icon:'☁️', title:'Синхронізація', sub:'Google для заявок і змін', match:['Синхронізація — Заявки','Синхронізація — Зміни']},
+  {key:'sync', icon:'☁️', title:'Синхронізація', sub:'Google для заявок, змін і окремого звіту', match:['Синхронізація — Заявки','Синхронізація — Зміни','Звіт диспетчеру']},
   {key:'telegram', icon:'✈️', title:'Telegram', sub:'Диспетчери, архів і звіти', match:['Telegram-бот']},
   {key:'security', icon:'🔐', title:'Безпека', sub:'Пароль та відбиток пальця', match:['Захист входу']},
   {key:'data', icon:'💾', title:'Дані та резервні копії', sub:'Кошик, імпорт, експорт, карти і бекапи', match:['Кошик','Дані','Офлайн-карта','Вигляд міток карти','Супутникова карта','Щоденні бекапи']},

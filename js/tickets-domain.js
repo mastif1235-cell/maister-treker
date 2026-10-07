@@ -317,6 +317,7 @@ async function deleteTicket(id){
     return false;
   }
   renderTicketsScreen();
+  globalThis.MTDispatcherReport?.enqueueDelete?.(ticket.id);
   showToast('Заявку видалено — відновити можна в Налаштуваннях → Кошик');
   return true;
 }
@@ -451,6 +452,7 @@ async function restoreDeletedTicket(deletedAt){
         return false;
       }
     }
+    globalThis.MTDispatcherReport?.enqueueUpsert?.(restored);
     const next=deletedTickets.filter((_,itemIndex)=>itemIndex!==index);
     if(!saveDeletedTickets(next)){
       // Жива заявка durably збережена (маркер усередині неї), запис кошика

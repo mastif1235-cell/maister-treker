@@ -893,6 +893,9 @@ async function saveTicketFromForm(e){
     return;
   }
   showToast(successMessage);
+  // Independent report outbox starts only AFTER durable local persistence.
+  // Its own bounded failures must never block the form or legacy sync.
+  if(savedTicketRef)globalThis.MTDispatcherReport?.enqueueUpsert?.(savedTicketRef);
   if(savedTicketRef && naryadPendingCompletionId){
     const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
     if(naryad){

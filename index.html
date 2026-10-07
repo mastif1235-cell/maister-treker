@@ -575,6 +575,24 @@
       </details>
 
       <details class="card acc-card">
+        <summary>Звіт диспетчеру — окремий канал <span class="acc-chevron">▾</span></summary>
+        <div style="margin-top:10px;">
+          <div class="field"><label for="dispatcherReportEndpoint">URL окремого GAS Web App</label><input type="url" id="dispatcherReportEndpoint" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></div>
+          <label><input type="checkbox" id="dispatcherReportEnabled"> Автоматично відправляти наряди після локального збереження</label>
+          <p>Google-авторизація власника. Без ключів у застосунку. Не замінює стару синхронізацію.</p>
+          <div class="btn-row" style="flex-wrap:wrap;">
+            <button type="button" class="btn" data-dispatcher-action="save">Зберегти</button>
+            <button type="button" class="btn" data-dispatcher-action="authorize">Відкрити Google-підключення</button>
+            <button type="button" class="btn" data-dispatcher-action="check">Перевірити підключення</button>
+            <button type="button" class="btn" data-dispatcher-action="sync">Повна синхронізація</button>
+            <button type="button" class="btn" data-dispatcher-action="rebuild">Перебудувати звіт</button>
+            <button type="button" class="btn" data-dispatcher-action="retry">Повторити чергу</button>
+          </div>
+          <p id="dispatcherReportStatus" role="status"></p><p id="dispatcherReportResult" role="status"></p>
+        </div>
+      </details>
+
+      <details class="card acc-card">
         <summary>Синхронізація — Заявки <span class="acc-chevron">▾</span></summary>
         <div style="margin-top:10px;">
         <div class="field">
@@ -810,6 +828,8 @@
 <div id="externalDailyBackupRoot"></div>
 <div id="appUpdateRoot"></div>
 <script src="js/core-utils.js"></script>
+<script src="js/dispatcher-report-core.js"></script>
+<script src="js/dispatcher-report-client.js"></script>
 <script src="js/safe-error.js"></script>
 <script src="js/storage-registry.js"></script>
 <script src="js/app-format-utils.js"></script>
