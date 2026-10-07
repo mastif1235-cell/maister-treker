@@ -267,6 +267,8 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-compact-address{min-width:0; font-size:14px; font-weight:600; line-height:1.25; overflow-wrap:anywhere;}
 .ticket-compact-sum{font-family:var(--mono); font-size:15px; font-weight:700; color:var(--accent); white-space:nowrap; justify-self:end;}
 .ticket-compact-card .ticket-view-expand-btn{min-height:40px; padding:0 10px; justify-self:end; font-size:12px;}
+.ticket-compact-card .tc-status-row{grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:3px 6px; min-width:0;}
+.ticket-compact-card .tc-sync-badge{font-size:11px; line-height:1.4; overflow-wrap:anywhere; padding:2px 5px; border-radius:6px;}
 .ticket-compact-expanded{min-width:0;}
 .ticket-compact-expanded .ticket-view-collapse-btn{min-height:44px; width:100%; margin-bottom:6px;}
 .ticket-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:13px;}

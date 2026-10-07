@@ -67,9 +67,13 @@ async function retrySyncQueue(){
   let ok=false;
   try{
     ok=await (runningLoop || syncEngine.flush());
+  } catch(error) {
+    // UI settlement only: never change the legacy journal/transport/retries.
+    globalThis.MTSafeError?.reportError?.(error,{scope:'sync-retry-ui'});
   } finally {
     retryBtn.disabled = false;
     retryBtn.textContent = previousLabel || 'Повторити';
+    renderSyncQueueBanner();
   }
   // NEW: якщо не пройшли саме зміни — робимо безпечну read-only пробу й
   // показуємо підказку замість загального «залишилось не синхронізовано».

@@ -402,3 +402,37 @@ targeted report E2E 4/4 PASS; 374-file syntax + GAS bundle PASS; check.sh and
 diff-check PASS. Root 216/217: only the unchanged Ping timing test returned
 48ms instead of 38–46ms; no threshold/assertion change. GitHub CI on the exact
 release SHA is mandatory before merge.
+
+## PWA connection and delivery-status correction — v91.89
+
+The previous bridge displayed "connected" before the opener acknowledged
+READY, and the client used `popup.closed` as an authentication/liveness gate.
+Android app/browser handoff can invalidate that proxy hint without invalidating
+the nonce/source/origin-pinned peer. The bridge now requires an opener ACK before
+displaying success, repeats only handshake metadata until ACK, and resumes the
+same pinned channel on focus/pageshow/visible. It never resets on pagehide.
+No origin, identity, private deployment access, or global popup protection is
+relaxed. A real Android device has not been inspected by the automated tests.
+
+Manual sync is independent of the automatic-send checkbox and authenticates
+before enqueueing all tickets. Connection failures pause the channel without
+consuming each operation's bounded retry budget. The old 430-error display was
+430 queued ticket operations exhausted by one shared connection failure, not
+430 independent Google failures. V1 queue recovery preserves operation IDs and
+versions, resets connection-only failures, and keeps pending deletes.
+
+Per-ticket dispatcher ACK receipts contain only ID/version in the existing
+`mtDispatcherReportOutboxV1` metadata store. No DTO/private text or ticket schema
+field is added. New edits invalidate receipts; stale ACKs cannot confirm newer
+queued edits. Endpoint changes invalidate endpoint-specific receipts. Full and
+compact cards show independent canonical legacy delivery and dispatcher states.
+The legacy retry change is UI settlement only (catch/finally/banner refresh).
+
+Release identity: v91.89 · 2026-10-07 / runtime-134. Before merge, require green
+Tests/MCP Tests/E2E on the exact release HEAD. Publish the saved separate GAS
+bridge as a new private version on the existing URL (USER_ACCESSING/MYSELF),
+then frontend-only Pages release; no Worker deploy. Run live status, synthetic
+CRUD/rebuild/retry checks before claiming production PASS. Rollback together to
+frontend v91.88/runtime-133 at f0f44da135896a12e04e733f5802300c29bc5221 and
+private report GAS version 6; preserve outbox pending metadata. Never reset
+legacy storage, clear real tickets, or widen the report endpoint's access.

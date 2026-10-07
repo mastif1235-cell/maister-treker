@@ -37,6 +37,7 @@
       <span class="ticket-compact-sum tabular">${fmtMoney(ticket.sum)}</span>
       <div class="ticket-compact-address">${escapeHtml(addressLabel(ticket))}</div>
       <button type="button" class="btn ticket-view-expand-btn" data-id="${id}">Розгорнути</button>
+      ${typeof ticketDeliveryBadges==='function'?`<div class="tc-status-row">${ticketDeliveryBadges(ticket)}</div>`:''}
     </article>`;
   }
   function renderItem(ticket,fullRenderer){
