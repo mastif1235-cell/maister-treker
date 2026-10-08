@@ -524,6 +524,58 @@ Owner-run read-only audit in the separate GAS editor established 437 source / 19
 
 All active records share one source_version/update timestamp, 2026-10-07T19:07:08.352Z. Visible execution history around 22:07 Kyiv shows five Completed reportDispatch calls, consistent with preflight plus four sends, duration 2.23–11.58 seconds. Application action/count/ACK were not retained in that history: Completed is not proof of a successful ACK. Latest safe error property empty/rejected_count zero cannot reconstruct historical errors.
 
-Offline exact-production-client counterexamples: 200 local records + three synthetic projection errors produce 197 written / pending 0 / failed 3 after four sends; 437 records interrupted after four sends produce 197 written / pending 237 / failed 3. Thus earlier reported 0/3 queue supports an incomplete local-source explanation, but same-device source IDs and outbox errors are still needed. No coded 200-item ticket cap/date cursor was found in checked dispatcher/storage/restore paths. Production's one-flush completion and per-page full rebuild are proven defects, not sufficient proof of the specific real 240-ID loss.
+Offline exact-production-client counterexamples: 200 local records + three synthetic projection errors produce 197 written / pending 0 / failed 3 after four sends; 437 records interrupted after four sends produce 197 written / pending 237 / failed 3. These are counterexamples, not historical telemetry. The later physical Android all-time count of 434 invalidates the inference that its current local source contains only about 200. No coded 200-item ticket cap/date cursor was found in checked dispatcher/storage/restore paths. Production's one-flush completion and per-page full rebuild are proven defects, not sufficient proof of the specific real 240-ID loss.
 
 The independent diagnostic functions read only source A:B and report ID/date, deleted_at, updated_at/source_version plus four safe report error/timestamp properties. They were saved/run in editor source only; Web App version 7 and access settings unchanged. No sync/rebuild, real-data writes, merge or rollout. Historical rebuild remains FAIL; physical Android gate remains unresolved.
+
+## Physical Android 434 correction (2026-10-08)
+
+The user observed installed-PWA Reports / All time: 434 tickets, cash 252009,
+cashless 60572, total 313481 UAH. In actual code `renderReport('all')` copies
+the entire global `tickets` array; `calculateTicketReportTotals` returns its
+length. Dispatcher `deps.tickets()` and per-ID lookup use that same global
+array. There is no different 200-row selection at full-sync enqueue. Assuming
+434 unique valid local IDs and no source changes, fullSync queues 434 operations:
+eight 50-operation batches and one 34-operation batch. Offline candidate tests
+confirm enqueue 434, nine requests, nine complete ACKs and 434 stored records;
+this is NOT a physical Android live PASS.
+
+Production does not journal source/enqueue/send/ACK counts. Its missing-ticket
+lookup branch removes an operation without sending it or recording an error.
+An offline production-client counterexample with 434 queued operations, lookup
+source shrinking to 200 and three synthetic projection errors yields exactly
+197 stored / pending 0 / failed 3. Plain interruption after four batches with
+434 unchanged source yields 197 / pending 234 / failed 3 instead. Neither model
+proves the real event: no same-run Android ID set, outbox snapshot or per-batch
+ACK journal is available. A date-window-shaped cloud/report gap cannot prove
+Android's queue order or a coded 200-row cap.
+
+Google 437 versus Android 434 is only a net count difference of three. Without
+Android ID/date metadata, it cannot be classified as exactly three missing
+cloud IDs (local-only IDs, duplicate IDs, tombstones and import decisions can
+change the two set differences). Do not equate the three interior report gaps
+with these three net-count units. Release remains blocked; DRAFT/no rollout.
+
+## Missing-ticket operation recovery (PR #82, unreleased)
+
+`TICKET_LOOKUP_MISSING` retains the upsert as an explicit failed/unresolved
+operation. The settings queue count includes these operations, not only the
+retry-eligible subset. Safe diagnostic metadata is ID, operation type, numeric
+timestamp and fixed reason code; no ticket contents are persisted. Retry clears
+the operation error and can deliver the ticket after its source becomes available.
+Reload retains the error and progress. Re-running fullSync with a smaller source
+also retains orphan upserts instead of silently dropping them. Absence never
+becomes a delete: an explicit enqueueDelete replaces the operation with a
+versioned delete/tombstone, including an already-pending operation with automatic
+enqueue disabled.
+
+Full-sync expected ID/action/version entries and confirmed flags are persisted
+as outbox metadata. Diagnostics expose expected_count, received_ack_count,
+failed_count, unresolved_count, batch_count and final_validation. Batch count
+counts send attempts (retries included); received ACK count counts unique
+current expected operations, not duplicated retry responses. Full-sync responses
+must contain complete mutation counters. Queue completion is not final PASS:
+the UI calls confirmArchive only after server active count and sorted-ID hash
+validation. Any unresolved expected operation prevents success. No historical
+Android event is retroactively attributed to this proven defect; cause of 197
+remains UNKNOWN pending physical-device telemetry.

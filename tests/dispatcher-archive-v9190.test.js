@@ -9,6 +9,16 @@ function harness(items){
   return {deps,q:c.globalThis.MTDispatcherReportClient.createOutbox(deps),calls,stored,raw:()=>raw};
 }
 (async()=>{
+  // Physical Android's all-time counter is list.length, not a 200-row window.
+  // Exercise its reported cardinality independently of the 437-row cloud set.
+  const totalsContext={};vm.runInNewContext(fs.readFileSync('js/report-utils.js','utf8'),totalsContext);
+  const androidTickets=Array.from({length:434},(_,i)=>({id:'android-'+i,date:'15.07.2026',sum:0})),android=harness(androidTickets);
+  assert.equal(totalsContext.calculateTicketReportTotals(androidTickets).count,434);
+  android.q.fullSync();assert.equal(JSON.parse(android.raw()).operations.length,434,'full sync enqueues the same complete local array');
+  for(let i=0;i<9;i++)await android.q.flush();
+  assert.deepEqual(android.calls.map(r=>r.tickets.length),[50,50,50,50,50,50,50,50,34]);
+  assert.equal(android.stored.size,434);assert.equal(android.q.status().pending,0);assert.equal(android.q.status().failed,0);
+  assert.equal((await android.q.archiveDiagnostics()).acknowledged_tickets,434);
   const tickets=Array.from({length:437},(_,i)=>({id:'history-'+i,date:i<200?'19.02.2026':'15.07.2026'})),h=harness(tickets);
   await h.q.syncAll();assert.equal(h.stored.size,437);assert.equal(h.q.status().pending,0);assert.equal(h.calls.length,9);assert(h.calls.slice(0,-1).every(r=>r.rebuild===false));assert.equal(h.calls.at(-1).rebuild,true);
   await h.q.syncAll();assert.equal(h.stored.size,437,'no duplication/date cutoff on repeated full sync');

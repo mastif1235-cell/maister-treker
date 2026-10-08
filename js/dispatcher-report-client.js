@@ -6,21 +6,31 @@
   const CONNECTION=/^(?:GOOGLE_\w+|REPORT_CONNECTION_RESET|REPORT_NOT_CONFIGURED|INVALID_ENDPOINT)$/;
   function endpoint(value){let url;try{url=new URL(String(value||''));}catch(_){throw new Error('INVALID_ENDPOINT');}if(url.protocol!=='https:'||url.hostname!=='script.google.com'||url.username||url.password||url.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(url.pathname)||url.search||url.hash)throw new Error('INVALID_ENDPOINT');return url.href;}
   function createOutbox(deps){
-    let state={endpoint:'',operations:[],receipts:[],lastError:'',lastSuccess:''},running=false,timer=null,generation=0,blocked=false,flight=null;
+    let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:''},running=false,timer=null,generation=0,blocked=false,flight=null;
     try{const saved=JSON.parse(deps.storage.getItem(KEY)||'null');if(saved&&Array.isArray(saved.operations)&&saved.operations.length<=10000){state={...state,...saved};state.operations=saved.operations.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)&&Number.isInteger(o.attempts)&&o.attempts>=0&&o.attempts<=3).map(o=>({id:o.id,action:o.action,version:o.version,attempts:o.attempts,next:Number(o.next)||0,error:String(o.error||'')}));}}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}
     const now=()=>deps.now?.()??Date.now();
     // Recover v91.88's per-ticket failures caused by ONE shared connection
     // failure. Keep all operation IDs/versions, never tickets or private DTOs.
     for(const o of state.operations)if(CONNECTION.test(o.error)||CONNECTION.test(state.lastError)){o.attempts=0;o.next=0;if(CONNECTION.test(o.error))o.error='';}
     state.receipts=(Array.isArray(state.receipts)?state.receipts:[]).filter(r=>r&&typeof r.id==='string'&&Number.isSafeInteger(r.version)).slice(-10000).map(r=>({id:r.id,version:r.version}));
+    state.diagnostics=(Array.isArray(state.diagnostics)?state.diagnostics:[]).filter(d=>d&&typeof d.ticket_id==='string'&&['upsert','delete'].includes(d.operation_type)&&Number.isSafeInteger(d.timestamp)&&d.reason==='TICKET_LOOKUP_MISSING').slice(-10000).map(d=>({ticket_id:d.ticket_id,operation_type:d.operation_type,timestamp:d.timestamp,reason:d.reason}));
+    const savedSync=state.sync;
+    state.sync=savedSync&&Array.isArray(savedSync.expected)&&savedSync.expected.length<=10000?{
+      expected:savedSync.expected.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)).map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:o.acknowledged===true})),
+      batch_count:Number.isSafeInteger(savedSync.batch_count)&&savedSync.batch_count>=0?savedSync.batch_count:0,
+      final_validation:['PASS','FAIL'].includes(savedSync.final_validation)?savedSync.final_validation:'PENDING'
+    }:null;
     blocked=CONNECTION.test(state.lastError);
-    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,lastError:state.lastError,lastSuccess:state.lastSuccess}));}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
-    function status(){return {pending:state.operations.filter(o=>o.attempts<3&&!o.error).length,failed:state.operations.filter(o=>o.attempts>=3||o.error).length,lastError:state.lastError,lastSuccess:state.lastSuccess,running,connectionRequired:blocked};}
+    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,diagnostics:state.diagnostics,sync:state.sync,lastError:state.lastError,lastSuccess:state.lastSuccess}));}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
+    function syncProgress(){if(!state.sync)return null;const expected=state.sync.expected,unresolved=expected.filter(o=>!o.acknowledged);return {expected_count:expected.length,received_ack_count:expected.length-unresolved.length,failed_count:unresolved.filter(o=>state.operations.some(n=>n.id===o.id&&(n.error||n.attempts>=3))).length,unresolved_count:unresolved.length,batch_count:state.sync.batch_count,final_validation:state.sync.final_validation};}
+    function status(){return {pending:state.operations.filter(o=>o.attempts<3&&!o.error).length,failed:state.operations.filter(o=>o.attempts>=3||o.error).length,unresolved:state.operations.length,sync:syncProgress(),lastError:state.lastError,lastSuccess:state.lastSuccess,running,connectionRequired:blocked};}
+    function invalidateExpected(id,action,version){if(!state.sync)return;const o=state.sync.expected.find(o=>o.id===id);if(o)Object.assign(o,{action,version,acknowledged:false});state.sync.final_validation='PENDING';}
+    function missingLookup(o){o.error='TICKET_LOOKUP_MISSING';state.lastError=o.error;state.diagnostics=state.diagnostics.filter(d=>d.ticket_id!==o.id);state.diagnostics.push({ticket_id:o.id,operation_type:o.action,timestamp:now(),reason:o.error});state.diagnostics=state.diagnostics.slice(-10000);persist();}
     function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
     function configured(){return !!deps.settings().dispatcherReportEndpoint;}
-    function align(){const c=deps.settings(),url=endpoint(c.dispatcherReportEndpoint);if(url!==state.endpoint){generation++;state.endpoint=url;state.receipts=[];state.lastError='';blocked=false;persist();}return url;}
-    function enqueue(id,action){try{id=String(id);state.receipts=state.receipts.filter(r=>r.id!==id);if(!configured()||!deps.settings().dispatcherReportEnabled){persist();return false;}align();const old=state.operations.find(o=>o.id===id),version=Math.max(now(),(old?.version||0)+1);state.operations=state.operations.filter(o=>o.id!==id);if(state.operations.length>=10000){state.lastError='REPORT_CAPACITY';persist();return false;}state.operations.push({id,action,version,attempts:0,next:0,error:''});persist();if(!blocked)schedule();return true;}catch(e){state.lastError=e?.message==='INVALID_ENDPOINT'?'INVALID_ENDPOINT':'REPORT_QUEUE_ERROR';persist();return false;}}
+    function align(){const c=deps.settings(),url=endpoint(c.dispatcherReportEndpoint);if(url!==state.endpoint){generation++;state.endpoint=url;state.receipts=[];state.sync=null;state.lastError='';blocked=false;persist();}return url;}
+    function enqueue(id,action){try{id=String(id);state.receipts=state.receipts.filter(r=>r.id!==id);const replacesPendingDelete=action==='delete'&&state.operations.some(o=>o.id===id);if(!configured()||(!deps.settings().dispatcherReportEnabled&&!replacesPendingDelete)){persist();return false;}align();const old=state.operations.find(o=>o.id===id),version=Math.max(now(),(old?.version||0)+1);state.operations=state.operations.filter(o=>o.id!==id);if(state.operations.length>=10000){state.lastError='REPORT_CAPACITY';persist();return false;}state.operations.push({id,action,version,attempts:0,next:0,error:''});invalidateExpected(id,action,version);persist();if(!blocked&&deps.settings().dispatcherReportEnabled)schedule();return true;}catch(e){state.lastError=e?.message==='INVALID_ENDPOINT'?'INVALID_ENDPOINT':'REPORT_QUEUE_ERROR';persist();return false;}}
     function flush(){if(flight)return flight;flight=flushBatch().finally(()=>{flight=null;});return flight;}
     async function flushBatch(){
       if(running||blocked||!configured()||deps.online?.()===false)return;
@@ -31,7 +41,7 @@
         const dtos=[],deletes=[];
         for(const o of batch){
           if(o.action==='delete'){deletes.push({ticket_id:o.id,source_version:o.version});sent.push(o);continue;}
-          const ticket=deps.ticket(o.id);if(!ticket){state.operations=state.operations.filter(x=>x!==o);continue;}
+          const ticket=deps.ticket(o.id);if(!ticket){missingLookup(o);continue;}
           try{
             const dto=await deps.dto(ticket,o.version);
             if(Object.values(dto).some(v=>typeof v==='string'&&/^[\s]*[=+@-]/.test(v)))throw new Error('FORMULA_REJECTED');
@@ -45,12 +55,17 @@
         // Rendering the complete archive after every page causes progressively
         // more GAS work. Only the final eligible page rebuilds the report.
         const rebuild=!state.operations.some(o=>!sent.includes(o)&&o.attempts<3&&!o.error);
+        if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
         const response=await deps.send(url,{action:'report_sync_all',tickets:dtos,deletes,request_id:deps.requestId(),rebuild});
         if(g!==generation||url!==deps.settings().dispatcherReportEndpoint)return;
         if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
         if(['inserted','updated','unchanged','deleted','rejected','errors'].some(k=>k in response)){
           if(response.rejected||response.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0)||response.inserted+response.updated+response.unchanged+response.deleted!==sent.length)throw new Error('REPORT_PARTIAL_ACK');
         }
+        // Full archive ACK accounting must never infer confirmation from an
+        // empty/legacy ok:true response without mutation counters.
+        if(state.sync&&!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0))throw new Error('REPORT_PARTIAL_ACK');
+        if(state.sync)for(const o of sent){const expected=state.sync.expected.find(n=>n.id===o.id&&n.action===o.action&&n.version===o.version);if(expected)expected.acknowledged=true;}
         const versions=new Map(sent.map(o=>[o.id,o.version]));state.operations=state.operations.filter(o=>versions.get(o.id)!==o.version);
         for(const o of sent){state.receipts=state.receipts.filter(r=>r.id!==o.id);if(o.action==='upsert'&&!state.operations.some(n=>n.id===o.id))state.receipts.push({id:o.id,version:o.version});}
         state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();persist();
@@ -73,16 +88,23 @@
       const ids=new Set(live.map(t=>String(t.id))),version=now();
       const operations=state.operations.filter(o=>!ids.has(o.id)&&o.action==='delete');
       for(const t of live){const id=String(t.id);operations.push({id,action:'upsert',version:Math.max(version,(previous.get(id)?.version||0)+1),attempts:0,next:0,error:''});}
-      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
+      // Preserve missing upserts from earlier attempts. Only an explicit
+      // enqueueDelete can replace them with a tombstone; absence is not delete.
+      for(const o of state.operations.filter(o=>!ids.has(o.id)&&o.action==='upsert'))operations.push(o);
+      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
     }
-    function retry(){for(const o of state.operations){o.attempts=0;o.next=0;o.error='';}state.lastError='';blocked=false;persist();schedule();}
+    function retry(){for(const o of state.operations){o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
     function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||state.lastError};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
     async function syncAll(){
       fullSync();connectionReady();
-      while(status().pending&&!blocked){await flush();if(state.lastError)break;}
-      const s=status();if(s.pending||s.failed||s.lastError)throw new Error(s.lastError||'REPORT_SYNC_INCOMPLETE');
+      while(status().pending&&!blocked&&deps.online?.()!==false){await flush();if(state.lastError&&state.lastError!=='TICKET_LOOKUP_MISSING')break;}
+      const s=status();if(s.unresolved||s.sync?.unresolved_count||s.lastError){if(state.sync)state.sync.final_validation='FAIL';persist();throw new Error(s.lastError||'REPORT_SYNC_INCOMPLETE');}
       return s;
+    }
+    function confirmArchive(remote,expectedHash,sourceCount){
+      const s=status();if(!state.sync||s.unresolved||s.lastError||s.sync.unresolved_count||s.sync.expected_count!==s.sync.received_ack_count||!remote?.ok||remote.active_count!==sourceCount||!/^[a-f0-9]{64}$/.test(expectedHash)||remote.id_set_hash!==expectedHash){if(state.sync)state.sync.final_validation='FAIL';persist();throw new Error('REPORT_ARCHIVE_MISMATCH');}
+      state.sync.final_validation='PASS';persist();return status();
     }
     async function archiveDiagnostics(){
       const live=deps.tickets(),dates=[],errors={};let projected=0;
@@ -90,7 +112,7 @@
       dates.sort();const acknowledged=live.filter(t=>delivery(t.id).state==='sent').length;
       return {source_tickets:live.length,projected_tickets:projected,acknowledged_tickets:acknowledged,missing_receipts:live.length-acknowledged,earliest_source:dates[0]||'',latest_source:dates.at(-1)||'',projection_errors:errors,...status()};
     }
-    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,archiveDiagnostics,retry,status,delivery,connectionReady});
+    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady});
   }
   function createBridge(){
     let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
@@ -144,7 +166,7 @@
   const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
   function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
   function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
-  function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const x=outbox.status();if(s)s.textContent=`У черзі: ${x.pending}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
+  function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const x=outbox.status();if(s)s.textContent=`У черзі: ${x.unresolved}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
   const activeActions=new Set();
   document.addEventListener('click',async event=>{
@@ -170,7 +192,7 @@
         if(!status?.ok)throw new Error(status?.code||'REPORT_NETWORK_ERROR');
         const source=typeof tickets==='undefined'?[]:tickets,ids=source.map(t=>String(t.id)).sort();
         const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(ids)))),n=>n.toString(16).padStart(2,'0')).join('');
-        if(status.active_count!==source.length||status.id_set_hash!==hash)throw new Error('REPORT_ARCHIVE_MISMATCH');
+        outbox.confirmArchive(status,hash,source.length);
         message(`Весь архів підтверджено: ${source.length} / ${status.active_count}. Дати: ${status.earliest_date||'—'} — ${status.latest_date||'—'}.`);return;
       }
       if(action==='retry'){outbox.retry();await outbox.flush();message('Повтор черги завершено. Перевірте стан каналу.');return;}

@@ -19,7 +19,7 @@ function harness(seed){
   assert.equal(h.q.status().running,false);assert(!h.raw().includes('PRIVATE-CANARY'));assert(JSON.parse(h.raw()).operations.every(o=>o.attempts===0));
   const migrated=harness({endpoint,operations:JSON.parse(h.raw()).operations.map(o=>({...o,attempts:3})),lastError:'GOOGLE_CONNECTION_REQUIRED'});
   assert.equal(migrated.q.status().pending,430);assert.equal(migrated.q.status().failed,0);assert.equal(migrated.q.status().connectionRequired,true);
-  h.deps.send=async()=>({ok:true});h.q.connectionReady();await h.q.flush();
+  h.deps.send=async(_url,r)=>({ok:true,inserted:r.tickets.length,updated:0,unchanged:0,deleted:r.deletes.length,rejected:0,errors:0});h.q.connectionReady();await h.q.flush();
   assert.equal(h.q.delivery('test-0').state,'sent');assert.equal(h.q.delivery('test-51').state,'pending');
   const reload=harness(JSON.parse(h.raw()));assert.equal(reload.q.delivery('test-0').state,'sent');
   h.q.enqueueUpsert(h.tickets[0]);assert.equal(h.q.delivery('test-0').state,'pending');
