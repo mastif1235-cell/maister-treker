@@ -510,3 +510,8 @@ No merge/Pages/Worker release. Production stays v91.89/runtime-134. The live
 report GAS remains version 7; the revised bundle is prepared outside Git but
 has not been deployed. Do not activate a new GAS/frontend pair simply to
 obtain a physical-device proof. No local origin was added in this follow-up.
+# July 15 public regression / live archive status (2026-10-08)
+
+The user supplied public fields for 15.07.2026, ПІДКЛЮЧЕННЯ, Сурсько-Михайлівка, пров. Залізничний 4: tariff 400, ONU 1 × 800, router 1 × 2300, cash total 3500, public note “Скажи какой тут тариф и есть ли задолженность”. `dispatcher-railway-public-regression.test.js` exercises both structured and raw-import presentation with those fields. It asserts quantities/units, tariff annotation, cash/total, note, omitted zeros, empty MAC and absent private source fields, immutable original input. No actual private source-row JSON was fetched; these two envelopes are test representations, not a claimed stored-JSON export.
+
+A fresh authenticated production `report_status` on the existing endpoint returned 197 active / 29 soft-deleted records. Compared with 437 dated source rows (19.02–08.10.2026), the count gap is 240; this is NOT yet an ID-based exact missing count. The earlier displayed 0-active result was stale and was replaced by the fresh ACK. Browser control subsequently failed with `Debugger unattached` after one recovery attempt, so report date bounds / exact ID comparison / full live historical rebuild remain unverified. No sync/rebuild or real ticket mutation was triggered for this measurement, and no GAS deployment or rollout was performed. Keep PR DRAFT.
