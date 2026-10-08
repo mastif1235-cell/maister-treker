@@ -100,10 +100,10 @@ function renderTicketCard(t, opts={}){
   let tgBadge = '';
   if((settings.tgBotToken||'').trim() && (settings.tgBackupChatId||'').trim() && t.content){
     tgBadge = t.tgBackupAmbiguous
-      ? `<button type="button" class="tc-sync-badge tc-sync-pending tg-open-btn" data-id="${t.id}" title="Відповідь Telegram втрачено. Автоматичний повтор вимкнено, щоб не створити дубль." style="border:none; cursor:pointer;">☁️⚠ Telegram</button><button type="button" class="tc-sync-badge tc-sync-pending retry-tg-ambiguous-btn" data-id="${t.id}" title="Надіслати копію ще раз (можливий дубль)" style="border:none; cursor:pointer;">🔁 Копію ще раз</button>`
+      ? `<button type="button" class="tc-sync-badge tc-sync-pending tg-open-btn" data-id="${t.id}" title="Відповідь Telegram втрачено. Автоматичний повтор вимкнено, щоб не створити дубль." style="border:none; cursor:pointer;">Telegram ⏳</button><button type="button" class="tc-sync-badge tc-sync-pending retry-tg-ambiguous-btn" data-id="${t.id}" title="Надіслати копію ще раз (можливий дубль)" style="border:none; cursor:pointer;">🔁 Копію ще раз</button>`
       : t.tgBackedUp
-      ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">☁️✅ Telegram</button>`
-      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">☁️⏳ Telegram</button>`;
+      ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">Telegram ✅</button>`
+      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">Telegram ⏳</button>`;
   }
   const hasPhotos=!!((t.photos&&t.photos.length)||t.photo);
   const photoBadge=hasPhotos?`<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-ids='${escapeHtml(JSON.stringify((t.tgPhotoFileIds&&t.tgPhotoFileIds.length)?t.tgPhotoFileIds:(t.tgPhotoFileId?[t.tgPhotoFileId]:[])))}'>📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>`:'';

@@ -109,6 +109,10 @@ function reportDispatch(request){
     if(request.action==='report_status'){
       if(request.ticket||request.tickets||request.deletes||request.rebuild!==undefined)throw new Error('INVALID_ACTION');
       result={ok:true,code:'OK',active_count:store.rows.filter(function(r){return !r.deleted_at;}).length,deleted_count:store.rows.filter(function(r){return !!r.deleted_at;}).length,rejected_count:Number(c.p.getProperty('REPORT_REJECTED_COUNT')||0),last_sync:c.p.getProperty('REPORT_LAST_SYNC')||'',last_rebuild:c.p.getProperty('REPORT_LAST_REBUILD')||'',last_error:c.p.getProperty('REPORT_LAST_ERROR')||'',pending_retry:0};
+      // Safe archive evidence: no IDs, ticket text or private fields leave GAS.
+      var active=store.rows.filter(function(r){return !r.deleted_at;}),dates=active.map(function(r){return r.work_date;}).sort();
+      result.earliest_date=dates[0]||'';result.latest_date=dates[dates.length-1]||'';
+      result.id_set_hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(active.map(function(r){return r.ticket_id;}).sort()),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
     }else{
       var items=request.action==='report_upsert'?[request.ticket]:request.action==='report_sync_all'?request.tickets||[]:[],deletes=request.deletes||[];
       if(!Array.isArray(items)||!Array.isArray(deletes)||items.length>100||deletes.length>100)throw new Error('INVALID_BATCH');

@@ -11,6 +11,8 @@ test('note-first other and collapsed cards have no sync badges at 360/390/430px'
     await page.setViewportSize({width,height:900});
     await expect(page.locator('.ticket-compact-card')).toHaveCount(2);
     await expect(page.locator('.ticket-compact-card .tc-status-row')).toHaveCount(0);
+    await expect(page.locator('#dispatcherReportQueueBanner')).toHaveCount(0);
+    for(const card of await page.locator('.ticket-compact-card').all())await expect(card).not.toContainText(/Таблиця|Telegram|Надіслано|Вимкнено/);
     await expect(page.locator('.ticket-compact-card[data-id="test-other-135"]')).toContainText('Забрати ONU');
     await expect(page.locator('.ticket-compact-card[data-id="test-other-135"]')).not.toContainText('FORBIDDEN');
     expect(await page.locator('.ticket-compact-card').evaluateAll(cards=>cards.every(c=>c.scrollWidth<=c.clientWidth))).toBe(true);

@@ -467,3 +467,46 @@ CRUD/rebuild/retry checks before claiming production PASS. Rollback together to
 frontend v91.88/runtime-133 at f0f44da135896a12e04e733f5802300c29bc5221 and
 private report GAS version 6; preserve outbox pending metadata. Never reset
 legacy storage, clear real tickets, or widen the report endpoint's access.
+# PR #82 historical archive follow-up (v91.90 candidate, unreleased)
+
+- Full sync now awaits every eligible page, not just one batch. Intermediate
+  pages use `rebuild:false`; the final page renders once. Incomplete queues or
+  projection errors do not produce a success message.
+- Serialized payloads are bounded below GAS's 500000-character ceiling.
+  Formula-like strings are rejected per item before the atomic server batch.
+  Mutation counter receipts must cover the complete sent batch when present;
+  partial ACK leaves operations pending.
+- Final archive confirmation requires both server active count and SHA-256 of
+  sorted active IDs to match the local source. `report_status` exposes only
+  safe counts, earliest/latest dates and the set hash, not IDs or ticket text.
+  Rebuild alone is **not** evidence that all historical tickets were uploaded.
+- Historical raw imports can project the exact labelled material/note lines
+  emitted by `buildTicketContent`, with the existing privacy filter. Structured
+  materials take precedence; explicit zero is not replaced by stale content.
+  This is presentation-only: no stored ticket mutation and no new physical
+  accounting/ONU reuse inference. Tariff is retained as a labelled report
+  annotation without adding a storage/DTO column.
+- Queue diagnostics live only in settings. Compact and Other cards retain
+  the v91.90 restrictions. The existing Telegram manual ambiguous retry action
+  remains available; only its status presentation is shortened.
+
+## Evidence and remaining release blockers
+
+Read-only ID/date selection in the existing legacy workbook on 2026-10-08
+showed 437 dated rows in A1:B650, earliest 19.02.2026, latest 08.10.2026, with
+trailing empty rows. This is **not** a count of the phone's IndexedDB source.
+Five rows for 15.07 were located. Copying the old workbook's content/private
+columns was blocked by browser safety review; no workaround or old-sheet
+write was used. The exact July stored structure, report count, missing IDs
+and the cause of the user's July cutoff remain unverified.
+
+The historical regression is a **redacted importer-shape fixture**, not a
+claim that the private July JSON was inspected. Confirm against that real
+record before release. Android installed-PWA delivery is still a physical
+device gate; desktop/mock tests do not prove process survival or Google
+return on the phone. Do not mark it fixed or merge PR #82 without this proof.
+
+No merge/Pages/Worker release. Production stays v91.89/runtime-134. The live
+report GAS remains version 7; the revised bundle is prepared outside Git but
+has not been deployed. Do not activate a new GAS/frontend pair simply to
+obtain a physical-device proof. No local origin was added in this follow-up.
