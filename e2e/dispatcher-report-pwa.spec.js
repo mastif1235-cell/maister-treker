@@ -17,8 +17,8 @@ test('mobile popup ACK, PWA lifecycle resume, manual sync with auto OFF and per-
   await page.evaluate(()=>{for(let p=document.getElementById('dispatcherReportEndpoint').parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;});
   await page.locator('#dispatcherReportEndpoint').fill('https://script.google.com/macros/s/synthetic/exec');await page.locator('[data-dispatcher-action="save"]').click();
   const opened=context.waitForEvent('page');await page.locator('[data-dispatcher-action="authorize"]').click();const popup=await opened;
-  await expect(popup.locator('#status')).toHaveText('Підключено. Можна повернутися до Майстер-Трекера.');
-  await expect(page.locator('#dispatcherReportResult')).toContainText('Google-підключення готове');
+  await expect(popup.locator('#status')).toHaveText('Таблиця Д підключена. Можна повернутися до Майстер-Трекера.');
+  await expect(page.locator('#dispatcherReportResult')).toContainText('Таблиця Д підключена');
   await page.evaluate(()=>{window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));window.dispatchEvent(new Event('focus'));});
   await page.locator('[data-dispatcher-action="check"]').click();await expect(page.locator('#dispatcherReportResult')).toContainText('Підключено.');expect(popupCount).toBe(1);
   await page.evaluate(()=>{tickets.push({id:'test-mobile-report',date:currentTicketDate,time:'12:34',type:'Ремонт',city:'Тест',address:'Тестова 1',sum:100,payment:'Готівка',content:'Тест'});renderTicketsScreen();});
@@ -26,8 +26,8 @@ test('mobile popup ACK, PWA lifecycle resume, manual sync with auto OFF and per-
   expect(await page.evaluate(()=>settings.dispatcherReportEnabled)).toBe(false);
   await expect(page.locator('[data-dispatcher-action="sync"]')).toBeEnabled();expect(await page.evaluate(()=>MTDispatcherReport.status().running)).toBe(false);
   requests.push(...await popup.evaluate(()=>window.testRequests));expect(requests.some(r=>r.action==='report_sync_all')).toBe(true);
-  await page.click('.tab-btn[data-tab="tickets"]');await expect(page.locator('[data-dispatcher-ticket-status="test-mobile-report"]')).toContainText('Надіслано');
-  await page.locator('#ticketViewModeBtn').click();await expect(page.locator('[data-dispatcher-ticket-status="test-mobile-report"]')).toContainText('Надіслано');
+  await page.click('.tab-btn[data-tab="tickets"]');await expect(page.locator('[data-dispatcher-ticket-status="test-mobile-report"]')).toHaveCount(0);
+  await page.locator('#ticketViewModeBtn').click();await expect(page.locator('[data-dispatcher-ticket-status="test-mobile-report"]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 test('popup blocked and timeout settle action buttons and do not enqueue all tickets',async({page,appEnv})=>{

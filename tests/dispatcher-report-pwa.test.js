@@ -36,9 +36,9 @@ function harness(seed){
   assert(source.includes('finally{activeActions.delete(action);button.disabled=false;button.removeAttribute'));
   // One presentation boundary for full and compact cards; old canonical ACK
   // does not influence dispatcher receipts, and no ticket schema fields added.
-  const render=fs.readFileSync('js/tickets-render.js','utf8');assert(render.includes('const syncBadge = ticketDeliveryBadges(t)'));assert(fs.readFileSync('js/tickets-compact-view.js','utf8').includes('ticketDeliveryBadges(ticket)'));
+  const render=fs.readFileSync('js/tickets-render.js','utf8');assert(render.includes('const syncBadge = ticketDeliveryBadges(t)'));assert(!fs.readFileSync('js/tickets-compact-view.js','utf8').includes('ticketDeliveryBadges(ticket)'));
   const start=render.indexOf('function ticketDeliveryBadges'),end=render.indexOf('function renderDateNavVisibility');
   const view={getScriptUrl:()=>endpoint,getEntityConflict:()=>null,isEntitySynced:()=>true,escapeHtml:x=>String(x),globalThis:{MTDispatcherReport:{delivery:()=>({state:'error',code:'GOOGLE_CONNECTION_REQUIRED'}),badge:()=> '📊 Таблиця Д: ❌ Помилка'}}};
-  vm.runInNewContext(render.slice(start,end)+';result=ticketDeliveryBadges({id:"a"});',view);assert(view.result.includes('Стара таблиця: ✅ Надіслано'));assert(view.result.includes('Таблиця Д: ❌ Помилка'));
+  vm.runInNewContext(render.slice(start,end)+';result=ticketDeliveryBadges({id:"a"});',view);assert(view.result.includes('Таблиця ✅'));assert(view.result.includes('Таблиця Д: ❌ Помилка'));
   console.log('Dispatcher Android-resume / 430-queue recovery / per-ticket receipts / manual sync / stale ACK / UI settlement: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

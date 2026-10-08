@@ -67,9 +67,9 @@
     return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,retry,status,delivery,connectionReady});
   }
   function createBridge(){
-    let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
+    let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
     const pending=new Map();
-    function close(){try{popup?.close();}catch(_){}popup=null;peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
+    function close(){try{popup?.close();}catch(_){}popup=null;peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;verified=false;checking=null;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
     window.addEventListener('message',e=>{
       // Android standalone may report popup.closed on app/browser handoff.
       // Liveness comes from the nonce/source/origin-pinned peer, not .closed.
@@ -79,8 +79,8 @@
       if(d.type==='MT_REPORT_BOOT'&&!peer){let host;try{const o=new URL(e.origin);host=o.protocol==='https:'&&(o.hostname==='script.google.com'||o.hostname.endsWith('.googleusercontent.com'));if(e.source?.top!==popup)return;}catch(_){return;}if(!host)return;peer=e.source;peerOrigin=e.origin;peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
       if(e.source!==peer||e.origin!==peerOrigin)return;
       if(d.type==='MT_REPORT_BOOT'){peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
-      if(d.type==='MT_REPORT_READY'){clearTimeout(readyTimer);connected=true;peer.postMessage({type:'MT_REPORT_ACK',channel},peerOrigin);resolveReady?.();resolveReady=null;rejectReady=null;ready=null;readyHandler?.();return;}
-      if(d.type==='MT_REPORT_RESPONSE'){const p=pending.get(d.id);if(p){clearTimeout(p.timer);pending.delete(d.id);p.resolve(d.result);}}
+      if(d.type==='MT_REPORT_READY'){clearTimeout(readyTimer);connected=true;peer.postMessage({type:'MT_REPORT_ACK',channel},peerOrigin);resolveReady?.();resolveReady=null;rejectReady=null;ready=null;return;}
+      if(d.type==='MT_REPORT_RESPONSE'){const p=pending.get(d.id);if(p){clearTimeout(p.timer);pending.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);p.resolve(d.result);}}
     });
     async function connect(value,interactive=false){
       const target=endpoint(value);if(url===target&&popup){if(connected&&peer)return;if(ready)return ready;}
@@ -93,9 +93,19 @@
       // postMessage bridge. No DTO or credential is placed in the URL.
       const wait=ready;try{popup=window.MTDispatcherReportOpen(u.href);if(!popup)throw new Error('GOOGLE_POPUP_BLOCKED');}catch(e){clearTimeout(readyTimer);rejectReady(new Error(/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_POPUP_BLOCKED'));ready=null;resolveReady=null;rejectReady=null;}return wait;
     }
-    async function send(value,request,interactive=false){await connect(value,interactive);const id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);connected=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));},90000);pending.set(id,{resolve,reject,timer});try{peer.postMessage({type:'MT_REPORT_REQUEST',channel,id,request},peerOrigin);}catch(_){clearTimeout(timer);pending.delete(id);connected=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));}});}
-    function resume(){if(peer&&channel){try{peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);}catch(_){connected=false;}}}
-    return {send,close,authorize:value=>connect(value,true),resume,onReady:fn=>{readyHandler=fn;}};
+    function rpc(request){const id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);connected=false;verified=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));},request.action==='report_status'?20000:90000);pending.set(id,{resolve,reject,timer});try{peer.postMessage({type:'MT_REPORT_REQUEST',channel,id,request},peerOrigin);}catch(_){clearTimeout(timer);pending.delete(id);connected=false;verified=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));}});}
+    function verify(){
+      if(verified)return Promise.resolve();if(checking)return checking;
+      const nonce=channel;
+      checking=rpc({action:'report_status',request_id:crypto.randomUUID()}).then(result=>{
+        if(nonce!==channel)throw new Error('REPORT_CONNECTION_RESET');
+        if(!result?.ok)throw new Error(result?.code||'REPORT_NETWORK_ERROR');
+        verified=true;peer.postMessage({type:'MT_REPORT_VERIFIED',channel},peerOrigin);readyHandler?.();
+      }).catch(error=>{if(nonce===channel){verified=false;if(peer)peer.postMessage({type:'MT_REPORT_FAILED',channel,code:/^[A-Z_]+$/.test(error?.message)?error.message:'REPORT_NETWORK_ERROR'},peerOrigin);}throw error;}).finally(()=>{if(nonce===channel)checking=null;});return checking;
+    }
+    async function send(value,request,interactive=false){await connect(value,interactive);await verify();return rpc(request);}
+    async function resume(){verified=false;if(!peer||!channel)return false;peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);await verify();return true;}
+    return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;}};
   }
   root.MTDispatcherReportClient=Object.freeze({createOutbox,endpoint});
   if(typeof document==='undefined')return;
@@ -105,8 +115,8 @@
     // Browser timers require Window as receiver, not the dependency object.
     setTimeout:(fn,ms)=>window.setTimeout(fn,ms),clearTimeout:id=>window.clearTimeout(id),changed:()=>refreshUI()});
   bridge.onReady(()=>outbox.connectionReady());
-  const deliveryLabels={sent:'✅ Надіслано',pending:'⏳ Очікує',error:'❌ Помилка',disabled:'○ Вимкнено',not_configured:'⚙ Не налаштовано'};
-  function badge(id){return '📊 Таблиця Д: '+deliveryLabels[outbox.delivery(id).state];}
+  const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
+  function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
   function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.textContent=badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
   function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const x=outbox.status();if(s)s.textContent=`У черзі: ${x.pending}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;const b=document.getElementById('dispatcherReportQueueBanner');if(b){b.hidden=!(x.pending||x.failed||x.lastError);b.textContent=`📊 Таблиця Д — очікує: ${x.pending}; помилки заявок: ${x.failed}${x.lastError?'; '+x.lastError:''}${x.running?' · надсилання…':''}`;}}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
@@ -116,7 +126,7 @@
     activeActions.add(action);button.disabled=true;button.setAttribute('aria-busy','true');
     try{
       if(action==='save'){const value=document.getElementById('dispatcherReportEndpoint').value.trim();const enabled=document.getElementById('dispatcherReportEnabled').checked;const validated=value?endpoint(value):'';if(enabled&&!validated)throw new Error('REPORT_NOT_CONFIGURED');const changed=cfg().dispatcherReportEndpoint!==validated;cfg().dispatcherReportEndpoint=validated;cfg().dispatcherReportEnabled=enabled;saveSettings();if(changed)bridge.close();renderSettings();message('Окремі налаштування збережено. Стару синхронізацію не змінено.');return;}
-      if(action==='authorize'){await bridge.authorize(cfg().dispatcherReportEndpoint);outbox.connectionReady();message('Google-підключення готове. Можна перевірити звіт або повторити чергу.');void outbox.flush();return;}
+      if(action==='authorize'){message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);message('Таблиця Д підключена');void outbox.flush();return;}
       const response=await bridge.send(cfg().dispatcherReportEndpoint,{action:action==='rebuild'?'report_rebuild':'report_status',request_id:crypto.randomUUID()},true);
       if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
       // Preflight the authenticated connection before adding every ticket.
@@ -126,7 +136,7 @@
     }catch(e){message('Звіт не відправлено. '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR')+'. Локальні заявки та стара синхронізація не змінені.');}
     finally{activeActions.delete(action);button.disabled=false;button.removeAttribute('aria-busy');refreshUI();}
   });
-  function resume(){bridge.resume();refreshUI();void outbox.flush();}
+  async function resume(){refreshUI();try{if(await bridge.resume()){message('Таблиця Д підключена');await outbox.flush();}}catch(e){message('Канал звіту не підтверджено: '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR'));}}
   window.addEventListener('online',resume);window.addEventListener('focus',resume);window.addEventListener('pageshow',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});document.addEventListener('DOMContentLoaded',resume);
-  root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge});
+  root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge,enabled:()=>!!cfg().dispatcherReportEnabled});
 })(typeof globalThis==='object'?globalThis:this);

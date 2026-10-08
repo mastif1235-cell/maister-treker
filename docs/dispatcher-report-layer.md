@@ -403,6 +403,37 @@ diff-check PASS. Root 216/217: only the unchanged Ping timing test returned
 48ms instead of 38–46ms; no threshold/assertion change. GitHub CI on the exact
 release SHA is mandatory before merge.
 
+## v91.90 / runtime-135 candidate — release gate
+
+The physical-PWA failure reported after v91.89 is NOT considered resolved by
+a desktop handshake. The actual v91.89 code marked the channel ready at
+`MT_REPORT_READY`, before a successful `report_status` response; this is the
+proven false-readiness defect, not proof of the phone's underlying suspension
+or WindowProxy behavior.
+
+This candidate gates queue release and the connected label on a status RPC,
+revalidates on foreground/focus/pageshow/online, coalesces concurrent probes,
+and keeps transient RPC receipts in the Google bridge until a pinned client
+ACK. HELLO can replay a receipt missed during suspension. Receipt buffers are
+bounded and memory-only; persisted outbox remains ID/version metadata only.
+Reload destroys window references: a fresh explicit private connection is
+required, with no automatic background popup or frontend credential.
+
+Compact cards have no delivery badges. Other is a note-only presentation;
+normal materials use individual non-zero rows. Stored ticket/content,
+financial calculations, legacy GAS, Telegram, Worker and physical engines
+are unchanged. Report numeric aggregate counters keep the existing required
+27-field contract (including zero aggregates); zero material *positions* are
+omitted from materials_display, which is newline-separated.
+
+Do NOT merge unless exact-head Tests/MCP/E2E and real report CRUD/reconnect,
+privacy and legacy regression gates PASS. Remove any temporary loopback
+origin before merge. Physical Android transport remains unproven until a
+real-device check; desktop success alone must not be labelled Android PASS.
+Rollback frontend to dda0cad9845dd32ba1c075d336e7f8f9d1bc9689 (v91.89/runtime-134)
+and the prior report deployment version as a coordinated pair if necessary;
+retain outbox/receipts/tombstones, never clear application storage.
+
 ## PWA connection and delivery-status correction — v91.89
 
 The previous bridge displayed "connected" before the opener acknowledged
