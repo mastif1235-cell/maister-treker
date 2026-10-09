@@ -1,6 +1,6 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-136';
+const CACHE_NAME = 'maister-treker-v67-runtime-137';
 const CORE_ASSETS = [
-  './js/dispatcher-report-core.js','./js/dispatcher-report-client.js','./js/dispatcher-report-projection.mjs',
+  './js/dispatcher-report-core.js','./js/dispatcher-report-client.js','./js/dispatcher-report-projection.mjs','./js/dispatcher-telemetry.js','./js/runtime-guard.js',
   './mcp/src/ask/work-events.js','./mcp/src/ask/work-reconciliation.js','./mcp/src/ask/physical-consumption.js','./mcp/src/gas/mappers.js',
   './js/offline-map-catalog.js','./js/offline-map-download-provider.js','./js/offline-map-download-core.js','./js/offline-map-downloader.js','./js/offline-map-download-worker.js','./js/offline-map-sha256.js','./js/tools-offline-download-ui.js',
   './js/tools-speedtest-edge.js',

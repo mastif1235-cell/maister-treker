@@ -895,7 +895,25 @@ async function saveTicketFromForm(e){
   showToast(successMessage);
   // Independent report outbox starts only AFTER durable local persistence.
   // Its own bounded failures must never block the form or legacy sync.
-  if(savedTicketRef)globalThis.MTDispatcherReport?.enqueueUpsert?.(savedTicketRef);
+  if(savedTicketRef){
+    // Explicit dispatcher enqueue call with safe telemetry (v91.92): a missing
+    // report module is a first-class diagnostic, never a silent no-op. Local
+    // save and legacy scriptUrl sync above are already complete at this point.
+    try{
+      globalThis.MTDispatcherTelemetry?.record?.('ticket_saved',{module_present:!!globalThis.MTDispatcherReport});
+      globalThis.MTDispatcherTelemetry?.record?.('enqueue_attempt',{module_present:!!globalThis.MTDispatcherReport,connected:false,verified:false});
+      if(!globalThis.MTDispatcherReport){
+        globalThis.MTDispatcherTelemetry?.record?.('enqueue_result',{code:'REPORT_MODULE_UNAVAILABLE',module_present:false});
+      }else if(typeof globalThis.MTDispatcherReport.enqueueUpsert==='function'){
+        globalThis.MTDispatcherReport.enqueueUpsert(savedTicketRef);
+      }else{
+        globalThis.MTDispatcherTelemetry?.record?.('enqueue_result',{code:'REPORT_MODULE_UNAVAILABLE',module_present:false});
+      }
+    }catch(dispatcherError){
+      // Same contract as before: the dispatcher layer can never reject a save.
+      try{globalThis.MTDispatcherTelemetry?.record?.('enqueue_result',{code:'REPORT_QUEUE_ERROR',module_present:true});}catch(_){}
+    }
+  }
   if(savedTicketRef && naryadPendingCompletionId){
     const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));
     if(naryad){

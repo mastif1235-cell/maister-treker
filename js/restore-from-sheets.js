@@ -777,6 +777,12 @@ if(typeof window !== 'undefined'){
 
     try{
       if(opts.ticketPlan){
+        // Класифікація потоку відновлення (v91.92): cloud restore пише заявки
+        // ЛИШЕ локально (saveTicketsLocalOnly). Автоматичне масове постановлення
+        // їх у чергу Таблиця Д тут НЕ відбувається — історична повна синхронізація
+        // залишається окремою, свідомою дією користувача (кнопки «Повний перенос» /
+        // «Повтор черги» у Налаштуваннях). Тут же фіксується розбіжність локальних
+        // заявок від хмари, яку можна класифікувати окремо від черги звітів.
         const next = MTRestoreFromSheets.applyTicketPlan(tickets || [], opts.cloudTickets || [], opts.decisions.tickets || {}, deps, skipCloud.ticket);
         tickets = next;
         syncTicketsSnapshot = JSON.parse(JSON.stringify(next));

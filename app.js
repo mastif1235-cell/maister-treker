@@ -9,7 +9,10 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.91 · 2026-10-09';
+const APP_VERSION = 'v91.92 · 2026-10-09';
+// Runtime revision of the app shell, checked with module/SW revisions by the
+// mixed-runtime guard (js/runtime-guard.js). Bump together with sw.js CACHE_NAME.
+globalThis.MTAppRuntimeRevision = 'runtime-137';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -346,6 +349,10 @@ async function init(){
     try{ const fallbackLegacy=loadJSON('tickets',[]); if(Array.isArray(fallbackLegacy)) tickets=fallbackLegacy; }catch(_legacyError){}
     showToast('⚠️ Не вдалося відкрити локальну базу заявок. Дані лишаються в аварійному режимі — не закривайте застосунок.');
   }
+  // Store-ready gate for the dispatcher outbox (v91.92): tickets are known only
+  // after loadTicketsFromIdb() resolves. Until this flag is set an empty
+  // `tickets` array must never be read as "ticket is missing" (v91.88 wipe race).
+  window.__mtTicketsStoreReady = true;
   syncTicketsSnapshot = JSON.parse(JSON.stringify(tickets));
   syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
   if(typeof mtRequestPersistentStorage==='function') mtRequestPersistentStorage(); // фон запит persist(): захист від витіснення сховища ОС
