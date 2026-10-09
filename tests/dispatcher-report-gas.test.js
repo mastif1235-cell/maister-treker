@@ -25,6 +25,17 @@ test('delete soft; no physical row erased',()=>{assert(call('report_delete',{del
 test('stale update cannot resurrect',()=>assert.equal(call('report_upsert',{ticket:dto()}).code,'STALE_VERSION'));
 test('rebuild alters only presentation',()=>{const before=JSON.stringify(rows),old=writes,n=rebuilds;assert(call('report_rebuild').ok);assert.equal(writes,old);assert.equal(JSON.stringify(rows),before);assert.equal(rebuilds,n+1);});
 test('owner-only authentication enforced before any read',()=>{email='other@example.invalid';let read=false;const original=c.reportStore_;c.reportStore_=()=>{read=true;};assert.equal(call('report_status').code,'UNAUTHORIZED');assert.equal(read,false);c.reportStore_=original;email='mastif1235@gmail.com';});
+test('437 historical rows survive paged sync, repeated rebuild and tombstones',()=>{
+  const baseline=structuredClone(rows);cache.clear();rows=[];
+  const history=Array.from({length:437},(_,i)=>{const d=dto('history-'+i,10);d.work_date=i<200?'2026-02-19':i<400?'2026-07-15':'2026-10-08';d.source_hash=c.reportHash_(d);return d;});
+  for(let pass=0;pass<2;pass++){
+    for(let i=0;i<history.length;i+=50){const r=call('report_sync_all',{tickets:history.slice(i,i+50),rebuild:false});assert(r.ok);assert.equal(r.inserted+r.updated+r.unchanged,history.slice(i,i+50).length);}
+    const before=JSON.stringify(rows);assert(call('report_rebuild').ok);assert.equal(JSON.stringify(rows),before);assert.equal(rows.length,437);
+    const status=call('report_status');assert.equal(status.active_count,437);assert.equal(status.earliest_date,'2026-02-19');assert.equal(status.latest_date,'2026-10-08');assert.equal(status.id_set_hash,crypto.createHash('sha256').update(JSON.stringify(history.map(d=>d.ticket_id).sort())).digest('hex'));
+  }
+  assert(call('report_delete',{deletes:[{ticket_id:'history-0',source_version:11}]}).ok);assert(call('report_rebuild').ok);assert.equal(rows.length,437);assert.equal(call('report_status').active_count,436);assert(rows[0].deleted_at);
+  rows=baseline;cache.clear();
+});
 test('rate limiter bounded',()=>{let result;for(let i=0;i<50;i++)result=call('report_status');assert.equal(result.code,'RATE_LIMITED');});
 test('arbitrary HTTP POST has no mutation path',()=>{const old=writes;c.ContentService={MimeType:{JSON:'json'},createTextOutput:body=>({setMimeType:()=>JSON.parse(body)})};assert.equal(c.doPost({postData:{contents:JSON.stringify({action:'report_upsert',ticket:dto('csrf')})}}).code,'METHOD_NOT_ALLOWED');assert.equal(writes,old);});
 test('only report tabs can be targeted',()=>{const source=fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8');assert(source.includes("getSheetByName('Заявки')"));assert(!source.includes('UrlFetchApp'));assert(!source.includes('getActiveSpreadsheet'));assert(source.includes('REPORT_SPREADSHEET_ID'));assert(source.includes('sheet.getRange(1,1,clearRows,5).breakApart().clear()'));});

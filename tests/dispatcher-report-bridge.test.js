@@ -9,7 +9,7 @@ async function main(){
   const appOrigin='http://127.0.0.1:50076';
   const googleOrigin='https://sandbox-script.googleusercontent.com';
   const handlers={},googleHandlers={};
-  let config,closed=0,calls=0,opens=0;
+  let config,closed=0,calls=0,opens=0,statusText='',heldStatus=null,holdStatus=true,readyCalls=0;
   const pwaPeer={postMessage(data,target){assert.equal(target,appOrigin);if(data.type==='MT_REPORT_RESPONSE'){
     handlers.message({data:{...data,result:{ok:false}},origin:'https://evil.example',source:googlePeer});
     handlers.message({data:{...data,result:{ok:false}},origin:googleOrigin,source:{top:popup}});
@@ -29,8 +29,8 @@ async function main(){
     handlers.message({data:boot,origin:googleOrigin,source:{top:{}}});
     const script=bridgeHtml.match(/<script>([\s\S]*?)<\/script>/)[1].replace('<?!= bridgeConfig ?>',JSON.stringify(config));
     let success;
-    const runner={withSuccessHandler(fn){success=fn;return this;},withFailureHandler(){return this;},reportDispatch(request){calls++;assert.equal(request.action,'report_status');success({ok:true,active_count:0});}};
-    vm.runInNewContext(script,{setInterval:()=>1,clearInterval:()=>{},window:{top:popup,parent:popup,addEventListener(type,fn){googleHandlers[type]=fn;}},document:{getElementById(){return {textContent:''};}},google:{script:{run:runner}}});
+    const runner={withSuccessHandler(fn){success=fn;return this;},withFailureHandler(){return this;},reportDispatch(request){calls++;assert.equal(request.action,'report_status');if(holdStatus){heldStatus=success;return;}success({ok:true,active_count:0});}};
+    vm.runInNewContext(script,{setInterval:()=>1,clearInterval:()=>{},window:{top:popup,parent:popup,addEventListener(type,fn){googleHandlers[type]=fn;}},document:{getElementById(){return {set textContent(value){statusText=value;}};}},google:{script:{run:runner}}});
   });return popup;}
   const source=fs.readFileSync(path.join(root,'js/dispatcher-report-client.js'),'utf8');
   const start=source.indexOf('  function createBridge(){'),end=source.indexOf('  root.MTDispatcherReportClient=',start);
@@ -57,19 +57,25 @@ async function main(){
   assert.equal(opens,0,'Invalid windows never reach native opener');
   const factory=vm.runInContext('(function(){'+source.slice(start,end)+'return createBridge;})()',context);
   const bridge=factory();
+  bridge.onReady(()=>{readyCalls++;});
   await assert.rejects(bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'}),/GOOGLE_CONNECTION_REQUIRED/);
   assert.equal(opens,0,'Background saves must not open popup windows');
-  const response=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'},true);
+  const first=bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'},true);
+  for(let i=0;i<10&&!heldStatus;i++)await Promise.resolve();
+  assert.match(statusText,/Перевіряємо канал/);assert.equal(readyCalls,0,'handshake without status ACK is NOT connected');
+  holdStatus=false;heldStatus({ok:true,active_count:0});
+  const response=await first;
+  assert.match(statusText,/Таблиця Д підключена/);assert.equal(readyCalls,1);
   assert.equal(response?.ok,true,'GAS response must reach the client with the same envelope field');
   assert.equal(response.active_count,0);
-  assert.equal(calls,1);
+  assert.equal(calls,2,'one mandatory status preflight plus requested RPC');
   assert.equal(timers.size,0);
   const again=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
-  assert.equal(again.ok,true);assert.equal(opens,1);assert.equal(calls,2);
+  assert.equal(again.ok,true);assert.equal(opens,1);assert.equal(calls,3);
   popup.closed=true; // Android PWA handoff: peer still live, proxy says closed.
-  bridge.resume();
+  await bridge.resume();
   const resumed=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
-  assert.equal(resumed.ok,true);assert.equal(opens,1);assert.equal(calls,3);
+  assert.equal(resumed.ok,true);assert.equal(opens,1);assert.equal(calls,5);assert.equal(readyCalls,2,'resume requires fresh status ACK');
   assert.equal(timers.size,0,'resume/ACK clean all pending timers');
   bridge.close();assert.equal(closed,1);
   console.log('Dispatcher actual HTML/client popup handshake + RPC + background safety + source/origin/nonce spoof rejection: PASS');
