@@ -25,17 +25,6 @@ test('parallel dispatcher settings: endpoint validation, no secrets, legacy unch
   await page.locator('[data-dispatcher-action="save"]').click();await expect(page.locator('#dispatcherReportResult')).toContainText('INVALID_ENDPOINT');
   await page.locator('#dispatcherReportEndpoint').fill('https://script.google.com/macros/s/synthetic/exec');
   await page.locator('[data-dispatcher-action="save"]').click();await expect(page.locator('#dispatcherReportResult')).toContainText('налаштування збережено');
-  await page.evaluate(()=>{
-    settings.dispatcherReportEnabled=true;
-    tickets.push({id:'test-disabled-report-badge',date:currentTicketDate,time:'12:00',type:'Ремонт',sum:0,payment:'Готівка',content:'TEST'});
-    renderTicketsScreen();
-  });
-  expect(await page.locator('[data-dispatcher-ticket-status="test-disabled-report-badge"]').evaluate(el=>el.hidden)).toBe(false);
-  // Saving auto-send OFF must hide a badge already mounted in an expanded
-  // card, not merely omit it on the next complete card render.
-  await page.locator('#dispatcherReportEnabled').uncheck();
-  await page.locator('[data-dispatcher-action="save"]').click();
-  expect(await page.locator('[data-dispatcher-ticket-status="test-disabled-report-badge"]').evaluate(el=>el.hidden)).toBe(true);
   expect(await page.evaluate(()=>({url:settings.scriptUrl,shift:settings.shiftsScriptUrl,secret:settings.syncHmacSecret}))).toEqual(legacy);
   await page.reload();await page.waitForFunction(()=>typeof settings==='object'&&!!window.MTDispatcherReport);
   expect(await page.evaluate(()=>settings.dispatcherReportEndpoint)).toBe('https://script.google.com/macros/s/synthetic/exec');

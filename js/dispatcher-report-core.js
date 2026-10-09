@@ -78,9 +78,8 @@
     const rule='- - - - - - - - - - - -';
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
-    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше','💰 Сума: '+money(r.total),r.dispatcher_comment].filter(Boolean).join('\n');
     return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
-      rule,r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
+      rule,'📦 Матеріали: 🔌 ONU: '+r.onu_used+' шт. · 📶 Роутер: '+r.router_used+' шт.',r.materials_display&&'🧰 '+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
       rule,paymentIcon+' Оплата: '+(r.payment_type||'Не вказано'),'💰 Сума: '+money(r.amount),rule,'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
   function render(rows){

@@ -43,7 +43,7 @@ const splitDetails=rendererContext.splitTicketContentForTechnicalDetails([
 assert.equal(splitDetails.before.split('\n').at(-1),'📞 Тел: 0500000000','subscriber block ends with the client phone');
 assert.equal(splitDetails.after.split('\n')[0],'------------------','remaining ticket data starts with the separator');
 assert.doesNotMatch(splitDetails.before+splitDetails.after,/MAC ONU|Сигнал ONU|dBm/,'technical rows are removed from general text to prevent duplication');
-const cardHead=ticketRenderer.slice(ticketRenderer.lastIndexOf('<div class="tc-head">'),ticketRenderer.indexOf('<div class="tc-details'));
+const cardHead=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-head">'),ticketRenderer.indexOf('<div class="tc-details'));
 assert.doesNotMatch(cardHead,/signalText|Сигнал ONU|MAC:/,'collapsed ticket card header does not show MAC or ONU signal');
 const cardDetails=ticketRenderer.slice(ticketRenderer.indexOf('<div class="tc-details'));
 const beforePosition=cardDetails.indexOf('detailContent.before');

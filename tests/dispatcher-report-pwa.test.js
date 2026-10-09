@@ -19,7 +19,7 @@ function harness(seed){
   assert.equal(h.q.status().running,false);assert(!h.raw().includes('PRIVATE-CANARY'));assert(JSON.parse(h.raw()).operations.every(o=>o.attempts===0));
   const migrated=harness({endpoint,operations:JSON.parse(h.raw()).operations.map(o=>({...o,attempts:3})),lastError:'GOOGLE_CONNECTION_REQUIRED'});
   assert.equal(migrated.q.status().pending,430);assert.equal(migrated.q.status().failed,0);assert.equal(migrated.q.status().connectionRequired,true);
-  h.deps.send=async(_url,r)=>({ok:true,inserted:r.tickets.length,updated:0,unchanged:0,deleted:r.deletes.length,rejected:0,errors:0});h.q.connectionReady();await h.q.flush();
+  h.deps.send=async()=>({ok:true});h.q.connectionReady();await h.q.flush();
   assert.equal(h.q.delivery('test-0').state,'sent');assert.equal(h.q.delivery('test-51').state,'pending');
   const reload=harness(JSON.parse(h.raw()));assert.equal(reload.q.delivery('test-0').state,'sent');
   h.q.enqueueUpsert(h.tickets[0]);assert.equal(h.q.delivery('test-0').state,'pending');
@@ -36,9 +36,9 @@ function harness(seed){
   assert(source.includes('finally{activeActions.delete(action);button.disabled=false;button.removeAttribute'));
   // One presentation boundary for full and compact cards; old canonical ACK
   // does not influence dispatcher receipts, and no ticket schema fields added.
-  const render=fs.readFileSync('js/tickets-render.js','utf8');assert(render.includes('const syncBadge = ticketDeliveryBadges(t)'));assert(!fs.readFileSync('js/tickets-compact-view.js','utf8').includes('ticketDeliveryBadges(ticket)'));
+  const render=fs.readFileSync('js/tickets-render.js','utf8');assert(render.includes('const syncBadge = ticketDeliveryBadges(t)'));assert(fs.readFileSync('js/tickets-compact-view.js','utf8').includes('ticketDeliveryBadges(ticket)'));
   const start=render.indexOf('function ticketDeliveryBadges'),end=render.indexOf('function renderDateNavVisibility');
   const view={getScriptUrl:()=>endpoint,getEntityConflict:()=>null,isEntitySynced:()=>true,escapeHtml:x=>String(x),globalThis:{MTDispatcherReport:{delivery:()=>({state:'error',code:'GOOGLE_CONNECTION_REQUIRED'}),badge:()=> '📊 Таблиця Д: ❌ Помилка'}}};
-  vm.runInNewContext(render.slice(start,end)+';result=ticketDeliveryBadges({id:"a"});',view);assert(view.result.includes('Таблиця ✅'));assert(view.result.includes('Таблиця Д: ❌ Помилка'));
+  vm.runInNewContext(render.slice(start,end)+';result=ticketDeliveryBadges({id:"a"});',view);assert(view.result.includes('Стара таблиця: ✅ Надіслано'));assert(view.result.includes('Таблиця Д: ❌ Помилка'));
   console.log('Dispatcher Android-resume / 430-queue recovery / per-ticket receipts / manual sync / stale ACK / UI settlement: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

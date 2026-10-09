@@ -39,6 +39,7 @@
         <span id="syncQueueBannerText"></span>
         <button type="button" class="btn btn-sm" id="syncQueueRetryBtn" style="min-height:26px; padding:0 10px; font-size:12px;">Повторити</button>
       </div>
+      <div id="dispatcherReportQueueBanner" role="status" hidden style="padding:8px 12px; margin-bottom:10px; font-size:12.5px;"></div>
       <div class="search-row">
         <input type="search" id="searchInput" placeholder="Пошук за текстом, тегом, датою...">
         <button class="btn btn-icon" id="filterToggleBtn">🏷️</button>
@@ -588,7 +589,6 @@
             <button type="button" class="btn" data-dispatcher-action="rebuild">Перебудувати звіт</button>
             <button type="button" class="btn" data-dispatcher-action="retry">Повторити чергу</button>
           </div>
-          <button type="button" class="btn" data-dispatcher-action="diagnostics">Діагностика архіву</button>
           <p id="dispatcherReportStatus" role="status"></p><p id="dispatcherReportResult" role="status"></p>
         </div>
       </details>

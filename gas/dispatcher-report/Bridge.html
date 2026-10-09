@@ -4,30 +4,19 @@
 const config=<?!= bridgeConfig ?>;
 // Google authenticates the user; this channel is only message correlation,
 // NOT a bearer credential. No tickets are sent to arbitrary windows/origins.
-let caller=null,acknowledged=false,verified=false;
-// Only transient RPC receipts, not tickets or credentials. A suspended PWA
-// may miss the initial delivery; replay receipts on its pinned HELLO.
-const receipts=new Map(),inflight=new Set();
+let caller=null,acknowledged=false;
 const send=(target,message)=>target.postMessage({...message,channel:config.channel},config.origin);
 window.addEventListener('message',event=>{
   if(event.origin!==config.origin||event.data?.channel!==config.channel)return;
   if(event.data.type==='MT_REPORT_HELLO'){
     if(caller&&event.source!==caller)return;
-    caller=event.source;send(caller,{type:'MT_REPORT_READY'});for(const result of receipts.values())send(caller,result);return;
+    caller=event.source;send(caller,{type:'MT_REPORT_READY'});return;
   }
-  if(caller&&event.source===caller&&event.data.type==='MT_REPORT_ACK'){acknowledged=true;if(!verified)document.getElementById('status').textContent='Google авторизацію виконано. Перевіряємо канал звіту...';return;}
-  if(caller&&event.source===caller&&event.data.type==='MT_REPORT_VERIFIED'){verified=true;document.getElementById('status').textContent='Таблиця Д підключена. Можна повернутися до Майстер-Трекера.';return;}
-  if(caller&&event.source===caller&&event.data.type==='MT_REPORT_FAILED'){verified=false;document.getElementById('status').textContent='Канал звіту не підтверджено: '+(/^[A-Z_]+$/.test(event.data.code)?event.data.code:'REPORT_NETWORK_ERROR');return;}
-  if(caller&&event.source===caller&&event.data.type==='MT_REPORT_RECEIPT'){receipts.delete(event.data.id);return;}
+  if(caller&&event.source===caller&&event.data.type==='MT_REPORT_ACK'){acknowledged=true;document.getElementById('status').textContent='Підключено. Можна повернутися до Майстер-Трекера.';return;}
   if(!caller||event.source!==caller||event.data.type!=='MT_REPORT_REQUEST')return;
   const id=event.data.id;
-  if(typeof id!=='string'||id.length>128||inflight.has(id))return;
-  if(receipts.has(id)){send(caller,receipts.get(id));return;}
-  if(inflight.size+receipts.size>=100)return;
-  inflight.add(id);
-  const finish=result=>{inflight.delete(id);const receipt={type:'MT_REPORT_RESPONSE',id,result};receipts.set(id,receipt);send(caller,receipt);};
-  google.script.run.withSuccessHandler(finish)
-    .withFailureHandler(()=>finish({ok:false,code:'REPORT_NETWORK_ERROR'})).reportDispatch(event.data.request);
+  google.script.run.withSuccessHandler(result=>send(caller,{type:'MT_REPORT_RESPONSE',id,result}))
+    .withFailureHandler(()=>send(caller,{type:'MT_REPORT_RESPONSE',id,result:{ok:false,code:'REPORT_NETWORK_ERROR'}})).reportDispatch(event.data.request);
 });
 // HtmlService runs in a Google iframe. Broadcast only the safe handshake to
 // ancestors; the PWA responds to this exact window and pins source+origin.
