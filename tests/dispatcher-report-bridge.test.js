@@ -36,6 +36,7 @@ async function main(){
   const start=source.indexOf('  function createBridge(){'),end=source.indexOf('  root.MTDispatcherReportClient=',start);
   assert(start>=0&&end>start);
   const context=vm.createContext({
+    document:{visibilityState:'visible'},
     window:{open,addEventListener(type,fn){handlers[type]=fn;}},URL,crypto:webcrypto,
     location:{origin:appOrigin},setTimeout:timer,clearTimeout:clear,
     settings:{dispatcherReportEndpoint:'https://script.google.com/macros/s/synthetic/exec'},
@@ -63,9 +64,14 @@ async function main(){
   const first=bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'},true);
   for(let i=0;i<10&&!heldStatus;i++)await Promise.resolve();
   assert.match(statusText,/Перевіряємо канал/);assert.equal(readyCalls,0,'handshake without status ACK is NOT connected');
+  context.document.visibilityState='hidden';
+  for(const expire of [...timers])expire();
+  assert.equal(bridge.diagnostics().connected,false,'hidden handoff is not an ACK');
+  context.document.visibilityState='visible';
   holdStatus=false;heldStatus({ok:true,active_count:0});
   const response=await first;
   assert.match(statusText,/Таблиця Д підключена/);assert.equal(readyCalls,1);
+  assert.equal(bridge.diagnostics().connected,true);assert.match(bridge.diagnostics().status_ack,/^\d{4}-/);
   assert.equal(response?.ok,true,'GAS response must reach the client with the same envelope field');
   assert.equal(response.active_count,0);
   assert.equal(calls,2,'one mandatory status preflight plus requested RPC');
@@ -73,7 +79,10 @@ async function main(){
   const again=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
   assert.equal(again.ok,true);assert.equal(opens,1);assert.equal(calls,3);
   popup.closed=true; // Android PWA handoff: peer still live, proxy says closed.
-  await bridge.resume();
+  holdStatus=true;const firstResume=bridge.resume(),secondResume=bridge.resume();assert.equal(firstResume,secondResume,'focus/pageshow/visibility share a single status verification');
+  for(let i=0;i<10;i++)await Promise.resolve();
+  assert.equal(bridge.diagnostics().connected,false,'resume is not connected before fresh ACK');
+  holdStatus=false;heldStatus({ok:true,active_count:0});await firstResume;
   const resumed=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
   assert.equal(resumed.ok,true);assert.equal(opens,1);assert.equal(calls,5);assert.equal(readyCalls,2,'resume requires fresh status ACK');
   assert.equal(timers.size,0,'resume/ACK clean all pending timers');

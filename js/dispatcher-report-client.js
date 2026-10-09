@@ -116,6 +116,7 @@
   }
   function createBridge(){
     let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
+    let lastStatusAck='',lastReason='',resumeFlight=null;
     const pending=new Map();
     function close(){try{popup?.close();}catch(_){}popup=null;peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;verified=false;checking=null;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
     window.addEventListener('message',e=>{
@@ -141,21 +142,35 @@
       // postMessage bridge. No DTO or credential is placed in the URL.
       const wait=ready;try{popup=window.MTDispatcherReportOpen(u.href);if(!popup)throw new Error('GOOGLE_POPUP_BLOCKED');}catch(e){clearTimeout(readyTimer);rejectReady(new Error(/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_POPUP_BLOCKED'));ready=null;resolveReady=null;rejectReady=null;}return wait;
     }
-    function rpc(request){const id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);connected=false;verified=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));},request.action==='report_status'?20000:90000);pending.set(id,{resolve,reject,timer});try{peer.postMessage({type:'MT_REPORT_REQUEST',channel,id,request},peerOrigin);}catch(_){clearTimeout(timer);pending.delete(id);connected=false;verified=false;reject(new Error('GOOGLE_CONNECTION_REQUIRED'));}});}
+    function rpc(request){const id=crypto.randomUUID(),started=Date.now();return new Promise((resolve,reject)=>{
+      const expire=()=>{
+        // Google is foreground while Android suspends the standalone caller.
+        // Keep the same request/receipt alive for a bounded handoff interval.
+        if(typeof document!=='undefined'&&document.visibilityState==='hidden'&&Date.now()-started<300000){const p=pending.get(id);if(p)p.timer=setTimeout(expire,10000);return;}
+        pending.delete(id);connected=false;verified=false;lastReason='GOOGLE_CONNECTION_REQUIRED';reject(new Error(lastReason));
+      };
+      const timer=setTimeout(expire,request.action==='report_status'?20000:90000);pending.set(id,{resolve,reject,timer});
+      try{peer.postMessage({type:'MT_REPORT_REQUEST',channel,id,request},peerOrigin);}catch(_){clearTimeout(timer);pending.delete(id);connected=false;verified=false;lastReason='GOOGLE_CONNECTION_REQUIRED';reject(new Error(lastReason));}
+    });}
     function verify(){
       if(verified)return Promise.resolve();if(checking)return checking;
       const nonce=channel;
       checking=rpc({action:'report_status',request_id:crypto.randomUUID()}).then(result=>{
         if(nonce!==channel)throw new Error('REPORT_CONNECTION_RESET');
         if(!result?.ok)throw new Error(result?.code||'REPORT_NETWORK_ERROR');
-        verified=true;peer.postMessage({type:'MT_REPORT_VERIFIED',channel},peerOrigin);readyHandler?.();
+        connected=true;verified=true;lastStatusAck=new Date().toISOString();lastReason='';peer.postMessage({type:'MT_REPORT_VERIFIED',channel},peerOrigin);readyHandler?.();
       }).catch(error=>{if(nonce===channel){verified=false;if(peer)peer.postMessage({type:'MT_REPORT_FAILED',channel,code:/^[A-Z_]+$/.test(error?.message)?error.message:'REPORT_NETWORK_ERROR'},peerOrigin);}throw error;}).finally(()=>{if(nonce===channel)checking=null;});return checking;
     }
     async function send(value,request,interactive=false){await connect(value,interactive);await verify();return rpc(request);}
-    async function resume(){verified=false;if(!peer||!channel)return false;peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);await verify();return true;}
-    return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;}};
+    function resume(){
+      if(resumeFlight)return resumeFlight;
+      if(!peer||!channel){lastReason='GOOGLE_CONNECTION_REQUIRED';return Promise.resolve(false);}
+      verified=false;
+      resumeFlight=(async()=>{peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);await verify();return true;})().finally(()=>{resumeFlight=null;});return resumeFlight;
+    }
+    return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({createOutbox,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-136',createOutbox,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),
@@ -177,7 +192,16 @@
         const local=await outbox.archiveDiagnostics();
         // Only counts/codes/lifecycle metadata. No IDs, ticket text, endpoint
         // credentials, private fields or storage payloads are displayed.
-        const diagnostics={app_version:typeof APP_VERSION==='undefined'?'UNKNOWN':APP_VERSION,standalone:window.matchMedia('(display-mode: standalone)').matches,visibility:document.visibilityState,auto_send:!!cfg().dispatcherReportEnabled,service_worker_controlled:!!navigator.serviceWorker?.controller,local};
+        const diagnostics={app_version:typeof APP_VERSION==='undefined'?'UNKNOWN':APP_VERSION,standalone:window.matchMedia('(display-mode: standalone)').matches,visibility:document.visibilityState,auto_send:!!cfg().dispatcherReportEnabled,service_worker_controlled:!!navigator.serviceWorker?.controller,loaded_modules:{compact:root.MTTicketCompactView?.runtimeRevision||'UNKNOWN',renderer:root.MTTicketRendererRevision||'UNKNOWN',report:root.MTDispatcherReportClient.runtimeRevision},bridge:bridge.diagnostics(),local};
+        if(navigator.serviceWorker?.controller){
+          try{diagnostics.runtime=await new Promise((resolve,reject)=>{const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(new Error('RUNTIME_STATUS_TIMEOUT'));},5000);channel.port1.onmessage=e=>{clearTimeout(timer);channel.port1.close();resolve(e.data);};navigator.serviceWorker.controller.postMessage({type:'MT_RUNTIME_STATUS'},[channel.port2]);});}
+          catch(e){diagnostics.runtime={reason:e.message};}
+          try{
+            const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
+            try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v67-runtime-136'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-136');
+          }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
+        }
         try{const remote=await bridge.send(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
         message(JSON.stringify(diagnostics));return;
       }
@@ -200,7 +224,7 @@
     }catch(e){message('Звіт не відправлено. '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR')+'. Локальні заявки та стара синхронізація не змінені.');}
     finally{activeActions.delete(action);button.disabled=false;button.removeAttribute('aria-busy');refreshUI();}
   });
-  async function resume(){refreshUI();try{if(await bridge.resume()){message('Таблиця Д підключена');await outbox.flush();}}catch(e){message('Канал звіту не підтверджено: '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR'));}}
+  async function resume(){refreshUI();try{if(await bridge.resume()){message('Таблиця Д підключена');await outbox.flush();}else if(cfg().dispatcherReportEndpoint){message('Google-сеанс не відновлено. Натисніть «Відкрити Google-підключення», дочекайтеся підтвердження каналу та поверніться в застосунок. Черга збережена.');}}catch(e){message('Канал звіту не підтверджено: '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR'));}}
   window.addEventListener('online',resume);window.addEventListener('focus',resume);window.addEventListener('pageshow',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});document.addEventListener('DOMContentLoaded',resume);
   root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge,enabled:()=>!!cfg().dispatcherReportEnabled});
 })(typeof globalThis==='object'?globalThis:this);

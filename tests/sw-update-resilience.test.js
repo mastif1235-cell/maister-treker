@@ -28,7 +28,7 @@ assert.match(swSource,/upgrade:stale\.length>0/,'activation message distinguishe
 
 const swr=appSource.slice(appSource.indexOf("if('serviceWorker' in navigator)"));
 assert.match(swr,/let serviceWorkerRegistration=null;/,'registration handle is kept for periodic checks');
-assert.match(swr,/function serviceWorkerPollUpdate\(\)\{[\s\S]*?now-serviceWorkerLastUpdateCheck<60\*60\*1000[\s\S]*?serviceWorkerRegistration\.update\(\)/,'periodic update check is throttled to one network check per hour');
+assert.match(swr,/function serviceWorkerPollUpdate\(\)\{[\s\S]*?now-serviceWorkerLastUpdateCheck<60\*1000[\s\S]*?serviceWorkerRegistration\.update\(\)/,'foreground checks are throttled to one per minute');
 assert.match(swr,/setInterval\(serviceWorkerPollUpdate, 6\*60\*60\*1000\);/,'long field sessions poll for updates every six hours');
 assert.match(swr,/document\.addEventListener\('visibilitychange',\(\)=>\{ if\(document\.visibilityState==='visible'\) serviceWorkerPollUpdate\(\); \}\);/,'returning to the app checks for updates');
 assert.match(swr,/data\.type!=='MT_SW_ACTIVATED'\) return;[\s\S]*?mtActiveServiceWorkerCacheName=data\.cacheName\|\|null;[\s\S]*?if\(data\.upgrade&&!serviceWorkerRefreshing[\s\S]*?serviceWorkerShowUpdateOffer\(\);/,'the MT_SW_ACTIVATED message is consumed: busy users keep the update banner');

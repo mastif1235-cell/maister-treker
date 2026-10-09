@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v67-runtime-135';
+const CACHE_NAME = 'maister-treker-v67-runtime-136';
 const CORE_ASSETS = [
   './js/dispatcher-report-core.js','./js/dispatcher-report-client.js','./js/dispatcher-report-projection.mjs',
   './mcp/src/ask/work-events.js','./mcp/src/ask/work-reconciliation.js','./mcp/src/ask/physical-consumption.js','./mcp/src/gas/mappers.js',
@@ -140,6 +140,24 @@ async function cacheShellGap(request,response){
   }catch(_putError){/* офлайн чи переповнене сховище — дірку латаємо наступного візиту */}
 }
 
+// Never search another release's cache (including a half-built install).
+async function mtRuntimeMatch(request){
+  const cache=await caches.open(CACHE_NAME);
+  return cache.match(request,{ignoreSearch:true});
+}
+
+self.addEventListener('message',event=>{
+  if(event.data?.type!=='MT_RUNTIME_STATUS'||!event.ports?.[0])return;
+  event.waitUntil((async()=>{
+    const cache=await caches.open(CACHE_NAME),assets={};
+    for(const asset of ['./index.html','./app.js','./styles.css','./js/tickets-render.js','./js/tickets-compact-view.js','./js/dispatcher-report-client.js','./js/dispatcher-report-core.js','./js/dispatcher-report-projection.mjs']){
+      const response=await cache.match(asset,{ignoreSearch:true});
+      assets[asset]=response?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await response.arrayBuffer())),n=>n.toString(16).padStart(2,'0')).join(''):'MISSING';
+    }
+    event.ports[0].postMessage({cacheName:CACHE_NAME,assets});
+  })());
+});
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
@@ -149,7 +167,7 @@ self.addEventListener('fetch', (e) => {
   if(/\.pmtiles$/i.test(url.pathname)||(e.request.cache==='no-store'&&e.request.destination===''))return;
   if(e.request.mode === 'navigate'){
     e.respondWith((async()=>{
-      const hit=await caches.match(e.request,{ignoreSearch:true})||await caches.match('./index.html');
+      const hit=await mtRuntimeMatch(e.request)||await mtRuntimeMatch('./index.html');
       if(hit)return hit;
       const fresh=await fetch(e.request,{cache:'no-store'}).catch(()=>null);
       if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);
@@ -159,7 +177,7 @@ self.addEventListener('fetch', (e) => {
   }
   if(/\.(?:js|mjs|css)$/.test(url.pathname)){
     e.respondWith((async()=>{
-      const hit=await caches.match(e.request,{ignoreSearch:true});
+      const hit=await mtRuntimeMatch(e.request);
       if(hit)return hit;
       const fresh=await fetch(e.request,{cache:'no-store'}).catch(()=>null);
       if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);
@@ -168,7 +186,8 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   e.respondWith((async()=>{
-    const hit=await caches.match(e.request);
+    const cache=await caches.open(CACHE_NAME);
+    const hit=await cache.match(e.request);
     if(hit)return hit;
     const fresh=await fetch(e.request).catch(()=>null);
     if(fresh&&fresh.status===200)await cacheShellGap(e.request,fresh);

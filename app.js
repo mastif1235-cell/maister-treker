@@ -9,7 +9,7 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.90 · 2026-10-08';
+const APP_VERSION = 'v91.91 · 2026-10-09';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -483,12 +483,12 @@ if('serviceWorker' in navigator){
   /* Фікс аудиту: раніше перевірка оновлення відбулася лише один раз при завантаженні.
      installer у полі тримає застосунок відкритим годинами — нову версію він міг не
      побачити ніколи. Додамо делікатний poll: раз на 6 годин + при поверненні
-     в активну вкладку (з годинним троттлом, щоб не ганяти мережу). */
+     в активну вкладку (з хвилинним троттлом для фізичного PWA update gate). */
   function serviceWorkerPollUpdate(){
     try{
       if(!serviceWorkerRegistration || typeof serviceWorkerRegistration.update!=='function') return;
       const now=Date.now();
-      if(now-serviceWorkerLastUpdateCheck<60*60*1000) return;
+      if(now-serviceWorkerLastUpdateCheck<60*1000) return;
       serviceWorkerLastUpdateCheck=now;
       Promise.resolve(serviceWorkerRegistration.update()).catch(()=>{});
     }catch(_error){}
@@ -521,6 +521,8 @@ if('serviceWorker' in navigator){
     if(typeof document!=='undefined'&&document.addEventListener){
       document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') serviceWorkerPollUpdate(); });
     }
+    window.addEventListener('pageshow',serviceWorkerPollUpdate);
+    window.addEventListener('focus',serviceWorkerPollUpdate);
   });
   window.__mtServiceWorkerDiagnostics=()=>({cacheName:mtActiveServiceWorkerCacheName, refreshing:serviceWorkerRefreshing});
 }
