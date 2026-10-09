@@ -86,6 +86,16 @@ async function main(){
   const resumed=await bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
   assert.equal(resumed.ok,true);assert.equal(opens,1);assert.equal(calls,5);assert.equal(readyCalls,2,'resume requires fresh status ACK');
   assert.equal(timers.size,0,'resume/ACK clean all pending timers');
+  holdStatus=true;
+  const timed=bridge.send('https://script.google.com/macros/s/synthetic/exec',{action:'report_status'});
+  const timeoutAssertion=assert.rejects(timed,/GOOGLE_CONNECTION_REQUIRED/);
+  for(let i=0;i<10;i++)await Promise.resolve();
+  for(const expire of [...timers]){timers.delete(expire);expire();}
+  await timeoutAssertion;
+  assert.equal(bridge.diagnostics().connected,false,'visible timeout invalidates connection');
+  holdStatus=false;await bridge.resume();
+  assert.equal(bridge.diagnostics().connected,true,'fresh ACK restores connected after timeout');
+  assert.equal(timers.size,0);
   bridge.close();assert.equal(closed,1);
   console.log('Dispatcher actual HTML/client popup handshake + RPC + background safety + source/origin/nonce spoof rejection: PASS');
 }
