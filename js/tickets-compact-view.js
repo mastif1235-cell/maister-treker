@@ -56,5 +56,5 @@
     button.setAttribute('aria-pressed',String(compact));
     button.classList.toggle('btn-accent',compact);
   }
-  root.MTTicketCompactView=Object.freeze({runtimeRevision:'runtime-139',mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
+  root.MTTicketCompactView=Object.freeze({runtimeRevision:'runtime-140',mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
 })(typeof window!=='undefined'?window:globalThis);

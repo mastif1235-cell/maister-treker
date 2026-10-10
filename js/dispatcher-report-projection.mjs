@@ -12,7 +12,7 @@ export function reportPresentation(ticket,core){
   const raw=ticket.cloudImported===true;
   const equipment=Array.isArray(ticket.equipment)?ticket.equipment:[];
   const cables=Array.isArray(ticket.cables)?ticket.cables:[];
-  // Materials display (v91.94): quantity + informational line price from the
+  // Materials display (v91.95): quantity + informational line price from the
   // real ticket/calculator data. The price is a decoding aid only — it never
   // adds to `total`, never feeds physical accounting, and is omitted when
   // missing or zero. Zero-quantity materials are not shown.

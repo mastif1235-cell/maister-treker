@@ -13,5 +13,10 @@
     "runtime": "runtime-139",
     "fingerprint": "052241fe930c6f95ee43290b88953f765f2ac95ccbe623a1e6fae531aec5a5fa",
     "assets": 8
+  },
+  "maister-treker-v70-runtime-140": {
+    "runtime": "runtime-140",
+    "fingerprint": "9a16e85f06bd12378360e78f9d2c1e5f564e60de0709e6eb29bbe075f9f903c5",
+    "assets": 8
   }
 }

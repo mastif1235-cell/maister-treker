@@ -1,47 +1,147 @@
 'use strict';
-/* v91.94 / runtime-139. Auto-send (task 1): a saved ticket reaches Таблиця Д
-   without a Settings visit; an app restart re-attaches to the SAME named
-   bridge window (no popup spam, no duplicate sends, ACK path unchanged). */
-const fs=require('node:fs');
+/* v91.95 / runtime-140. Direct transport E2E (physical-Android gate):
+   A) a saved ticket is delivered to Таблиця Д by a SIGNED POST (MT-SYNC-HMAC-V3,
+      verified here against the shared canonical contract) with popupCount===0;
+   B) an app restart keeps sending with no Google connect at all;
+   C) background/resume sends a new ticket with no popup;
+   D) offline -> pending -> online/resume -> automatic retry -> ACK;
+   E) lost response -> the SAME request_id replays the server receipt -> sent
+      with exactly ONE server-side mutation (no duplicate). */
+const crypto=require('node:crypto');
+const contract=require('../js/sync-contract.js');
 const {test,expect,gotoApp,waitAppReady,createTicketViaUi}=require('./app-test');
 
-test('auto-send: saved ticket delivers by itself and the session revives after an app restart',async({page,context,appEnv})=>{
-  const html=fs.readFileSync(require('path').join(__dirname,'../gas/dispatcher-report/Bridge.html'),'utf8');
-  let popupCount=0;
-  context.on('page',()=>{popupCount++;});
-  await context.route('https://script.google.com/macros/s/synthetic/exec?**',async route=>{
-    const u=new URL(route.request().url()),config={origin:u.searchParams.get('origin'),channel:u.searchParams.get('channel')};
-    const runner=`<script>let done;const ids=new Set();window.google={script:{run:{withSuccessHandler(fn){done=fn;return this},withFailureHandler(){return this},async reportDispatch(request){const callback=done;window.testRequests=(window.testRequests||[]).concat(request);
-      if(request.action==='report_upsert'){ids.add(request.ticket.ticket_id);callback({ok:true,inserted:1,updated:0,unchanged:0,deleted:0,rejected:0,errors:0});return;}
-      if(request.action==='report_sync_all'){for(const t of request.tickets)ids.add(t.ticket_id);callback({ok:true,inserted:request.tickets.length,updated:0,unchanged:0,deleted:0,rejected:0,errors:0});return;}
-      const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([...ids].sort())));callback({ok:true,active_count:ids.size,deleted_count:0,id_set_hash:Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join(''),earliest_date:'2026-10-08',latest_date:'2026-10-08'});}}}};</script>`;
-    await route.fulfill({contentType:'text/html; charset=utf-8',body:html.replace('<script>',runner+'<script>').replace('<?!= bridgeConfig ?>',JSON.stringify(config))});
-  });
-  await gotoApp(page,appEnv.url);
-  // One-time channel setup, exactly as the user does it on day one.
-  await page.click('.tab-btn[data-tab="settings"]');await page.locator('[data-settings-hub="sync"]').click();
+const SECRET='e2e-direct-secret-0123456789abcdef';
+const ENDPOINT='https://script.google.com/macros/s/synthetic/exec';
+
+// Behaviour model of the migrated dispatcher GAS: HMAC envelope verification,
+// request_id receipt cache (REPORT_ACK_) and upsert accounting.
+function makeServer(){
+  const rows=new Map(),acks=new Map();
+  let mutations=0,dropNextResponse=false,requests=0,denied=0;
+  function verifyEnvelope(env){
+    if(!env||typeof env!=='object')return false;
+    const expected=crypto.createHmac('sha256',SECRET).update(contract.canonical(env),'utf8').digest('base64url');
+    return typeof env.sig==='string'&&env.sig===expected&&env.entity==='system'&&env.id==='';
+  }
+  function dispatch(env){
+    requests++;
+    if(!verifyEnvelope(env)){denied++;return {ok:false,code:'AUTH_FAILED'};}
+    let request;try{request=JSON.parse(env.body);}catch(_){denied++;return {ok:false,code:'AUTH_FAILED'};}
+    if(!request||request.action!==env.action||request.request_id!==env.requestId){denied++;return {ok:false,code:'AUTH_FAILED'};}
+    const cached=acks.get(request.request_id);
+    if(cached)return cached;
+    let inserted=0,updated=0,deleted=0;
+    for(const t of request.tickets||[]){if(rows.has(t.ticket_id)){updated++;}else{inserted++;}rows.set(t.ticket_id,t);}
+    for(const d of request.deletes||[]){if(rows.delete(d.ticket_id))deleted++;else inserted++;}
+    mutations++;
+    const result=request.action==='report_status'
+      ?{ok:true,active_count:rows.size,deleted_count:0,id_set_hash:'',earliest_date:'2026-10-10',latest_date:'2026-10-10'}
+      :{ok:true,inserted,updated,unchanged:0,deleted,rejected:0,errors:0};
+    acks.set(request.request_id,result);
+    return result;
+  }
+  return {
+    rows,mutations:()=>mutations,denied:()=>denied,requests:()=>requests,
+    dropNext(){dropNextResponse=true;},
+    async handle(route){
+      let env;try{env=JSON.parse(route.request().postData()||'');}catch(_){env=null;}
+      const result=dispatch(env||{});
+      if(dropNextResponse){dropNextResponse=false;await route.abort('connectionreset');return;}
+      await route.fulfill({status:200,contentType:'application/json; charset=utf-8',body:JSON.stringify(result)});
+    }
+  };
+}
+
+async function setupDirectChannel(page){
+  await page.click('.tab-btn[data-tab="settings"]');
+  await page.locator('[data-settings-hub="sync"]').click();
   await page.evaluate(()=>{for(let p=document.getElementById('dispatcherReportEndpoint').parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;});
-  await page.locator('#dispatcherReportEndpoint').fill('https://script.google.com/macros/s/synthetic/exec');
+  await page.locator('#dispatcherReportEndpoint').fill(ENDPOINT);
+  await page.locator('#dispatcherHmacSecret').fill(SECRET);
   await page.locator('#dispatcherReportEnabled').check();
   await page.locator('[data-dispatcher-action="save"]').click();
-  const opened=context.waitForEvent('page');await page.locator('[data-dispatcher-action="authorize"]').click();const popup=await opened;
-  await expect(popup.locator('#status')).toHaveText('Таблиця Д підключена. Можна повернутися до Майстер-Трекера.');
-  expect(popupCount).toBe(1);
+  await expect(page.locator('#dispatcherReportResult')).toContainText('Прямий підписаний канал');
+}
 
-  // A) Saved through the real calculator UI → sent with zero extra clicks.
-  await createTicketViaUi(page,'Auto Send Alpha');
-  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Auto Send Alpha');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+test('A/B: signed direct send delivers by itself after an app restart — popupCount stays 0',async({page,context,appEnv})=>{
+  let popupCount=0;
+  context.on('page',()=>{popupCount++;});
+  const server=makeServer();
+  await context.route(ENDPOINT,route=>server.handle(route));
+  await gotoApp(page,appEnv.url);
+  await setupDirectChannel(page);
 
-  // B) Android-style process restart: in-memory bridge state is gone. The
-  // durable queue must re-attach to the still-open named bridge window and
-  // send by itself — no Settings visit, no second popup.
+  // «Перевірити підключення» uses the same signed POST — no popup.
+  await page.locator('[data-dispatcher-action="check"]').click();
+  await expect(page.locator('#dispatcherReportResult')).toContainText('Активних нарядів');
+
+  // A) Saved through the real calculator UI -> ACK -> sent, zero clicks.
+  await createTicketViaUi(page,'Direct Alpha');
+  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Direct Alpha');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+  expect(popupCount).toBe(0);
+
+  // B) Android-style process restart: nothing to re-attach, no Google session.
   await page.reload({waitUntil:'domcontentloaded'});
   await waitAppReady(page);
-  expect(popupCount).toBe(1);
-  await createTicketViaUi(page,'Auto Send Beta');
-  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Auto Send Beta');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
-  expect(popupCount).toBe(1);
-  // Both tickets acknowledged exactly once — no duplicate rows are created.
-  const sent=await page.evaluate(()=>{const ids=tickets.filter(t=>t.clientName&&t.clientName.startsWith('Auto Send')).map(t=>t.id);return ids.map(id=>MTDispatcherReport.delivery(id).state);});
+  await createTicketViaUi(page,'Direct Beta');
+  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Direct Beta');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+  expect(popupCount).toBe(0);
+  const sent=await page.evaluate(()=>tickets.filter(t=>t.clientName&&t.clientName.startsWith('Direct')).map(t=>MTDispatcherReport.delivery(t.id).state));
   expect(sent).toEqual(['sent','sent']);
+  // Each ticket applied on the server exactly once — no duplicates.
+  expect(server.rows.size).toBe(2);
+  expect(server.mutations()).toBeGreaterThanOrEqual(2);
+});
+
+test('C/D: offline ticket stays pending and resume sends it plus a new one — no popup',async({page,context,appEnv})=>{
+  let popupCount=0;
+  context.on('page',()=>{popupCount++;});
+  const server=makeServer();
+  await context.route(ENDPOINT,route=>server.handle(route));
+  await gotoApp(page,appEnv.url);
+  await setupDirectChannel(page);
+
+  // D) Offline: the save is local-first and the queue keeps the operation.
+  await context.setOffline(true);
+  await createTicketViaUi(page,'Direct Gamma');
+  const gamma=await page.evaluate(()=>{const t=tickets.find(x=>x.clientName==='Direct Gamma');return t&&MTDispatcherReport.delivery(t.id).state;});
+  expect(gamma).toBe('pending');
+
+  // C/D) Back online + resume: the durable queue flushes by itself.
+  await context.setOffline(false);
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Direct Gamma');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+
+  // C) A NEW ticket after the resume also sends by itself.
+  await createTicketViaUi(page,'Direct Delta');
+  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Direct Delta');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+  expect(popupCount).toBe(0);
+  expect(server.rows.size).toBe(2);
+});
+
+test('E: lost response replays the SAME request_id receipt — one server mutation, no duplicate',async({page,context,appEnv})=>{
+  let popupCount=0;
+  context.on('page',()=>{popupCount++;});
+  const server=makeServer();
+  await context.route(ENDPOINT,route=>server.handle(route));
+  await gotoApp(page,appEnv.url);
+  await setupDirectChannel(page);
+
+  // The mutation reaches the server but the ACK is lost on the wire.
+  server.dropNext();
+  await createTicketViaUi(page,'Direct Epsilon');
+  await expect.poll(()=>server.mutations(),{timeout:20000}).toBe(1);
+  const pendingBefore=await page.evaluate(()=>{const t=tickets.find(x=>x.clientName==='Direct Epsilon');return MTDispatcherReport.delivery(t.id).state;});
+  expect(pendingBefore).toBe('pending');
+  expect(server.mutations()).toBe(1);
+
+  // Resume retries with the SAME request_id -> receipt cache answers -> sent.
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));});
+  await page.waitForFunction(()=>{const t=tickets.find(x=>x.clientName==='Direct Epsilon');return !!t&&MTDispatcherReport.delivery(t.id).state==='sent';},null,{timeout:20000});
+  expect(popupCount).toBe(0);
+  expect(server.mutations()).toBe(1);
+  expect(server.rows.size).toBe(1);
+  // The retry carried the same request_id — the receipt was replayed, not re-executed.
+  expect(server.requests()).toBeGreaterThanOrEqual(2);
 });

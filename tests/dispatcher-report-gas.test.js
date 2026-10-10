@@ -1,10 +1,11 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto');
 const properties=new Map(),cache=new Map();let email='mastif1235@gmail.com',writes=0,rebuilds=0,rows=[],locked=false;
-const c={console:{warn:()=>{}},Date,Map,Set,JSON,PropertiesService:{getScriptProperties:()=>({getProperty:k=>properties.get(k)||null,setProperty:(k,v)=>properties.set(k,v),deleteProperty:k=>properties.delete(k),setProperties:o=>Object.entries(o).forEach(([k,v])=>properties.set(k,v))})},Session:{getActiveUser:()=>({getEmail:()=>email})},CacheService:{getScriptCache:()=>({get:k=>cache.get(k)||null,put:(k,v)=>cache.set(k,v)})},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},hasLock:()=>locked,releaseLock:()=>{locked=false;}})},Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>Array.from(crypto.createHash('sha256').update(s).digest())}};
+const c={console:{warn:()=>{}},Date,Map,Set,JSON,PropertiesService:{getScriptProperties:()=>({getProperty:k=>properties.get(k)||null,setProperty:(k,v)=>properties.set(k,v),deleteProperty:k=>properties.delete(k),setProperties:o=>Object.entries(o).forEach(([k,v])=>properties.set(k,v))})},Session:{getActiveUser:()=>({getEmail:()=>email})},CacheService:{getScriptCache:()=>({get:k=>cache.get(k)||null,put:(k,v)=>cache.set(k,v)})},LockService:{getScriptLock:()=>({tryLock:()=>{locked=true;return true;},hasLock:()=>locked,releaseLock:()=>{locked=false;}})},Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>Array.from(crypto.createHash('sha256').update(String(s)).digest()),computeHmacSha256Signature:(s,key)=>Array.from(crypto.createHmac('sha256',String(key)).update(String(s),'utf8').digest()),base64EncodeWebSafe:bytes=>Buffer.from(bytes).toString('base64').replace(/\+/g,'-').replace(/\//g,'_'),newBlob:s=>({getBytes:()=>Array.from(Buffer.from(String(s),'utf8'))})}};
 vm.createContext(c);vm.runInContext(fs.readFileSync('js/dispatcher-report-core.js','utf8'),c);vm.runInContext(fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8'),c);
 const actualRender=c.reportRender_;
-properties.set('REPORT_ALLOWED_EMAIL',email);properties.set('REPORT_SPREADSHEET_ID','only-report-target');properties.set('REPORT_ALLOWED_ORIGINS','https://mastif1235-cell.github.io');
+const DISPATCHER_SECRET='dispatcher-only-secret-0123456789abcdef';
+properties.set('REPORT_ALLOWED_EMAIL',email);properties.set('REPORT_SPREADSHEET_ID','only-report-target');properties.set('REPORT_ALLOWED_ORIGINS','https://mastif1235-cell.github.io');properties.set('MT_DISPATCHER_HMAC_SECRET',DISPATCHER_SECRET);
 c.reportStore_=()=>({rows:structuredClone(rows),ss:{},sheet:{}});c.reportWrite_=store=>{rows=structuredClone(store.rows);writes++;};c.reportRender_=()=>{rebuilds++;};
 const core=c.MTDispatcherReportCore;
 function dto(id='test-1',version=1){const d=Object.fromEntries(core.FIELDS.map(k=>[k,'']));Object.assign(d,{ticket_id:id,work_date:'2026-09-30',work_time:'12:30',work_type:'Ремонт',work_category:'repair',amount:0,total:0,onu_used:1,onu_replacement:1,router_used:0,payment_cash:0,payment_cashless:0,payment_free_amount:0,payment_free_count:1,updated_at:'2026-10-06T00:00:00.000Z',source_version:version});d.source_hash=c.reportHash_(d);return d;}
@@ -37,8 +38,82 @@ test('437 historical rows survive paged sync, repeated rebuild and tombstones',(
   rows=baseline;cache.clear();
 });
 test('rate limiter bounded',()=>{let result;for(let i=0;i<50;i++)result=call('report_status');assert.equal(result.code,'RATE_LIMITED');});
-test('arbitrary HTTP POST has no mutation path',()=>{const old=writes;c.ContentService={MimeType:{JSON:'json'},createTextOutput:body=>({setMimeType:()=>JSON.parse(body)})};assert.equal(c.doPost({postData:{contents:JSON.stringify({action:'report_upsert',ticket:dto('csrf')})}}).code,'METHOD_NOT_ALLOWED');assert.equal(writes,old);});
-test('only report tabs can be targeted',()=>{const source=fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8');assert(source.includes("getSheetByName('Заявки')"));assert(!source.includes('UrlFetchApp'));assert(!source.includes('getActiveSpreadsheet'));assert(source.includes('REPORT_SPREADSHEET_ID'));assert(source.includes('sheet.getRange(1,1,clearRows,5).breakApart().clear()'));});
+// ---- v91.95 direct transport: signed doPost is the ONLY mutation path ----
+// Canonical/signature reuse: the SAME js/sync-contract.js the browser ships.
+const contract=require('../js/sync-contract.js');
+function envelope(action,body,opts={}){
+  const e={v:3,method:'POST',action,entity:'system',id:'',ts:String(opts.ts!==undefined?opts.ts:Date.now()),nonce:opts.nonce||'n'+crypto.randomUUID().replace(/-/g,''),'requestId':opts.requestId||String((body&&body.request_id)||('req-'+crypto.randomUUID())),body:JSON.stringify(body)};
+  e.sig=crypto.createHmac('sha256',opts.secret||DISPATCHER_SECRET).update(contract.canonical(e),'utf8').digest('base64url');
+  return e;
+}
+function post(env){return c.doPost({postData:{contents:JSON.stringify(env)}});}
+cache.clear(); // the rate flood above must not shadow the auth suite
+test('F: unsigned/malformed HTTP POST denied, no mutation',()=>{
+  const old=writes;
+  c.ContentService={MimeType:{JSON:'json'},createTextOutput:body=>({setMimeType:()=>JSON.parse(body)})};
+  assert.equal(c.doPost({postData:{contents:''}}).code,'AUTH_FAILED');
+  assert.equal(c.doPost({postData:{contents:'not-json'}}).code,'AUTH_FAILED');
+  assert.equal(c.doPost({postData:{contents:JSON.stringify({action:'report_sync_all',tickets:[dto('csrf')],request_id:'csrf-request-01'})}}).code,'AUTH_FAILED');
+  assert.equal(writes,old);
+});
+test('signed direct POST executes via the one reportExecute_ engine',()=>{
+  cache.clear();
+  const r=post(envelope('report_sync_all',{action:'report_sync_all',tickets:[dto('direct-1')],rebuild:false,request_id:'direct-req-01'}));
+  assert.equal(r.ok,true);assert.equal(r.inserted,1);
+  assert(rows.some(x=>x.ticket_id==='direct-1'),'signed POST mutates the same store');
+});
+test('F: tampered body breaks the signature, denied',()=>{
+  const old=writes,env=envelope('report_sync_all',{action:'report_sync_all',tickets:[dto('signed-ok')],rebuild:false,request_id:'direct-req-02'});
+  env.body=JSON.stringify({action:'report_sync_all',tickets:[dto('tampered')],rebuild:false,request_id:'direct-req-02'});
+  assert.equal(post(env).code,'AUTH_FAILED');assert.equal(writes,old);
+});
+test('H: wrong dispatcher secret denied',()=>{
+  const old=writes;
+  assert.equal(post(envelope('report_status',{action:'report_status',request_id:'direct-req-03'},{secret:'wrong-secret-9876543210abcdef'})).code,'AUTH_FAILED');
+  assert.equal(writes,old);
+});
+test('G: reused nonce denied even with a valid signature',()=>{
+  cache.clear();
+  const nonce='fixed-nonce-'+crypto.randomUUID().replace(/-/g,'').slice(0,12);
+  assert.equal(post(envelope('report_status',{action:'report_status',request_id:'direct-req-04'},{nonce})).ok,true);
+  const old=writes;
+  assert.equal(post(envelope('report_sync_all',{action:'report_sync_all',tickets:[dto('replayed')],rebuild:false,request_id:'direct-req-05'},{nonce})).code,'AUTH_FAILED');
+  assert.equal(writes,old,'the replayed nonce can never execute a second mutation');
+});
+test('E: request_id retry (fresh nonce) replays the receipt, one mutation',()=>{
+  cache.clear();
+  const body={action:'report_sync_all',tickets:[dto('direct-2')],rebuild:false,request_id:'direct-req-06'};
+  const first=post(envelope('report_sync_all',body));assert.equal(first.ok,true);assert.equal(first.inserted,1);
+  const after=writes;
+  const retry=post(envelope('report_sync_all',body));assert.equal(retry.ok,true);assert.deepEqual([retry.inserted,retry.updated,retry.unchanged,retry.deleted],[first.inserted,first.updated,first.unchanged,first.deleted]);
+  assert.equal(writes,after,'the receipt cache answers the retry — no second mutation');
+});
+test('exact envelope replay answers from the receipt cache',()=>{
+  const body={action:'report_sync_all',tickets:[dto('direct-3')],rebuild:false,request_id:'direct-req-07'};
+  const env=envelope('report_sync_all',body);
+  const first=post(env);assert.equal(first.ok,true);
+  const after=writes,replay=post(env);assert.equal(replay.ok,true);assert.equal(writes,after);
+});
+test('envelope must match the body it was signed for',()=>{
+  const old=writes;
+  const mismatched=envelope('report_status',{action:'report_sync_all',tickets:[dto('sneaky')],rebuild:false,request_id:'direct-req-08'});
+  assert.equal(post(mismatched).code,'AUTH_FAILED');
+  const badId=envelope('report_status',{action:'report_status',request_id:'direct-req-09'});
+  badId.requestId='direct-req-10';
+  badId.sig=crypto.createHmac('sha256',DISPATCHER_SECRET).update(contract.canonical(badId),'utf8').digest('base64url');
+  assert.equal(post(badId).code,'AUTH_FAILED');
+  assert.equal(writes,old);
+});
+test('expired timestamp outside +-5 min denied',()=>{
+  const old=writes,env=envelope('report_status',{action:'report_status',request_id:'direct-req-11'},{ts:Date.now()-6*60*1000});
+  assert.equal(post(env).code,'AUTH_FAILED');assert.equal(writes,old);
+});
+test('unsigned mutation can never reach reportExecute_',()=>{
+  let reached=false;const original=c.reportExecute_;c.reportExecute_=()=>{reached=true;return {ok:true};};
+  c.doPost({postData:{contents:JSON.stringify({action:'report_upsert',ticket:dto('csrf-2')})}});
+  c.reportExecute_=original;assert.equal(reached,false);
+});
+test('only report tabs can be targeted',()=>{const source=fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8');assert(source.includes("getSheetByName('Заявки')"));assert(!source.includes('UrlFetchApp'));assert(!source.includes('getActiveSpreadsheet'));assert(source.includes('REPORT_SPREADSHEET_ID'));assert(source.includes('sheet.getRange(1,1,clearRows,5).breakApart().clear()'));assert(source.includes('MT_DISPATCHER_HMAC_SECRET'),'signed transport uses the dedicated dispatcher secret');assert(source.includes('MT-SYNC-HMAC-V3'),'envelope stays on the shared canonical contract');assert(source.includes("getProperty('MT_DISPATCHER_HMAC_SECRET')"),'secret comes from Script Properties, never hardcoded');});
 function renderSheet(merges=[]){
   const calls=[],sheet={getLastRow:()=>2,getMaxRows:()=>1000,getRange:(row,col,height=1,width=1)=>{if(typeof row==='string'){assert.equal(row,'B2');row=2;col=2;}const range={};for(const method of ['breakApart','clear','merge','setValue','setValues','setRichTextValues','setNumberFormat','setWrap','setVerticalAlignment','setHorizontalAlignment','setFontFamily','setFontSize','setFontColor','setBackground','setBackgrounds','setFontWeight','setFontWeights','setBorder'])range[method]=(...args)=>{calls.push({method,row,col,height,width,args});return range;};range.getMergedRanges=()=>merges;return range;},setRowHeights:(...args)=>calls.push({method:'heights',args}),setColumnWidth:(...args)=>calls.push({method:'width',args}),setHiddenGridlines:()=>{}};
   return {sheet,calls,ss:{getSheetByName:name=>{assert.equal(name,'Отчет');return sheet;}}};

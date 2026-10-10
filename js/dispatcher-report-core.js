@@ -74,7 +74,7 @@
   function money(n){return Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';}
   function displayDate(day){return day.split('-').reverse().join('.');}
   function dayNumbers(list){
-    // Deterministic daily наряд numbering (v91.94): chronological order inside
+    // Deterministic daily наряд numbering (v91.95): chronological order inside
     // the day (work_time ASC, then ticket_id ASC), independent of display
     // order, batch composition, retries, rebuilds and sync history.
     const m=new Map();

@@ -31,7 +31,7 @@ function harness(items){
   // Redacted historical importer shape; not a claim of reading private July JSON.
   const rawTicket={id:'redacted-history',date:'15.07.2026',time:'12:00',type:'Ремонт',sum:3500,payment:'Готівка',cloudImported:true,equipment:[],cables:[],note:'',content:'🛠️ ONU: 1 шт. х 800 грн\n🛠️ Роутер: 1 шт. х 2300 грн\n🔌 UTP: 12,5м х 10грн\n🛠️ Кріплення: 2 шт. х 0 грн\n🛠️ Нуль: 0 шт. х 10 грн\n📝 Перевірити тариф, signal -18 dBm\n📞 Тел: 000\nПриватна примітка майстра: PRIVATE-CANARY\n📝 DO-NOT-LEAK'};
   const before=JSON.stringify(rawTicket),dto=await buildDTO(rawTicket,core);
-  // v91.94 contract: materials show quantity + informational line price from
+  // v91.95 contract: materials show quantity + informational line price from
   // the real content data; a zero price keeps quantity only (never «0 грн»).
   assert.equal(dto.materials_display,'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн\nUTP — 12.5 м — 125 грн\nКріплення — 2 шт.');assert.equal(dto.dispatcher_comment,'Перевірити тариф');assert.equal(JSON.stringify(rawTicket),before);
   const rendered=core.render([dto]).blocks.find(b=>b.kind==='ticket').text;assert(rendered.includes(dto.materials_display));assert(rendered.includes(dto.dispatcher_comment));assert(!JSON.stringify(dto).includes('PRIVATE-CANARY'));assert(!JSON.stringify(dto).includes('DO-NOT-LEAK'));

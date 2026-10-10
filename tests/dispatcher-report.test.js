@@ -91,7 +91,7 @@ async function asyncTests(){
   result={ok:false,code:'PRIVACY_REJECTED'};restored.retry();await restored.flush();assert.equal(restored.status().failed,1);await restored.flush();assert.equal(sends,5);count++;
   cfg.dispatcherReportEndpoint='https://script.google.com/macros/s/another/exec';q.enqueueDelete('synthetic-2');const metadata=JSON.parse(store.get('mtDispatcherReportOutboxV1'));assert.equal(metadata.operations.length,2,'endpoint edit must not discard pending work');assert.equal(metadata.operations[1].id,'synthetic-2');count++;
   const original=fs.readFileSync(path.join(root,'Code.gs'),'utf8');assert(!original.includes('report_upsert'));assert(!fs.readFileSync(path.join(root,'js/sync-contract.js'),'utf8').includes('report_upsert'));count++;
-  // Material pricing display (v91.94): quantity + informational line price
+  // Material pricing display (v91.95): quantity + informational line price
   // from real ticket/calculator data; total is never increased by it.
   const priced={id:'priced-1',date:'10.10.2026',time:'13:41',type:'Підключення',city:'Тест',address:'Тестова 1',sum:6000,payment:'Готівка',
     equipment:[{label:'ДБЖ',checked:true,qty:1,price:2500},{label:'Роутер',checked:true,qty:1,price:2300},{label:'ONU',checked:true,qty:1,price:800}],

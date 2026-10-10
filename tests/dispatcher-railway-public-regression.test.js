@@ -21,7 +21,7 @@ const core=require('../js/dispatcher-report-core.js');
     assert.equal(dto.work_date,'2026-07-15');assert.equal(dto.work_category,'connection');
     assert.equal(dto.city,'Сурсько-Михайлівка');
     assert.equal(dto.address_display,'Сурсько-Михайлівка, пров. Залізничний, 4');
-    // v91.94: quantity + informational line price (raw and structured agree).
+    // v91.95: quantity + informational line price (raw and structured agree).
     assert.equal(dto.materials_display,'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн');
     assert.equal(dto.dispatcher_comment,'Тариф: 400 грн\n'+note);
     assert.equal(dto.payment_type,'Готівка');assert.equal(dto.payment_cash,3500);

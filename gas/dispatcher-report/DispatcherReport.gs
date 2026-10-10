@@ -1,7 +1,12 @@
 /* ONLY the separate dispatcher Apps Script project. Legacy Code.gs untouched.
-   Deployment MUST execute as USER_ACCESSING. Never deploy as anonymous owner.
+   v91.95 direct transport: deployment MUST execute as the owner
+   (webapp executeAs USER_DEPLOYING, access ANYONE). Every mutation request is
+   authenticated by the signed MT-SYNC-HMAC-V3 envelope (secret property
+   MT_DISPATCHER_HMAC_SECRET, >=32 chars) — never by Google session identity.
+   The private spreadsheet stays private: only this script opens it.
    Script Properties: REPORT_SPREADSHEET_ID, REPORT_ALLOWED_EMAIL,
-   REPORT_ALLOWED_ORIGINS (comma-separated origins). No client secrets. */
+   REPORT_ALLOWED_ORIGINS (comma-separated origins), MT_DISPATCHER_HMAC_SECRET.
+   No other client secrets. */
 var REPORT_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
 var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status'];
 function reportConfig_(){
@@ -102,53 +107,128 @@ function reportAudit_(c,code){
   // Safe metadata only; never payload, notes, addresses, identity or MAC.
   console.warn(JSON.stringify({scope:'dispatcher-report',code:code,rejected_count:count}));
 }
-function reportErrorCode_(error){var code=String(error&&error.message||'');return /^(?:UNAUTHORIZED|REPORT_[A-Z_]+|LEGACY_WORKBOOK_FORBIDDEN|DUPLICATE_STORED_ID|INVALID_[A-Z_]+|UNKNOWN_OR_MISSING_FIELD|PRIVACY_REJECTED|STALE_VERSION|PAYMENT_MISMATCH|RATE_LIMITED|BUSY|HASH_MISMATCH|FORMULA_REJECTED)$/.test(code)?code:'REPORT_INTERNAL_ERROR';}
+function reportErrorCode_(error){var code=String(error&&error.message||'');return /^(?:UNAUTHORIZED|AUTH_FAILED|REPORT_[A-Z_]+|LEGACY_WORKBOOK_FORBIDDEN|DUPLICATE_STORED_ID|INVALID_[A-Z_]+|UNKNOWN_OR_MISSING_FIELD|PRIVACY_REJECTED|STALE_VERSION|PAYMENT_MISMATCH|RATE_LIMITED|BUSY|HASH_MISMATCH|FORMULA_REJECTED)$/.test(code)?code:'REPORT_INTERNAL_ERROR';}
 function reportDispatch(request){
+  // Interactive HtmlService RPC path (legacy bridge fallback). The Google
+  // identity check stays here; the signed direct doPost below never relies on it.
   var c;try{c=reportAuthorize_();}catch(e){return {ok:false,code:reportErrorCode_(e)};}
   var lock=LockService.getScriptLock();
   try{
     if(!lock.tryLock(10000))throw new Error('BUSY');
-    if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
-    if(typeof request.request_id!=='string'||!/^[a-zA-Z0-9-]{8,80}$/.test(request.request_id))throw new Error('INVALID_REQUEST_ID');
-    if(JSON.stringify(request).length>500000)throw new Error('INVALID_SIZE');
-    var cache=CacheService.getScriptCache(),cached=cache.get('REPORT_ACK_'+request.request_id);
-    var requestHash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(request),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
-    if(cached){var ack=JSON.parse(cached);if(ack.hash!==requestHash)throw new Error('INVALID_REQUEST_ID');return ack.result;}
-    var minute=Math.floor(Date.now()/60000),rateKey='REPORT_RATE_'+minute,count=Number(cache.get(rateKey)||0);if(count>=40)throw new Error('RATE_LIMITED');cache.put(rateKey,String(count+1),120);
-    var store=reportStore_(c),result={ok:true,code:'OK',inserted:0,updated:0,unchanged:0,deleted:0,rejected:0,privacy_violations:0,errors:0},now=new Date().toISOString();
-    if(request.action==='report_status'){
-      if(request.ticket||request.tickets||request.deletes||request.rebuild!==undefined)throw new Error('INVALID_ACTION');
-      result={ok:true,code:'OK',active_count:store.rows.filter(function(r){return !r.deleted_at;}).length,deleted_count:store.rows.filter(function(r){return !!r.deleted_at;}).length,rejected_count:Number(c.p.getProperty('REPORT_REJECTED_COUNT')||0),last_sync:c.p.getProperty('REPORT_LAST_SYNC')||'',last_rebuild:c.p.getProperty('REPORT_LAST_REBUILD')||'',last_error:c.p.getProperty('REPORT_LAST_ERROR')||'',pending_retry:0};
-      // Safe archive evidence: no IDs, ticket text or private fields leave GAS.
-      var active=store.rows.filter(function(r){return !r.deleted_at;}),dates=active.map(function(r){return r.work_date;}).sort();
-      result.earliest_date=dates[0]||'';result.latest_date=dates[dates.length-1]||'';
-      result.id_set_hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(active.map(function(r){return r.ticket_id;}).sort()),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
-    }else{
-      var items=request.action==='report_upsert'?[request.ticket]:request.action==='report_sync_all'?request.tickets||[]:[],deletes=request.deletes||[];
-      if(!Array.isArray(items)||!Array.isArray(deletes)||items.length>100||deletes.length>100)throw new Error('INVALID_BATCH');
-      if(request.action==='report_upsert'&&(request.tickets||deletes.length))throw new Error('INVALID_ACTION');
-      if(request.action==='report_sync_all'&&request.ticket)throw new Error('INVALID_ACTION');
-      if(request.action==='report_delete'&&(!deletes.length||request.ticket||request.tickets))throw new Error('INVALID_DELETE');
-      if(request.action==='report_rebuild'&&(items.length||deletes.length))throw new Error('INVALID_ACTION');
-      // Validate the entire batch before ANY persistent write. A privacy/schema
-      // failure cannot partially store a batch or leak its contents in logs.
-      items=items.map(function(dto){var v=MTDispatcherReportCore.validate(dto);if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});return v;});
-      deletes.forEach(function(d){if(!d||Object.keys(d).some(function(k){return !['ticket_id','source_version'].includes(k);}))throw new Error('INVALID_DELETE');});
-      items.forEach(function(v){result[MTDispatcherReportCore.upsert(store.rows,v)]++;});
-      deletes.forEach(function(d){result[MTDispatcherReportCore.remove(store.rows,d.ticket_id,d.source_version,now)]++;});
-      if(items.length||deletes.length){reportWrite_(store);c.p.setProperty('REPORT_LAST_SYNC',now);}
-      if(request.action==='report_rebuild'||request.rebuild!==false){reportRender_(store.ss,store.rows);c.p.setProperty('REPORT_LAST_REBUILD',now);}
-      c.p.deleteProperty('REPORT_LAST_ERROR');
-    }
-    cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
+    return reportExecute_(c,request);
   }catch(e){var code=reportErrorCode_(e);reportAudit_(c,code);return {ok:false,code:code,rejected:1,privacy_violations:code==='PRIVACY_REJECTED'?1:0};}
   finally{if(lock.hasLock())lock.releaseLock();}
 }
+// The ONE mutation engine shared by both entry points. Assumes the script lock
+// is already held. envelopeNonce is provided ONLY by the signed doPost path:
+// the anti-replay nonce is consumed AFTER the idempotent REPORT_ACK_ replay and
+// BEFORE the first mutation, so a same-request retry answers from the receipt
+// cache while a reused nonce can never execute twice.
+function reportExecute_(c,request,envelopeNonce){
+  if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
+  if(typeof request.request_id!=='string'||!/^[a-zA-Z0-9-]{8,80}$/.test(request.request_id))throw new Error('INVALID_REQUEST_ID');
+  if(JSON.stringify(request).length>500000)throw new Error('INVALID_SIZE');
+  var cache=CacheService.getScriptCache(),cached=cache.get('REPORT_ACK_'+request.request_id);
+  var requestHash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(request),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
+  if(cached){var ack=JSON.parse(cached);if(ack.hash!==requestHash)throw new Error('INVALID_REQUEST_ID');return ack.result;}
+  if(envelopeNonce!==undefined&&!reportConsumeNonce_(envelopeNonce))throw new Error('AUTH_FAILED');
+  var minute=Math.floor(Date.now()/60000),rateKey='REPORT_RATE_'+minute,count=Number(cache.get(rateKey)||0);if(count>=40)throw new Error('RATE_LIMITED');cache.put(rateKey,String(count+1),120);
+  var store=reportStore_(c),result={ok:true,code:'OK',inserted:0,updated:0,unchanged:0,deleted:0,rejected:0,privacy_violations:0,errors:0},now=new Date().toISOString();
+  if(request.action==='report_status'){
+    if(request.ticket||request.tickets||request.deletes||request.rebuild!==undefined)throw new Error('INVALID_ACTION');
+    result={ok:true,code:'OK',active_count:store.rows.filter(function(r){return !r.deleted_at;}).length,deleted_count:store.rows.filter(function(r){return !!r.deleted_at;}).length,rejected_count:Number(c.p.getProperty('REPORT_REJECTED_COUNT')||0),last_sync:c.p.getProperty('REPORT_LAST_SYNC')||'',last_rebuild:c.p.getProperty('REPORT_LAST_REBUILD')||'',last_error:c.p.getProperty('REPORT_LAST_ERROR')||'',pending_retry:0};
+    // Safe archive evidence: no IDs, ticket text or private fields leave GAS.
+    var active=store.rows.filter(function(r){return !r.deleted_at;}),dates=active.map(function(r){return r.work_date;}).sort();
+    result.earliest_date=dates[0]||'';result.latest_date=dates[dates.length-1]||'';
+    result.id_set_hash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(active.map(function(r){return r.ticket_id;}).sort()),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
+  }else{
+    var items=request.action==='report_upsert'?[request.ticket]:request.action==='report_sync_all'?request.tickets||[]:[],deletes=request.deletes||[];
+    if(!Array.isArray(items)||!Array.isArray(deletes)||items.length>100||deletes.length>100)throw new Error('INVALID_BATCH');
+    if(request.action==='report_upsert'&&(request.tickets||deletes.length))throw new Error('INVALID_ACTION');
+    if(request.action==='report_sync_all'&&request.ticket)throw new Error('INVALID_ACTION');
+    if(request.action==='report_delete'&&(!deletes.length||request.ticket||request.tickets))throw new Error('INVALID_DELETE');
+    if(request.action==='report_rebuild'&&(items.length||deletes.length))throw new Error('INVALID_ACTION');
+    // Validate the entire batch before ANY persistent write. A privacy/schema
+    // failure cannot partially store a batch or leak its contents in logs.
+    items=items.map(function(dto){var v=MTDispatcherReportCore.validate(dto);if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});return v;});
+    deletes.forEach(function(d){if(!d||Object.keys(d).some(function(k){return !['ticket_id','source_version'].includes(k);}))throw new Error('INVALID_DELETE');});
+    items.forEach(function(v){result[MTDispatcherReportCore.upsert(store.rows,v)]++;});
+    deletes.forEach(function(d){result[MTDispatcherReportCore.remove(store.rows,d.ticket_id,d.source_version,now)]++;});
+    if(items.length||deletes.length){reportWrite_(store);c.p.setProperty('REPORT_LAST_SYNC',now);}
+    if(request.action==='report_rebuild'||request.rebuild!==false){reportRender_(store.ss,store.rows);c.p.setProperty('REPORT_LAST_REBUILD',now);}
+    c.p.deleteProperty('REPORT_LAST_ERROR');
+  }
+  cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
+}
+function reportJson_(obj){
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function reportHmacSecret_(){
+  return String(PropertiesService.getScriptProperties().getProperty('MT_DISPATCHER_HMAC_SECRET')||'');
+}
+function reportCanonicalField_(value){
+  value=String(value==null?'':value);
+  return Utilities.newBlob(value).getBytes().length+':'+value;
+}
+// Byte-compatible with js/sync-contract.js canonical() and the legacy Code.gs
+// syncCanonicalRequest_ (prefix MT-SYNC-HMAC-V3). Parity is test-proven.
+function reportCanonical_(envelope){
+  return ['MT-SYNC-HMAC-V3',
+    reportCanonicalField_(String(Number(envelope.v))),
+    reportCanonicalField_(String(envelope.method||'').toUpperCase()),
+    reportCanonicalField_(String(envelope.action||'')),
+    reportCanonicalField_(String(envelope.entity||'')),
+    reportCanonicalField_(String(envelope.id||'')),
+    reportCanonicalField_(String(envelope.ts||'')),
+    reportCanonicalField_(String(envelope.nonce||'')),
+    reportCanonicalField_(String(envelope.requestId||'')),
+    reportCanonicalField_(String(envelope.body||''))].join('\n');
+}
+function reportConstantTimeEqual_(a,b){
+  a=String(a||'');b=String(b||'');
+  var max=a.length>b.length?a.length:b.length,diff=a.length^b.length;
+  for(var i=0;i<max;i++)diff|=(i<a.length?a.charCodeAt(i):0)^(i<b.length?b.charCodeAt(i):0);
+  return diff===0;
+}
+function reportConsumeNonce_(nonce){
+  var cache=CacheService.getScriptCache(),key='mt-dispatcher-nonce-'+Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(nonce),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
+  if(cache.get(key))return false;
+  cache.put(key,'1',600);return true;
+}
+// Fail-closed envelope verification: shape, timestamp window (+-5 min), nonce
+// format, request binding and the HMAC-SHA256 signature over the canonical
+// MT-SYNC-HMAC-V3 form. Any miss is a boolean false — the caller denies.
+function reportVerifyEnvelope_(envelope){
+  if(!envelope||typeof envelope!=='object'||Array.isArray(envelope))return false;
+  if(Number(envelope.v)!==3||String(envelope.method||'').toUpperCase()!=='POST')return false;
+  if(!REPORT_ACTIONS.includes(String(envelope.action||''))||String(envelope.entity||'')!=='system'||String(envelope.id||'')!=='')return false;
+  if(!/^\d{13}$/.test(String(envelope.ts||''))||Math.abs(Date.now()-Number(envelope.ts))>5*60*1000)return false;
+  if(!/^[A-Za-z0-9_-]{16,128}$/.test(String(envelope.nonce||'')))return false;
+  if(!/^[a-zA-Z0-9-]{8,80}$/.test(String(envelope.requestId||'')))return false;
+  if(typeof envelope.body!=='string'||envelope.body.length>1536*1024)return false;
+  if(!/^[A-Za-z0-9_-]{43}$/.test(String(envelope.sig||'')))return false;
+  var secret=reportHmacSecret_();
+  if(Utilities.newBlob(secret).getBytes().length<32)return false;
+  var expected=Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(reportCanonical_(envelope),secret,Utilities.Charset.UTF_8)).replace(/=+$/g,'');
+  return reportConstantTimeEqual_(expected,String(envelope.sig));
+}
 function doPost(e){
-  // Session cookies alone are not CSRF proof for an arbitrary cross-site POST.
-  // All report actions use Google's authenticated HtmlService RPC bridge.
-  // Do not expose a second mutation path or reuse legacy authentication.
-  return ContentService.createTextOutput(JSON.stringify({ok:false,code:'METHOD_NOT_ALLOWED'})).setMimeType(ContentService.MimeType.JSON);
+  // v91.95 direct transport: the ONLY accepted mutation path is a signed
+  // MT-SYNC-HMAC-V3 envelope. Unsigned, invalid, replayed or tampered requests
+  // never reach reportExecute_ — DENY before any read or write.
+  var raw=e&&e.postData?String(e.postData.contents||''):'';
+  if(!raw||raw.length>2*1024*1024)return reportJson_({ok:false,code:'AUTH_FAILED'});
+  var envelope;try{envelope=JSON.parse(raw);}catch(_){return reportJson_({ok:false,code:'AUTH_FAILED'});}
+  if(!reportVerifyEnvelope_(envelope))return reportJson_({ok:false,code:'AUTH_FAILED'});
+  var request;try{request=JSON.parse(envelope.body);}catch(_){return reportJson_({ok:false,code:'AUTH_FAILED'});}
+  if(!request||typeof request!=='object'||Array.isArray(request)||String(request.action)!==envelope.action||String(request.request_id)!==envelope.requestId)return reportJson_({ok:false,code:'AUTH_FAILED'});
+  var c;try{c=reportConfig_();}catch(err){return reportJson_({ok:false,code:reportErrorCode_(err)});}
+  var lock=LockService.getScriptLock();
+  try{
+    if(!lock.tryLock(10000))throw new Error('BUSY');
+    return reportJson_(reportExecute_(c,request,String(envelope.nonce)));
+  }catch(err){var code=reportErrorCode_(err);reportAudit_(c,code);return reportJson_({ok:false,code:code,rejected:1,privacy_violations:code==='PRIVACY_REJECTED'?1:0});}
+  finally{if(lock.hasLock())lock.releaseLock();}
 }
 function doGet(e){
   var c;try{c=reportAuthorize_();}catch(error){return ContentService.createTextOutput(JSON.stringify({ok:false,code:reportErrorCode_(error)})).setMimeType(ContentService.MimeType.JSON);}

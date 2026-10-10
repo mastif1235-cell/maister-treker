@@ -7,7 +7,7 @@ assert.match(gas,/PropertiesService\.getScriptProperties\(\)\.getProperty\(SYNC_
 assert.match(runtime,/delete target\.syncSecret/,'legacy query secret discarded');
 assert.match(runtime,/legacyTicketEndpoint:[\s\S]*legacyShiftsEndpoint:[\s\S]*legacySecretWasPresent:/,'legacy endpoints retained without retaining the legacy secret');
 assert.match(runtime,/marker\.status = 'complete'[\s\S]*marker\.canonicalEndpoint = target\.scriptUrl/,'one-time v66 settings migration is detectable');
-for(const key of ['tgBotToken','syncSecret','syncHmacSecret','tgBackupChatId','tgDispatcherChatId','tgDispatchers','tgMyChatId','tgShiftsMsgId']) assert.match(hardening,new RegExp(`'${key}'`),`backup excludes ${key}`);
+for(const key of ['tgBotToken','syncSecret','syncHmacSecret','dispatcherHmacSecret','tgBackupChatId','tgDispatcherChatId','tgDispatchers','tgMyChatId','tgShiftsMsgId']) assert.match(hardening,new RegExp(`'${key}'`),`backup excludes ${key}`);
 assert.match(html,/id="tgBotTokenInput"[^>]*type="password"|type="password"[^>]*id="tgBotTokenInput"/);
 assert.equal(/console\.(?:log|warn|error|debug)\([^\n]*(?:tgBotToken|syncHmacSecret|\btoken\b)/.test(runtime),false,'no direct secret logging');
 console.log('PASS secret inventory/properties/backup exclusion/logging boundaries');

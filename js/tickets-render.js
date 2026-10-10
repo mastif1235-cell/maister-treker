@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-139';
+globalThis.MTTicketRendererRevision='runtime-140';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';

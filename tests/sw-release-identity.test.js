@@ -1,5 +1,5 @@
 'use strict';
-/* Release identity regression (v91.94 / runtime-139).
+/* Release identity regression (v91.95 / runtime-140).
    Rule: any runtime-proof asset change between releases REQUIRES a new
    CACHE_NAME/runtime revision — changed cached JS must never ship under the
    same cache name (Android v91.92 smoke: stale dispatcher-report-client.js
@@ -42,17 +42,20 @@ assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:t
 assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:{...tampered,'./js/dispatcher-report-client.js':'1'.repeat(64)},identity}),/RELEASE_IDENTITY_CHANGED/,'the rule covers the report client itself');
 
 // 5. The required remedy — a NEW cache/runtime for changed bytes — passes.
-const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v70-runtime-140',assets:tampered,identity});
+const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v71-runtime-141',assets:tampered,identity});
 assert.equal(bumped.recorded,false,'new cache name is not yet recorded');
-assert.equal(bumped.runtime,'runtime-140','bumped release keeps the runtime token');
+assert.equal(bumped.runtime,'runtime-141','bumped release keeps the runtime token');
 
 // 6. Ledger history: every recorded release keeps its own immutable fingerprint pair.
 const names=Object.keys(identity);
 assert.ok(names.includes('maister-treker-v67-runtime-137'),'production identity stays recorded');
 assert.ok(names.includes('maister-treker-v68-runtime-138'),'the first cache bump stays recorded');
-assert.ok(names.includes('maister-treker-v69-runtime-139'),'the cache bump is recorded');
-assert.notEqual(identity['maister-treker-v69-runtime-139'].fingerprint,identity['maister-treker-v67-runtime-137'].fingerprint,'the two releases differ in bytes AND in cache name');
-assert.notEqual(identity['maister-treker-v69-runtime-139'].fingerprint,identity['maister-treker-v68-runtime-138'].fingerprint,'every release keeps its own immutable fingerprint');
+assert.ok(names.includes('maister-treker-v69-runtime-139'),'the v91.94 cache bump stays recorded');
+assert.ok(names.includes('maister-treker-v70-runtime-140'),'the v91.95 direct-transport release is recorded');
+assert.notEqual(identity['maister-treker-v70-runtime-140'].fingerprint,identity['maister-treker-v67-runtime-137'].fingerprint,'the two releases differ in bytes AND in cache name');
+assert.notEqual(identity['maister-treker-v70-runtime-140'].fingerprint,identity['maister-treker-v68-runtime-138'].fingerprint,'every release keeps its own immutable fingerprint');
+assert.notEqual(identity['maister-treker-v70-runtime-140'].fingerprint,identity['maister-treker-v69-runtime-139'].fingerprint,'v91.95 bytes are fingerprinted under their own cache name');
+assert.notEqual(identity['maister-treker-v69-runtime-139'].fingerprint,identity['maister-treker-v68-runtime-138'].fingerprint,'history entries never share a fingerprint');
 for(const [name,rec] of Object.entries(identity)){
   assert.ok(name.includes(rec.runtime),'recorded runtime token belongs to its cache name: '+name);
   assert.match(rec.fingerprint,/^[a-f0-9]{64}$/,name+' fingerprint');
