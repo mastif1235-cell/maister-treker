@@ -913,6 +913,9 @@ async function saveTicketFromForm(e){
       // Same contract as before: the dispatcher layer can never reject a save.
       try{globalThis.MTDispatcherTelemetry?.record?.('enqueue_result',{code:'REPORT_QUEUE_ERROR',module_present:true});}catch(_){}
     }
+    // Auto-send (v91.95): inside the save gesture the dispatcher layer itself
+    // restores the Таблиця Д channel and sends — no Settings visit required.
+    try{const ensure=globalThis.MTDispatcherReport&&globalThis.MTDispatcherReport.ensureChannel;if(typeof ensure==='function'){const p=ensure();if(p&&typeof p.catch==='function')p.catch(()=>{});}}catch(_){/* auto-resume must never break a save */}
   }
   if(savedTicketRef && naryadPendingCompletionId){
     const naryad = naryadQueue.find(n=>String(n.id)===String(naryadPendingCompletionId));

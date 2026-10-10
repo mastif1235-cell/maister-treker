@@ -31,7 +31,9 @@ function harness(items){
   // Redacted historical importer shape; not a claim of reading private July JSON.
   const rawTicket={id:'redacted-history',date:'15.07.2026',time:'12:00',type:'Ремонт',sum:3500,payment:'Готівка',cloudImported:true,equipment:[],cables:[],note:'',content:'🛠️ ONU: 1 шт. х 800 грн\n🛠️ Роутер: 1 шт. х 2300 грн\n🔌 UTP: 12,5м х 10грн\n🛠️ Кріплення: 2 шт. х 0 грн\n🛠️ Нуль: 0 шт. х 10 грн\n📝 Перевірити тариф, signal -18 dBm\n📞 Тел: 000\nПриватна примітка майстра: PRIVATE-CANARY\n📝 DO-NOT-LEAK'};
   const before=JSON.stringify(rawTicket),dto=await buildDTO(rawTicket,core);
-  assert.equal(dto.materials_display,'ONU — 1 шт.\nРоутер — 1 шт.\nUTP — 12.5 м\nКріплення — 2 шт.');assert.equal(dto.dispatcher_comment,'Перевірити тариф');assert.equal(JSON.stringify(rawTicket),before);
+  // v91.95 contract: materials show quantity + informational line price from
+  // the real content data; a zero price keeps quantity only (never «0 грн»).
+  assert.equal(dto.materials_display,'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн\nUTP — 12.5 м — 125 грн\nКріплення — 2 шт.');assert.equal(dto.dispatcher_comment,'Перевірити тариф');assert.equal(JSON.stringify(rawTicket),before);
   const rendered=core.render([dto]).blocks.find(b=>b.kind==='ticket').text;assert(rendered.includes(dto.materials_display));assert(rendered.includes(dto.dispatcher_comment));assert(!JSON.stringify(dto).includes('PRIVATE-CANARY'));assert(!JSON.stringify(dto).includes('DO-NOT-LEAK'));
   assert.equal(reportPresentation({...rawTicket,cloudImported:false},core).materials,'','explicit structured emptiness wins over stale content');
   const historical=await buildDTO({...rawTicket,type:'Підключення',city:'',address:'',payment:'',content:'📋 ЗАЯВКА: РЕМОНТ\n🏙️ Місто: Тестове\n📍 Адреса: пров. Тестовий 4\n💎 Тариф: 400 грн\n💳 Оплата: Готівка\n🛠️ ONU: 1 шт. х 800 грн\n📝 Уточнити тариф'},core);assert.equal(historical.work_type,'Ремонт');assert.equal(historical.city,'Тестове');assert.equal(historical.address_display,'Тестове, пров. Тестовий 4');assert.equal(historical.payment_cash,3500);assert.equal(historical.dispatcher_comment,'Тариф: 400 грн\nУточнити тариф');

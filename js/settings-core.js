@@ -98,7 +98,7 @@ function sanitizeLegacySyncEndpoint(value){
   if(!raw) return '';
   try{
     const url = new URL(raw);
-    ['secret','syncSecret','syncHmacSecret'].forEach(key=>url.searchParams.delete(key));
+    ['secret','syncSecret','syncHmacSecret','dispatcherHmacSecret'].forEach(key=>url.searchParams.delete(key));
     url.hash = '';
     return url.toString();
   }catch(e){
@@ -156,7 +156,7 @@ function migrateSyncSettingsV66(source, merged, nowIso){
 
 function loadSettings(){
   const s = loadJSON('settings', null);
-  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
+  const base = {hourlyRate:150, tags:[...DEFAULT_TAGS], coworkers:[...DEFAULT_COWORKERS], cities:[], streets:{}, theme:'dark', scriptUrl:DEFAULT_SCRIPT_URL, shiftsScriptUrl:'', materials: DEFAULT_MATERIALS.map(m=>({...m})), workTypes: DEFAULT_WORK_TYPES.map(m=>({...m})), cableTypes: DEFAULT_CABLE_TYPES.map(c=>({...c})), defaultConnectFee:500, defaultRepairCallFee:300, freeRepairCallThreshold:800, defaultTariff:250, syncHmacSecret:'', dispatcherHmacSecret:'', syncResponseMode:'opaque', vizitkaUrl:'https://on-b6a966.netlify.app', dogovorUrl:'', masters: DEFAULT_MASTERS.map(m=>({...m})), tgBotToken:'', tgBackupChatId:'', tgDispatcherChatId:'', tgDispatchers:[{name:'',chatId:''},{name:'',chatId:''}], tgMyChatId:'', quickDialContacts:[],
     // NEW: захист входу — пароль зберігається як SHA-256 хеш (не відкритим
     // текстом), відбиток пальця — через WebAuthn (credential id, сам ключ
     // керується браузером/ОС, у нас лежить лише посилання на нього)

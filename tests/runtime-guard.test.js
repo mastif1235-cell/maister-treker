@@ -1,5 +1,5 @@
 'use strict';
-/* v91.93 / runtime-138. Обов'язкова регресія №8: змішаний runtime (модулі/SW
+/* v91.95 / runtime-140. Обов'язкова регресія №8: змішаний runtime (модулі/SW
    різних ревізій) → один безпечний reload із sessionStorage-обмежувачем циклу;
    повторний mismatch → fail closed (flush не запускається, дані не чіпаються);
    консистентний runtime → без reload. Плюс: SW-кеш з тим самим runtime-токеном
@@ -9,7 +9,7 @@ const root=path.join(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'
 
 function bootGuard(opts={}){
   const store=new Map(Object.entries(opts.initialStore||{})),reloads=[],channels=[];
-  const revisions=Object.assign({app:'runtime-138',report:'runtime-138',renderer:'runtime-138',compact:'runtime-138'},opts.revisions||{});
+  const revisions=Object.assign({app:'runtime-140',report:'runtime-140',renderer:'runtime-140',compact:'runtime-140'},opts.revisions||{});
   const ctx={
     setTimeout,clearTimeout,
     sessionStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v)),removeItem:k=>store.delete(k)},
@@ -20,7 +20,7 @@ function bootGuard(opts={}){
     MessageChannel:class{constructor(){const s=this;this.port1={onmessage:null};this.port2={close(){}};channels.push(s);this.deliver=data=>{if(typeof s.port1.onmessage==='function')s.port1.onmessage({data});};}},
     location:{reload:()=>{reloads.push(Date.now());}}
   };
-  ctx.navigator={serviceWorker:opts.noController?{}:{controller:{postMessage:(msg,ports)=>{assert.equal(msg.type,'MT_RUNTIME_STATUS');const channel=channels.at(-1);queueMicrotask(()=>channel.deliver(opts.swAnswer===undefined?{cacheName:'maister-treker-v68-runtime-138'}:opts.swAnswer));}}}};
+  ctx.navigator={serviceWorker:opts.noController?{}:{controller:{postMessage:(msg,ports)=>{assert.equal(msg.type,'MT_RUNTIME_STATUS');const channel=channels.at(-1);queueMicrotask(()=>channel.deliver(opts.swAnswer===undefined?{cacheName:'maister-treker-v70-runtime-140'}:opts.swAnswer));}}}};
   vm.runInNewContext(read('js/runtime-guard.js'),ctx,{filename:'js/runtime-guard.js'});
   return {guard:ctx.MTDispatcherRuntimeGuard,reloads,store,ctx};
 }
@@ -56,7 +56,7 @@ function bootGuard(opts={}){
   }
   // 4) SW-кеш з тим самим runtime-токеном + release-суфікс (e2e-update) → узгоджений.
   {
-    const h=bootGuard({swAnswer:{cacheName:'maister-treker-v68-runtime-138-e2e-update'}});
+    const h=bootGuard({swAnswer:{cacheName:'maister-treker-v70-runtime-140-e2e-update'}});
     await new Promise(r=>setTimeout(r,10));
     assert.equal(h.guard.blocked(),false,'same runtime token with a release suffix is consistent');
     assert.deepEqual(h.reloads,[],'no reload for an e2e-renamed cache');
@@ -64,9 +64,9 @@ function bootGuard(opts={}){
   // 5) evaluate(): чиста функція сумісності модулів.
   {
     const h=bootGuard({noController:true});
-    assert.equal(h.guard.evaluate({app:'runtime-138',report:'runtime-138',renderer:'runtime-138',compact:'runtime-138'},'maister-treker-v68-runtime-138').ok,true);
-    assert.equal(h.guard.evaluate({app:'runtime-138',report:'runtime-136',renderer:'runtime-138',compact:'runtime-138'},'maister-treker-v68-runtime-138').ok,false);
-    assert.equal(h.guard.evaluate({app:'runtime-138',report:'runtime-138',renderer:'runtime-138',compact:'runtime-138'},'maister-treker-v67-runtime-136').ok,false);
+    assert.equal(h.guard.evaluate({app:'runtime-140',report:'runtime-140',renderer:'runtime-140',compact:'runtime-140'},'maister-treker-v70-runtime-140').ok,true);
+    assert.equal(h.guard.evaluate({app:'runtime-140',report:'runtime-136',renderer:'runtime-140',compact:'runtime-140'},'maister-treker-v70-runtime-140').ok,false);
+    assert.equal(h.guard.evaluate({app:'runtime-140',report:'runtime-140',renderer:'runtime-140',compact:'runtime-140'},'maister-treker-v67-runtime-136').ok,false);
   }
   // 6) flush-зв'язка: заблокований runtime-guard зупиняє flush і syncAll, але
   //    не чіпає чергу (жодних видалень/помилок), і fail closed зберігається.

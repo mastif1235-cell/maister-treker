@@ -5,7 +5,7 @@ test('compact list keeps ticket order, expands one full card and survives offlin
   await page.setViewportSize({width:320,height:740});
   const errors=await gotoApp(page,appEnv.url);
   const cache=await waitServiceWorkerCacheReady(page);
-  expect(cache).toBe('maister-treker-v68-runtime-138');
+  expect(cache).toBe('maister-treker-v70-runtime-140');
   expect(await page.evaluate(async()=>{
     const base={date:currentTicketDate,city:'Дніпро',street:'вул. Робоча',house:'15',apartment:'27',address:'вул. Робоча 15, кв. 27',sum:450};
     tickets=[
@@ -100,5 +100,53 @@ test('compact list keeps ticket order, expands one full card and survives offlin
   await page.locator('#ticketList .ticket-compact-expanded[data-id="compact-a"] .edit-ticket-btn').click();
   await expect(page.locator('#screen-calculator')).toBeVisible();
   await expect(page.locator('#f_client')).toHaveValue('Compact Alpha');
+  expect(errors).toEqual([]);
+});
+
+test('first expand shows real delivery statuses under the address; compact row stays clean',async({page,appEnv})=>{
+  await page.setViewportSize({width:320,height:740});
+  const errors=await gotoApp(page,appEnv.url);
+  await page.evaluate(()=>{
+    settings.scriptUrl='https://script.google.com/macros/s/legacy-synthetic/exec';
+    settings.tgBotToken='BOT';settings.tgBackupChatId='CHAT';
+    settings.dispatcherReportEndpoint='https://script.google.com/macros/s/synthetic/exec';
+    settings.dispatcherReportEnabled=true;
+    tickets=[Object.assign(blankTicketObject(),{id:'status-a',date:currentTicketDate,time:'10:00',type:'Ремонт',city:'Дніпро',address:'вул. Робоча 15',sum:450,payment:'Готівка',content:'тест'})];
+    saveSettings();renderTicketsScreen();
+  });
+  // E) Compact row: design unchanged, no delivery badges.
+  await page.locator('#ticketViewModeBtn').click();
+  const compact=page.locator('#ticketList > .ticket-compact-card[data-id="status-a"]');
+  await expect(compact.locator('.tc-status-row')).toHaveCount(0);
+  await expect(compact.locator('[data-dispatcher-ticket-status]')).toHaveCount(0);
+  await expect(compact).toContainText('вул. Робоча 15');
+  await expect(compact.locator('.ticket-view-expand-btn')).toBeVisible();
+  // D) First expand: statuses UNDER the address, ABOVE the action buttons.
+  await compact.locator('.ticket-view-expand-btn').click();
+  const card=page.locator('#ticketList > .ticket-compact-expanded[data-id="status-a"] .ticket-card');
+  await expect(card.locator('.tc-status-row')).toHaveCount(1);
+  const order=await card.evaluate(el=>{
+    const sub=el.querySelector('.tc-head .tc-sub')||el.querySelector('.tc-sub'),status=el.querySelector('.tc-status-row'),actions=el.querySelector('.tc-actions');
+    const follows=(a,b)=>!!(a&&b&&(a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING));
+    return {subBeforeStatus:follows(sub,status),statusBeforeActions:follows(status,actions)};
+  });
+  expect(order).toEqual({subBeforeStatus:true,statusBeforeActions:true});
+  const statusRow=card.locator('.tc-status-row');
+  await expect(statusRow).toContainText('Таблиця');
+  await expect(statusRow).toContainText('Таблиця Д');
+  await expect(statusRow).toContainText('Telegram');
+  // Real states only: a queued Таблиця Д operation is ⏳ and never ✅.
+  const reportBadge=card.locator('[data-dispatcher-ticket-status]');
+  await expect(reportBadge).toHaveAttribute('data-delivery-state','pending');
+  await expect(reportBadge).toContainText('⏳');
+  await expect(reportBadge).not.toContainText('✅');
+  await expect(statusRow).toContainText('⏳');
+  // Second expand: the full detailed card (level 2).
+  const details=card.locator('.tc-details');
+  await expect(details).toHaveClass(/tc-collapsed/);
+  await card.locator('.tc-expand-btn').click();
+  await expect(details).not.toHaveClass(/tc-collapsed/);
+  await card.locator('.tc-expand-btn').click();
+  await expect(details).toHaveClass(/tc-collapsed/);
   expect(errors).toEqual([]);
 });

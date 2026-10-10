@@ -17,6 +17,24 @@ for(const [key,value] of [['work_date','2026-02-30'],['work_time','24:15'],['upd
 test('no mutation',()=>{const t=fixture(),before=JSON.stringify(t);core.validate(t);core.render([t]);assert.equal(JSON.stringify(t),before);});
 test('date/time descending and ID ascending',()=>assert.deepEqual(core.sorted([fixture('b'),fixture('a'),fixture('later','2026-10-01'),fixture('late-time','2026-09-30','23:59')]).map(r=>r.ticket_id),['later','late-time','a','b']));
 test('daily numbering restarts',()=>{const x=core.render([fixture('a'),fixture('b'),fixture('c','2026-10-01')]);assert.equal(x.blocks.filter(b=>b.kind==='ticket'&&b.text.startsWith('📋 Наряд №1')).length,2);});
+test('daily numbering chronological: 4 existing + 13:41 = Наряд №5, next = №6',()=>{
+  const day='2026-10-10';
+  const rows=['08:00','09:15','10:30','11:45'].map((t,i)=>fixture('old-'+i,day,t));
+  const fifth=fixture('fifth',day,'13:41'),sixth=fixture('sixth',day,'15:00');
+  const x=core.render([...rows,fifth]);
+  const texts=Object.fromEntries(x.blocks.filter(b=>b.kind==='ticket').map(b=>[b.key,b.text]));
+  for(let i=0;i<4;i++)assert.ok(texts['old-'+i].startsWith('📋 Наряд №'+(i+1)),'existing ticket '+(i+1)+' keeps chronological number');
+  assert.ok(texts.fifth.startsWith('📋 Наряд №5'),'the 13:41 ticket is Наряд №5');
+  const y=core.render([...rows,fifth,sixth]);
+  const yTexts=Object.fromEntries(y.blocks.filter(b=>b.kind==='ticket').map(b=>[b.key,b.text]));
+  assert.ok(yTexts.fifth.startsWith('📋 Наряд №5'),'№5 is stable after the next ticket');
+  assert.ok(yTexts.sixth.startsWith('📋 Наряд №6'),'the next ticket is Наряд №6');
+  // Display order stays newest-first; numbering does not depend on it.
+  assert.deepEqual(y.blocks.filter(b=>b.kind==='ticket').map(b=>b.key),['sixth','fifth','old-3','old-2','old-1','old-0']);
+  // Same numbers in the sheet layout; deterministic under any input order.
+  assert.ok(y.layout.rows.find(r=>r.key==='fifth').text.startsWith('📋 Наряд №5'));
+  assert.equal(JSON.stringify(y),JSON.stringify(core.render([sixth,fifth,...rows.slice().reverse()])));
+});
 test('cross-month week unified; monthly independent',()=>{const x=core.render([fixture('s'),fixture('o','2026-10-01')]);assert.equal(Object.keys(x.weekly).length,1);assert.equal(x.weekly['2026-09-28'].ticket_count,2);assert.equal(x.monthly['2026-09'].ticket_count,1);assert.equal(x.monthly['2026-10'].ticket_count,1);assert.equal(x.blocks.filter(b=>b.kind==='weekly').length,1);assert.equal(x.blocks.filter(b=>b.kind==='monthly').length,2);assert(x.blocks.findIndex(b=>b.kind==='weekly')>x.blocks.findIndex(b=>b.kind==='day'&&b.key==='2026-09-30'));});
 test('B tickets, C daily, D weekly, E monthly aligned spans',()=>{
   const rows=[fixture('a','2026-10-07'),fixture('b','2026-10-07'),fixture('c','2026-10-07'),fixture('d','2026-10-06'),fixture('e','2026-10-01'),fixture('f','2026-09-30'),fixture('g','2026-09-23')],before=JSON.stringify(rows),x=core.render(rows),l=x.layout;
@@ -73,6 +91,29 @@ async function asyncTests(){
   result={ok:false,code:'PRIVACY_REJECTED'};restored.retry();await restored.flush();assert.equal(restored.status().failed,1);await restored.flush();assert.equal(sends,5);count++;
   cfg.dispatcherReportEndpoint='https://script.google.com/macros/s/another/exec';q.enqueueDelete('synthetic-2');const metadata=JSON.parse(store.get('mtDispatcherReportOutboxV1'));assert.equal(metadata.operations.length,2,'endpoint edit must not discard pending work');assert.equal(metadata.operations[1].id,'synthetic-2');count++;
   const original=fs.readFileSync(path.join(root,'Code.gs'),'utf8');assert(!original.includes('report_upsert'));assert(!fs.readFileSync(path.join(root,'js/sync-contract.js'),'utf8').includes('report_upsert'));count++;
+  // Material pricing display (v91.95): quantity + informational line price
+  // from real ticket/calculator data; total is never increased by it.
+  const priced={id:'priced-1',date:'10.10.2026',time:'13:41',type:'Підключення',city:'Тест',address:'Тестова 1',sum:6000,payment:'Готівка',
+    equipment:[{label:'ДБЖ',checked:true,qty:1,price:2500},{label:'Роутер',checked:true,qty:1,price:2300},{label:'ONU',checked:true,qty:1,price:800}],
+    cables:[{label:'Оптика',meters:40,pricePerMeter:10}],note:'',masterNote:''};
+  const pricedDto=await buildDTO(priced,core);
+  assert.equal(pricedDto.total,6000,'total stays 6000');
+  assert.equal(pricedDto.amount,6000,'amount stays 6000');
+  const lines=pricedDto.materials_display.split('\n');
+  assert.deepEqual(lines.slice(0,3),['ДБЖ — 1 шт. — 2500 грн','Роутер — 1 шт. — 2300 грн','ONU — 1 шт. — 800 грн']);
+  assert.ok(lines.includes('Оптика — 40 м — 400 грн'),'cable line shows meters × pricePerMeter');
+  assert.equal(lines.length,4,'each material exactly once');
+  assert.equal(core.stats([pricedDto]).total,6000,'statistics do not double count');
+  const pricedRows=[];for(let i=0;i<5;i++)assert.equal(core.upsert(pricedRows,pricedDto),i?'unchanged':'inserted');
+  assert.equal(pricedRows.length,1);assert.equal(core.stats(pricedRows).total,6000,'repeat sync never inflates total');
+  const raw=await buildDTO({id:'raw-1',date:'10.10.2026',time:'12:00',type:'Ремонт',sum:300,payment:'Готівка',cloudImported:true,
+    content:'📋 ЗАЯВКА: РЕМОНТ\n🛠️ ДБЖ: 1 шт. х 2500 грн\n🔌 Оптика: 40м х 10грн = 400грн'},core);
+  assert.ok(raw.materials_display.includes('ДБЖ — 1 шт. — 2500 грн'),'raw content price tail is decoded');
+  assert.ok(raw.materials_display.includes('Оптика — 40 м — 400 грн'),'raw explicit total wins over unit price');
+  const zero=await buildDTO({id:'zero-1',date:'10.10.2026',time:'12:00',type:'Ремонт',sum:0,payment:'Безкоштовно',
+    equipment:[{label:'Free-part',checked:true,qty:1,price:0},{label:'Hidden-part',checked:true,qty:0,price:5}],cables:[],note:'',masterNote:''},core);
+  assert.deepEqual(zero.materials_display.split('\n'),['Free-part — 1 шт.'],'zero price shows quantity only; zero quantity hidden');
+  count++;
   console.log('Dispatcher contract/projection/outbox: '+count+' PASS');
 }
 asyncTests().catch(e=>{console.error(e);process.exitCode=1;});
