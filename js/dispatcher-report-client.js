@@ -44,7 +44,7 @@
       state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();
       state.inflight=null;persist();
     }
-    // Lost-ACK reconciliation (v91.92): a late/replayed response whose
+    // Lost-ACK reconciliation (v91.93): a late/replayed response whose
     // request_id matches the persisted in-flight batch confirms those exact
     // operation versions as sent WITHOUT resending the mutation. Any other
     // answer (mismatched id, superseded versions, missing counters) is
@@ -67,7 +67,7 @@
     }
     function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
-    // Since v91.92 the operation itself is ALWAYS persisted after a successful
+    // Since v91.93 the operation itself is ALWAYS persisted after a successful
     // local save: connection state, auto-send flag and endpoint health gate
     // only SENDING. A ticket ID is never lost to a silent `return false`.
     function configured(){return !!deps.settings().dispatcherReportEndpoint;}
@@ -206,7 +206,7 @@
     }
     function confirmArchive(remote,expectedHash,sourceCount){
       // GAS v7 report_status has no id_set_hash: that is a contract-version gap,
-      // not an archive mismatch. Upgrade detection first (task Q40/v91.92).
+      // not an archive mismatch. Upgrade detection first (task Q40/v91.93).
       if(remote&&remote.id_set_hash===undefined)throw new Error('REPORT_GAS_UPGRADE_REQUIRED');
       const s=status();if(!state.sync||s.unresolved||s.lastError||s.sync.unresolved_count||s.sync.expected_count!==s.sync.received_ack_count||!remote?.ok||remote.active_count!==sourceCount||!/^[a-f0-9]{64}$/.test(expectedHash)||remote.id_set_hash!==expectedHash){if(state.sync)state.sync.final_validation='FAIL';persist();throw new Error('REPORT_ARCHIVE_MISMATCH');}
       state.sync.final_validation='PASS';persist();return status();
@@ -291,7 +291,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-137',createOutbox,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-138',createOutbox,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),
@@ -312,7 +312,7 @@
   function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
   function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const x=outbox.status();if(s)s.textContent=`У черзі: ${x.unresolved}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
-  // Safe copy-diagnostics (v91.92): counts/codes/revisions ONLY. Never the
+  // Safe copy-diagnostics (v91.93): counts/codes/revisions ONLY. Never the
   // endpoint URL, ticket IDs or any private ticket field. Telemetry events are
   // pre-filtered to the safe field whitelist by dispatcher-telemetry.js.
   async function collectDiagnostics(){
@@ -334,7 +334,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v67-runtime-137'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-137');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v68-runtime-138'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-138');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -355,7 +355,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v67-runtime-137'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-137');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v68-runtime-138'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-138');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await bridge.send(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
