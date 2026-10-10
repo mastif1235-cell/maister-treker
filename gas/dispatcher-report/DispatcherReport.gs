@@ -3,6 +3,8 @@
    (webapp executeAs USER_DEPLOYING, access ANYONE). Every mutation request is
    authenticated by the signed MT-SYNC-HMAC-V3 envelope (secret property
    MT_DISPATCHER_HMAC_SECRET, >=32 chars) — never by Google session identity.
+   The legacy HtmlService bridge (reportDispatch) is READ-ONLY: report_status
+   only; mutations there fail closed with REPORT_DIRECT_TRANSPORT_REQUIRED.
    The private spreadsheet stays private: only this script opens it.
    Script Properties: REPORT_SPREADSHEET_ID, REPORT_ALLOWED_EMAIL,
    REPORT_ALLOWED_ORIGINS (comma-separated origins), MT_DISPATCHER_HMAC_SECRET.
@@ -109,15 +111,22 @@ function reportAudit_(c,code){
 }
 function reportErrorCode_(error){var code=String(error&&error.message||'');return /^(?:UNAUTHORIZED|AUTH_FAILED|REPORT_[A-Z_]+|LEGACY_WORKBOOK_FORBIDDEN|DUPLICATE_STORED_ID|INVALID_[A-Z_]+|UNKNOWN_OR_MISSING_FIELD|PRIVACY_REJECTED|STALE_VERSION|PAYMENT_MISMATCH|RATE_LIMITED|BUSY|HASH_MISMATCH|FORMULA_REJECTED)$/.test(code)?code:'REPORT_INTERNAL_ERROR';}
 function reportDispatch(request){
-  // Interactive HtmlService RPC path (legacy bridge fallback). The Google
-  // identity check stays here; the signed direct doPost below never relies on it.
+  // Interactive HtmlService RPC path — READ-ONLY since the direct-transport
+  // security fix: only report_status (diagnostics) may execute here. Google
+  // identity no longer grants mutation capability; every known MUTATION action
+  // fails closed with REPORT_DIRECT_TRANSPORT_REQUIRED and must arrive as a
+  // signed HMAC envelope through doPost below. Unknown actions keep the old
+  // INVALID_ACTION contract. Do not remove this entry point: rollback/debug
+  // status checks and the owner identity gate still need it.
   var c;try{c=reportAuthorize_();}catch(e){return {ok:false,code:reportErrorCode_(e)};}
-  var lock=LockService.getScriptLock();
   try{
-    if(!lock.tryLock(10000))throw new Error('BUSY');
-    return reportExecute_(c,request);
+    if(request&&typeof request==='object'&&!Array.isArray(request)&&REPORT_ACTIONS.includes(request.action)&&request.action!=='report_status')throw new Error('REPORT_DIRECT_TRANSPORT_REQUIRED');
+    var lock=LockService.getScriptLock();
+    try{
+      if(!lock.tryLock(10000))throw new Error('BUSY');
+      return reportExecute_(c,request);
+    }finally{if(lock.hasLock())lock.releaseLock();}
   }catch(e){var code=reportErrorCode_(e);reportAudit_(c,code);return {ok:false,code:code,rejected:1,privacy_violations:code==='PRIVACY_REJECTED'?1:0};}
-  finally{if(lock.hasLock())lock.releaseLock();}
 }
 // The ONE mutation engine shared by both entry points. Assumes the script lock
 // is already held. envelopeNonce is provided ONLY by the signed doPost path:
