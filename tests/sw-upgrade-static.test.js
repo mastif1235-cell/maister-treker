@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),appSource=fs.readFileSync(path.join(root,'app.js'),'utf8'),handlers={},deleted=[],added=[],puts=[];let localTouches=0,idbTouches=0,networkResolve,fetchCalls=0,skipWaitingCalls=0,reloadCalls=0,messageHandler;
-assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v67-runtime-137'/,'installed-PWA cache revision is unique for v91.92');
-assert.match(appSource,/APP_VERSION\s*=\s*'v91\.92 · 2026-10-09'/,'canonical release identity is v91.92');
+assert.match(source,/CACHE_NAME\s*=\s*'maister-treker-v68-runtime-138'/,'installed-PWA cache revision is unique for v91.93');
+assert.match(appSource,/APP_VERSION\s*=\s*'v91\.93 · 2026-10-10'/,'canonical release identity is v91.93');
 assert.match(appSource,/register\('sw\.js',\{updateViaCache:'none'\}\)/,'browser cache cannot suppress the service-worker update check');
 assert.match(appSource,/function serviceWorkerUpdateIsSafe\(\)[\s\S]*hasUnsavedChanges\(\)[\s\S]*modalRoot[\s\S]*toolsSpeedController[\s\S]*isPointPlacementActive/,'update is deferred while a form, modal, speed test or map placement is active');
 assert.match(appSource,/function serviceWorkerApplyUpdate\(\)[\s\S]*if\(serviceWorkerRefreshing\) return false;[\s\S]*saveDraftToLocalStorage\(\)[\s\S]*window\.location\.reload\(\)/,'reload stays single-shot and still saves the draft');
