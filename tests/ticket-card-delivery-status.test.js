@@ -1,5 +1,5 @@
 'use strict';
-/* v91.95 / runtime-140. Delivery statuses in the card (task 2):
+/* v91.95 / runtime-141. Delivery statuses in the card (task 2):
    — compact row: no delivery badges (pinned separately in dispatcher-ui-clean);
    — first expand (card shell): Таблиця / Таблиця Д / Telegram statuses UNDER the
      address line and ABOVE the action buttons;

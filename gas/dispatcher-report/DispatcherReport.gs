@@ -157,15 +157,37 @@ function reportExecute_(c,request,envelopeNonce){
     if(request.action==='report_sync_all'&&request.ticket)throw new Error('INVALID_ACTION');
     if(request.action==='report_delete'&&(!deletes.length||request.ticket||request.tickets))throw new Error('INVALID_DELETE');
     if(request.action==='report_rebuild'&&(items.length||deletes.length))throw new Error('INVALID_ACTION');
-    // Validate the entire batch before ANY persistent write. A privacy/schema
-    // failure cannot partially store a batch or leak its contents in logs.
-    items=items.map(function(dto){var v=MTDispatcherReportCore.validate(dto);if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});return v;});
-    deletes.forEach(function(d){if(!d||Object.keys(d).some(function(k){return !['ticket_id','source_version'].includes(k);}))throw new Error('INVALID_DELETE');});
-    items.forEach(function(v){result[MTDispatcherReportCore.upsert(store.rows,v)]++;});
-    deletes.forEach(function(d){result[MTDispatcherReportCore.remove(store.rows,d.ticket_id,d.source_version,now)]++;});
-    if(items.length||deletes.length){reportWrite_(store);c.p.setProperty('REPORT_LAST_SYNC',now);}
+    // An item failure never grants an ACK to its siblings or prevents their
+    // writes. The request envelope/auth checks remain fail-closed above.
+    result.items=[];
+    function applyItem(dto,action){
+      var item={ticket_id:dto&&typeof dto.ticket_id==='string'&&/^[\p{L}\p{N}_:.@-]{1,128}$/u.test(dto.ticket_id)?dto.ticket_id:'',action:action,source_version:dto&&Number.isSafeInteger(dto.source_version)?dto.source_version:null};
+      try{
+        var outcome;
+        if(action==='upsert'){
+          var v=MTDispatcherReportCore.validate(dto);
+          if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');
+          Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});
+          outcome=MTDispatcherReportCore.upsert(store.rows,v);
+        }else{
+          if(!dto||Object.keys(dto).some(function(k){return !['ticket_id','source_version'].includes(k);}))throw new Error('INVALID_DELETE');
+          outcome=MTDispatcherReportCore.remove(store.rows,dto.ticket_id,dto.source_version,now);
+        }
+        result[outcome]++;item.status=outcome==='unchanged'?'unchanged':'synced';item.code='OK';
+      }catch(error){
+        var code=reportErrorCode_(error);item.code=code;
+        item.status=code==='STALE_VERSION'?'stale_version':/^(?:INVALID_|UNKNOWN_|PRIVACY_|HASH_|FORMULA_|PAYMENT_)/.test(code)?'invalid_dto':'error';
+        result.rejected++;result.errors++;if(code==='PRIVACY_REJECTED')result.privacy_violations++;
+      }
+      result.items.push(item);
+    }
+    items.forEach(function(dto){applyItem(dto,'upsert');});
+    deletes.forEach(function(dto){applyItem(dto,'delete');});
+    if(result.inserted+result.updated+result.unchanged+result.deleted){reportWrite_(store);c.p.setProperty('REPORT_LAST_SYNC',now);}
+    if(result.errors)result.code='PARTIAL';
     if(request.action==='report_rebuild'||request.rebuild!==false){reportRender_(store.ss,store.rows);c.p.setProperty('REPORT_LAST_REBUILD',now);}
-    c.p.deleteProperty('REPORT_LAST_ERROR');
+    if(result.errors)result.items.filter(function(item){return item.code!=='OK';}).forEach(function(item){reportAudit_(c,item.code);});
+    else c.p.deleteProperty('REPORT_LAST_ERROR');
   }
   cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
 }

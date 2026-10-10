@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-140';
+globalThis.MTTicketRendererRevision='runtime-141';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -14,6 +14,12 @@ function ticketDeliveryBadges(t){
   }
   const report=globalThis.MTDispatcherReport,d=report?.delivery?.(t.id)||{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};
   return legacy+(report?.enabled?.()===false||['disabled','not_configured'].includes(d.state)?'':`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'Таблиця Д ⏳')}</span>`);
+}
+function dispatcherFailureDetails(t){
+  const d=globalThis.MTDispatcherReport?.delivery?.(t.id);
+  const date=/^(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})$/.test(t.date||'')?t.date:'';
+  const text=d?.state==='error'?JSON.stringify({ticket_id:String(t.id),date,attempts:d.attempts||0,error_code:/^[A-Z_]{1,64}$/.test(d.code||'')?d.code:'REPORT_ERROR',channel:'dispatcher',server_response:d.server_response||''}):'';
+  return `<div class="tc-dispatcher-error" data-dispatcher-error="${escapeHtml(t.id)}" data-dispatcher-date="${date}" ${text?'':'hidden'}>${escapeHtml(text)}</div>`;
 }
 function renderDateNavVisibility(){
   const inSpecialMode = searchQuery.trim().length>0 || activeFilterTags.size>0;
@@ -126,6 +132,7 @@ function renderTicketCard(t, opts={}){
     ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
     ${(opts.workOnly || hasContent || materialPresentation.html || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
+      ${dispatcherFailureDetails(t)}
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
       ${((t.macAddress || signalText) && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
