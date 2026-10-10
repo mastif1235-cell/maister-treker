@@ -44,7 +44,7 @@
       state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();
       state.inflight=null;persist();
     }
-    // Lost-ACK reconciliation (v91.93): a late/replayed response whose
+    // Lost-ACK reconciliation (v91.94): a late/replayed response whose
     // request_id matches the persisted in-flight batch confirms those exact
     // operation versions as sent WITHOUT resending the mutation. Any other
     // answer (mismatched id, superseded versions, missing counters) is
@@ -67,7 +67,7 @@
     }
     function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
-    // Since v91.93 the operation itself is ALWAYS persisted after a successful
+    // Since v91.94 the operation itself is ALWAYS persisted after a successful
     // local save: connection state, auto-send flag and endpoint health gate
     // only SENDING. A ticket ID is never lost to a silent `return false`.
     function configured(){return !!deps.settings().dispatcherReportEndpoint;}
@@ -206,7 +206,7 @@
     }
     function confirmArchive(remote,expectedHash,sourceCount){
       // GAS v7 report_status has no id_set_hash: that is a contract-version gap,
-      // not an archive mismatch. Upgrade detection first (task Q40/v91.93).
+      // not an archive mismatch. Upgrade detection first (task Q40/v91.94).
       if(remote&&remote.id_set_hash===undefined)throw new Error('REPORT_GAS_UPGRADE_REQUIRED');
       const s=status();if(!state.sync||s.unresolved||s.lastError||s.sync.unresolved_count||s.sync.expected_count!==s.sync.received_ack_count||!remote?.ok||remote.active_count!==sourceCount||!/^[a-f0-9]{64}$/.test(expectedHash)||remote.id_set_hash!==expectedHash){if(state.sync)state.sync.final_validation='FAIL';persist();throw new Error('REPORT_ARCHIVE_MISMATCH');}
       state.sync.final_validation='PASS';persist();return status();
@@ -228,29 +228,74 @@
     // an Android handoff. A late/replayed MT_REPORT_RESPONSE is NOT dropped.
     const timedOut=new Map();
     let lateHandler=null;
-    function close(){try{popup?.close();}catch(_){}popup=null;peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;verified=false;checking=null;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
+    // Session-pinned bridge identity (technical sessionStorage only): lets the
+    // app RE-ATTACH to the still-open named bridge window after an Android
+    // process restart without opening anything or asking for consent again.
+    const SESSION_KEY='mtDispatcherReportBridge';
+    function saveSession(extra){try{sessionStorage.setItem(SESSION_KEY,JSON.stringify({channel,url,peerOrigin,...(extra||{})}));}catch(_){}}
+    function loadSession(){try{const s=JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null');return s&&typeof s==='object'&&s.channel&&s.url?s:null;}catch(_){return null;}}
+    function rememberPeerOrigin(){saveSession({peerOrigin});}
+    function resetState(){peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;verified=false;checking=null;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
+    function close(){try{popup?.close();}catch(_){}popup=null;resetState();try{sessionStorage.removeItem(SESSION_KEY);}catch(_){}}
     window.addEventListener('message',e=>{
       // Android standalone may report popup.closed on app/browser handoff.
       // Liveness comes from the nonce/source/origin-pinned peer, not .closed.
       const d=e.data;if(!d||!channel||d.channel!==channel||!popup)return;
       // Only the HtmlService child of THIS authenticated Google window may
       // complete the channel. No arbitrary Google window can become the peer.
-      if(d.type==='MT_REPORT_BOOT'&&!peer){let host;try{const o=new URL(e.origin);host=o.protocol==='https:'&&(o.hostname==='script.google.com'||o.hostname.endsWith('.googleusercontent.com'));if(e.source?.top!==popup)return;}catch(_){return;}if(!host)return;peer=e.source;peerOrigin=e.origin;peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
-      if(e.source!==peer||e.origin!==peerOrigin)return;
-      if(d.type==='MT_REPORT_BOOT'){peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
+      if(d.type==='MT_REPORT_BOOT'||d.type==='MT_REPORT_READY'){
+        let host=false;try{const o=new URL(e.origin);host=o.protocol==='https:'&&(o.hostname==='script.google.com'||o.hostname.endsWith('.googleusercontent.com'));}catch(_){/* fail closed */}
+        if(!host||e.source?.top!==popup)return;
+        // First valid hello binds the peer exactly once; a reload may only
+        // re-pin the (redirect-volatile) Google origin of the SAME window.
+        if(!peer){peer=e.source;peerOrigin=e.origin;rememberPeerOrigin();}
+        else if(e.source!==peer)return;
+        else if(e.origin!==peerOrigin){peerOrigin=e.origin;rememberPeerOrigin();}
+        if(d.type==='MT_REPORT_BOOT'){peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
+      }else if(e.source!==peer||e.origin!==peerOrigin)return;
       if(d.type==='MT_REPORT_READY'){clearTimeout(readyTimer);connected=true;peer.postMessage({type:'MT_REPORT_ACK',channel},peerOrigin);resolveReady?.();resolveReady=null;rejectReady=null;ready=null;return;}
       if(d.type==='MT_REPORT_RESPONSE'){const p=pending.get(d.id);if(p){clearTimeout(p.timer);pending.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);p.resolve(d.result);return;}const late=timedOut.get(d.id);if(late){timedOut.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);try{lateHandler?.(late.request,d.result);}catch(_){/* reconciliation must never break the channel */}}return;}
     });
+    let reviveFlight=null,reviveProbeAt=0;
+    // Re-attach to the session's still-open named bridge window: restore the
+    // persisted channel nonce, say HELLO to the popup/frames and wait for the
+    // pinned peer's READY. Never opens a window; never bypasses Google auth —
+    // if the Google session itself expired, this honestly fails.
+    function tryRevive(s,target){
+      if(reviveFlight)return reviveFlight;
+      reviveFlight=(async()=>{
+        const w=window.MTDispatcherReportOpen&&typeof window.MTDispatcherReportOpen.reacquire==='function'?window.MTDispatcherReportOpen.reacquire():null;
+        if(!w)return false;
+        const keepChannel=s.channel,keepPeerOrigin=s.peerOrigin||'';
+        resetState();
+        url=target;channel=keepChannel;popup=w;peerOrigin=keepPeerOrigin;
+        saveSession();
+        const wait=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;readyTimer=setTimeout(()=>{ready=null;connected=false;resolveReady=null;rejectReady=null;reject(new Error('GOOGLE_BRIDGE_TIMEOUT'));},12000);});
+        ready=wait;
+        const targets=[popup];try{for(let i=0;i<popup.length&&i<4;i++)targets.push(popup.frames[i]);}catch(_){/* cross-origin frame list is best-effort */}
+        for(const t of targets){try{t.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin||'*');}catch(_){}}
+        try{await wait;return true;}catch(_){resetState();try{sessionStorage.removeItem(SESSION_KEY);}catch(_){}return false;}
+      })().finally(()=>{reviveFlight=null;});
+      return reviveFlight;
+    }
     async function connect(value,interactive=false){
       const target=endpoint(value);if(url===target&&popup){if(connected&&peer)return;if(ready)return ready;}
       // A background local save must never open a window or demand consent.
-      if(!interactive)throw new Error('GOOGLE_CONNECTION_REQUIRED');
-      close();url=target;channel=Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
+      // It may, however, safely RE-ATTACH to the existing session's bridge.
+      if(!interactive){
+        const s=loadSession();
+        if(s&&s.url===target&&Date.now()-reviveProbeAt>10000){
+          reviveProbeAt=Date.now();
+          if(await tryRevive(s,target))return ready;
+        }
+        throw new Error('GOOGLE_CONNECTION_REQUIRED');
+      }
+      resetState();url=target;channel=Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
       ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;readyTimer=setTimeout(()=>{ready=null;connected=false;resolveReady=null;rejectReady=null;reject(new Error('GOOGLE_BRIDGE_TIMEOUT'));},20000);});
       const u=new URL(target);u.searchParams.set('origin',location.origin);u.searchParams.set('channel',channel);
       // Keep opener ONLY for this validated Google endpoint's nonce-pinned
       // postMessage bridge. No DTO or credential is placed in the URL.
-      const wait=ready;try{popup=window.MTDispatcherReportOpen(u.href);if(!popup)throw new Error('GOOGLE_POPUP_BLOCKED');}catch(e){clearTimeout(readyTimer);rejectReady(new Error(/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_POPUP_BLOCKED'));ready=null;resolveReady=null;rejectReady=null;}return wait;
+      const wait=ready;try{popup=window.MTDispatcherReportOpen(u.href);if(!popup)throw new Error('GOOGLE_POPUP_BLOCKED');}catch(e){clearTimeout(readyTimer);rejectReady(new Error(/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_POPUP_BLOCKED'));ready=null;resolveReady=null;rejectReady=null;}saveSession();return wait;
     }
     function rpc(request){const id=crypto.randomUUID(),started=Date.now(),base=request.action==='report_status'?20000:90000;return new Promise((resolve,reject)=>{
       const expire=()=>{
@@ -285,13 +330,24 @@
     async function send(value,request,interactive=false){await connect(value,interactive);await verify();return rpc(request);}
     function resume(){
       if(resumeFlight)return resumeFlight;
-      if(!peer||!channel){lastReason='GOOGLE_CONNECTION_REQUIRED';return Promise.resolve(false);}
-      verified=false;
-      resumeFlight=(async()=>{peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);await verify();return true;})().finally(()=>{resumeFlight=null;});return resumeFlight;
+      resumeFlight=(async()=>{
+        if(peer&&channel){
+          verified=false;
+          peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);
+          await verify();return true;
+        }
+        // Safe auto-resume on focus/return: re-attach to the session's named
+        // bridge window when it is still open. No window is opened here.
+        const s=loadSession();
+        if(s&&await tryRevive(s,s.url)){await verify();return true;}
+        lastReason='GOOGLE_CONNECTION_REQUIRED';
+        return false;
+      })().finally(()=>{resumeFlight=null;});
+      return resumeFlight;
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-138',createOutbox,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-139',createOutbox,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),
@@ -312,7 +368,7 @@
   function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
   function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const x=outbox.status();if(s)s.textContent=`У черзі: ${x.unresolved}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
-  // Safe copy-diagnostics (v91.93): counts/codes/revisions ONLY. Never the
+  // Safe copy-diagnostics (v91.94): counts/codes/revisions ONLY. Never the
   // endpoint URL, ticket IDs or any private ticket field. Telemetry events are
   // pre-filtered to the safe field whitelist by dispatcher-telemetry.js.
   async function collectDiagnostics(){
@@ -334,7 +390,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v68-runtime-138'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-138');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v69-runtime-139'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-139');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -355,7 +411,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v68-runtime-138'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-138');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v69-runtime-139'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-139');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await bridge.send(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
@@ -407,6 +463,41 @@
       message('Канал звіту не підтверджено: '+code);
     }
   }
+  // Auto-send entry point (v91.94): after a local save the app itself restores
+  // the Таблиця Д channel and flushes the queue — no Settings visit needed.
+  // Layers: (1) live peer resume, (2) silent re-attach to the session's named
+  // bridge window, (3) ONE auto-connect window inside the save gesture with a
+  // cooldown. Google auth is never bypassed; an expired Google session fails
+  // honestly and the durable queue simply waits for the next safe recovery.
+  let autoConnectAt=0;
+  async function ensureChannel(){
+    if(!cfg().dispatcherReportEndpoint||!cfg().dispatcherReportEnabled)return false;
+    if(outbox.status().unresolved<=0)return false;
+    try{
+      if(await bridge.resume()){
+        const b=bridge.diagnostics();record('connection_state',{code:'RESUMED',connected:!!b.connected,verified:!!b.verified});
+        void outbox.flush();return true;
+      }
+    }catch(e){
+      const code=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';
+      record('connection_state',{code,connected:false,verified:false});
+    }
+    if(Date.now()-autoConnectAt<180000)return false;
+    autoConnectAt=Date.now();
+    try{
+      message('Відновлюємо канал Таблиці Д…');
+      await bridge.authorize(cfg().dispatcherReportEndpoint);
+      record('connection_state',{code:'AUTO_CONNECTED',connected:true,verified:true});
+      message('Таблиця Д підключена');
+      void outbox.flush();
+      return true;
+    }catch(e){
+      const code=/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_CONNECTION_REQUIRED';
+      record('connection_state',{code,connected:false,verified:false});
+      message('Канал Таблиці Д не відновлено автоматично ('+code+'). Черга збережена — надішлемо при наступному відновленні.');
+      return false;
+    }
+  }
   window.addEventListener('online',resume);window.addEventListener('focus',resume);window.addEventListener('pageshow',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});document.addEventListener('DOMContentLoaded',resume);
-  root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge,enabled:()=>!!cfg().dispatcherReportEnabled});
+  root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge,ensureChannel,enabled:()=>!!cfg().dispatcherReportEnabled});
 })(typeof globalThis==='object'?globalThis:this);

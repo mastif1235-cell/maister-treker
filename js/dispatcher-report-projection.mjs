@@ -12,13 +12,22 @@ export function reportPresentation(ticket,core){
   const raw=ticket.cloudImported===true;
   const equipment=Array.isArray(ticket.equipment)?ticket.equipment:[];
   const cables=Array.isArray(ticket.cables)?ticket.cables:[];
-  let materials=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>core.sanitize(e.label)+' — '+(e.consumption_qty??e.qty??1)+' шт.'),...cables.filter(c=>Number(c.meters)>0).map(c=>core.sanitize(c.label)+' — '+Number(c.meters)+' м')];
+  // Materials display (v91.94): quantity + informational line price from the
+  // real ticket/calculator data. The price is a decoding aid only — it never
+  // adds to `total`, never feeds physical accounting, and is omitted when
+  // missing or zero. Zero-quantity materials are not shown.
+  const priceSuffix=n=>Number(n)>0?' — '+(Math.round(Number(n)*100)/100)+' грн':'';
+  let materials=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>core.sanitize(e.label)+' — '+(e.consumption_qty??e.qty??1)+' шт.'+priceSuffix(e.price)),...cables.filter(c=>Number(c.meters)>0).map(c=>core.sanitize(c.label)+' — '+Number(c.meters)+' м'+priceSuffix(Number(c.meters)*Number(c.pricePerMeter||0)))];
   if((raw&&!equipment.length&&!cables.length)||(!Array.isArray(ticket.equipment)&&!Array.isArray(ticket.cables))){
     materials=lines.flatMap(line=>{
       // Exact markers emitted by buildTicketContent; no fuzzy note guessing.
-      const match=/^\s*(?:🛠️?|🔌)\s*([^:\n]+):\s*(\d+(?:[.,]\d+)?)\s*(шт\.?|м)(?=\s|$|[хx×])/u.exec(line);
+      // Optional price tail: «х N грн» and/or «= T грн» (explicit total wins).
+      const match=/^\s*(?:🛠️?|🔌)\s*([^:\n]+):\s*(\d+(?:[.,]\d+)?)\s*(шт\.?|м)(?=\s|$|[хx×])(?:\s*[хx×]\s*(\d+(?:[.,]\d+)?)\s*грн)?(?:\s*=\s*(\d+(?:[.,]\d+)?)\s*грн)?/u.exec(line);
       if(!match||Number(match[2].replace(',','.'))<=0)return [];
-      const label=core.sanitize(match[1]);return label?[label+' — '+Number(match[2].replace(',','.'))+' '+(match[3].startsWith('шт')?'шт.':'м')]:[];
+      const label=core.sanitize(match[1]);
+      const qty=Number(match[2].replace(',','.')),unit=match[3].startsWith('шт')?'шт.':'м';
+      const explicit=match[5]!==undefined?Number(match[5].replace(',','.')):match[4]!==undefined?qty*Number(match[4].replace(',','.')):0;
+      return label?[label+' — '+qty+' '+unit+priceSuffix(explicit)]:[];
     });
   }
   const note=ticket.note||ticket.otherNote||((raw||ticket.note===undefined)?lines.filter(line=>/^\s*📝\s*/u.test(line)).map(line=>line.replace(/^\s*📝\s*/u,'')).join('\n'):'');

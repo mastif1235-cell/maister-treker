@@ -1,4 +1,4 @@
-/* Mixed-runtime self-heal guard for the installed PWA (v91.93 / runtime-138).
+/* Mixed-runtime self-heal guard for the installed PWA (v91.94 / runtime-139).
    A page whose module revisions (app, dispatcher client, tickets renderer,
    compact view) or Service Worker runtime disagree is a mixed runtime: the
    dispatcher flush MUST NOT run against it and the queue must survive.
@@ -8,8 +8,8 @@
    diagnostics available in Settings) and NEVER touches user data. */
 (function(root){
   'use strict';
-  const EXPECTED='runtime-138';
-  const CACHE_EXPECTED='maister-treker-v68-runtime-138';
+  const EXPECTED='runtime-139';
+  const CACHE_EXPECTED='maister-treker-v69-runtime-139';
   const RELOAD_GUARD_KEY='mtRuntimeGuardReloadV1';
   const TOKEN=/^runtime-\d{1,4}$/;
   function storage(kind){

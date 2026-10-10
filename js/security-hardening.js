@@ -107,14 +107,26 @@ try{
   const securityNativeOpen = window.open.bind(window);
   // Narrow authenticated dispatcher RPC exception. Never expose a generic
   // native opener: require the saved endpoint and exactly the bridge nonce.
-  Object.defineProperty(window, 'MTDispatcherReportOpen', {value:function(value){
+  const dispatcherReportOpen=function(value){
     const u=new URL(String(value)),saved=new URL(String(settings.dispatcherReportEndpoint||''));
     if(saved.protocol!=='https:'||saved.hostname!=='script.google.com'||saved.username||saved.password||saved.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(saved.pathname)||saved.search||saved.hash||
        u.origin!==saved.origin||u.pathname!==saved.pathname||u.username||u.password||u.port||u.hash||
        u.searchParams.get('origin')!==location.origin||! /^[a-f0-9]{32}$/.test(u.searchParams.get('channel')||'')||
        [...u.searchParams.keys()].length!==2)throw new Error('INVALID_REPORT_WINDOW');
-    return securityNativeOpen(u.href,'_blank');
-  },writable:false,configurable:false});
+    // One stable window name: repeat connects REUSE/RELOAD this single bridge
+    // window instead of stacking popups (Android tab discard recovery).
+    return securityNativeOpen(u.href,'mtDispatcherReportBridge');
+  };
+  // Re-attach probe for auto-resume: targets ONLY this session's named bridge
+  // window, never creates a visible popup outside a user gesture (blocked
+  // probes return null). A blank window some webviews spawn is closed at once.
+  dispatcherReportOpen.reacquire=function(){
+    let w=null;try{w=securityNativeOpen('','mtDispatcherReportBridge');}catch(_e){return null;}
+    if(!w)return null;
+    try{if(w.location&&w.location.href==='about:blank'){w.close();return null;}}catch(_e){/* cross-origin = real bridge window */}
+    return w;
+  };
+  Object.defineProperty(window, 'MTDispatcherReportOpen', {value:dispatcherReportOpen,writable:false,configurable:false});
   window.open = function(url, target, features){
     const extra = String(features || '').trim();
     const safeFeatures = [extra, 'noopener', 'noreferrer'].filter(Boolean).join(',');

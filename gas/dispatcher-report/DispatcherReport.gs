@@ -66,6 +66,13 @@ function reportRender_(ss,rows){
   if(!blocks.length){sheet.getRange('B2').setValue('Нарядів поки немає').setFontColor('#243447');return;}
   var range=sheet.getRange(1,2,blocks.length,4);range.setNumberFormat('@').setValues(blocks.map(function(b){return [b.text,'','',''];})).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('left').setFontFamily('Arial').setFontSize(11).setFontColor('#243447');
   sheet.getRange(1,2,blocks.length,1).setBackgrounds(blocks.map(function(b){return [colors[b.kind]];})).setFontWeights(blocks.map(function(b){return [b.kind==='ticket'?'normal':'bold'];}));
+  // Bold «Наряд №N» title line of every наряд (rich text, first line only).
+  var bold=SpreadsheetApp.newTextStyle().setBold(true).build();
+  sheet.getRange(1,2,blocks.length,1).setRichTextValues(blocks.map(function(b){
+    var text=String(b.text||''),nl=text.indexOf('\n'),rich=SpreadsheetApp.newRichTextValue().setText(text);
+    if(b.kind==='ticket'&&nl>0)rich.setStyle(0,nl,bold);
+    return [rich.build()];
+  }));
   layout.spans.forEach(function(s){
     var cell=sheet.getRange(s.row,s.column,s.height,s.width);if(s.height>1||s.width>1)cell.merge();
     cell.setValue(s.text).setBackground(colors[s.kind]);
@@ -79,6 +86,9 @@ function reportRender_(ss,rows){
     frame.setBorder(true,true,true,true,null,null,border,thick);
     sheet.getRange(s.row,2,1,1).setFontSize(12).setBorder(null,null,true,null,null,null,border,thick);
   });
+  // Visible thick separator BETWEEN adjacent наряды only; the inner card
+  // rules stay thin text lines so the two never get confused.
+  blocks.forEach(function(b,i){if(b.kind==='ticket'&&i>0&&blocks[i-1].kind==='ticket')sheet.getRange(i+1,2,1,1).setBorder(true,null,null,null,false,false,border,thick);});
   // Complete B:E month frames; no statistical merge crosses a title band.
   layout.monthSeparators.forEach(function(row,i){var end=layout.monthSeparators[i+1]||blocks.length+1;sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);});
   // B is readable on a phone without shrinking text; C:E are adjacent

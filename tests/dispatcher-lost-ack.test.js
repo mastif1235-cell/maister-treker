@@ -1,5 +1,5 @@
 'use strict';
-/* v91.93 / runtime-138. Lost-ACK / reconciliation регресії (фізичний Android-гейт):
+/* v91.94 / runtime-139. Lost-ACK / reconciliation регресії (фізичний Android-гейт):
    8) мутація ДІЙШЛА сервера, ACK загублено → reconnect/отримання квитанції
       підтверджує операцію (sent) БЕЗ повторної мутації (жодного дубля);
    9) мутація дійшла сервера, ACK загублено, reconnect НЕ підтверджує квитанцію →
@@ -155,7 +155,12 @@ function harness(server,opts={}){
     const source=read('js/dispatcher-report-client.js');
     assert.ok(source.includes('if(e.source!==peer||e.origin!==peerOrigin)return;'),'source+origin pinning intact');
     assert.ok(source.includes('d.channel!==channel'),'channel nonce pinning intact');
-    assert.ok(source.includes("d.type==='MT_REPORT_BOOT'&&!peer"),'peer pinning on BOOT intact');
+    // v91.94: BOOT and READY share one validated binding path (safe auto-resume);
+    // the invariants are stronger than the old BOOT-only pin.
+    assert.ok(source.includes("if(!peer){peer=e.source;peerOrigin=e.origin;rememberPeerOrigin();}"),'peer binds exactly once on the first valid hello');
+    assert.ok(source.includes('else if(e.source!==peer)return;'),'peer never re-binds to another source');
+    assert.ok(source.includes('e.source?.top!==popup'),'peer must be this bridge popup window');
+    assert.ok(source.includes("o.hostname==='script.google.com'||o.hostname.endsWith('.googleusercontent.com')"),'google host whitelist intact');
     assert.ok(!/addEventListener\('pagehide',/.test(source),'no Android app-switch connection reset');
     assert.ok(source.includes('function createBridge(){'),'bridge boundary marker stable for the slice test');
     assert.ok(source.includes('root.MTDispatcherReportClient='),'bridge boundary marker stable for the slice test');

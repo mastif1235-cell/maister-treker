@@ -73,6 +73,14 @@
   function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
   function money(n){return Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';}
   function displayDate(day){return day.split('-').reverse().join('.');}
+  function dayNumbers(list){
+    // Deterministic daily наряд numbering (v91.94): chronological order inside
+    // the day (work_time ASC, then ticket_id ASC), independent of display
+    // order, batch composition, retries, rebuilds and sync history.
+    const m=new Map();
+    list.slice().sort((a,b)=>a.work_time.localeCompare(b.work_time)||(a.ticket_id<b.ticket_id?-1:a.ticket_id>b.ticket_id?1:0)).forEach((r,i)=>m.set(r.ticket_id,i+1));
+    return m;
+  }
   function statsText(title,s){return title+'\n'+[['Всього нарядів',s.ticket_count],['Підключень',s.connections],['Ремонтів',s.repairs],['Інших робіт',s.other],['ONU',s.onu_used],['Замін ONU',s.onu_replacement],['Роутерів',s.router_used],['Загальна сума',money(s.total)],['Готівка',money(s.payment_cash)],['Безготівка',money(s.payment_cashless)],['Безкоштовно',s.payment_free_count+' · '+money(s.payment_free_amount)],['Робочих днів',s.working_days]].map(([k,v])=>k+': '+v).join('\n');}
   function card(r,n){
     const rule='- - - - - - - - - - - -';
@@ -88,8 +96,8 @@
     const weekdays=['Неділя','Понеділок','Вівторок','Середа','Четвер','П’ятниця','Субота'];
     const lastWeek=new Map([...weeks].map(([k,v])=>[k,v[v.length-1].work_date])),lastMonth=new Map([...months].map(([k,v])=>[k,v[v.length-1].work_date]));
     for(const [day,list] of days){
-      const summary=stats(list);blocks.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
-      list.forEach((r,i)=>blocks.push({kind:'ticket',key:r.ticket_id,text:card(r,i+1)}));
+      const summary=stats(list),nums=dayNumbers(list);blocks.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
+      list.forEach(r=>blocks.push({kind:'ticket',key:r.ticket_id,text:card(r,nums.get(r.ticket_id))}));
       blocks.push({kind:'daily',key:day,text:statsText('СТАТИСТИКА ЗА '+displayDate(day),summary)});
       const week=weekKey(day),month=day.slice(0,7);
       if(lastWeek.get(week)===day){const end=new Date(week+'T00:00:00Z');end.setUTCDate(end.getUTCDate()+6);blocks.push({kind:'weekly',key:week,text:statsText('ТИЖДЕНЬ '+displayDate(week)+'–'+displayDate(end.toISOString().slice(0,10)),stats(weeks.get(week)))});}
@@ -123,9 +131,9 @@
         monthSpans.set(month,{row:row+1,end:row,title:'МІСЯЦЬ\n'+layout.rows[row-1].text});
         previousMonth=month;
       }
-      const start=layout.rows.length+1,summary=stats(list);
+      const start=layout.rows.length+1,summary=stats(list),nums=dayNumbers(list);
       layout.rows.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
-      list.forEach((r,i)=>layout.rows.push({kind:'ticket',key:r.ticket_id,text:card(r,i+1)}));
+      list.forEach(r=>layout.rows.push({kind:'ticket',key:r.ticket_id,text:card(r,nums.get(r.ticket_id))}));
       const end=layout.rows.length;
       layout.dayFrames.push({key:day,row:start,height:end-start+1});
       panel('daily',day,start,end,3,'СТАТИСТИКА ЗА\n'+displayDate(day),statsBody(summary));

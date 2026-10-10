@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-138';
+globalThis.MTTicketRendererRevision='runtime-139';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -123,9 +123,9 @@ function renderTicketCard(t, opts={}){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
-    ${(opts.workOnly || hasContent || materialPresentation.html || syncBadge || tgBadge || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
+    ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
+    ${(opts.workOnly || hasContent || materialPresentation.html || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
-      ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
       ${((t.macAddress || signalText) && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
