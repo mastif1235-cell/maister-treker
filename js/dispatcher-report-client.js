@@ -6,13 +6,20 @@
   const CONNECTION=/^(?:GOOGLE_\w+|REPORT_CONNECTION_RESET|REPORT_NOT_CONFIGURED|INVALID_ENDPOINT)$/;
   function endpoint(value){let url;try{url=new URL(String(value||''));}catch(_){throw new Error('INVALID_ENDPOINT');}if(url.protocol!=='https:'||url.hostname!=='script.google.com'||url.username||url.password||url.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(url.pathname)||url.search||url.hash)throw new Error('INVALID_ENDPOINT');return url.href;}
   function createOutbox(deps){
-    let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:''},running=false,timer=null,generation=0,blocked=false,flight=null;
+    let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:'',inflight:null},running=false,timer=null,generation=0,blocked=false,flight=null;
     try{const saved=JSON.parse(deps.storage.getItem(KEY)||'null');if(saved&&Array.isArray(saved.operations)&&saved.operations.length<=10000){state={...state,...saved};state.operations=saved.operations.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)&&Number.isInteger(o.attempts)&&o.attempts>=0&&o.attempts<=3).map(o=>({id:o.id,action:o.action,version:o.version,attempts:o.attempts,next:Number(o.next)||0,error:String(o.error||'')}));}}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}
     const now=()=>deps.now?.()??Date.now();
     // Recover v91.88's per-ticket failures caused by ONE shared connection
     // failure. Keep all operation IDs/versions, never tickets or private DTOs.
     for(const o of state.operations)if(CONNECTION.test(o.error)||CONNECTION.test(state.lastError)){o.attempts=0;o.next=0;if(CONNECTION.test(o.error))o.error='';}
     state.receipts=(Array.isArray(state.receipts)?state.receipts:[]).filter(r=>r&&typeof r.id==='string'&&Number.isSafeInteger(r.version)).slice(-10000).map(r=>({id:r.id,version:r.version}));
+    // In-flight batch metadata only (ids/versions/request_id/rebuild) — never
+    // DTOs, tickets or private text. It survives reloads so a lost ACK can be
+    // reconciled or retried idempotently instead of blindly duplicated.
+    state.inflight=state.inflight&&typeof state.inflight==='object'&&typeof state.inflight.request_id==='string'&&/^[a-zA-Z0-9-]{8,80}$/.test(state.inflight.request_id)&&Array.isArray(state.inflight.ops)
+      ?{action:'report_sync_all',request_id:state.inflight.request_id,rebuild:state.inflight.rebuild===true,ts:Number(state.inflight.ts)||0,ops:state.inflight.ops.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)).map(o=>({id:o.id,action:o.action,version:o.version}))}
+      :null;
+    if(state.inflight&&!state.inflight.ops.length)state.inflight=null;
     state.diagnostics=(Array.isArray(state.diagnostics)?state.diagnostics:[]).filter(d=>d&&typeof d.ticket_id==='string'&&['upsert','delete'].includes(d.operation_type)&&Number.isSafeInteger(d.timestamp)&&d.reason==='TICKET_LOOKUP_MISSING').slice(-10000).map(d=>({ticket_id:d.ticket_id,operation_type:d.operation_type,timestamp:d.timestamp,reason:d.reason}));
     const savedSync=state.sync;
     state.sync=savedSync&&Array.isArray(savedSync.expected)&&savedSync.expected.length<=10000?{
@@ -21,18 +28,50 @@
       final_validation:['PASS','FAIL'].includes(savedSync.final_validation)?savedSync.final_validation:'PENDING'
     }:null;
     blocked=CONNECTION.test(state.lastError);
-    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,diagnostics:state.diagnostics,sync:state.sync,lastError:state.lastError,lastSuccess:state.lastSuccess}));}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
+    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,diagnostics:state.diagnostics,sync:state.sync,lastError:state.lastError,lastSuccess:state.lastSuccess,inflight:state.inflight}));}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
     function syncProgress(){if(!state.sync)return null;const expected=state.sync.expected,unresolved=expected.filter(o=>!o.acknowledged);return {expected_count:expected.length,received_ack_count:expected.length-unresolved.length,failed_count:unresolved.filter(o=>state.operations.some(n=>n.id===o.id&&(n.error||n.attempts>=3))).length,unresolved_count:unresolved.length,batch_count:state.sync.batch_count,final_validation:state.sync.final_validation};}
     function status(){return {pending:state.operations.filter(o=>o.attempts<3&&!o.error).length,failed:state.operations.filter(o=>o.attempts>=3||o.error).length,unresolved:state.operations.length,sync:syncProgress(),lastError:state.lastError,lastSuccess:state.lastSuccess,running,connectionRequired:blocked};}
     function invalidateExpected(id,action,version){if(!state.sync)return;const o=state.sync.expected.find(o=>o.id===id);if(o)Object.assign(o,{action,version,acknowledged:false});state.sync.final_validation='PENDING';}
     function missingLookup(o){o.error='TICKET_LOOKUP_MISSING';state.lastError=o.error;state.diagnostics=state.diagnostics.filter(d=>d.ticket_id!==o.id);state.diagnostics.push({ticket_id:o.id,operation_type:o.action,timestamp:now(),reason:o.error});state.diagnostics=state.diagnostics.slice(-10000);telemetry('lookup_miss',{code:'TICKET_LOOKUP_MISSING',store_ready:storeReady(),pending:status().pending,failed:status().failed,unresolved:status().unresolved});persist();}
+    // ACK completion is shared by the live send path and the late/reconciled
+    // path (Android handoff). Only the EXACT acknowledged versions leave the
+    // queue: an old ACK can never confirm a newer edit; nothing is ever
+    // removed without a server-side confirmation.
+    function completeSent(sent,response){
+      if(state.sync)for(const o of sent){const expected=state.sync.expected.find(n=>n.id===o.id&&n.action===o.action&&n.version===o.version);if(expected)expected.acknowledged=true;}
+      const versions=new Map(sent.map(o=>[o.id,o.version]));state.operations=state.operations.filter(o=>versions.get(o.id)!==o.version);
+      for(const o of sent){state.receipts=state.receipts.filter(r=>r.id!==o.id);if(o.action==='upsert'&&!state.operations.some(n=>n.id===o.id))state.receipts.push({id:o.id,version:o.version});}
+      state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();
+      state.inflight=null;persist();
+    }
+    // Lost-ACK reconciliation (v91.92): a late/replayed response whose
+    // request_id matches the persisted in-flight batch confirms those exact
+    // operation versions as sent WITHOUT resending the mutation. Any other
+    // answer (mismatched id, superseded versions, missing counters) is
+    // ignored — the operations stay pending until a real confirmation.
+    function reconcile(request,result){
+      try{
+        if(!request||!result||!result.ok||!state.inflight||request.request_id!==state.inflight.request_id)return false;
+        const want=new Set(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version));
+        const sent=state.operations.filter(o=>want.has(o.id+'#'+o.action+'#'+o.version));
+        if(!sent.length)return false;
+        if(['inserted','updated','unchanged','deleted'].some(k=>k in result)){
+          if(result.rejected||result.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(result[k])&&result[k]>=0)||result.inserted+result.updated+result.unchanged+result.deleted!==sent.length)return false;
+        }
+        const size=sent.length;
+        completeSent(sent,result);
+        telemetry('ack_received',{ack_count:size,batch_size:size});
+        telemetry('send_result',{code:'RECONCILED',batch_size:size});
+        return true;
+      }catch(_){return false;}
+    }
     function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
     // Since v91.92 the operation itself is ALWAYS persisted after a successful
     // local save: connection state, auto-send flag and endpoint health gate
     // only SENDING. A ticket ID is never lost to a silent `return false`.
     function configured(){return !!deps.settings().dispatcherReportEndpoint;}
-    function align(){const c=deps.settings(),url=endpoint(c.dispatcherReportEndpoint);if(url!==state.endpoint){generation++;state.endpoint=url;state.receipts=[];state.sync=null;state.lastError='';blocked=false;persist();}return url;}
+    function align(){const c=deps.settings(),url=endpoint(c.dispatcherReportEndpoint);if(url!==state.endpoint){generation++;state.endpoint=url;state.receipts=[];state.sync=null;state.lastError='';state.inflight=null;blocked=false;persist();}return url;}
     function telemetry(event,fields){try{const t=typeof globalThis==='object'&&globalThis&&globalThis.MTDispatcherTelemetry;if(t&&typeof t.record==='function')t.record(event,fields);}catch(_){/* telemetry must never break the outbox */}}
     function storeReady(){try{const d=deps.storeReady;return typeof d==='function'?!!d():true;}catch(_){return true;}}
     function runtimeBlocked(){try{const g=typeof globalThis==='object'&&globalThis&&globalThis.MTDispatcherRuntimeGuard;return !!(g&&typeof g.blocked==='function'&&g.blocked());}catch(_){return false;}}
@@ -89,10 +128,32 @@
         if(!sent.length)return;
         // Rendering the complete archive after every page causes progressively
         // more GAS work. Only the final eligible page rebuilds the report.
-        const rebuild=!state.operations.some(o=>!sent.includes(o)&&o.attempts<3&&!o.error);
+        // Idempotent retry (lost-ACK recovery): a batch whose mutation may
+        // already be committed REUSES its original request_id and rebuild flag
+        // so the server's REPORT_ACK_<request_id> receipt cache replays the
+        // first result instead of executing the batch again (upsert is already
+        // duplicate-safe; the replay avoids a second mutation entirely).
+        const batchOps=sent.map(o=>({id:o.id,action:o.action,version:o.version}));
+        const batchKey=JSON.stringify(batchOps.map(o=>o.id+'#'+o.action+'#'+o.version).sort());
+        const reuse=!!(state.inflight&&state.inflight.action==='report_sync_all'&&JSON.stringify(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version).sort())===batchKey);
+        const rebuild=reuse?state.inflight.rebuild:!state.operations.some(o=>!sent.includes(o)&&o.attempts<3&&!o.error);
         if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
+        const request={action:'report_sync_all',tickets:dtos,deletes,request_id:reuse?state.inflight.request_id:deps.requestId(),rebuild};
+        state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};
+        persist();
         telemetry('send_attempt',{batch_size:dtos.length+deletes.length,store_ready:true});
-        const response=await deps.send(url,{action:'report_sync_all',tickets:dtos,deletes,request_id:deps.requestId(),rebuild});
+        let response,retried=false;
+        for(;;){
+          try{response=await deps.send(url,request);}
+          catch(sendError){
+            // A replayed request_id whose bytes no longer match must never be
+            // treated as a permanent failure: fall back to a fresh request_id.
+            if(reuse&&!retried&&String(sendError?.message)==='INVALID_REQUEST_ID'){retried=true;request.request_id=deps.requestId();state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};persist();continue;}
+            throw sendError;
+          }
+          if(reuse&&!retried&&!response?.ok&&response?.code==='INVALID_REQUEST_ID'){retried=true;request.request_id=deps.requestId();state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};persist();continue;}
+          break;
+        }
         if(g!==generation||url!==deps.settings().dispatcherReportEndpoint)return;
         if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
         if(['inserted','updated','unchanged','deleted','rejected','errors'].some(k=>k in response)){
@@ -101,10 +162,7 @@
         // Full archive ACK accounting must never infer confirmation from an
         // empty/legacy ok:true response without mutation counters.
         if(state.sync&&!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0))throw new Error('REPORT_PARTIAL_ACK');
-        if(state.sync)for(const o of sent){const expected=state.sync.expected.find(n=>n.id===o.id&&n.action===o.action&&n.version===o.version);if(expected)expected.acknowledged=true;}
-        const versions=new Map(sent.map(o=>[o.id,o.version]));state.operations=state.operations.filter(o=>versions.get(o.id)!==o.version);
-        for(const o of sent){state.receipts=state.receipts.filter(r=>r.id!==o.id);if(o.action==='upsert'&&!state.operations.some(n=>n.id===o.id))state.receipts.push({id:o.id,version:o.version});}
-        state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();persist();
+        completeSent(sent,response);
         telemetry('ack_received',{ack_count:dtos.length+deletes.length,batch_size:dtos.length+deletes.length});
         telemetry('send_result',{code:'OK',batch_size:dtos.length+deletes.length});
       }catch(e){
@@ -130,7 +188,7 @@
       // Preserve missing upserts from earlier attempts. Only an explicit
       // enqueueDelete can replace them with a tombstone; absence is not delete.
       for(const o of state.operations.filter(o=>!ids.has(o.id)&&o.action==='upsert'))operations.push(o);
-      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
+      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
     }
     function retry(){for(const o of state.operations){o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
@@ -159,12 +217,17 @@
       dates.sort();const acknowledged=live.filter(t=>delivery(t.id).state==='sent').length;
       return {source_tickets:live.length,projected_tickets:projected,acknowledged_tickets:acknowledged,missing_receipts:live.length-acknowledged,earliest_source:dates[0]||'',latest_source:dates.at(-1)||'',projection_errors:errors,...status()};
     }
-    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure});
+    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure,reconcile});
   }
   function createBridge(){
     let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
     let lastStatusAck='',lastReason='',resumeFlight=null;
     const pending=new Map();
+    // Timed-out RPCs stay here (bounded, lazy cleanup — never extra timers):
+    // the Google child keeps its own receipts and replays them on HELLO after
+    // an Android handoff. A late/replayed MT_REPORT_RESPONSE is NOT dropped.
+    const timedOut=new Map();
+    let lateHandler=null;
     function close(){try{popup?.close();}catch(_){}popup=null;peer=null;peerOrigin='';channel='';url='';ready=null;connected=false;verified=false;checking=null;clearTimeout(readyTimer);rejectReady?.(new Error('REPORT_CONNECTION_RESET'));resolveReady=null;rejectReady=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('REPORT_CONNECTION_RESET'));}pending.clear();}
     window.addEventListener('message',e=>{
       // Android standalone may report popup.closed on app/browser handoff.
@@ -176,7 +239,7 @@
       if(e.source!==peer||e.origin!==peerOrigin)return;
       if(d.type==='MT_REPORT_BOOT'){peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);return;}
       if(d.type==='MT_REPORT_READY'){clearTimeout(readyTimer);connected=true;peer.postMessage({type:'MT_REPORT_ACK',channel},peerOrigin);resolveReady?.();resolveReady=null;rejectReady=null;ready=null;return;}
-      if(d.type==='MT_REPORT_RESPONSE'){const p=pending.get(d.id);if(p){clearTimeout(p.timer);pending.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);p.resolve(d.result);}}
+      if(d.type==='MT_REPORT_RESPONSE'){const p=pending.get(d.id);if(p){clearTimeout(p.timer);pending.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);p.resolve(d.result);return;}const late=timedOut.get(d.id);if(late){timedOut.delete(d.id);peer.postMessage({type:'MT_REPORT_RECEIPT',channel,id:d.id},peerOrigin);try{lateHandler?.(late.request,d.result);}catch(_){/* reconciliation must never break the channel */}}return;}
     });
     async function connect(value,interactive=false){
       const target=endpoint(value);if(url===target&&popup){if(connected&&peer)return;if(ready)return ready;}
@@ -189,14 +252,25 @@
       // postMessage bridge. No DTO or credential is placed in the URL.
       const wait=ready;try{popup=window.MTDispatcherReportOpen(u.href);if(!popup)throw new Error('GOOGLE_POPUP_BLOCKED');}catch(e){clearTimeout(readyTimer);rejectReady(new Error(/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_POPUP_BLOCKED'));ready=null;resolveReady=null;rejectReady=null;}return wait;
     }
-    function rpc(request){const id=crypto.randomUUID(),started=Date.now();return new Promise((resolve,reject)=>{
+    function rpc(request){const id=crypto.randomUUID(),started=Date.now(),base=request.action==='report_status'?20000:90000;return new Promise((resolve,reject)=>{
       const expire=()=>{
         // Google is foreground while Android suspends the standalone caller.
         // Keep the same request/receipt alive for a bounded handoff interval.
-        if(typeof document!=='undefined'&&document.visibilityState==='hidden'&&Date.now()-started<300000){const p=pending.get(id);if(p)p.timer=setTimeout(expire,10000);return;}
-        pending.delete(id);connected=false;verified=false;lastReason='GOOGLE_CONNECTION_REQUIRED';reject(new Error(lastReason));
+        const p=pending.get(id),hiddenNow=typeof document!=='undefined'&&document.visibilityState==='hidden';
+        if(hiddenNow&&Date.now()-started<300000){if(p){p.hiddenArmed=true;p.timer=setTimeout(expire,10000);}return;}
+        // Frozen Android pages fire their timers late, on return to foreground.
+        // A wait that outlived the base timeout (or was armed while hidden) gets
+        // ONE bounded grace window instead of dying at the visible-return tick —
+        // the response is usually replayed on HELLO right after resume.
+        if(p&&!p.graceUsed&&(p.hiddenArmed||Date.now()-started>=base*1.5)&&Date.now()-started<300000){p.graceUsed=true;p.timer=setTimeout(expire,10000);return;}
+        pending.delete(id);
+        // Keep a bounded record of the request whose ACK may still arrive:
+        // reconciliation marks its operations sent instead of a blind resend.
+        timedOut.set(id,{request,ts:Date.now()});
+        while(timedOut.size>20)timedOut.delete(timedOut.keys().next().value);
+        connected=false;verified=false;lastReason='GOOGLE_CONNECTION_REQUIRED';reject(new Error(lastReason));
       };
-      const timer=setTimeout(expire,request.action==='report_status'?20000:90000);pending.set(id,{resolve,reject,timer});
+      const timer=setTimeout(expire,base);pending.set(id,{resolve,reject,timer,hiddenArmed:false,graceUsed:false});
       try{peer.postMessage({type:'MT_REPORT_REQUEST',channel,id,request},peerOrigin);}catch(_){clearTimeout(timer);pending.delete(id);connected=false;verified=false;lastReason='GOOGLE_CONNECTION_REQUIRED';reject(new Error(lastReason));}
     });}
     function verify(){
@@ -215,7 +289,7 @@
       verified=false;
       resumeFlight=(async()=>{peer.postMessage({type:'MT_REPORT_HELLO',channel},peerOrigin);await verify();return true;})().finally(()=>{resumeFlight=null;});return resumeFlight;
     }
-    return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size})};
+    return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
   root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-137',createOutbox,endpoint});
   if(typeof document==='undefined')return;
@@ -229,6 +303,10 @@
     storeReady:()=>window.__mtTicketsStoreReady===true});
   const record=(event,fields)=>{try{root.MTDispatcherTelemetry?.record?.(event,fields);}catch(_){}};
   bridge.onReady(()=>{record('report_status_ack',{connected:true,verified:true});outbox.connectionReady();});
+  // Replayed/late RPC responses (Bridge.html keeps receipts and replays them
+  // on HELLO after an Android handoff) confirm the in-flight batch instead of
+  // being dropped — the queue drains without a duplicate resend.
+  bridge.onLateResult((request,result)=>{try{outbox.reconcile(request,result);}catch(_){/* reconciliation is best-effort */}});
   const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
   function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
   function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}

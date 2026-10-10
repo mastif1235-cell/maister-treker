@@ -6,7 +6,7 @@
     "./styles.css": "ef7c2bc42c3cb7413be855a78e323b119309cb1268b0a1770de9a578882bdb7b",
     "./js/tickets-render.js": "1962c4c77bf65db429aaae5f2619958e1778688bbaede505404375323d4372d5",
     "./js/tickets-compact-view.js": "f1276f1da3bfb1ffbb6ad57690cf4cefdf3e18937c21f35d4c2f26930be3359a",
-    "./js/dispatcher-report-client.js": "6dd67712f8b8757fbefa77e25868c4638425eedbeb227099449aef71bdbac880",
+    "./js/dispatcher-report-client.js": "eb0304b5b4dac23e77e33e22e404bc116cd402d264162125c1b8abfdc85447f2",
     "./js/dispatcher-report-core.js": "13c1efe7766d63a37aff1565b41705163dcab228175b1108774e41032d5faa36",
     "./js/dispatcher-report-projection.mjs": "6902e5d82569beec7967bdf0a11ffb99fc5731df2e5a858c6c638da3abd0fde1"
   }
