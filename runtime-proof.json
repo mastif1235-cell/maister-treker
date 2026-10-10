@@ -1,0 +1,13 @@
+{
+  "cacheName": "maister-treker-v67-runtime-137",
+  "assets": {
+    "./index.html": "6c137b37b8bbf2477cc7b3c8c29c3a9ba46ac301904a23d96d1379c1a570410f",
+    "./app.js": "7586eb0d90c58764ee72e6cb17ef0ce4b99972272ae2fee6bd5ef14824be20dd",
+    "./styles.css": "ef7c2bc42c3cb7413be855a78e323b119309cb1268b0a1770de9a578882bdb7b",
+    "./js/tickets-render.js": "1962c4c77bf65db429aaae5f2619958e1778688bbaede505404375323d4372d5",
+    "./js/tickets-compact-view.js": "f1276f1da3bfb1ffbb6ad57690cf4cefdf3e18937c21f35d4c2f26930be3359a",
+    "./js/dispatcher-report-client.js": "6dd67712f8b8757fbefa77e25868c4638425eedbeb227099449aef71bdbac880",
+    "./js/dispatcher-report-core.js": "13c1efe7766d63a37aff1565b41705163dcab228175b1108774e41032d5faa36",
+    "./js/dispatcher-report-projection.mjs": "6902e5d82569beec7967bdf0a11ffb99fc5731df2e5a858c6c638da3abd0fde1"
+  }
+}

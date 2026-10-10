@@ -22,6 +22,7 @@
   }
   function isExpanded(id){ return expanded.has(String(id)); }
   function addressLabel(ticket){
+    if(ticket.type==='Інше') return String(ticket.otherNote||ticket.note||'').trim();
     if(ticket.street || ticket.house || ticket.apartment){
       const structured=root.MTToolsCore?.addressLabel(ticket);
       if(structured) return structured;
@@ -37,7 +38,6 @@
       <span class="ticket-compact-sum tabular">${fmtMoney(ticket.sum)}</span>
       <div class="ticket-compact-address">${escapeHtml(addressLabel(ticket))}</div>
       <button type="button" class="btn ticket-view-expand-btn" data-id="${id}">Розгорнути</button>
-      ${typeof ticketDeliveryBadges==='function'?`<div class="tc-status-row">${ticketDeliveryBadges(ticket)}</div>`:''}
     </article>`;
   }
   function renderItem(ticket,fullRenderer){
@@ -56,5 +56,5 @@
     button.setAttribute('aria-pressed',String(compact));
     button.classList.toggle('btn-accent',compact);
   }
-  root.MTTicketCompactView=Object.freeze({mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
+  root.MTTicketCompactView=Object.freeze({runtimeRevision:'runtime-137',mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
 })(typeof window!=='undefined'?window:globalThis);

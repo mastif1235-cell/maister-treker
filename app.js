@@ -9,7 +9,10 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v91.89 · 2026-10-07';
+const APP_VERSION = 'v91.92 · 2026-10-09';
+// Runtime revision of the app shell, checked with module/SW revisions by the
+// mixed-runtime guard (js/runtime-guard.js). Bump together with sw.js CACHE_NAME.
+globalThis.MTAppRuntimeRevision = 'runtime-137';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -346,6 +349,10 @@ async function init(){
     try{ const fallbackLegacy=loadJSON('tickets',[]); if(Array.isArray(fallbackLegacy)) tickets=fallbackLegacy; }catch(_legacyError){}
     showToast('⚠️ Не вдалося відкрити локальну базу заявок. Дані лишаються в аварійному режимі — не закривайте застосунок.');
   }
+  // Store-ready gate for the dispatcher outbox (v91.92): tickets are known only
+  // after loadTicketsFromIdb() resolves. Until this flag is set an empty
+  // `tickets` array must never be read as "ticket is missing" (v91.88 wipe race).
+  window.__mtTicketsStoreReady = true;
   syncTicketsSnapshot = JSON.parse(JSON.stringify(tickets));
   syncShiftsSnapshot = JSON.parse(JSON.stringify(shifts));
   if(typeof mtRequestPersistentStorage==='function') mtRequestPersistentStorage(); // фон запит persist(): захист від витіснення сховища ОС
@@ -483,12 +490,12 @@ if('serviceWorker' in navigator){
   /* Фікс аудиту: раніше перевірка оновлення відбулася лише один раз при завантаженні.
      installer у полі тримає застосунок відкритим годинами — нову версію він міг не
      побачити ніколи. Додамо делікатний poll: раз на 6 годин + при поверненні
-     в активну вкладку (з годинним троттлом, щоб не ганяти мережу). */
+     в активну вкладку (з хвилинним троттлом для фізичного PWA update gate). */
   function serviceWorkerPollUpdate(){
     try{
       if(!serviceWorkerRegistration || typeof serviceWorkerRegistration.update!=='function') return;
       const now=Date.now();
-      if(now-serviceWorkerLastUpdateCheck<60*60*1000) return;
+      if(now-serviceWorkerLastUpdateCheck<60*1000) return;
       serviceWorkerLastUpdateCheck=now;
       Promise.resolve(serviceWorkerRegistration.update()).catch(()=>{});
     }catch(_error){}
@@ -521,6 +528,8 @@ if('serviceWorker' in navigator){
     if(typeof document!=='undefined'&&document.addEventListener){
       document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') serviceWorkerPollUpdate(); });
     }
+    window.addEventListener('pageshow',serviceWorkerPollUpdate);
+    window.addEventListener('focus',serviceWorkerPollUpdate);
   });
   window.__mtServiceWorkerDiagnostics=()=>({cacheName:mtActiveServiceWorkerCacheName, refreshing:serviceWorkerRefreshing});
 }

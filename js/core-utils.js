@@ -1,6 +1,26 @@
 /*
  * Низькоризикові чисті утиліти.
  *
+ * ЗАПИС ПЕРШИМ БЛОКОМ ФАЙЛУ (v91.92): облік змін SW-контролера на ранньому
+ * етапі завантаження. core-utils.js — перший скрипт застосунку, тож цей
+ * лічильник працює ДО реєстрації/активації SW і ДО ініціалізації модулів.
+ * Живий контроль належить app.js (serviceWorkerApplyUpdate); тут лише
+ * консультаційні прапорці для змішаного runtime-гарда (js/runtime-guard.js).
+ */
+(function(){
+  try{
+    var had=!!(navigator.serviceWorker&&navigator.serviceWorker.controller);
+    window.__mtSWControllerHadController=had;
+    window.__mtSWControllerFlips=0;
+    if(navigator.serviceWorker&&navigator.serviceWorker.addEventListener){
+      navigator.serviceWorker.addEventListener('controllerchange',function(){
+        window.__mtSWControllerFlips=(window.__mtSWControllerFlips||0)+1;
+      });
+    }
+  }catch(_swWatchError){/* облік не має ламати застосунок */}
+})();
+
+/*
  * Це класичний script, а не ES-модуль: функції навмисно залишаються
  * доступними глобально, щоб app.js продовжував працювати без зміни його
  * існуючих викликів. Тут немає DOM, localStorage, IndexedDB або мережі.

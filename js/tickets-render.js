@@ -1,18 +1,19 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
+globalThis.MTTicketRendererRevision='runtime-137';
 function ticketDeliveryBadges(t){
   let legacy;
-  if(!getScriptUrl())legacy='<span class="tc-sync-badge">☁️ Стара таблиця: ⚙ Не налаштовано</span>';
+  if(!getScriptUrl())legacy='';
   else{
     const conflict=getEntityConflict('ticket',t.id);
     legacy=conflict
-      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${escapeHtml(t.id)}" title="${conflict.code==='INVALID_INPUT'?'Виправте дані заявки':'Оберіть, яку версію зберегти'}">☁️ Стара таблиця: ❌ ${conflict.code==='INVALID_INPUT'?'Помилка даних':'Конфлікт'}</button>`
+      ? `<button type="button" class="tc-sync-badge btn-danger resolve-sync-conflict-btn" data-id="${escapeHtml(t.id)}" title="${conflict.code==='INVALID_INPUT'?'Виправте дані заявки':'Оберіть, яку версію зберегти'}">Таблиця ❌</button>`
       : isEntitySynced('ticket',t.id)
-      ? '<span class="tc-sync-badge tc-sync-ok" title="Підтверджено старим сервером">☁️ Стара таблиця: ✅ Надіслано</span>'
-      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${escapeHtml(t.id)}">☁️ Стара таблиця: ⏳ Очікує</button>`;
+      ? '<span class="tc-sync-badge tc-sync-ok" title="Підтверджено сервером таблиці">Таблиця ✅</span>'
+      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${escapeHtml(t.id)}">Таблиця ⏳</button>`;
   }
   const report=globalThis.MTDispatcherReport,d=report?.delivery?.(t.id)||{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};
-  return legacy+`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'📊 Таблиця Д: ⚙ Не налаштовано')}</span>`;
+  return legacy+(report?.enabled?.()===false||['disabled','not_configured'].includes(d.state)?'':`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'Таблиця Д ⏳')}</span>`);
 }
 function renderDateNavVisibility(){
   const inSpecialMode = searchQuery.trim().length>0 || activeFilterTags.size>0;
@@ -63,10 +64,18 @@ function ticketDiagnosticHistoryHtml(ticket){
   return `<div class="tc-diagnostic-history" style="margin-top:9px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;"><strong>🛠 Історія діагностик</strong>${records||'<div style="font-size:12px;color:var(--text-faint);margin-top:5px;">Діагностика ще не виконувалась</div>'}</div>`;
 }
 
+function ticketMaterialPresentation(ticket,content){
+  const elements=[...(ticket.equipment||[]).filter(e=>e.checked!==false).map(e=>({label:String(e.label||''),qty:Number(e.consumption_qty??e.qty??1),unit:'шт.'})),...(ticket.cables||[]).map(c=>({label:String(c.label||''),qty:Number(c.meters),unit:'м'}))];
+  const lines=String(content||'').split('\n').filter(line=>!elements.some(e=>e.label&&new RegExp('^[\\s🛠️🔌]*'+e.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*:','u').test(line)));
+  const visible=elements.filter(e=>Number.isFinite(e.qty)&&e.qty>0);
+  return {content:lines.join('\n'),html:visible.length?'<div class="tc-materials"><strong>Матеріали</strong>'+visible.map(e=>'<div>'+escapeHtml(e.label)+' — '+escapeHtml(e.qty)+' '+e.unit+'</div>').join('')+'</div>':''};
+}
+
 // NEW: стислий опис виконаної роботи (обладнання/кабелі/роботи/нотатка) БЕЗ
 // імені, телефону, адреси — для картки під "профілем абонента", де ці дані
 // вже показані один раз вище, а не в кожній заявці окремо.
 function renderTicketCard(t, opts={}){
+  if(t.type==='Інше')return `<div class="ticket-card" data-id="${escapeHtml(t.id)}"><div class="tc-head"><div class="tc-type">Інше</div><div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div><div class="tc-sum tabular">${fmtMoney(t.sum)}</div></div><div class="tc-content">${escapeHtml(t.otherNote||t.note||'')}</div><div class="tc-actions"><button type="button" class="btn btn-sm edit-ticket-btn" data-id="${escapeHtml(t.id)}">✏️ Редагувати</button><button type="button" class="btn btn-sm share-ticket-btn" data-id="${escapeHtml(t.id)}">📤 Переслати</button><button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${escapeHtml(t.id)}">🗑️ Видалити</button></div></div>`;
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
   const signalText = formatOnuSignal(t.signal);
@@ -77,7 +86,8 @@ function renderTicketCard(t, opts={}){
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
   // замість повного тексту заявки (де є ім'я/телефон/адреса) показуємо лише
   // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.
-  const displayContent = opts.workOnly ? buildWorkSummaryLines(t).join('\n') : String(t.content||'');
+  const materialPresentation=ticketMaterialPresentation(t,opts.workOnly ? buildWorkSummaryLines(t).join('\n') : String(t.content||''));
+  const displayContent = materialPresentation.content;
   const detailContent = opts.workOnly ? {before:displayContent,after:''} : splitTicketContentForTechnicalDetails(displayContent);
   const hasContent = !!(detailContent.before || detailContent.after);
   const isOther = t.type === 'Інше';
@@ -91,10 +101,10 @@ function renderTicketCard(t, opts={}){
   let tgBadge = '';
   if((settings.tgBotToken||'').trim() && (settings.tgBackupChatId||'').trim() && t.content){
     tgBadge = t.tgBackupAmbiguous
-      ? `<button type="button" class="tc-sync-badge tc-sync-pending tg-open-btn" data-id="${t.id}" title="Відповідь Telegram втрачено. Автоматичний повтор вимкнено, щоб не створити дубль." style="border:none; cursor:pointer;">☁️⚠ Telegram</button><button type="button" class="tc-sync-badge tc-sync-pending retry-tg-ambiguous-btn" data-id="${t.id}" title="Надіслати копію ще раз (можливий дубль)" style="border:none; cursor:pointer;">🔁 Копію ще раз</button>`
+      ? `<button type="button" class="tc-sync-badge tc-sync-pending tg-open-btn" data-id="${t.id}" title="Відповідь Telegram втрачено. Автоматичний повтор вимкнено, щоб не створити дубль." style="border:none; cursor:pointer;">Telegram ⏳</button><button type="button" class="tc-sync-badge tc-sync-pending retry-tg-ambiguous-btn" data-id="${t.id}" title="Надіслати копію ще раз (можливий дубль)" style="border:none; cursor:pointer;">🔁 Копію ще раз</button>`
       : t.tgBackedUp
-      ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">☁️✅ Telegram</button>`
-      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">☁️⏳ Telegram</button>`;
+      ? `<button type="button" class="tc-sync-badge tc-sync-ok tg-open-btn" data-id="${t.id}" title="Відкрити цю заявку в Telegram" style="border:none; cursor:pointer;">Telegram ✅</button>`
+      : `<button type="button" class="tc-sync-badge tc-sync-pending retry-tg-btn" data-id="${t.id}" title="Натисніть, щоб повторити спробу" style="border:none; cursor:pointer;">Telegram ⏳</button>`;
   }
   const hasPhotos=!!((t.photos&&t.photos.length)||t.photo);
   const photoBadge=hasPhotos?`<button type="button" class="tc-photo-badge tc-photo-toggle-btn" data-id="${t.id}" data-photo-keys='${escapeHtml(JSON.stringify((t.photos&&t.photos.length)?t.photos:[t.photo]))}' data-tg-file-ids='${escapeHtml(JSON.stringify((t.tgPhotoFileIds&&t.tgPhotoFileIds.length)?t.tgPhotoFileIds:(t.tgPhotoFileId?[t.tgPhotoFileId]:[])))}'>📷 Фото${(t.photos&&t.photos.length>1) ? ` (${t.photos.length})` : ''}</button>`:'';
@@ -113,9 +123,9 @@ function renderTicketCard(t, opts={}){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
-    ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
-    ${(opts.workOnly || hasContent || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
+    ${(opts.workOnly || hasContent || materialPresentation.html || syncBadge || tgBadge || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
+      ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
       ${((t.macAddress || signalText) && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
@@ -127,6 +137,7 @@ function renderTicketCard(t, opts={}){
       </div>` : ''}
       ${(!opts.workOnly&&linkedPoints.length)?`<div class="tc-network-links"><strong>📡 Об’єкти мережі</strong>${linkedPoints.map(point=>`<div class="row between"><button type="button" class="btn btn-sm ticket-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml((typeof MTToolsCore!=='undefined'&&MTToolsCore.networkPointAddress(point))||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger ticket-network-unlink" data-ticket-id="${escapeHtml(t.id)}" data-point-id="${escapeHtml(point.id)}">Відв’язати</button></div>`).join('')}</div>`:''}
       ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : (!hasContent && opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
+      ${materialPresentation.html}
       ${!opts.workOnly?ticketDiagnosticHistoryHtml(t):''}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}

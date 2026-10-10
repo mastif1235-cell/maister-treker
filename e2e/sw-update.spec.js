@@ -6,10 +6,14 @@
    перезавантажується під новим SW без помилок. */
 const fs = require('node:fs');
 const path = require('node:path');
-const { test, expect, gotoApp, waitServiceWorkerCacheReady, waitAppReady, readSwCacheName } = require('./app-test');
+const { test, expect, gotoApp, createTicketViaUi, waitServiceWorkerCacheReady, waitAppReady, readSwCacheName } = require('./app-test');
 
 test('D: оновлення SW з новим CACHE_NAME активується атомарно, без мішанини версій', async ({ page, appEnv }) => {
   const errors = await gotoApp(page, appEnv.url);
+  const retainedClient='E2E runtime update retained ticket';
+  await createTicketViaUi(page,retainedClient);
+  const retainedIds=await page.evaluate(name=>tickets.filter(t=>t.clientName===name).map(t=>String(t.id)),retainedClient);
+  expect(retainedIds).toHaveLength(1);
 
   // 1. Перше встановлення: install → activate, повний кеш ядра.
   const oldCache = await waitServiceWorkerCacheReady(page);
@@ -82,6 +86,8 @@ test('D: оновлення SW з новим CACHE_NAME активується �
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitAppReady(page);
   await expect(page.locator('#screen-tickets')).toBeVisible();
+
+  expect(await page.evaluate(name=>tickets.filter(t=>t.clientName===name).map(t=>String(t.id)),retainedClient)).toEqual(retainedIds);
 
   expect(errors, `необроблені JS-помилки під час оновлення SW: ${errors.join(' | ')}`).toEqual([]);
 });

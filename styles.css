@@ -264,7 +264,7 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 .ticket-compact-card{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; column-gap:8px; row-gap:3px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:7px 10px; min-width:0;}
 .ticket-compact-meta{display:flex; flex-wrap:wrap; align-items:center; gap:3px 6px; min-width:0; font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--text-dim);}
 .ticket-compact-type{max-width:100%; overflow-wrap:anywhere; border-radius:999px; padding:1px 6px; background:var(--surface-2); color:var(--text); font-family:inherit; font-size:11px; line-height:1.3;}
-.ticket-compact-address{min-width:0; font-size:14px; font-weight:600; line-height:1.25; overflow-wrap:anywhere;}
+.ticket-compact-address{min-width:0; font-size:14px; font-weight:600; line-height:1.25; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;}
 .ticket-compact-sum{font-family:var(--mono); font-size:15px; font-weight:700; color:var(--accent); white-space:nowrap; justify-self:end;}
 .ticket-compact-card .ticket-view-expand-btn{min-height:40px; padding:0 10px; justify-self:end; font-size:12px;}
 .ticket-compact-card .tc-status-row{grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:3px 6px; min-width:0;}
