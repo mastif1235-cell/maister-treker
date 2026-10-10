@@ -1,7 +1,7 @@
 'use strict';
 const {test,expect,gotoApp,waitServiceWorkerCacheReady}=require('./app-test');
 
-test('runtime-140 reports real cached asset hashes and executed UI revisions',async({page,appEnv})=>{
+test('runtime-141 reports real cached asset hashes and executed UI revisions',async({page,appEnv})=>{
   const errors=await gotoApp(page,appEnv.url);
   await waitServiceWorkerCacheReady(page);
   const proof=await page.evaluate(async()=>{
@@ -15,6 +15,6 @@ test('runtime-140 reports real cached asset hashes and executed UI revisions',as
   });
   expect(proof.runtime).toEqual(proof.published);
   expect(Object.keys(proof.runtime.assets)).toHaveLength(8);
-  expect(proof.revisions).toEqual(['runtime-140','runtime-140','runtime-140']);
+  expect(proof.revisions).toEqual(['runtime-141','runtime-141','runtime-141']);
   expect(errors).toEqual([]);
 });

@@ -1,5 +1,23 @@
 'use strict';
 const {test,expect,gotoApp}=require('./app-test');
+test('partial dispatcher ACK isolates stale item, receipts and expanded diagnostics',async({page,appEnv})=>{
+  const errors=await gotoApp(page,appEnv.url);
+  const result=await page.evaluate(async()=>{
+    let raw=null;
+    const list=[{id:'stale'},{id:'valid-2650'},{id:'valid-third'}];
+    const q=MTDispatcherReportClient.createOutbox({storage:{getItem:()=>raw,setItem:(_k,v)=>{raw=v;}},settings:()=>({dispatcherReportEndpoint:'https://script.google.com/macros/s/synthetic/exec',dispatcherReportEnabled:false}),now:()=>1000,requestId:()=>'synthetic-request',tickets:()=>list,ticket:id=>list.find(t=>t.id===id),dto:async(t,v)=>({ticket_id:t.id,source_version:v}),setTimeout:()=>1,clearTimeout:()=>{},send:async(_u,r)=>({ok:true,code:'PARTIAL',items:r.tickets.map(t=>({ticket_id:t.ticket_id,source_version:t.source_version,action:'upsert',status:t.ticket_id==='stale'?'stale_version':'synced',code:t.ticket_id==='stale'?'STALE_VERSION':'OK'}))})});
+    for(const t of list)q.enqueueUpsert(t);await q.flush();
+    const report=globalThis.MTDispatcherReport;
+    globalThis.MTDispatcherReport={...report,delivery:id=>q.delivery(id)};
+    const html=dispatcherFailureDetails({id:'stale',date:'10.10.2026',phone:'PRIVATE-PHONE',masterNote:'PRIVATE-NOTE'});
+    globalThis.MTDispatcherReport=report;
+    return {failed:q.status().failed,unresolved:q.status().unresolved,stale:q.delivery('stale'),good:q.delivery('valid-2650'),receipts:JSON.parse(raw).receipts.length,html};
+  });
+  expect(result.failed).toBe(1);expect(result.unresolved).toBe(1);expect(result.receipts).toBe(2);
+  expect(result.stale.code).toBe('STALE_VERSION');expect(result.good.state).toBe('sent');
+  for(const text of ['10.10.2026','STALE_VERSION','dispatcher','attempts'])expect(result.html).toContain(text);
+  expect(result.html).not.toContain('PRIVATE-');expect(errors).toEqual([]);
+});
 test('report enqueue uses browser timers with the correct receiver',async({page,appEnv})=>{
   await gotoApp(page,appEnv.url);
   const result=await page.evaluate(()=>{

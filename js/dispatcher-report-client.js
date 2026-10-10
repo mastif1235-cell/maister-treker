@@ -44,6 +44,24 @@
       state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();
       state.inflight=null;persist();
     }
+    function applyItemResults(sent,response){
+      if(!Array.isArray(response.items)||response.items.length!==sent.length)throw new Error('REPORT_PARTIAL_ACK');
+      const key=o=>o.ticket_id+'#'+o.action+'#'+o.source_version,seen=new Set(),matched=[];
+      for(const item of response.items){
+        const o=sent.find(o=>o.id===item?.ticket_id&&o.action===item.action&&o.version===item.source_version);
+        if(!o||seen.has(key(item))||!['synced','unchanged','stale_version','invalid_dto','error'].includes(item.status)||!/^\w{1,64}$/.test(item.code||'')||item.code!==item.code.toUpperCase()||(['synced','unchanged'].includes(item.status)!==(item.code==='OK'))||item.status==='stale_version'&&item.code!=='STALE_VERSION')throw new Error('REPORT_PARTIAL_ACK');
+        seen.add(key(item));matched.push({o,item});
+      }
+      // Validate the COMPLETE identity-bound response before changing ANY op.
+      const successful=matched.filter(x=>['synced','unchanged'].includes(x.item.status)).map(x=>x.o),failed=matched.filter(x=>!successful.includes(x.o));
+      completeSent(successful,response);
+      for(const {o,item} of failed){
+        if(!state.operations.includes(o))continue;
+        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=0;
+      }
+      state.lastError=failed[0]?.item.code||'';persist();
+      return successful.length;
+    }
     // Lost-ACK reconciliation (v91.95): a late/replayed response whose
     // request_id matches the persisted in-flight batch confirms those exact
     // operation versions as sent WITHOUT resending the mutation. Any other
@@ -55,6 +73,7 @@
         const want=new Set(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version));
         const sent=state.operations.filter(o=>want.has(o.id+'#'+o.action+'#'+o.version));
         if(!sent.length)return false;
+        if('items' in result){const count=applyItemResults(sent,result);telemetry('ack_received',{ack_count:count,batch_size:sent.length});return true;}
         if(['inserted','updated','unchanged','deleted'].some(k=>k in result)){
           if(result.rejected||result.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(result[k])&&result[k]>=0)||result.inserted+result.updated+result.unchanged+result.deleted!==sent.length)return false;
         }
@@ -156,6 +175,12 @@
         }
         if(g!==generation||url!==deps.settings().dispatcherReportEndpoint)return;
         if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
+        if('items' in response){
+          const count=applyItemResults(sent,response);
+          telemetry('ack_received',{ack_count:count,batch_size:sent.length});
+          telemetry('send_result',{code:count===sent.length?'OK':'PARTIAL',batch_size:sent.length});
+          return;
+        }
         if(['inserted','updated','unchanged','deleted','rejected','errors'].some(k=>k in response)){
           if(response.rejected||response.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0)||response.inserted+response.updated+response.unchanged+response.deleted!==sent.length)throw new Error('REPORT_PARTIAL_ACK');
         }
@@ -190,9 +215,9 @@
       for(const o of state.operations.filter(o=>!ids.has(o.id)&&o.action==='upsert'))operations.push(o);
       if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
     }
-    function retry(){for(const o of state.operations){o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
+    function retry(id){for(const o of state.operations){if(id!==undefined&&o.id!==String(id))continue;if(o.error==='INVALID_DTO')continue;o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
-    function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||state.lastError};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
+    function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||(!o.error&&o.attempts>=3?'REPORT_NETWORK_ERROR':''),ticket_id:id,attempts:o.attempts,channel:'dispatcher',server_response:o.error&&/^[A-Z_]{1,64}$/.test(o.error)?o.error:''};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
     async function syncAll(){
       // flushBatch may no-op while the store is not ready / runtime is mixed;
       // this loop must never spin forever on that, and a manual sync must fail
@@ -372,7 +397,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-140',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-141',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -396,7 +421,10 @@
   bridge.onLateResult((request,result)=>{try{outbox.reconcile(request,result);}catch(_){/* reconciliation is best-effort */}});
   const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
   function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
-  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
+  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});document.querySelectorAll('[data-dispatcher-error]').forEach(el=>{
+    const d=outbox.delivery(el.dataset.dispatcherError);el.hidden=d.state!=='error';
+    el.textContent=el.hidden?'':JSON.stringify({ticket_id:el.dataset.dispatcherError,date:el.dataset.dispatcherDate||'',attempts:d.attempts||0,error_code:/^[A-Z_]{1,64}$/.test(d.code||'')?d.code:'REPORT_ERROR',channel:'dispatcher',server_response:d.server_response||''});
+  });if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
   function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),k=document.getElementById('dispatcherHmacSecret'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(k&&document.activeElement!==k)k.value=c.dispatcherHmacSecret||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const legacy=document.querySelector('[data-dispatcher-action="authorize"]');if(legacy)legacy.hidden=directMode();const x=outbox.status();if(s)s.textContent=`У черзі: ${x.unresolved}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
   // Safe copy-diagnostics (v91.95): counts/codes/revisions ONLY. Never the
@@ -422,7 +450,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v70-runtime-140'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-140');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v71-runtime-141'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-141');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -443,7 +471,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v70-runtime-140'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-140');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v71-runtime-141'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-141');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}

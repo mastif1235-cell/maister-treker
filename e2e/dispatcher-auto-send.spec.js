@@ -1,5 +1,5 @@
 'use strict';
-/* v91.95 / runtime-140. Direct transport E2E (physical-Android gate):
+/* v91.95 / runtime-141. Direct transport E2E (physical-Android gate):
    A) a saved ticket is delivered to Таблиця Д by a SIGNED POST (MT-SYNC-HMAC-V3,
       verified here against the shared canonical contract) with popupCount===0;
    B) an app restart keeps sending with no Google connect at all;
