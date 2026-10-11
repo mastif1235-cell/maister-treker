@@ -34,6 +34,11 @@ write did not persist, the same bound request can resume only originally success
 items, using unchanged stale fences. A newer/conflicting state fails closed with
 `REPORT_COMMIT_UNRESOLVED`; it never receives an invented ACK or overwrite.
 Originally rejected siblings retain their exact original results.
+New mutation requests cannot cross an unresolved PREPARED receipt: matching
+evidence is finalized first, otherwise `REPORT_COMMIT_UNRESOLVED` blocks the new
+write until the original request is resumed. This prevents a later edit from
+destroying commit evidence when the receipt marker failed. Status/proof reads
+remain available; this fence never silently acknowledges or drops an operation.
 
 Journal creation/prepare failures occur before ticket writes. Durable receipts
 have no cache TTL and are never silently evicted. At 100,000 requests the journal

@@ -36,7 +36,8 @@ function harness(){
   fail.cache.clear();assert.equal(fail.execute(failed).items[0].status,'synced');assert.equal(fail.writes(),1);
   const conflict=harness();conflict.writeFailure(true);const pending=conflict.request([conflict.dto('conflict')]);
   assert.throws(()=>conflict.execute(pending));conflict.writeFailure(false);
-  conflict.execute(conflict.request([conflict.dto('conflict',1001,'newer')]));
+  assert.throws(()=>conflict.execute(conflict.request([conflict.dto('neighbor')])),/REPORT_COMMIT_UNRESOLVED/,'new mutations cannot cross unresolved commit evidence');
+  conflict.rows().push({...conflict.dto('conflict',1001,'newer'),deleted_at:'',sync_status:'SYNCED'}); // simulate an external change, never overwrite it
   const conflictWrites=conflict.writes();assert.throws(()=>conflict.execute(pending),/REPORT_COMMIT_UNRESOLVED/);assert.equal(conflict.writes(),conflictWrites);assert.equal(conflict.rows()[0].dispatcher_comment,'newer');
   // D: exact partial results remain unchanged when presentation fails.
   const mixed=harness();mixed.execute(mixed.request([mixed.dto('stale',1000,'old')]));mixed.renderFailure(true);
@@ -57,9 +58,12 @@ function harness(){
   const journalFactory=staged.c.reportReceiptJournal_;
   staged.c.reportReceiptJournal_=s=>{const j=journalFactory(s);return {...j,commit:()=>{throw Error('marker unavailable');}};};
   const stageAck=staged.execute(stageReq);staged.c.reportReceiptJournal_=journalFactory;staged.cache.clear();
-  assert.equal(JSON.stringify(staged.execute(stageReq)),JSON.stringify(stageAck));assert.equal(staged.writes(),1);
+  // A subsequent request must finalize the matching old evidence BEFORE it
+  // can legitimately edit that row. The original ACK stays exact afterwards.
+  staged.execute(staged.request([staged.dto('staged',1001,'later')]));
+  assert.equal(JSON.stringify(staged.execute(stageReq)),JSON.stringify(stageAck));assert.equal(staged.writes(),2);
   // No data write when the durable intent cannot be stored.
-  const unavailable=harness();unavailable.c.reportReceiptJournal_=()=>({find:()=>null,prepare:()=>{throw Error('journal unavailable');}});
+  const unavailable=harness();unavailable.c.reportReceiptJournal_=()=>({find:()=>null,pending:()=>[],prepare:()=>{throw Error('journal unavailable');}});
   assert.throws(()=>unavailable.execute(unavailable.request([unavailable.dto('no-write')])),/journal unavailable/);assert.equal(unavailable.writes(),0);
   // Orphan path: only signed read-only proof, exact ID/version/hash/SYNCED,
   // no mutation, only the selected REPORT_INTERNAL_ERROR operation is removed.

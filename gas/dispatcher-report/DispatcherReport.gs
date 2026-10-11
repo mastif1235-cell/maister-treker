@@ -19,7 +19,8 @@ function reportReceiptJournal_(store){
   if(!sheet){sheet=store.ss.insertSheet('_DispatcherReceipts');sheet.getRange(1,1,1,6).setValues([headers]);sheet.hideSheet();}
   if(JSON.stringify(sheet.getRange(1,1,1,6).getValues()[0])!==JSON.stringify(headers))throw new Error('REPORT_RECEIPT_SCHEMA');
   var last=sheet.getLastRow(),values=last>1?sheet.getRange(2,1,last-1,6).getValues():[];
-  return {find:function(id){var key='request:'+id,found=values.map(function(v,i){return {v:v,row:i+2};}).filter(function(r){return r.v[0]===key;});if(found.length>1)throw new Error('REPORT_RECEIPT_CONFLICT');return found[0]||null;},
+  return {pending:function(){return values.map(function(v,i){return {v:v,row:i+2};}).filter(function(r){return r.v[4]==='PREPARED';});},
+    find:function(id){var key='request:'+id,found=values.map(function(v,i){return {v:v,row:i+2};}).filter(function(r){return r.v[0]===key;});if(found.length>1)throw new Error('REPORT_RECEIPT_CONFLICT');return found[0]||null;},
     prepare:function(id,hash,result,evidence){
       var resultJson=JSON.stringify(result),evidenceJson=JSON.stringify(evidence);
       if(last>=100001||resultJson.length>45000||evidenceJson.length>45000)throw new Error('REPORT_RECEIPT_CAPACITY');
@@ -197,6 +198,13 @@ function reportExecute_(c,request,envelopeNonce){
       }
       return saved;
     }
+    // No newer mutation may destroy the evidence needed to recover an earlier
+    // interrupted commit. Confirm matching PREPARED receipts first; otherwise
+    // fail closed until the original bound request is resumed successfully.
+    journal.pending().forEach(function(pending){
+      if(!reportEvidenceMatches_(store.rows,JSON.parse(pending.v[3])))throw new Error('REPORT_COMMIT_UNRESOLVED');
+      journal.commit(pending);
+    });
   }
   if(envelopeNonce!==undefined&&!reportConsumeNonce_(envelopeNonce))throw new Error('AUTH_FAILED');
   var minute=Math.floor(Date.now()/60000),rateKey='REPORT_RATE_'+minute,count=Number(cache.get(rateKey)||0);if(count>=40)throw new Error('RATE_LIMITED');cache.put(rateKey,String(count+1),120);
