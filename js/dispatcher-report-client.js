@@ -8,6 +8,7 @@
   function createOutbox(deps){
     let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:'',inflight:null},running=false,timer=null,generation=0,blocked=false,flight=null;
     try{const saved=JSON.parse(deps.storage.getItem(KEY)||'null');if(saved&&Array.isArray(saved.operations)&&saved.operations.length<=10000){state={...state,...saved};state.operations=saved.operations.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)&&Number.isInteger(o.attempts)&&o.attempts>=0&&o.attempts<=3).map(o=>({id:o.id,action:o.action,version:o.version,attempts:o.attempts,next:Number(o.next)||0,error:String(o.error||'')}));}}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}
+    let durable=true;
     const now=()=>deps.now?.()??Date.now();
     // Recover v91.88's per-ticket failures caused by ONE shared connection
     // failure. Keep all operation IDs/versions, never tickets or private DTOs.
@@ -28,7 +29,7 @@
       final_validation:['PASS','FAIL'].includes(savedSync.final_validation)?savedSync.final_validation:'PENDING'
     }:null;
     blocked=CONNECTION.test(state.lastError);
-    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,diagnostics:state.diagnostics,sync:state.sync,lastError:state.lastError,lastSuccess:state.lastSuccess,inflight:state.inflight}));}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
+    function persist(){try{deps.storage.setItem(KEY,JSON.stringify({endpoint:state.endpoint,operations:state.operations,receipts:state.receipts,diagnostics:state.diagnostics,sync:state.sync,lastError:state.lastError,lastSuccess:state.lastSuccess,inflight:state.inflight}));durable=true;}catch(_){durable=false;state.lastError='LOCAL_QUEUE_UNAVAILABLE';}deps.changed?.(status());}
     function syncProgress(){if(!state.sync)return null;const expected=state.sync.expected,unresolved=expected.filter(o=>!o.acknowledged);return {expected_count:expected.length,received_ack_count:expected.length-unresolved.length,failed_count:unresolved.filter(o=>state.operations.some(n=>n.id===o.id&&(n.error||n.attempts>=3))).length,unresolved_count:unresolved.length,batch_count:state.sync.batch_count,final_validation:state.sync.final_validation};}
     function status(){return {pending:state.operations.filter(o=>o.attempts<3&&!o.error).length,failed:state.operations.filter(o=>o.attempts>=3||o.error).length,unresolved:state.operations.length,sync:syncProgress(),lastError:state.lastError,lastSuccess:state.lastSuccess,running,connectionRequired:blocked};}
     function invalidateExpected(id,action,version){if(!state.sync)return;const o=state.sync.expected.find(o=>o.id===id);if(o)Object.assign(o,{action,version,acknowledged:false});state.sync.final_validation='PENDING';}
@@ -37,12 +38,30 @@
     // path (Android handoff). Only the EXACT acknowledged versions leave the
     // queue: an old ACK can never confirm a newer edit; nothing is ever
     // removed without a server-side confirmation.
-    function completeSent(sent,response){
+    function completeSent(sent,response,save=true){
       if(state.sync)for(const o of sent){const expected=state.sync.expected.find(n=>n.id===o.id&&n.action===o.action&&n.version===o.version);if(expected)expected.acknowledged=true;}
-      const versions=new Map(sent.map(o=>[o.id,o.version]));state.operations=state.operations.filter(o=>versions.get(o.id)!==o.version);
+      state.operations=state.operations.filter(o=>!sent.some(n=>n.id===o.id&&n.action===o.action&&n.version===o.version));
       for(const o of sent){state.receipts=state.receipts.filter(r=>r.id!==o.id);if(o.action==='upsert'&&!state.operations.some(n=>n.id===o.id))state.receipts.push({id:o.id,version:o.version});}
       state.receipts=state.receipts.slice(-10000);state.lastError='';state.lastSuccess=new Date(now()).toISOString();
-      state.inflight=null;persist();
+      state.inflight=null;if(save)persist();
+    }
+    function applyItemResults(sent,response){
+      if(!Array.isArray(response.items)||response.items.length!==sent.length)throw new Error('REPORT_PARTIAL_ACK');
+      const key=o=>o.ticket_id+'#'+o.action+'#'+o.source_version,seen=new Set(),matched=[];
+      for(const item of response.items){
+        const o=sent.find(o=>o.id===item?.ticket_id&&o.action===item.action&&o.version===item.source_version);
+        if(!o||seen.has(key(item))||!['synced','unchanged','stale_version','invalid_dto','error'].includes(item.status)||!/^\w{1,64}$/.test(item.code||'')||item.code!==item.code.toUpperCase()||(['synced','unchanged'].includes(item.status)!==(item.code==='OK'))||item.status==='stale_version'&&item.code!=='STALE_VERSION')throw new Error('REPORT_PARTIAL_ACK');
+        seen.add(key(item));matched.push({o,item});
+      }
+      // Validate the COMPLETE identity-bound response before changing ANY op.
+      const successful=matched.filter(x=>['synced','unchanged'].includes(x.item.status)).map(x=>x.o),failed=matched.filter(x=>!successful.includes(x.o));
+      completeSent(successful,response,false);
+      for(const {o,item} of failed){
+        if(!state.operations.includes(o))continue;
+        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=0;
+      }
+      state.lastError=failed[0]?.item.code||'';persist();
+      return successful.length;
     }
     // Lost-ACK reconciliation (v91.95): a late/replayed response whose
     // request_id matches the persisted in-flight batch confirms those exact
@@ -55,9 +74,10 @@
         const want=new Set(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version));
         const sent=state.operations.filter(o=>want.has(o.id+'#'+o.action+'#'+o.version));
         if(!sent.length)return false;
-        if(['inserted','updated','unchanged','deleted'].some(k=>k in result)){
+        if('items' in result){const count=applyItemResults(sent,result);telemetry('ack_received',{ack_count:count,batch_size:sent.length});return true;}
+        if(['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(result[k])&&result[k]>=0)){
           if(result.rejected||result.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(result[k])&&result[k]>=0)||result.inserted+result.updated+result.unchanged+result.deleted!==sent.length)return false;
-        }
+        }else return false;
         const size=sent.length;
         completeSent(sent,result);
         telemetry('ack_received',{ack_count:size,batch_size:size});
@@ -65,7 +85,12 @@
         return true;
       }catch(_){return false;}
     }
-    function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
+    // AUTO permission is checked again at execution time (including timers and
+    // after async projection). MANUAL permission is scoped to explicit IDs.
+    const autoIntent=()=>({reason:'auto'});
+    const permitted=intent=>intent.reason==='manual'||deps.settings().dispatcherReportEnabled===true;
+    const selected=(o,intent)=>!intent.ids||intent.ids.includes(o.id);
+    function schedule(ms=0,intent=autoIntent()){if(timer!==null)deps.clearTimeout(timer);timer=null;if(!permitted(intent))return;timer=deps.setTimeout(()=>{timer=null;void flush(intent);},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
     // Since v91.95 the operation itself is ALWAYS persisted after a successful
     // local save: connection state, auto-send flag and endpoint health gate
@@ -95,10 +120,15 @@
     }catch(e){state.lastError=e?.message==='INVALID_ENDPOINT'?'INVALID_ENDPOINT':'REPORT_QUEUE_ERROR';persist();telemetry('enqueue_result',{code:state.lastError,pending:status().pending,failed:status().failed,unresolved:status().unresolved,store_ready:storeReady()});return false;}}
     // Endpoint was fixed in Settings: clear config-blocked operations so the
     // preserved queue becomes sendable without losing a single ticket ID.
-    function reconfigure(){for(const o of state.operations){if(o.error==='REPORT_NOT_CONFIGURED'||o.error==='INVALID_ENDPOINT'){o.error='';o.attempts=0;o.next=0;}}blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();if(deps.settings().dispatcherReportEnabled&&!blocked)schedule();return status();}
-    function flush(){if(flight)return flight;flight=flushBatch().finally(()=>{flight=null;});return flight;}
-    async function flushBatch(){
-      if(running||blocked||!configured()||deps.online?.()===false)return;
+    function reconfigure(){generation++;for(const o of state.operations){if(o.error==='REPORT_NOT_CONFIGURED'||o.error==='INVALID_ENDPOINT'){o.error='';o.attempts=0;o.next=0;}}blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();if(deps.settings().dispatcherReportEnabled&&!blocked)schedule();return status();}
+    let autoWaiting=false;
+    function flush(intent={reason:'manual'}){
+      const scoped=intent.reason==='auto'?autoIntent():{reason:'manual',ids:intent.ids||state.operations.map(o=>o.id)};
+      if(flight){if(scoped.reason==='auto'){autoWaiting=true;return flight;}return flight.then(()=>flush(scoped));}
+      flight=flushBatch(scoped).finally(()=>{flight=null;if(autoWaiting){autoWaiting=false;schedule();}});return flight;
+    }
+    async function flushBatch(intent){
+      if(!permitted(intent)||running||blocked||!configured()||deps.online?.()===false)return;
       if(runtimeBlocked()){telemetry('flush_attempt',{code:'RUNTIME_GUARD',store_ready:storeReady(),pending:status().pending,failed:status().failed,unresolved:status().unresolved});return;}
       if(!storeReady()){
         // Before tickets load from IndexedDB an "empty" ticket list must never
@@ -110,7 +140,10 @@
       telemetry('flush_attempt',{store_ready:true,pending:status().pending,failed:status().failed,unresolved:status().unresolved});
       running=true;let failed=false,sent=[],g=generation;persist();
       try{
-        const url=align(),batch=state.operations.filter(o=>o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
+        const url=align(),sendSecret=deps.settings().dispatcherHmacSecret,batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
+        // One send capability survives every async boundary, but is revoked by
+        // OFF/config changes, superseded operations or a mixed runtime.
+        const canSend=()=>durable&&permitted(intent)&&g===generation&&url===deps.settings().dispatcherReportEndpoint&&sendSecret===deps.settings().dispatcherHmacSecret&&!runtimeBlocked()&&sent.every(o=>state.operations.includes(o));
         if(!batch.length)return;
         const dtos=[],deletes=[];
         for(const o of batch){
@@ -125,7 +158,7 @@
             dtos.push(dto);sent.push(o);
           }catch(e){o.error=PERMANENT.test(e.code||e.message)?e.code||e.message:'INVALID_DTO';state.lastError=o.error;persist();}
         }
-        if(!sent.length)return;
+        if(!sent.length||!canSend())return;
         // Rendering the complete archive after every page causes progressively
         // more GAS work. Only the final eligible page rebuilds the report.
         // Idempotent retry (lost-ACK recovery): a batch whose mutation may
@@ -136,7 +169,7 @@
         const batchOps=sent.map(o=>({id:o.id,action:o.action,version:o.version}));
         const batchKey=JSON.stringify(batchOps.map(o=>o.id+'#'+o.action+'#'+o.version).sort());
         const reuse=!!(state.inflight&&state.inflight.action==='report_sync_all'&&JSON.stringify(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version).sort())===batchKey);
-        const rebuild=reuse?state.inflight.rebuild:!state.operations.some(o=>!sent.includes(o)&&o.attempts<3&&!o.error);
+        const rebuild=reuse?state.inflight.rebuild:!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&!o.error);
         if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
         const request={action:'report_sync_all',tickets:dtos,deletes,request_id:reuse?state.inflight.request_id:deps.requestId(),rebuild};
         state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};
@@ -144,7 +177,8 @@
         telemetry('send_attempt',{batch_size:dtos.length+deletes.length,store_ready:true});
         let response,retried=false;
         for(;;){
-          try{response=await deps.send(url,request);}
+          if(!canSend())return;
+          try{response=await deps.send(url,request,canSend);}
           catch(sendError){
             // A replayed request_id whose bytes no longer match must never be
             // treated as a permanent failure: fall back to a fresh request_id.
@@ -156,26 +190,33 @@
         }
         if(g!==generation||url!==deps.settings().dispatcherReportEndpoint)return;
         if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
+        if('items' in response){
+          const count=applyItemResults(sent,response);
+          telemetry('ack_received',{ack_count:count,batch_size:sent.length});
+          telemetry('send_result',{code:count===sent.length?'OK':'PARTIAL',batch_size:sent.length});
+          return;
+        }
         if(['inserted','updated','unchanged','deleted','rejected','errors'].some(k=>k in response)){
           if(response.rejected||response.errors||!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0)||response.inserted+response.updated+response.unchanged+response.deleted!==sent.length)throw new Error('REPORT_PARTIAL_ACK');
         }
         // Full archive ACK accounting must never infer confirmation from an
         // empty/legacy ok:true response without mutation counters.
-        if(state.sync&&!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0))throw new Error('REPORT_PARTIAL_ACK');
+        if(!['inserted','updated','unchanged','deleted'].every(k=>Number.isSafeInteger(response[k])&&response[k]>=0))throw new Error('REPORT_PARTIAL_ACK');
         completeSent(sent,response);
         telemetry('ack_received',{ack_count:dtos.length+deletes.length,batch_size:dtos.length+deletes.length});
         telemetry('send_result',{code:'OK',batch_size:dtos.length+deletes.length});
       }catch(e){
         if(g!==generation)return;
+        if(e?.message==='REPORT_SEND_CANCELLED')return;
         failed=true;const code=String(e?.message||'REPORT_NETWORK_ERROR');state.lastError=/^[A-Z_]+$/.test(code)?code:'REPORT_NETWORK_ERROR';
         telemetry('send_result',{code:CONNECTION.test(state.lastError)?'REPORT_CONNECTION_REQUIRED':state.lastError});
         // No retry of privacy/schema failures. Bounded retries for transport,
         // consent, throttling and service failures, including across reload.
         if(CONNECTION.test(state.lastError))blocked=true;
-        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts++;if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
+        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
         persist();
       }finally{
-        running=false;persist();const eligible=state.operations.filter(o=>o.attempts<3&&!o.error);if(!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()));
+        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
       }
     }
     function fullSync(){
@@ -188,11 +229,11 @@
       // Preserve missing upserts from earlier attempts. Only an explicit
       // enqueueDelete can replace them with a tombstone; absence is not delete.
       for(const o of state.operations.filter(o=>!ids.has(o.id)&&o.action==='upsert'))operations.push(o);
-      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
+      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule(0,{reason:'manual',ids:operations.map(o=>o.id)});return status();
     }
-    function retry(){for(const o of state.operations){o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
+    function retry(id){const ids=[];for(const o of state.operations){if(id!==undefined&&o.id!==String(id))continue;if(o.error==='INVALID_DTO')continue;if(id===undefined&&!o.error&&o.attempts<3)continue;ids.push(o.id);o.attempts=0;o.next=0;o.error='';}if(state.sync&&ids.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();if(!ids.length)return Promise.resolve();const intent={reason:'manual',ids};return flight?flight.then(()=>flush(intent)):flush(intent);}
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
-    function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||state.lastError};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
+    function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||(!o.error&&o.attempts>=3?'REPORT_NETWORK_ERROR':''),ticket_id:id,attempts:o.attempts,channel:'dispatcher',server_response:o.error&&/^[A-Z_]{1,64}$/.test(o.error)?o.error:''};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
     async function syncAll(){
       // flushBatch may no-op while the store is not ready / runtime is mixed;
       // this loop must never spin forever on that, and a manual sync must fail
@@ -200,7 +241,7 @@
       if(runtimeBlocked())throw new Error('REPORT_RUNTIME_MIXED');
       if(!storeReady())throw new Error('REPORT_STORE_NOT_READY');
       fullSync();connectionReady();
-      while(status().pending&&!blocked&&deps.online?.()!==false){await flush();if(state.lastError&&state.lastError!=='TICKET_LOOKUP_MISSING')break;}
+      while(status().pending&&!blocked&&deps.online?.()!==false){const before=status();await flush();const after=status();if(state.lastError&&state.lastError!=='TICKET_LOOKUP_MISSING'||after.unresolved===before.unresolved&&after.failed===before.failed&&after.sync?.batch_count===before.sync?.batch_count)break;}
       const s=status();if(s.unresolved||s.sync?.unresolved_count||s.lastError){if(state.sync)state.sync.final_validation='FAIL';persist();throw new Error(s.lastError||'REPORT_SYNC_INCOMPLETE');}
       return s;
     }
@@ -226,7 +267,7 @@
   // JSON result feeds the existing ACK path unchanged; a network failure maps
   // to a connection-class error so the durable queue waits and retries later.
   function createDirectSend(deps){
-    return async function directSend(value,request){
+    return async function directSend(value,request,canSend=()=>true){
       const url=endpoint(value);
       const secret=String(deps.settings().dispatcherHmacSecret||'');
       if(secret.length<32)throw new Error('REPORT_NOT_CONFIGURED');
@@ -236,6 +277,7 @@
       const envelope=await api.signedEnvelope(
         {action:String(request.action||''),entity:'system',id:'',requestId:String(request.request_id||''),body:request},
         secret,()=>nonce,()=>deps.now?.()??Date.now());
+      if(!canSend())throw new Error('REPORT_SEND_CANCELLED');
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),deps.postTimeoutMs||20000);
       try{
         const response=await (deps.fetch||fetch)(url,{method:'POST',mode:'cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope),signal:controller.signal});
@@ -352,7 +394,7 @@
         connected=true;verified=true;lastStatusAck=new Date().toISOString();lastReason='';peer.postMessage({type:'MT_REPORT_VERIFIED',channel},peerOrigin);readyHandler?.();
       }).catch(error=>{if(nonce===channel){verified=false;if(peer)peer.postMessage({type:'MT_REPORT_FAILED',channel,code:/^[A-Z_]+$/.test(error?.message)?error.message:'REPORT_NETWORK_ERROR'},peerOrigin);}throw error;}).finally(()=>{if(nonce===channel)checking=null;});return checking;
     }
-    async function send(value,request,interactive=false){await connect(value,interactive);await verify();return rpc(request);}
+    async function send(value,request,interactive=false,canSend=()=>true){await connect(value,interactive);await verify();if(!canSend())throw new Error('REPORT_SEND_CANCELLED');return rpc(request);}
     function resume(){
       if(resumeFlight)return resumeFlight;
       resumeFlight=(async()=>{
@@ -372,7 +414,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-140',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-143',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -382,7 +424,7 @@
   const directSend=createDirectSend({settings:cfg,now:()=>Date.now(),postTimeoutMs:20000});
   const sendRequest=(value,request,interactive=false)=>directMode()?directSend(value,request):bridge.send(value,request,interactive);
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),
-    dto:async(t,v)=>(await import('./dispatcher-report-projection.mjs')).buildDTO(t,root.MTDispatcherReportCore,v),send:sendRequest,requestId:()=>crypto.randomUUID(),online:()=>navigator.onLine,
+    dto:async(t,v)=>(await import('./dispatcher-report-projection.mjs')).buildDTO(t,root.MTDispatcherReportCore,v),send:(value,request,canSend)=>directMode()?directSend(value,request,canSend):bridge.send(value,request,false,canSend),requestId:()=>crypto.randomUUID(),online:()=>navigator.onLine,
     // Browser timers require Window as receiver, not the dependency object.
     setTimeout:(fn,ms)=>window.setTimeout(fn,ms),clearTimeout:id=>window.clearTimeout(id),changed:x=>{record('queue_state',{pending:x.pending,failed:x.failed,unresolved:x.unresolved});refreshUI();},
     // Explicit store-ready gate: set by app.js after loadTicketsFromIdb(). An
@@ -396,7 +438,10 @@
   bridge.onLateResult((request,result)=>{try{outbox.reconcile(request,result);}catch(_){/* reconciliation is best-effort */}});
   const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
   function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
-  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
+  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});document.querySelectorAll('[data-dispatcher-error]').forEach(el=>{
+    const d=outbox.delivery(el.dataset.dispatcherError);el.hidden=d.state!=='error';
+    el.textContent=el.hidden?'':JSON.stringify({ticket_id:el.dataset.dispatcherError,date:el.dataset.dispatcherDate||'',attempts:d.attempts||0,error_code:/^[A-Z_]{1,64}$/.test(d.code||'')?d.code:'REPORT_ERROR',channel:'dispatcher',server_response:d.server_response||''});
+  });if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
   function renderSettings(){const c=cfg(),u=document.getElementById('dispatcherReportEndpoint'),k=document.getElementById('dispatcherHmacSecret'),enable=document.getElementById('dispatcherReportEnabled'),s=document.getElementById('dispatcherReportStatus');if(u&&document.activeElement!==u)u.value=c.dispatcherReportEndpoint||'';if(k&&document.activeElement!==k)k.value=c.dispatcherHmacSecret||'';if(enable)enable.checked=!!c.dispatcherReportEnabled;const legacy=document.querySelector('[data-dispatcher-action="authorize"]');if(legacy)legacy.hidden=directMode();const x=outbox.status();if(s)s.textContent=`У черзі: ${x.unresolved}. Помилки заявок: ${x.failed}.${x.running?' Надсилання…':''}${x.lastSuccess?' Остання синхронізація: '+x.lastSuccess:''}${x.lastError?' Канал: '+x.lastError:''}`;}
   function message(text){const e=document.getElementById('dispatcherReportResult');if(e)e.textContent=text;}
   // Safe copy-diagnostics (v91.95): counts/codes/revisions ONLY. Never the
@@ -422,7 +467,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v70-runtime-140'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-140');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v73-runtime-143'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-143');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -443,7 +488,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v70-runtime-140'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-140');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v73-runtime-143'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-143');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
@@ -453,8 +498,8 @@
       if(action==='authorize'){
         // Legacy Google-bridge fallback (rollback/debug). The normal send path
         // never opens this: direct mode hides the button entirely.
-        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush();return;}
-        record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush();return;}
+        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
+        record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush({reason:'auto'});return;}
       if(action==='copyDiagnostics'){
         const payload=await collectDiagnostics(),text=JSON.stringify(payload,null,2);
         let copied=false;
@@ -478,7 +523,7 @@
         outbox.confirmArchive(status,hash,source.length);
         message(`Весь архів підтверджено: ${source.length} / ${status.active_count}. Дати: ${status.earliest_date||'—'} — ${status.latest_date||'—'}.`);return;
       }
-      if(action==='retry'){outbox.retry();await outbox.flush();message('Повтор черги завершено. Перевірте стан каналу.');return;}
+      if(action==='retry'){await outbox.retry();message('Повтор черги завершено. Перевірте стан каналу.');return;}
       outbox.connectionReady();message(action==='rebuild'?'Видимий звіт перебудовано.':`Підключено. Активних нарядів: ${Number(response.active_count)||0}; видалених: ${Number(response.deleted_count)||0}.`);
     }catch(e){message('Звіт не відправлено. '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR')+'. Локальні заявки та стара синхронізація не змінені.');}
     finally{activeActions.delete(action);button.disabled=false;button.removeAttribute('aria-busy');refreshUI();}
@@ -491,13 +536,13 @@
     if(directMode()){
       outbox.connectionReady();
       record('connection_state',{code:'DIRECT_ONLINE',connected:true,verified:true});
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return;
     }
     try{
       if(await bridge.resume()){
         const b=bridge.diagnostics();record('connection_state',{code:'RESUMED',connected:!!b.connected,verified:!!b.verified});
-        message('Таблиця Д підключена');await outbox.flush();
+        message('Таблиця Д підключена');await outbox.flush({reason:'auto'});
       }else if(cfg().dispatcherReportEndpoint){
         const b=bridge.diagnostics();record('connection_state',{code:'GOOGLE_CONNECTION_REQUIRED',connected:!!b.connected,verified:!!b.verified});
         message('Google-сеанс не відновлено. Натисніть «Відкрити Google-підключення», дочекайтеся підтвердження каналу та поверніться в застосунок. Черга збережена.');
@@ -522,13 +567,13 @@
     // re-attach. Clear any connection latch and flush the durable queue.
     if(directMode()){
       outbox.connectionReady();
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return true;
     }
     try{
       if(await bridge.resume()){
         const b=bridge.diagnostics();record('connection_state',{code:'RESUMED',connected:!!b.connected,verified:!!b.verified});
-        void outbox.flush();return true;
+        void outbox.flush({reason:'auto'});return true;
       }
     }catch(e){
       const code=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';
@@ -541,7 +586,7 @@
       await bridge.authorize(cfg().dispatcherReportEndpoint);
       record('connection_state',{code:'AUTO_CONNECTED',connected:true,verified:true});
       message('Таблиця Д підключена');
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return true;
     }catch(e){
       const code=/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_CONNECTION_REQUIRED';
@@ -550,6 +595,7 @@
       return false;
     }
   }
+  window.addEventListener('mt-dispatcher-runtime-ready',resume);
   window.addEventListener('online',resume);window.addEventListener('focus',resume);window.addEventListener('pageshow',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});document.addEventListener('DOMContentLoaded',resume);
   root.MTDispatcherReport=Object.freeze({...outbox,renderSettings,badge,ensureChannel,enabled:()=>!!cfg().dispatcherReportEnabled});
 })(typeof globalThis==='object'?globalThis:this);
