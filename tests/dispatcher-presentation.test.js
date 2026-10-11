@@ -32,8 +32,16 @@ const raw=context.ticketWorkContentPresentation('Робота\n🛠️ ONU: 1 ш
 assert(raw.work.includes('ONU'));assert(!raw.work.includes('ІТОГО'));assert(raw.closing.includes('Нотатка'));
 const rows=[dto,{...dto,ticket_id:'day-two',work_date:'2026-10-10',work_category:'connection',onu_used:2,onu_replacement:1,router_used:1,payment_cash:0,payment_cashless:900},{...dto,ticket_id:'old-month',work_date:'2026-09-30',work_category:'other',amount:0,total:0,payment_cash:0,payment_free_count:1}];
 const result=core.render(rows);
-assert.deepEqual(result.layout.rows,result.blocks);
-for(const frame of result.layout.statFrames)assert.equal(frame.column,2,'stats are in the same vertical column');
+assert(result.layout.rows.filter(r=>r.kind==='ticket').length===rows.length);
+for(const frame of result.layout.statFrames)assert.equal(frame.column,{daily:3,weekly:4,weeklyContinuation:4,monthly:5}[frame.kind],'side-panel column');
+for(const frame of result.layout.dayFrames){
+  const daily=result.layout.statFrames.find(s=>s.kind==='daily'&&s.key===frame.key);
+  assert.equal(daily.row,frame.row);assert.equal(daily.height,frame.height);
+}
+for(const s of result.layout.spans){
+  assert(!/^(?:\s*-){4,}\s*$/m.test(s.text),'no literal rules in side panels');
+  for(const row of result.layout.monthSeparators)assert(!(s.row<row&&s.row+s.height>row),'no span crosses month title');
+}
 for(const period of ['daily','weekly','monthly']){
   assert.equal(Object.values(result[period]).reduce((n,s)=>n+s.ticket_count,0),3);
   assert.equal(Object.values(result[period]).reduce((n,s)=>n+s.total,0),1800);
@@ -44,4 +52,4 @@ for(const period of ['daily','weekly','monthly']){
 }
 assert.equal(core.stats(rows).onu_used,4);assert.equal(core.stats(rows).router_used,1);
 for(const b of result.blocks)assert(!b.text.includes('- - - -'));
-console.log('PASS presentation A-L: order/omission/diagnostics/vertical stats/unchanged inputs and calculations');
+console.log('PASS presentation A-M: B:E/order/omission/diagnostics/side stats/unchanged inputs and calculations');
