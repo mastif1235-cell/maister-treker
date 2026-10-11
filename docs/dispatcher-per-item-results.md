@@ -29,9 +29,19 @@ and dispatcher channel, inside expanded card details. No DTO, note, address,
 phone, token, secret or raw server body is persisted in these diagnostics.
 Compact presentation is unchanged apart from its required runtime revision pin.
 
-Candidate identity: v91.96 / runtime-141,
-`maister-treker-v71-runtime-141`. A future coordinated release needs the new
+Candidate identity: v91.97 / runtime-142,
+`maister-treker-v72-runtime-142`. A future coordinated release needs the new
 dispatcher GAS source before the frontend, then runtime-proof verification.
 This patch does not perform deployment, retry, rebuild, or any data mutation.
 Legacy GAS/sync, shifts, Telegram transport, AI, maps, backups and storage schema
 are not changed.
+
+AUTO/MANUAL follow-up: automatic callbacks and timers use `reason:'auto'` and
+check `dispatcherReportEnabled === true` before sending, including after async
+projection. OFF preserves pending operations without generating errors. The
+existing explicit `flush()` API is manual and snapshots its selected IDs;
+`await retry(ticketId)` sends only that ID, never enabling global auto-send.
+Queue retry selects failed operations (excluding historical INVALID_DTO), not
+unrelated pending items. Manual continuations retain the same ID scope.
+Expanded cards retain pending/error/sent state with auto-send OFF; compact
+markup is unchanged. No production retry is performed by this patch.

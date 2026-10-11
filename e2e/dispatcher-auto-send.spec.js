@@ -1,5 +1,5 @@
 'use strict';
-/* v91.95 / runtime-141. Direct transport E2E (physical-Android gate):
+/* v91.95 / runtime-142. Direct transport E2E (physical-Android gate):
    A) a saved ticket is delivered to Таблиця Д by a SIGNED POST (MT-SYNC-HMAC-V3,
       verified here against the shared canonical contract) with popupCount===0;
    B) an app restart keeps sending with no Google connect at all;
@@ -63,6 +63,30 @@ async function setupDirectChannel(page){
   await page.locator('[data-dispatcher-action="save"]').click();
   await expect(page.locator('#dispatcherReportResult')).toContainText('Прямий підписаний канал');
 }
+
+test('OFF survives real lifecycle/reload; ON sends once; targeted OFF retry isolates its ID',async({page,context,appEnv})=>{
+  const server=makeServer();await context.route(ENDPOINT,route=>server.handle(route));
+  await gotoApp(page,appEnv.url);await setupDirectChannel(page);
+  await page.evaluate(()=>{settings.dispatcherReportEnabled=false;saveSettings();MTDispatcherReport.reconfigure();MTDispatcherReport.enqueueDelete('synthetic-off');});
+  const before=server.requests();
+  await page.evaluate(async()=>{
+    for(const name of ['focus','pageshow','online'])window.dispatchEvent(new Event(name));
+    document.dispatchEvent(new Event('visibilitychange'));MTDispatcherReport.connectionReady();await MTDispatcherReport.flush({reason:'auto'});
+  });
+  await page.waitForTimeout(250);expect(server.requests()).toBe(before);
+  await page.reload();await waitAppReady(page);await page.waitForTimeout(250);
+  expect(server.requests()).toBe(before);expect(await page.evaluate(()=>MTDispatcherReport.status().pending)).toBe(1);
+  await page.evaluate(()=>{settings.dispatcherReportEnabled=true;saveSettings();MTDispatcherReport.reconfigure();});
+  await expect.poll(()=>server.requests()).toBe(before+1);
+  await expect.poll(()=>page.evaluate(()=>MTDispatcherReport.status().unresolved)).toBe(0);
+  await page.evaluate(async()=>{
+    settings.dispatcherReportEnabled=false;saveSettings();MTDispatcherReport.reconfigure();
+    MTDispatcherReport.enqueueDelete('synthetic-selected');MTDispatcherReport.enqueueDelete('synthetic-neighbor');
+    await MTDispatcherReport.retry('synthetic-selected');
+  });
+  expect(server.requests()).toBe(before+2);
+  expect(await page.evaluate(()=>({enabled:settings.dispatcherReportEnabled,pending:MTDispatcherReport.status().pending}))).toEqual({enabled:false,pending:1});
+});
 
 test('A/B: signed direct send delivers by itself after an app restart — popupCount stays 0',async({page,context,appEnv})=>{
   let popupCount=0;

@@ -84,7 +84,12 @@
         return true;
       }catch(_){return false;}
     }
-    function schedule(ms=0){if(timer!==null)deps.clearTimeout(timer);timer=deps.setTimeout(()=>{timer=null;void flush();},ms);}
+    // AUTO permission is checked again at execution time (including timers and
+    // after async projection). MANUAL permission is scoped to explicit IDs.
+    const autoIntent=()=>({reason:'auto'});
+    const permitted=intent=>intent.reason==='manual'||deps.settings().dispatcherReportEnabled===true;
+    const selected=(o,intent)=>!intent.ids||intent.ids.includes(o.id);
+    function schedule(ms=0,intent=autoIntent()){if(timer!==null)deps.clearTimeout(timer);timer=null;if(!permitted(intent))return;timer=deps.setTimeout(()=>{timer=null;void flush(intent);},ms);}
     // Checkbox controls AUTOMATIC enqueue, not explicit manual sync/retry.
     // Since v91.95 the operation itself is ALWAYS persisted after a successful
     // local save: connection state, auto-send flag and endpoint health gate
@@ -115,9 +120,9 @@
     // Endpoint was fixed in Settings: clear config-blocked operations so the
     // preserved queue becomes sendable without losing a single ticket ID.
     function reconfigure(){for(const o of state.operations){if(o.error==='REPORT_NOT_CONFIGURED'||o.error==='INVALID_ENDPOINT'){o.error='';o.attempts=0;o.next=0;}}blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();if(deps.settings().dispatcherReportEnabled&&!blocked)schedule();return status();}
-    function flush(){if(flight)return flight;flight=flushBatch().finally(()=>{flight=null;});return flight;}
-    async function flushBatch(){
-      if(running||blocked||!configured()||deps.online?.()===false)return;
+    function flush(intent={reason:'manual'}){if(flight)return flight;const scoped=intent.reason==='auto'?autoIntent():{reason:'manual',ids:intent.ids||state.operations.map(o=>o.id)};flight=flushBatch(scoped).finally(()=>{flight=null;});return flight;}
+    async function flushBatch(intent){
+      if(!permitted(intent)||running||blocked||!configured()||deps.online?.()===false)return;
       if(runtimeBlocked()){telemetry('flush_attempt',{code:'RUNTIME_GUARD',store_ready:storeReady(),pending:status().pending,failed:status().failed,unresolved:status().unresolved});return;}
       if(!storeReady()){
         // Before tickets load from IndexedDB an "empty" ticket list must never
@@ -129,7 +134,7 @@
       telemetry('flush_attempt',{store_ready:true,pending:status().pending,failed:status().failed,unresolved:status().unresolved});
       running=true;let failed=false,sent=[],g=generation;persist();
       try{
-        const url=align(),batch=state.operations.filter(o=>o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
+        const url=align(),batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
         if(!batch.length)return;
         const dtos=[],deletes=[];
         for(const o of batch){
@@ -144,7 +149,7 @@
             dtos.push(dto);sent.push(o);
           }catch(e){o.error=PERMANENT.test(e.code||e.message)?e.code||e.message:'INVALID_DTO';state.lastError=o.error;persist();}
         }
-        if(!sent.length)return;
+        if(!sent.length||!permitted(intent))return;
         // Rendering the complete archive after every page causes progressively
         // more GAS work. Only the final eligible page rebuilds the report.
         // Idempotent retry (lost-ACK recovery): a batch whose mutation may
@@ -200,7 +205,7 @@
         else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts++;if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
         persist();
       }finally{
-        running=false;persist();const eligible=state.operations.filter(o=>o.attempts<3&&!o.error);if(!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()));
+        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
       }
     }
     function fullSync(){
@@ -213,9 +218,9 @@
       // Preserve missing upserts from earlier attempts. Only an explicit
       // enqueueDelete can replace them with a tombstone; absence is not delete.
       for(const o of state.operations.filter(o=>!ids.has(o.id)&&o.action==='upsert'))operations.push(o);
-      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule();return status();
+      if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule(0,{reason:'manual',ids:operations.map(o=>o.id)});return status();
     }
-    function retry(id){for(const o of state.operations){if(id!==undefined&&o.id!==String(id))continue;if(o.error==='INVALID_DTO')continue;o.attempts=0;o.next=0;o.error='';}if(state.sync&&state.operations.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();schedule();}
+    function retry(id){const ids=[];for(const o of state.operations){if(id!==undefined&&o.id!==String(id))continue;if(o.error==='INVALID_DTO')continue;if(id===undefined&&!o.error&&o.attempts<3)continue;ids.push(o.id);o.attempts=0;o.next=0;o.error='';}if(state.sync&&ids.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();if(!ids.length)return Promise.resolve();const intent={reason:'manual',ids};return flight?flight.then(()=>flush(intent)):flush(intent);}
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
     function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||(!o.error&&o.attempts>=3?'REPORT_NETWORK_ERROR':''),ticket_id:id,attempts:o.attempts,channel:'dispatcher',server_response:o.error&&/^[A-Z_]{1,64}$/.test(o.error)?o.error:''};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
     async function syncAll(){
@@ -397,7 +402,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-141',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-142',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -421,7 +426,7 @@
   bridge.onLateResult((request,result)=>{try{outbox.reconcile(request,result);}catch(_){/* reconciliation is best-effort */}});
   const deliveryLabels={sent:'✅',pending:'⏳',error:'❌',disabled:'',not_configured:''};
   function badge(id){return 'Таблиця Д '+deliveryLabels[outbox.delivery(id).state];}
-  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=!cfg().dispatcherReportEnabled||['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});document.querySelectorAll('[data-dispatcher-error]').forEach(el=>{
+  function refreshUI(){renderSettings();document.querySelectorAll('[data-dispatcher-ticket-status]').forEach(el=>{const d=outbox.delivery(el.dataset.dispatcherTicketStatus);el.hidden=['disabled','not_configured'].includes(d.state);el.textContent=el.hidden?'':badge(el.dataset.dispatcherTicketStatus);el.dataset.deliveryState=d.state;el.title=d.code||'';});document.querySelectorAll('[data-dispatcher-error]').forEach(el=>{
     const d=outbox.delivery(el.dataset.dispatcherError);el.hidden=d.state!=='error';
     el.textContent=el.hidden?'':JSON.stringify({ticket_id:el.dataset.dispatcherError,date:el.dataset.dispatcherDate||'',attempts:d.attempts||0,error_code:/^[A-Z_]{1,64}$/.test(d.code||'')?d.code:'REPORT_ERROR',channel:'dispatcher',server_response:d.server_response||''});
   });if(typeof renderSyncQueueBanner==='function')renderSyncQueueBanner();}
@@ -450,7 +455,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v71-runtime-141'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-141');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v72-runtime-142'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-142');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -471,7 +476,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v71-runtime-141'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-141');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v72-runtime-142'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-142');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
@@ -481,8 +486,8 @@
       if(action==='authorize'){
         // Legacy Google-bridge fallback (rollback/debug). The normal send path
         // never opens this: direct mode hides the button entirely.
-        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush();return;}
-        record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush();return;}
+        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
+        record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush({reason:'auto'});return;}
       if(action==='copyDiagnostics'){
         const payload=await collectDiagnostics(),text=JSON.stringify(payload,null,2);
         let copied=false;
@@ -506,7 +511,7 @@
         outbox.confirmArchive(status,hash,source.length);
         message(`Весь архів підтверджено: ${source.length} / ${status.active_count}. Дати: ${status.earliest_date||'—'} — ${status.latest_date||'—'}.`);return;
       }
-      if(action==='retry'){outbox.retry();await outbox.flush();message('Повтор черги завершено. Перевірте стан каналу.');return;}
+      if(action==='retry'){await outbox.retry();message('Повтор черги завершено. Перевірте стан каналу.');return;}
       outbox.connectionReady();message(action==='rebuild'?'Видимий звіт перебудовано.':`Підключено. Активних нарядів: ${Number(response.active_count)||0}; видалених: ${Number(response.deleted_count)||0}.`);
     }catch(e){message('Звіт не відправлено. '+(/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR')+'. Локальні заявки та стара синхронізація не змінені.');}
     finally{activeActions.delete(action);button.disabled=false;button.removeAttribute('aria-busy');refreshUI();}
@@ -519,13 +524,13 @@
     if(directMode()){
       outbox.connectionReady();
       record('connection_state',{code:'DIRECT_ONLINE',connected:true,verified:true});
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return;
     }
     try{
       if(await bridge.resume()){
         const b=bridge.diagnostics();record('connection_state',{code:'RESUMED',connected:!!b.connected,verified:!!b.verified});
-        message('Таблиця Д підключена');await outbox.flush();
+        message('Таблиця Д підключена');await outbox.flush({reason:'auto'});
       }else if(cfg().dispatcherReportEndpoint){
         const b=bridge.diagnostics();record('connection_state',{code:'GOOGLE_CONNECTION_REQUIRED',connected:!!b.connected,verified:!!b.verified});
         message('Google-сеанс не відновлено. Натисніть «Відкрити Google-підключення», дочекайтеся підтвердження каналу та поверніться в застосунок. Черга збережена.');
@@ -550,13 +555,13 @@
     // re-attach. Clear any connection latch and flush the durable queue.
     if(directMode()){
       outbox.connectionReady();
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return true;
     }
     try{
       if(await bridge.resume()){
         const b=bridge.diagnostics();record('connection_state',{code:'RESUMED',connected:!!b.connected,verified:!!b.verified});
-        void outbox.flush();return true;
+        void outbox.flush({reason:'auto'});return true;
       }
     }catch(e){
       const code=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';
@@ -569,7 +574,7 @@
       await bridge.authorize(cfg().dispatcherReportEndpoint);
       record('connection_state',{code:'AUTO_CONNECTED',connected:true,verified:true});
       message('Таблиця Д підключена');
-      void outbox.flush();
+      void outbox.flush({reason:'auto'});
       return true;
     }catch(e){
       const code=/^[A-Z_]+$/.test(e?.message)?e.message:'GOOGLE_CONNECTION_REQUIRED';

@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-141';
+globalThis.MTTicketRendererRevision='runtime-142';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -13,7 +13,7 @@ function ticketDeliveryBadges(t){
       : `<button type="button" class="tc-sync-badge tc-sync-pending retry-sync-btn" data-id="${escapeHtml(t.id)}">Таблиця ⏳</button>`;
   }
   const report=globalThis.MTDispatcherReport,d=report?.delivery?.(t.id)||{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};
-  return legacy+(report?.enabled?.()===false||['disabled','not_configured'].includes(d.state)?'':`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'Таблиця Д ⏳')}</span>`);
+  return legacy+(['disabled','not_configured'].includes(d.state)?'':`<span class="tc-sync-badge" data-dispatcher-ticket-status="${escapeHtml(t.id)}" data-delivery-state="${escapeHtml(d.state)}" title="${escapeHtml(d.code||'')}">${escapeHtml(report?.badge?.(t.id)||'Таблиця Д ⏳')}</span>`);
 }
 function dispatcherFailureDetails(t){
   const d=globalThis.MTDispatcherReport?.delivery?.(t.id);

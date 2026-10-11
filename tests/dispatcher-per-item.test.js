@@ -67,7 +67,7 @@ function read(){return JSON.parse(raw);}
   // client. Targeted retries clear ONLY the two absent-server operations.
   rows=[{...dto('stale',1000,'different hash'),deleted_at:'',sync_status:'SYNCED'}];cache.clear();
   raw=JSON.stringify({operations:[{id:'historical',action:'upsert',version:1,attempts:0,error:'INVALID_DTO'},...tickets.map(t=>({id:t.id,action:'upsert',version:1000,attempts:1,error:'STALE_VERSION'}))]});
-  q=c.MTDispatcherReportClient.createOutbox(deps);q.retry('valid-2650');q.retry('valid-third');await q.flush();
+  q=c.MTDispatcherReportClient.createOutbox(deps);await q.retry('valid-2650');await q.retry('valid-third');
   assert.equal(rows.length,3);assert.equal(q.delivery('valid-2650').state,'sent');assert.equal(q.delivery('valid-third').state,'sent');assert.equal(q.delivery('stale').code,'STALE_VERSION');assert.equal(q.delivery('historical').code,'INVALID_DTO');
   assert.deepEqual(read().operations.map(o=>[o.id,o.attempts]),[['historical',0],['stale',1]]);
   // Full-sync counters account for successes ONLY; partial never means PASS.
