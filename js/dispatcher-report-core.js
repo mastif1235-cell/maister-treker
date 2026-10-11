@@ -83,70 +83,41 @@
   }
   function statsText(title,s){return title+'\n'+[['Всього нарядів',s.ticket_count],['Підключень',s.connections],['Ремонтів',s.repairs],['Інших робіт',s.other],['ONU',s.onu_used],['Замін ONU',s.onu_replacement],['Роутерів',s.router_used],['Загальна сума',money(s.total)],['Готівка',money(s.payment_cash)],['Безготівка',money(s.payment_cashless)],['Безкоштовно',s.payment_free_count+' · '+money(s.payment_free_amount)],['Робочих днів',s.working_days]].map(([k,v])=>k+': '+v).join('\n');}
   function card(r,n){
-    const rule='- - - - - - - - - - - -';
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
-    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше','💰 Сума: '+money(r.total),r.dispatcher_comment].filter(Boolean).join('\n');
-    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
-      rule,r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
-      rule,paymentIcon+' Оплата: '+(r.payment_type||'Не вказано'),'💰 Сума: '+money(r.amount),rule,'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
+    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment,'💰 Сума: '+money(r.total)].filter(Boolean).join('\n');
+    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
+      r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
+      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Сума: '+money(r.amount),'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
   function render(rows){
     const data=sorted(rows),days=group(data,r=>r.work_date),weeks=group(data,r=>weekKey(r.work_date)),months=group(data,r=>r.work_date.slice(0,7)),blocks=[];
     const weekdays=['Неділя','Понеділок','Вівторок','Середа','Четвер','П’ятниця','Субота'];
     const lastWeek=new Map([...weeks].map(([k,v])=>[k,v[v.length-1].work_date])),lastMonth=new Map([...months].map(([k,v])=>[k,v[v.length-1].work_date]));
+    const monthNames=['СІЧЕНЬ','ЛЮТИЙ','БЕРЕЗЕНЬ','КВІТЕНЬ','ТРАВЕНЬ','ЧЕРВЕНЬ','ЛИПЕНЬ','СЕРПЕНЬ','ВЕРЕСЕНЬ','ЖОВТЕНЬ','ЛИСТОПАД','ГРУДЕНЬ'];
+    let previousMonth='';
     for(const [day,list] of days){
+      const month=day.slice(0,7);
+      if(month!==previousMonth){blocks.push({kind:'monthHeader',key:month,text:monthNames[Number(month.slice(5))-1]+' '+month.slice(0,4)});previousMonth=month;}
       const summary=stats(list),nums=dayNumbers(list);blocks.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
       list.forEach(r=>blocks.push({kind:'ticket',key:r.ticket_id,text:card(r,nums.get(r.ticket_id))}));
       blocks.push({kind:'daily',key:day,text:statsText('СТАТИСТИКА ЗА '+displayDate(day),summary)});
-      const week=weekKey(day),month=day.slice(0,7);
+      const week=weekKey(day);
       if(lastWeek.get(week)===day){const end=new Date(week+'T00:00:00Z');end.setUTCDate(end.getUTCDate()+6);blocks.push({kind:'weekly',key:week,text:statsText('ТИЖДЕНЬ '+displayDate(week)+'–'+displayDate(end.toISOString().slice(0,10)),stats(weeks.get(week)))});}
       if(lastMonth.get(month)===day)blocks.push({kind:'monthly',key:month,text:statsText('МІСЯЦЬ '+month,stats(months.get(month)))});
-      blocks.push({kind:'spacer',key:day,text:''});
     }
-    // Presentation-only coordinates (one-based, B:E). The statistics and
-    // whitelist are shared with the existing vertical formatter above.
-    const layout={rows:[],spans:[],dayFrames:[],statFrames:[],monthSeparators:[]},weekSpans=new Map(),monthSpans=new Map();
-    const monthNames=['СІЧЕНЬ','ЛЮТИЙ','БЕРЕЗЕНЬ','КВІТЕНЬ','ТРАВЕНЬ','ЧЕРВЕНЬ','ЛИПЕНЬ','СЕРПЕНЬ','ВЕРЕСЕНЬ','ЖОВТЕНЬ','ЛИСТОПАД','ГРУДЕНЬ'];
-    const statsBody=s=>['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
-      '- - - - - - - - - - - -','🔌 ONU: '+s.onu_used,'🔄 Заміна ONU: '+s.onu_replacement,'📶 Роутерів: '+s.router_used,
-      '- - - - - - - - - - - -','💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),
-      '- - - - - - - - - - - -','📅 Робочих днів: '+s.working_days].join('\n');
-    function panel(kind,key,row,end,column,title,body){
-      layout.spans.push({kind:kind+'Header',key,row,column,height:1,width:1,text:title});
-      if(end>row)layout.spans.push({kind,key,row:row+1,column,height:end-row,width:1,text:body});
-      layout.statFrames.push({kind,key,row,column,height:end-row+1});
-    }
-    if(data.length)layout.rows.push({kind:'topSpacer',key:'',text:''});
-    let previousMonth='';
-    for(const [day,list] of days){
-      const month=day.slice(0,7),week=weekKey(day);
-      if(month!==previousMonth){
-        const row=layout.rows.length+1;
-        layout.rows.push({kind:'monthHeader',key:month,text:monthNames[Number(month.slice(5))-1]+' '+month.slice(0,4)});
-        // Do not merge across a month separator, including a cross-month week.
-        // Such a week has one summary and a styled continuation, not two totals.
-        layout.spans.push({kind:'monthHeader',key:month,row,column:2,height:1,width:4,text:layout.rows[row-1].text});
-        layout.monthSeparators.push(row);
-        monthSpans.set(month,{row:row+1,end:row,title:'МІСЯЦЬ\n'+layout.rows[row-1].text});
-        previousMonth=month;
+    // A single vertical flow; no statistics in off-screen side columns.
+    // Layout is derived from the same blocks, never a second stats calculation.
+    const layout={rows:blocks.slice(),spans:[],dayFrames:[],statFrames:[],monthSeparators:[]};
+    blocks.forEach((b,i)=>{
+      const row=i+1;
+      if(b.kind==='monthHeader')layout.monthSeparators.push(row);
+      if(b.kind==='day'){
+        let end=i+1;while(end<blocks.length&&blocks[end].kind==='ticket')end++;
+        layout.dayFrames.push({key:b.key,row,height:end-i});
       }
-      const start=layout.rows.length+1,summary=stats(list),nums=dayNumbers(list);
-      layout.rows.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
-      list.forEach(r=>layout.rows.push({kind:'ticket',key:r.ticket_id,text:card(r,nums.get(r.ticket_id))}));
-      const end=layout.rows.length;
-      layout.dayFrames.push({key:day,row:start,height:end-start+1});
-      panel('daily',day,start,end,3,'СТАТИСТИКА ЗА\n'+displayDate(day),statsBody(summary));
-      if(!weekSpans.has(week)){
-        const last=new Date(week+'T00:00:00Z');last.setUTCDate(last.getUTCDate()+6);
-        weekSpans.set(week,{title:'ТИЖДЕНЬ\n'+displayDate(week)+'–'+displayDate(last.toISOString().slice(0,10)),segments:[]});
-      }
-      const segments=weekSpans.get(week).segments,last=segments[segments.length-1];
-      if(!last||last.month!==month)segments.push({month,row:start,end});else last.end=end;
-      monthSpans.get(month).end=end;
-    }
-    for(const [week,span] of weekSpans)span.segments.forEach((s,i)=>panel(i?'weeklyContinuation':'weekly',week,s.row,s.end,4,i?'ПРОДОВЖЕННЯ ТИЖНЯ\n'+span.title.split('\n')[1]:span.title,i?'Підсумок тижня — у першому блоці вище.':statsBody(stats(weeks.get(week)))));
-    for(const [month,s] of monthSpans)panel('monthly',month,s.row,s.end,5,s.title,statsBody(stats(months.get(month))));
+      if(['daily','weekly','monthly'].includes(b.kind))layout.statFrames.push({kind:b.kind,key:b.key,row,column:2,height:1});
+    });
     return {blocks,layout,daily:Object.fromEntries([...days].map(([k,v])=>[k,stats(v)])),weekly:Object.fromEntries([...weeks].map(([k,v])=>[k,stats(v)])),monthly:Object.fromEntries([...months].map(([k,v])=>[k,stats(v)]))};
   }
   function upsert(rows,dto){

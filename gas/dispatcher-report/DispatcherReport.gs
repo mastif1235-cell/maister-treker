@@ -104,49 +104,38 @@ function reportWrite_(store){
 }
 function reportRender_(ss,rows){
   var sheet=ss.getSheetByName('Отчет');if(!sheet)throw new Error('REPORT_NOT_INITIALIZED');
-  var layout=MTDispatcherReportCore.render(rows).layout,blocks=layout.rows;
-  // Only owned A:E, including old merged footprints whose bottom cells may
-  // be empty. Refuse a merge crossing the boundary rather than touch F+.
+  var blocks=MTDispatcherReportCore.render(rows).layout.rows;
+  // Clear only the owned A:E footprint, including old horizontal merges.
+  // Refuse cross-boundary merges rather than touching unrelated F+ cells.
   var oldMerges=sheet.getRange(1,1,sheet.getMaxRows(),5).getMergedRanges(),clearRows=Math.max(sheet.getLastRow(),blocks.length,1);
   oldMerges.forEach(function(r){if(r.getColumn()+r.getNumColumns()-1>5)throw new Error('REPORT_LAYOUT_CONFLICT');clearRows=Math.max(clearRows,r.getRow()+r.getNumRows()-1);});
   if(sheet.getMaxRows()<clearRows)sheet.insertRowsAfter(sheet.getMaxRows(),clearRows-sheet.getMaxRows());
   sheet.getRange(1,1,clearRows,5).breakApart().clear();
   sheet.setRowHeights(1,clearRows,21);
-  sheet.setColumnWidth(1,8);sheet.setColumnWidth(2,380);[3,4,5].forEach(function(column){sheet.setColumnWidth(column,250);});sheet.setHiddenGridlines(true);
-  var colors={topSpacer:'#FFFFFF',monthHeader:'#DCC4F4',day:'#FFE49C',ticket:'#FFF6E5',daily:'#E5F1FA',dailyHeader:'#C9DFEF',weekly:'#E6F2E2',weeklyHeader:'#C8DFBF',weeklyContinuation:'#E6F2E2',weeklyContinuationHeader:'#C8DFBF',monthly:'#EFE5F7',monthlyHeader:'#DCC9EA'};
-  var border='#233E69',thick=SpreadsheetApp.BorderStyle.SOLID_THICK;
+  sheet.setColumnWidth(1,8);sheet.setColumnWidth(2,380);[3,4,5].forEach(function(column){sheet.setColumnWidth(column,8);});sheet.setHiddenGridlines(true);
   if(!blocks.length){sheet.getRange('B2').setValue('Нарядів поки немає').setFontColor('#243447');return;}
-  var range=sheet.getRange(1,2,blocks.length,4);range.setNumberFormat('@').setValues(blocks.map(function(b){return [b.text,'','',''];})).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('left').setFontFamily('Arial').setFontSize(11).setFontColor('#243447');
-  sheet.getRange(1,2,blocks.length,1).setBackgrounds(blocks.map(function(b){return [colors[b.kind]];})).setFontWeights(blocks.map(function(b){return [b.kind==='ticket'?'normal':'bold'];}));
-  // Bold «Наряд №N» title line of every наряд (rich text, first line only).
+  var colors={monthHeader:'#DCC4F4',day:'#FFE49C',ticket:'#FFF6E5',daily:'#E5F1FA',weekly:'#E6F2E2',monthly:'#EFE5F7'};
+  var range=sheet.getRange(1,2,blocks.length,1);
+  range.setNumberFormat('@').setValues(blocks.map(function(b){return [b.text];})).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('left').setFontFamily('Arial').setFontSize(11).setFontColor('#243447');
+  range.setBackgrounds(blocks.map(function(b){return [colors[b.kind]];})).setFontWeight('normal');
+  // Bold title lines only, including statistical headings. No text rules.
   var bold=SpreadsheetApp.newTextStyle().setBold(true).build();
-  sheet.getRange(1,2,blocks.length,1).setRichTextValues(blocks.map(function(b){
+  range.setRichTextValues(blocks.map(function(b){
     var text=String(b.text||''),nl=text.indexOf('\n'),rich=SpreadsheetApp.newRichTextValue().setText(text);
-    if(b.kind==='ticket'&&nl>0)rich.setStyle(0,nl,bold);
+    if(text)rich.setStyle(0,nl<0?text.length:nl,bold);
     return [rich.build()];
   }));
-  layout.spans.forEach(function(s){
-    var cell=sheet.getRange(s.row,s.column,s.height,s.width);if(s.height>1||s.width>1)cell.merge();
-    cell.setValue(s.text).setBackground(colors[s.kind]);
-    if(/Header$/.test(s.kind))cell.setFontWeight('bold').setFontSize(s.kind==='monthHeader'?16:12).setBorder(null,null,true,null,false,false,border,thick);
-    if(s.kind==='monthHeader')cell.setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true,true,true,true,false,false,border,thick);
+  blocks.forEach(function(b,i){
+    var cell=sheet.getRange(i+1,2,1,1);
+    cell.setBorder(null,null,true,null,false,false,'#D8D8D8',SpreadsheetApp.BorderStyle.SOLID);
+    if(b.kind==='monthHeader')cell.setFontSize(15).setHorizontalAlignment('center');
+    else if(b.kind==='day')cell.setFontSize(12);
   });
-  layout.statFrames.forEach(function(s){sheet.getRange(s.row,s.column,s.height,1).setBorder(true,true,true,true,null,null,border,thick);});
-  layout.dayFrames.forEach(function(s){
-    var frame=sheet.getRange(s.row,2,s.height,1);
-    frame.setBorder(null,null,null,null,false,true,'#E0D2B3',SpreadsheetApp.BorderStyle.SOLID);
-    frame.setBorder(true,true,true,true,null,null,border,thick);
-    sheet.getRange(s.row,2,1,1).setFontSize(12).setBorder(null,null,true,null,null,null,border,thick);
+  // Content-sized rows; short Інше cards are not stretched for side panels.
+  var heights=blocks.map(function(b){
+    var lines=b.text.split('\n').reduce(function(n,s){return n+Math.max(1,Math.ceil(s.length/46));},0);
+    return Math.max(b.kind==='monthHeader'?36:30,lines*18+16);
   });
-  // Visible thick separator BETWEEN adjacent наряды only; the inner card
-  // rules stay thin text lines so the two never get confused.
-  blocks.forEach(function(b,i){if(b.kind==='ticket'&&i>0&&blocks[i-1].kind==='ticket')sheet.getRange(i+1,2,1,1).setBorder(true,null,null,null,false,false,border,thick);});
-  // Complete B:E month frames; no statistical merge crosses a title band.
-  layout.monthSeparators.forEach(function(row,i){var end=layout.monthSeparators[i+1]||blocks.length+1;sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);});
-  // B is readable on a phone without shrinking text; C:E are adjacent
-  // horizontally scrollable panels. Guarantee space for a one-ticket day.
-  var heights=blocks.map(function(b){var lines=b.text.split('\n').reduce(function(n,s){return n+Math.max(1,Math.ceil(s.length/48));},0);return b.kind==='topSpacer'?21:b.kind==='monthHeader'?44:b.kind==='day'?64:Math.max(100,lines*18+16);});
-  layout.dayFrames.forEach(function(s){var height=heights.slice(s.row-1,s.row+s.height-1).reduce(function(a,b){return a+b;},0);if(height<370)heights[s.row+s.height-2]+=370-height;});
   for(var start=0;start<heights.length;){var end=start+1;while(end<heights.length&&heights[end]===heights[start])end++;sheet.setRowHeights(start+1,end-start,heights[start]);start=end;}
 }
 function reportAudit_(c,code){

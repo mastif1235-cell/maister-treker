@@ -36,30 +36,32 @@ test('daily numbering chronological: 4 existing + 13:41 = Наряд №5, next 
   assert.equal(JSON.stringify(y),JSON.stringify(core.render([sixth,fifth,...rows.slice().reverse()])));
 });
 test('cross-month week unified; monthly independent',()=>{const x=core.render([fixture('s'),fixture('o','2026-10-01')]);assert.equal(Object.keys(x.weekly).length,1);assert.equal(x.weekly['2026-09-28'].ticket_count,2);assert.equal(x.monthly['2026-09'].ticket_count,1);assert.equal(x.monthly['2026-10'].ticket_count,1);assert.equal(x.blocks.filter(b=>b.kind==='weekly').length,1);assert.equal(x.blocks.filter(b=>b.kind==='monthly').length,2);assert(x.blocks.findIndex(b=>b.kind==='weekly')>x.blocks.findIndex(b=>b.kind==='day'&&b.key==='2026-09-30'));});
-test('B tickets, C daily, D weekly, E monthly aligned spans',()=>{
+test('vertical month/day/tickets/statistics flow, one summary per period',()=>{
   const rows=[fixture('a','2026-10-07'),fixture('b','2026-10-07'),fixture('c','2026-10-07'),fixture('d','2026-10-06'),fixture('e','2026-10-01'),fixture('f','2026-09-30'),fixture('g','2026-09-23')],before=JSON.stringify(rows),x=core.render(rows),l=x.layout;
-  assert.equal(JSON.stringify(rows),before);assert.deepEqual(l.rows.filter(r=>r.kind==='day').map(r=>r.key),['2026-10-07','2026-10-06','2026-10-01','2026-09-30','2026-09-23']);
+  assert.equal(JSON.stringify(rows),before);
+  assert.deepEqual(l.rows,x.blocks);
+  assert.deepEqual(l.rows.filter(r=>r.kind==='day').map(r=>r.key),['2026-10-07','2026-10-06','2026-10-01','2026-09-30','2026-09-23']);
   assert.deepEqual(l.rows.filter(r=>r.kind==='monthHeader').map(r=>r.text),['ЖОВТЕНЬ 2026','ВЕРЕСЕНЬ 2026']);
-  assert.equal(l.rows[0].kind,'topSpacer');assert.equal(l.rows[0].text,'');
+  assert.equal(l.rows[0].kind,'monthHeader');
   assert.equal(l.rows.filter(r=>r.kind==='ticket'&&r.text.startsWith('📋 Наряд №1')).length,5);
   assert.equal(l.rows.filter(r=>r.kind==='ticket'&&r.text.startsWith('📋 Наряд №3')).length,1);
-  assert.equal(l.spans.filter(s=>s.kind==='daily').length,5);assert.equal(l.spans.filter(s=>s.kind==='weekly').length,3);assert.equal(l.spans.filter(s=>s.kind==='monthly').length,2);
-  for(const frame of l.dayFrames){const s=l.statFrames.find(s=>s.kind==='daily'&&s.key===frame.key);assert.equal(s.column,3);assert.equal(s.row,frame.row);assert.equal(s.height,frame.height);assert(l.spans.some(s=>s.kind==='dailyHeader'&&s.row===frame.row));}
-  const week=l.spans.find(s=>s.kind==='weekly'&&s.key==='2026-09-28'),oct=l.dayFrames.find(s=>s.key==='2026-10-01'),sep=l.dayFrames.find(s=>s.key==='2026-09-30');
-  assert.equal(week.column,4);assert.equal(week.row,oct.row+1);assert.equal(week.row+week.height,oct.row+oct.height);
-  const continuation=l.statFrames.find(s=>s.kind==='weeklyContinuation'&&s.key==='2026-09-28');assert.equal(continuation.row,sep.row);assert.equal(continuation.height,sep.height);
-  for(const cut of l.monthSeparators)assert(!l.spans.some(s=>s.row<cut&&s.row+s.height>cut),'merge hides month separator');
-  const occupied=new Set();for(const s of l.spans){for(let row=s.row;row<s.row+s.height;row++)for(let column=s.column;column<s.column+s.width;column++){const k=row+':'+column;assert(!occupied.has(k),'overlapping merge '+k);occupied.add(k);}}
-  assert(l.spans.filter(s=>s.kind==='monthly').every(s=>s.column===5));
-  for(const title of l.spans.filter(s=>s.kind==='monthHeader')){assert.equal(title.column,2);assert.equal(title.width,4);const monthly=l.statFrames.find(s=>s.kind==='monthly'&&s.key===title.key);assert.equal(monthly.row,title.row+1);const frames=l.dayFrames.filter(s=>s.key.startsWith(title.key));assert.equal(monthly.height,frames.reduce((n,s)=>n+s.height,0));}
-  assert.equal(Object.values(x.daily).reduce((n,s)=>n+s.total,0),700);assert.equal(Object.values(x.weekly).reduce((n,s)=>n+s.total,0),700);assert.equal(Object.values(x.monthly).reduce((n,s)=>n+s.total,0),700);
+  assert.deepEqual(l.spans,[],'no horizontal dashboard merges');
+  assert(l.statFrames.every(s=>s.column===2&&s.height===1));
+  for(const frame of l.dayFrames){
+    const daily=l.statFrames.find(s=>s.kind==='daily'&&s.key===frame.key);
+    assert.equal(daily.row,frame.row+frame.height,'daily stats immediately follow all day tickets');
+  }
+  for(const kind of ['daily','weekly','monthly'])assert.equal(l.statFrames.filter(s=>s.kind===kind).length,Object.keys(x[kind]).length);
+  assert.equal(Object.values(x.daily).reduce((n,s)=>n+s.total,0),700);
+  assert.equal(Object.values(x.weekly).reduce((n,s)=>n+s.total,0),700);
+  assert.equal(Object.values(x.monthly).reduce((n,s)=>n+s.total,0),700);
 });
 test('cards have sections, numeric equipment and payment icons without text guessing',()=>{
   const r={...fixture(),materials_display:'ONU 99; роутер 99',onu_used:2,router_used:1,dispatcher_comment:'Виконано'};
   const text=core.render([r]).layout.rows.find(s=>s.kind==='ticket').text;
   for(const label of ['📋 Наряд №1','🕒 12:34','🛠 Ремонт','📍','📦 Матеріали:','💵 Оплата:','💰 Сума:','🧾 Разом:','📝 Диспетчеру:'])assert(text.includes(label));
   assert.equal(core.stats([r]).onu_used,2,'statistics use numeric counters, not material text');assert.equal(core.stats([r]).router_used,1);
-  assert.equal(text.split('- - - - - - - - - - - -').length,4);
+  assert(!text.includes('- - - -'),'no decorative text rules');
   assert(core.render([{...r,payment_cashless:100,payment_cash:0}]).layout.rows.find(s=>s.kind==='ticket').text.includes('💳'));
   assert(core.render([{...r,payment_free_count:1,payment_cash:0,total:0}]).layout.rows.find(s=>s.kind==='ticket').text.includes('🆓'));
 });
