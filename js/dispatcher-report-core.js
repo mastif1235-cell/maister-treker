@@ -17,18 +17,24 @@
       const label=String(e.label||'').normalize('NFKC').trim().replace(/\s+/gu,' '),quantity=Number(e.quantity),unit=e.unit;
       if(!label||label.length>160||sanitize(label)!==label||/[\r\n\u0000-\u001f]/u.test(label)||/^\s*[=+@-]/u.test(label)||PRIVATE.test(label)||SENSITIVE.test(label))fail('PRIVACY_REJECTED');
       if(!['шт.','м'].includes(unit)||!Number.isFinite(quantity)||quantity<=0||quantity>MONEY_MAX||(unit==='шт.'&&!Number.isSafeInteger(quantity)))fail('INVALID_MATERIAL');
-      const key=JSON.stringify([label,unit]),old=grouped.get(key);
-      grouped.set(key,{label,quantity:Math.round(((old?.quantity||0)+quantity)*1e6)/1e6,unit});
+      if(e.unit_price!==undefined&&(typeof e.unit_price!=='number'||!Number.isFinite(e.unit_price)||e.unit_price<0||e.unit_price>MONEY_MAX))fail('INVALID_MATERIAL');
+      const price=Math.round((e.unit_price||0)*100)/100;
+      const key=JSON.stringify([label,unit,price]),old=grouped.get(key);
+      grouped.set(key,{label,quantity:Math.round(((old?.quantity||0)+quantity)*1e6)/1e6,unit,...(price?{unit_price:price}:{})});
     }
     if(!aggregate&&grouped.size>100)fail('INVALID_MATERIAL');
-    const result=JSON.stringify([...grouped.values()].sort((a,b)=>a.label<b.label?-1:a.label>b.label?1:a.unit<b.unit?-1:a.unit>b.unit?1:0));
+    const result=JSON.stringify([...grouped.values()].sort((a,b)=>a.label<b.label?-1:a.label>b.label?1:a.unit<b.unit?-1:a.unit>b.unit?1:(a.unit_price||0)-(b.unit_price||0)));
     if(!aggregate&&result.length>20000)fail('INVALID_MATERIAL');return result;
   }
   function readMaterials(value){
     if(typeof value!=='string'||value.length>20000)fail('INVALID_MATERIAL');
     let entries;try{entries=JSON.parse(value);}catch(_){fail('INVALID_MATERIAL');}
-    if(!Array.isArray(entries)||entries.length>100||entries.some(e=>!e||typeof e!=='object'||Array.isArray(e)||Object.keys(e).sort().join(',')!=='label,quantity,unit'||typeof e.label!=='string'||typeof e.quantity!=='number'))fail('INVALID_MATERIAL');
-    if(materialJSON(entries)!==value)fail('INVALID_MATERIAL');return entries;
+    if(!Array.isArray(entries)||entries.length>100||entries.some(e=>!e||typeof e!=='object'||Array.isArray(e)||!['label,quantity,unit','label,quantity,unit,unit_price'].includes(Object.keys(e).sort().join(','))||typeof e.label!=='string'||typeof e.quantity!=='number'))fail('INVALID_MATERIAL');
+    // Producers omit zero prices. Also accept an explicit stored zero without
+    // rewriting its bytes/hash; grouping still treats it as the no-price group.
+    const stored=entries.map(e=>({label:e.label,quantity:e.quantity,unit:e.unit,...(e.unit_price!==undefined?{unit_price:e.unit_price}:{})}));
+    const normalized=stored.map(({unit_price,...e})=>({...e,...(unit_price?{unit_price}:{})}));
+    if(JSON.stringify(stored)!==value||materialJSON(entries)!==JSON.stringify(normalized))fail('INVALID_MATERIAL');return entries;
   }
   function dateKey(value){
     const s=String(value||'');
@@ -110,7 +116,7 @@
     list.slice().sort((a,b)=>a.work_time.localeCompare(b.work_time)||(a.ticket_id<b.ticket_id?-1:a.ticket_id>b.ticket_id?1:0)).forEach((r,i)=>m.set(r.ticket_id,i+1));
     return m;
   }
-  function materialLines(s){return s.materials.length?['📦 Матеріали:',...s.materials.map(m=>m.label+' — '+m.quantity+' '+m.unit)]:[];}
+  function materialLines(s){return s.materials.length?['📦 Матеріали:',...s.materials.map(m=>m.label+' — '+m.quantity+' '+m.unit+(m.unit_price?' — '+money(m.unit_price)+(m.unit==='м'?'/м':''):''))]:[];}
   function statsText(title,s){return title+'\n'+statsBody(s);}
   function statsBody(s){return ['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
     ...materialLines(s),'🔄 Заміна ONU: '+s.onu_replacement,

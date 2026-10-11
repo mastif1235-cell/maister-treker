@@ -68,8 +68,8 @@ export function projectTicket(ticket,core,now=Date.now()){
   if(Array.isArray(ticket.equipment)||Array.isArray(ticket.cables)){
     const equipment=ticket.equipment||[],cables=ticket.cables||[];
     if(!ticket.cloudImported||equipment.length||cables.length){
-      const entries=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>({label:text(e.label),quantity:Number(e.consumption_qty??e.qty??1),unit:'шт.'})),
-        ...cables.filter(c=>Number(c.meters)>0).map(c=>({label:text(c.label),quantity:Number(c.meters),unit:'м'}))].filter(e=>e.label);
+      const entries=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>({label:text(e.label),quantity:Number(e.consumption_qty??e.qty??1),unit:'шт.',...(e.price!==undefined?{unit_price:Number(e.price)}:{})})),
+        ...cables.filter(c=>Number(c.meters)>0).map(c=>({label:text(c.label),quantity:Number(c.meters),unit:'м',...(c.pricePerMeter!==undefined?{unit_price:Number(c.pricePerMeter)}:{})}))].filter(e=>e.label);
       dto.materials_json=core.materialJSON(entries);
     }
   }

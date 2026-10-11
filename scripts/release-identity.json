@@ -53,5 +53,10 @@
     "runtime": "runtime-147",
     "fingerprint": "f463ddc15309737f61315a7f90f264a7202b9aebb8ab55017049c3c155329196",
     "assets": 8
+  },
+  "maister-treker-v78-runtime-148": {
+    "runtime": "runtime-148",
+    "fingerprint": "db0f0d5dce52513e09c373c5cc0e932354412a76a6b1217ce3ccbd4d6961ad59",
+    "assets": 8
   }
 }
