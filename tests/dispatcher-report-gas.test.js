@@ -143,8 +143,30 @@ function renderSheet(merges=[]){
 function spreadsheetAppMock(){
   return {BorderStyle:{SOLID:'solid',SOLID_THICK:'thick'},
     newTextStyle:()=>({setBold:()=>({build:()=>({bold:true})})}),
-    newRichTextValue:()=>{const v={text:'',styles:[]};const api={setText:t=>(v.text=String(t),api),setStyle:(a,b,s)=>(v.styles.push([a,b,s]),api),build:()=>v};return api;}};
+    newRichTextValue:()=>{const v={text:'',styles:[]};const api={setText:t=>(v.text=String(t),api),setTextStyle:(a,b,s)=>(v.styles.push([a,b,s]),api),build:()=>v};return api;}};
 }
+test('RichText preparation failures preserve existing report without any sheet mutation',()=>{
+  for(const stage of ['setText','setTextStyle','build']){
+    const mock=renderSheet();
+    let existing='EXISTING APPROVED REPORT';
+    const getRange=mock.sheet.getRange;
+    mock.sheet.getRange=(...args)=>{const range=getRange(...args);range.clear=()=>{existing='';return range;};return range;};
+    c.SpreadsheetApp=spreadsheetAppMock();
+    const make=c.SpreadsheetApp.newRichTextValue;
+    let prepared=0;
+    c.SpreadsheetApp.newRichTextValue=()=>{
+      const builder=make();prepared++;
+      // Fail after earlier values were prepared, including the first ticket.
+      if(prepared===4)builder[stage]=()=>{throw new Error('RICH_PREFLIGHT_FAILED');};
+      return builder;
+    };
+    assert.throws(()=>actualRender(mock.ss,[dto('preflight')]),/RICH_PREFLIGHT_FAILED/,stage);
+    assert.equal(existing,'EXISTING APPROVED REPORT',stage);
+    assert.equal(mock.calls.length,0,'no clear, breakApart, write, resize or formatting before preflight completes');
+  }
+  c.SpreadsheetApp=spreadsheetAppMock();
+  assert.equal(c.SpreadsheetApp.newRichTextValue().setStyle,undefined,'mock exposes only the real Sheets API');
+});
 test('renderer creates B:E merged blocks and clears previous merge bottom',()=>{
   const old={getColumn:()=>5,getNumColumns:()=>1,getRow:()=>1,getNumRows:()=>30},mock=renderSheet([old]),input=[dto('a'),dto('b')],before=JSON.stringify(input);
   c.SpreadsheetApp=spreadsheetAppMock();actualRender(mock.ss,input);

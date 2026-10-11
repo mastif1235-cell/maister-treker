@@ -105,6 +105,17 @@ function reportWrite_(store){
 function reportRender_(ss,rows){
   var sheet=ss.getSheetByName('Отчет');if(!sheet)throw new Error('REPORT_NOT_INITIALIZED');
   var layout=MTDispatcherReportCore.render(rows).layout,blocks=layout.rows;
+  // Prepare every RichText value before any sheet mutation. API/build failures
+  // must leave the existing visible report intact.
+  var richValues=[];
+  if(blocks.length){
+    var bold=SpreadsheetApp.newTextStyle().setBold(true).build();
+    richValues=blocks.map(function(b){
+      var text=String(b.text||''),nl=text.indexOf('\n'),rich=SpreadsheetApp.newRichTextValue().setText(text);
+      if(b.kind==='ticket'&&nl>0)rich.setTextStyle(0,nl,bold);
+      return [rich.build()];
+    });
+  }
   // Only owned A:E, including old merged footprints whose bottom cells may
   // be empty. Refuse a merge crossing the boundary rather than touch F+.
   var oldMerges=sheet.getRange(1,1,sheet.getMaxRows(),5).getMergedRanges(),clearRows=Math.max(sheet.getLastRow(),blocks.length,1);
@@ -119,12 +130,7 @@ function reportRender_(ss,rows){
   var range=sheet.getRange(1,2,blocks.length,4);range.setNumberFormat('@').setValues(blocks.map(function(b){return [b.text,'','',''];})).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('left').setFontFamily('Arial').setFontSize(11).setFontColor('#243447');
   sheet.getRange(1,2,blocks.length,1).setBackgrounds(blocks.map(function(b){return [colors[b.kind]];})).setFontWeights(blocks.map(function(b){return [b.kind==='ticket'?'normal':'bold'];}));
   // Bold «Наряд №N» title line of every наряд (rich text, first line only).
-  var bold=SpreadsheetApp.newTextStyle().setBold(true).build();
-  sheet.getRange(1,2,blocks.length,1).setRichTextValues(blocks.map(function(b){
-    var text=String(b.text||''),nl=text.indexOf('\n'),rich=SpreadsheetApp.newRichTextValue().setText(text);
-    if(b.kind==='ticket'&&nl>0)rich.setStyle(0,nl,bold);
-    return [rich.build()];
-  }));
+  sheet.getRange(1,2,blocks.length,1).setRichTextValues(richValues);
   layout.spans.forEach(function(s){
     var cell=sheet.getRange(s.row,s.column,s.height,s.width);if(s.height>1||s.width>1)cell.merge();
     cell.setValue(s.text).setBackground(colors[s.kind]);
