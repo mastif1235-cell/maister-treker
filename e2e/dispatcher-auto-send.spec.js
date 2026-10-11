@@ -1,5 +1,5 @@
 'use strict';
-/* v91.95 / runtime-142. Direct transport E2E (physical-Android gate):
+/* v91.95 / runtime-143. Direct transport E2E (physical-Android gate):
    A) a saved ticket is delivered to Таблиця Д by a SIGNED POST (MT-SYNC-HMAC-V3,
       verified here against the shared canonical contract) with popupCount===0;
    B) an app restart keeps sending with no Google connect at all;
@@ -63,6 +63,21 @@ async function setupDirectChannel(page){
   await page.locator('[data-dispatcher-action="save"]').click();
   await expect(page.locator('#dispatcherReportResult')).toContainText('Прямий підписаний канал');
 }
+
+test('OFF during actual asynchronous signing revokes POST without failing the queued operation',async({page,context,appEnv})=>{
+  const server=makeServer();await context.route(ENDPOINT,route=>server.handle(route));
+  const errors=await gotoApp(page,appEnv.url);await setupDirectChannel(page);
+  await page.evaluate(()=>{
+    const original=MTSyncTransport;
+    globalThis.MTSyncTransport={...original,signedEnvelope:async(...args)=>{window.__auditSigning=true;await new Promise(resolve=>window.__auditRelease=resolve);return original.signedEnvelope(...args);}};
+    MTDispatcherReport.enqueueDelete('synthetic-signing-race');window.__auditFlight=MTDispatcherReport.flush({reason:'auto'});
+  });
+  await page.waitForFunction(()=>window.__auditSigning===true);
+  await page.evaluate(async()=>{settings.dispatcherReportEnabled=false;saveSettings();MTDispatcherReport.reconfigure();window.__auditRelease();await window.__auditFlight;});
+  expect(server.requests()).toBe(0);
+  expect(await page.evaluate(()=>({pending:MTDispatcherReport.status().pending,error:MTDispatcherReport.delivery('synthetic-signing-race').code}))).toEqual({pending:1,error:''});
+  expect(errors).toEqual([]);
+});
 
 test('OFF survives real lifecycle/reload; ON sends once; targeted OFF retry isolates its ID',async({page,context,appEnv})=>{
   const server=makeServer();await context.route(ENDPOINT,route=>server.handle(route));

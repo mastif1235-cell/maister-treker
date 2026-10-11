@@ -78,5 +78,33 @@ function read(){return JSON.parse(raw);}
   q=reset();for(const t of tickets)q.enqueueUpsert(t);
   const send=deps.send;deps.send=async()=>({ok:true,items:Array(3).fill({ticket_id:'valid-2650',action:'upsert',source_version:1000,status:'synced',code:'OK'})});
   await q.flush();assert.equal(q.status().unresolved,3);assert.equal(read().receipts.length,0);deps.send=send;
-  console.log('Dispatcher per-item server/client: PASS (partial failure, retry, lost ACK/reload, unavailable/recovery, duplicate safety, privacy, historical isolation)');
+  // Monotonic version fence, including unchanged-content updates: an older
+  // different-content edit must never overwrite a newer accepted version.
+  cache.clear();rows=[{...dto('fenced',10),deleted_at:'',sync_status:'SYNCED'}];
+  const dispatch=(tickets,deletes=[],id='audit-'+(++rid))=>c.reportExecute_(c.reportConfig_(),{action:'report_sync_all',tickets,deletes,request_id:id});
+  assert.equal(dispatch([dto('fenced',20)]).items[0].status,'unchanged');assert.equal(rows[0].source_version,20);
+  assert.equal(dispatch([dto('fenced',15,'old content')]).items[0].code,'STALE_VERSION');
+  assert.equal(dispatch([dto('fenced',19)]).items[0].code,'STALE_VERSION');assert.equal(rows[0].dispatcher_comment,'');
+  // Malformed/invalid/stale items cannot stop a mixed valid upsert/delete.
+  const mixed=dispatch([null,{...dto('bad',1),phone:'PRIVATE-CANARY'},dto('fenced',20,'conflict'),dto('mixed-good',1)],[{ticket_id:'mixed-delete',source_version:1}]);
+  assert.deepEqual(Array.from(mixed.items,x=>x.status),['invalid_dto','invalid_dto','stale_version','synced','synced']);
+  assert.equal(new Set(rows.map(r=>r.ticket_id)).size,rows.length);
+  const duplicate=dispatch([dto('same-id',1),dto('same-id',1)]);assert.deepEqual(Array.from(duplicate.items,x=>x.status),['synced','unchanged']);assert.equal(rows.filter(r=>r.ticket_id==='same-id').length,1);
+  // Exact redacted Android operation metadata, not synthetic look-alike IDs.
+  const real='6e859003-4b70-4353-9891-ca6ff49609d2',a='4ae0253f-1df3-436a-a6ff-0bc56912e345',b='47c2e608-ea05-4001-9da0-29af26308a6a';
+  const historical=['1778837660005','1778836817895','1778163875815'];
+  const ops=[{id:real,version:1791629025427},{id:a,version:1791657472324},{id:b,version:1791657932032}].map(o=>({...o,action:'upsert',attempts:1,next:0,error:'STALE_VERSION'}));
+  const history=historical.map(id=>({id,version:1,action:'upsert',attempts:0,next:0,error:'INVALID_DTO'}));
+  cache.clear();rows=[{...dto(real,1791629025427,'different hash'),deleted_at:'',sync_status:'SYNCED'}];tickets.splice(0,tickets.length,...[real,a,b].map(id=>({id})));
+  raw=JSON.stringify({operations:[...history,...ops]});q=c.MTDispatcherReportClient.createOutbox(deps);
+  await Promise.all([q.retry(a),q.retry(b)]);
+  assert.equal(rows.length,3);assert.equal(rows.find(r=>r.ticket_id===a).source_version,1791657472324);assert.equal(rows.find(r=>r.ticket_id===b).source_version,1791657932032);
+  assert.equal(q.delivery(real).code,'STALE_VERSION');assert.equal(q.delivery(a).state,'sent');assert.equal(q.delivery(b).state,'sent');
+  assert.deepEqual(read().operations,[...history,ops[0]],'real stale and historical operations remain byte-for-byte metadata equivalent');
+  q=c.MTDispatcherReportClient.createOutbox(deps);assert.equal(q.delivery(a).state,'sent');assert.equal(q.delivery(b).state,'sent');assert.equal(q.status().failed,4);
+  cache.clear();rows=Array.from({length:10000},(_,i)=>({...dto('capacity-'+i,1),deleted_at:'',sync_status:'SYNCED'}));
+  const capacity=dispatch([dto('over-capacity',2),dto('capacity-0',2)]);
+  assert.equal(capacity.items[0].code,'REPORT_CAPACITY');assert.equal(capacity.items[1].status,'unchanged');
+  assert.equal(rows.length,10000);assert.equal(rows[0].source_version,2,'capacity failure must not prevent valid existing-row sibling');
+  console.log('Dispatcher per-item server/client: PASS (partial failure, retry, lost ACK/reload, unavailable/recovery, duplicate safety, privacy, historical isolation, capacity isolation)');
 })().catch(e=>{console.error(e);process.exitCode=1;});

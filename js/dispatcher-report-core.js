@@ -151,7 +151,8 @@
   }
   function upsert(rows,dto){
     const value=validate(dto),i=rows.findIndex(r=>r.ticket_id===value.ticket_id),old=rows[i];
-    if(old&&old.source_hash===value.source_hash&&!old.deleted_at)return 'unchanged';
+    if(old&&old.source_version>value.source_version)fail('STALE_VERSION');
+    if(old&&old.source_hash===value.source_hash&&!old.deleted_at){old.source_version=value.source_version;old.updated_at=value.updated_at;return 'unchanged';}
     if(old&&old.source_version>=value.source_version)fail('STALE_VERSION');
     const next={...value,deleted_at:'',sync_status:'SYNCED'};if(i<0)rows.push(next);else rows[i]=next;return old?'updated':'inserted';
   }

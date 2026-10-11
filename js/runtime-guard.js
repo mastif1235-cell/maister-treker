@@ -1,4 +1,4 @@
-/* Mixed-runtime self-heal guard for the installed PWA (v91.95 / runtime-142).
+/* Mixed-runtime self-heal guard for the installed PWA (v91.95 / runtime-143).
    A page whose module revisions (app, dispatcher client, tickets renderer,
    compact view) or Service Worker runtime disagree is a mixed runtime: the
    dispatcher flush MUST NOT run against it and the queue must survive.
@@ -8,8 +8,8 @@
    diagnostics available in Settings) and NEVER touches user data. */
 (function(root){
   'use strict';
-  const EXPECTED='runtime-142';
-  const CACHE_EXPECTED='maister-treker-v72-runtime-142';
+  const EXPECTED='runtime-143';
+  const CACHE_EXPECTED='maister-treker-v73-runtime-143';
   const RELOAD_GUARD_KEY='mtRuntimeGuardReloadV1';
   const TOKEN=/^runtime-\d{1,4}$/;
   function storage(kind){
@@ -85,20 +85,23 @@
     if(state!=='pending')return;
     if(!verdict||!verdict.ok)return;
     const nav=root.navigator;
-    if(!nav||!nav.serviceWorker||typeof root.MessageChannel!=='function')return;
-    const sw=nav.serviceWorker,channel=new root.MessageChannel();
+    if(!nav||!nav.serviceWorker){state='ok';return;}
+    if(typeof root.MessageChannel!=='function'){state='failed';reason='RUNTIME_STATUS_UNAVAILABLE';return;}
+    const sw=nav.serviceWorker,controller=sw.controller,channel=new root.MessageChannel();
     let settled=false;
     const done=value=>{
-      if(settled)return;
+      if(settled||sw.controller!==controller)return;
       settled=true;
       const cacheName=value&&value.cacheName?v_sw_name(value):'';
       const swVerdict=evaluate(verdict.details,cacheName);
       verdict=swVerdict;
-      if(!swVerdict.ok)handleMismatch(swVerdict);
+      if(!cacheName){state='failed';reason='RUNTIME_STATUS_UNAVAILABLE';}
+      else if(!swVerdict.ok)handleMismatch(swVerdict);
       else{
         state='ok';
         reason='';
         try{const session=storage('sessionStorage');if(session)session.removeItem(RELOAD_GUARD_KEY);}catch(_){/* best effort */}
+        if(typeof root.dispatchEvent==='function'&&typeof root.Event==='function')root.dispatchEvent(new root.Event('mt-dispatcher-runtime-ready'));
       }
     };
     function v_sw_name(value){return String(value.cacheName||'');}
@@ -112,16 +115,17 @@
     channel.port1.onmessage=event=>done(event.data||{});
     try{
       sw.controller.postMessage({type:'MT_RUNTIME_STATUS'},[channel.port2]);
-      (root.setTimeout||setTimeout)(()=>{settled=true;if(state==='pending'){state='ok';reason='';}},2500);
-    }catch(_){state='ok';reason='';}
+      (root.setTimeout||setTimeout)(()=>{if(settled||sw.controller!==controller)return;settled=true;if(state==='pending'){state='failed';reason='RUNTIME_STATUS_UNAVAILABLE';}},2500);
+    }catch(_){settled=true;state='failed';reason='RUNTIME_STATUS_UNAVAILABLE';}
   }
   function boot(){
     if(!checkModules())return;
     checkServiceWorker();
-    if(state==='pending'){state='ok';}
   }
   function blocked(){return state!=='ok';}
   root.MTDispatcherRuntimeGuard=Object.freeze({EXPECTED,CACHE_EXPECTED,RELOAD_GUARD_KEY,revisions,evaluate,boot,state:()=>state,reason:()=>reason,blocked,checkServiceWorker});
+  root.navigator?.serviceWorker?.addEventListener?.('controllerchange',()=>{state='pending';reason='';boot();});
+  root.addEventListener?.('focus',()=>{if(reason==='RUNTIME_STATUS_UNAVAILABLE'){state='pending';reason='';boot();}});
   try{
     if(typeof document!=='undefined'&&document.readyState==='loading'&&typeof document.addEventListener==='function'){
       document.addEventListener('DOMContentLoaded',()=>{try{boot();}catch(_){/* fail closed */}},{once:true});

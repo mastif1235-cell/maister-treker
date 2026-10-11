@@ -168,9 +168,11 @@ function reportExecute_(c,request,envelopeNonce){
           var v=MTDispatcherReportCore.validate(dto);
           if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');
           Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});
+          if(store.rows.length>=10000&&!store.rows.some(function(r){return r.ticket_id===v.ticket_id;}))throw new Error('REPORT_CAPACITY');
           outcome=MTDispatcherReportCore.upsert(store.rows,v);
         }else{
           if(!dto||Object.keys(dto).some(function(k){return !['ticket_id','source_version'].includes(k);}))throw new Error('INVALID_DELETE');
+          if(store.rows.length>=10000&&!store.rows.some(function(r){return r.ticket_id===dto.ticket_id;}))throw new Error('REPORT_CAPACITY');
           outcome=MTDispatcherReportCore.remove(store.rows,dto.ticket_id,dto.source_version,now);
         }
         result[outcome]++;item.status=outcome==='unchanged'?'unchanged':'synced';item.code='OK';
