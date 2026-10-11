@@ -154,7 +154,10 @@ test('renderer creates B:E merged blocks and clears previous merge bottom',()=>{
   assert(mock.calls.some(x=>x.method==='merge'&&x.col===2&&x.width===4));
   assert(mock.calls.some(x=>x.method==='setHorizontalAlignment'&&x.col===2&&x.width===4&&x.args[0]==='center'));
   assert(mock.calls.some(x=>x.method==='setBorder'&&x.col===2&&x.width===1&&x.args[5]===true&&x.args.at(-1)==='solid'));
-  assert(mock.calls.filter(x=>x.method==='heights').every(x=>x.args[2]>=21));
+  assert(mock.calls.filter(x=>x.method==='heights').every(x=>x.args[2]>0));
+  for(const col of [3,4,5])assert(mock.calls.some(x=>x.method==='width'&&x.args[0]===col&&x.args[1]===250));
+  assert(mock.calls.some(x=>x.method==='width'&&x.args[0]===2&&x.args[1]===380));
+  assert(mock.calls.some(x=>x.method==='setWrap'&&x.args[0]===true));
   assert(mock.calls.some(x=>x.method==='setBorder'&&x.args.at(-1)==='thick'));
   assert(mock.calls.some(x=>x.method==='setBorder'&&x.width===4&&x.row===2&&x.args[0]===true&&x.args.at(-1)==='thick'));
   for(const col of [3,4,5])assert(mock.calls.some(x=>x.method==='setFontWeight'&&x.col===col&&x.args[0]==='bold'));
@@ -167,9 +170,9 @@ test('наряд title bold via rich text and thick separators only between adja
   const rich=mock.calls.find(x=>x.method==='setRichTextValues');
   assert(rich,'ticket titles rendered as rich text');
   const matrix=rich.args[0];
-  assert.equal(matrix.length,input.length+3,'one rich row per block: spacer, month, day, 2 tickets');
+  assert.equal(matrix.length,core.render(input).layout.rows.length,'one rich row per B block');
   for(const row of matrix){assert.equal(row.length,1);}
-  const ticketRows=matrix.slice(-2);
+  const ticketRows=matrix.filter(row=>row[0].text.startsWith('📋 Наряд'));
   for(const rowArr of ticketRows){
     const rich=rowArr[0];
     assert.equal(rich.styles.length,1,'exactly one bold run per наряд');
@@ -181,9 +184,54 @@ test('наряд title bold via rich text and thick separators only between adja
   assert.equal(separators.length,1,'one thick top border between the two adjacent наряды');
   assert.equal(separators[0].row,5,'the separator sits above the second наряд');
   assert.deepEqual(separators[0].args.slice(1,4),[null,null,null],'only the between-наряды top edge is drawn');
-  // Internal card rules stay plain text lines — never mixed with the separator.
+  // Inner content uses no literal text separators.
   const ticketText=String(ticketRows[0][0].text);
-  assert.ok(ticketText.includes('- - - - - - - - - - - -'),'inner thin rule stays a text line');
+  assert(!ticketText.includes('- - - -'),'no decorative inner rules');
+});
+test('closed month/day/panel perimeters and continuous B|C|D|E thick edges',()=>{
+  c.SpreadsheetApp=spreadsheetAppMock();
+  const input=[dto('a'),dto('b'),{...dto('other-day'),work_date:'2026-10-01'},{...dto('other-month'),work_date:'2026-09-30'}];
+  const mock=renderSheet(),layout=core.render(input).layout;
+  actualRender(mock.ss,input);
+  // Resolve successive Sheets border calls to their final physical edges.
+  // This catches a later false/thin overwrite, not just presence of a call.
+  const edges=new Map();
+  const edge=(axis,row,col,value,call)=>{if(value!==null&&value!==undefined)edges.set(axis+':'+row+':'+col,value?call.args.slice(6):null);};
+  for(const call of mock.calls.filter(x=>x.method==='setBorder')){
+    const {row:r,col:c,height:h,width:w,args:a}=call;
+    for(let col=c;col<c+w;col++){edge('h',r,col,a[0],call);edge('h',r+h,col,a[2],call);}
+    for(let row=r;row<r+h;row++){edge('v',row,c,a[1],call);edge('v',row,c+w,a[3],call);}
+    for(let col=c+1;col<c+w;col++)for(let row=r;row<r+h;row++)edge('v',row,col,a[4],call);
+    for(let row=r+1;row<r+h;row++)for(let col=c;col<c+w;col++)edge('h',row,col,a[5],call);
+  }
+  const thick=(axis,row,col)=>assert.deepEqual(edges.get(axis+':'+row+':'+col),['#233E69','thick'],axis+' edge '+row+':'+col);
+  const closed=(row,col,height,width)=>{
+    for(let c=col;c<col+width;c++){thick('h',row,c);thick('h',row+height,c);}
+    for(let r=row;r<row+height;r++){thick('v',r,col);thick('v',r,col+width);}
+  };
+  layout.monthSeparators.forEach((row,i)=>{
+    const end=layout.monthSeparators[i+1]||layout.rows.length+1;
+    closed(row,2,end-row,4);
+    for(let r=row+1;r<end;r++)for(const col of [3,4,5])thick('v',r,col);
+    for(const col of [3,4,5])assert.equal(edges.get('v:'+row+':'+col),null,'merged month title has no internal lines');
+  });
+  for(const day of layout.dayFrames)closed(day.row,2,day.height,1);
+  for(const panel of layout.statFrames)closed(panel.row,panel.column,panel.height,1);
+  for(const header of layout.spans.filter(s=>/Header$/.test(s.kind)))closed(header.row,header.column,header.height,header.width);
+  layout.rows.forEach((b,i)=>{if(b.kind==='ticket'&&layout.rows[i-1]?.kind==='ticket')thick('h',i+1,2);});
+});
+test('short Інше row sizes depend on content, not a minimum day panel height',()=>{
+  c.SpreadsheetApp=spreadsheetAppMock();
+  const mock=renderSheet(),input=[{...dto('short'),work_type:'Інше',dispatcher_comment:'TEST',amount:0,total:0}];
+  actualRender(mock.ss,input);
+  const ticketRow=core.render(input).layout.rows.findIndex(b=>b.kind==='ticket')+1;
+  const heightCall=mock.calls.find(x=>x.method==='heights'&&x.args[0]<=ticketRow&&x.args[0]+x.args[1]>ticketRow&&x.args[2]!==21);
+  assert(heightCall&&heightCall.args[2]<100,'three-line note has a compact content-sized row');
+  const layout=core.render(input).layout,padding=layout.rows.findIndex(b=>b.kind==='statsSpacer')+1;
+  assert(padding>ticketRow,'stats space is separate from ticket content');
+  const daily=layout.statFrames.find(s=>s.kind==='daily'),frame=layout.dayFrames[0];
+  assert.equal(daily.row,frame.row);assert.equal(daily.height,frame.height);
+  assert(mock.calls.some(x=>x.method==='setBackgrounds'&&x.args[0][padding-1][0]==='#FFF6E5'));
 });
 test('merge crossing report ownership fails before any clear',()=>{const mock=renderSheet([{getColumn:()=>5,getNumColumns:()=>2,getRow:()=>1,getNumRows:()=>3}]);assert.throws(()=>actualRender(mock.ss,[dto()]),/REPORT_LAYOUT_CONFLICT/);assert.equal(mock.calls.length,0);});
 test('empty rebuild removes old overlays but not hidden source rows',()=>{const mock=renderSheet();actualRender(mock.ss,[]);assert(mock.calls.some(x=>x.method==='setValue'&&x.args[0]==='Нарядів поки немає'));assert(!mock.calls.some(x=>x.method==='merge'));});

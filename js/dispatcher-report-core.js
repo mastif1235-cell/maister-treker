@@ -83,13 +83,12 @@
   }
   function statsText(title,s){return title+'\n'+[['Всього нарядів',s.ticket_count],['Підключень',s.connections],['Ремонтів',s.repairs],['Інших робіт',s.other],['ONU',s.onu_used],['Замін ONU',s.onu_replacement],['Роутерів',s.router_used],['Загальна сума',money(s.total)],['Готівка',money(s.payment_cash)],['Безготівка',money(s.payment_cashless)],['Безкоштовно',s.payment_free_count+' · '+money(s.payment_free_amount)],['Робочих днів',s.working_days]].map(([k,v])=>k+': '+v).join('\n');}
   function card(r,n){
-    const rule='- - - - - - - - - - - -';
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
-    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше','💰 Сума: '+money(r.total),r.dispatcher_comment].filter(Boolean).join('\n');
-    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
-      rule,r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
-      rule,paymentIcon+' Оплата: '+(r.payment_type||'Не вказано'),'💰 Сума: '+money(r.amount),rule,'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
+    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment,'💰 Сума: '+money(r.total)].filter(Boolean).join('\n');
+    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
+      r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
+      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Сума: '+money(r.amount),'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
   function render(rows){
     const data=sorted(rows),days=group(data,r=>r.work_date),weeks=group(data,r=>weekKey(r.work_date)),months=group(data,r=>r.work_date.slice(0,7)),blocks=[];
@@ -109,9 +108,9 @@
     const layout={rows:[],spans:[],dayFrames:[],statFrames:[],monthSeparators:[]},weekSpans=new Map(),monthSpans=new Map();
     const monthNames=['СІЧЕНЬ','ЛЮТИЙ','БЕРЕЗЕНЬ','КВІТЕНЬ','ТРАВЕНЬ','ЧЕРВЕНЬ','ЛИПЕНЬ','СЕРПЕНЬ','ВЕРЕСЕНЬ','ЖОВТЕНЬ','ЛИСТОПАД','ГРУДЕНЬ'];
     const statsBody=s=>['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
-      '- - - - - - - - - - - -','🔌 ONU: '+s.onu_used,'🔄 Заміна ONU: '+s.onu_replacement,'📶 Роутерів: '+s.router_used,
-      '- - - - - - - - - - - -','💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),
-      '- - - - - - - - - - - -','📅 Робочих днів: '+s.working_days].join('\n');
+      '🔌 ONU: '+s.onu_used,'🔄 Заміна ONU: '+s.onu_replacement,'📶 Роутерів: '+s.router_used,
+      '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),
+      '📅 Робочих днів: '+s.working_days].join('\n');
     function panel(kind,key,row,end,column,title,body){
       layout.spans.push({kind:kind+'Header',key,row,column,height:1,width:1,text:title});
       if(end>row)layout.spans.push({kind,key,row:row+1,column,height:end-row,width:1,text:body});
@@ -134,6 +133,13 @@
       const start=layout.rows.length+1,summary=stats(list),nums=dayNumbers(list);
       layout.rows.push({kind:'day',key:day,text:displayDate(day)+' · '+weekdays[new Date(day+'T00:00:00Z').getUTCDay()]+'\n'+list.length+' нарядів · '+money(summary.total)});
       list.forEach(r=>layout.rows.push({kind:'ticket',key:r.ticket_id,text:card(r,nums.get(r.ticket_id))}));
+      // Reserve only the space that side statistics actually need. A short
+      // ticket retains its own content height; any deficit is a separate
+      // presentation-only padding row, never added to the last ticket.
+      const textHeight=(text,width)=>String(text).split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/width)),0)*18+16;
+      const ticketHeight=list.reduce((n,r)=>n+Math.max(58,textHeight(card(r,nums.get(r.ticket_id)),48)),0);
+      const panelHeight=Math.max(...[summary,stats(weeks.get(week)),stats(months.get(month))].map(s=>textHeight(statsBody(s),29)));
+      if(ticketHeight<panelHeight)layout.rows.push({kind:'statsSpacer',key:day,text:'',height:panelHeight-ticketHeight});
       const end=layout.rows.length;
       layout.dayFrames.push({key:day,row:start,height:end-start+1});
       panel('daily',day,start,end,3,'СТАТИСТИКА ЗА\n'+displayDate(day),statsBody(summary));

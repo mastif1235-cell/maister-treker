@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-145';
+globalThis.MTTicketRendererRevision='runtime-146';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -61,20 +61,29 @@ function splitTicketContentForTechnicalDetails(content){
 
 function ticketDiagnosticHistoryHtml(ticket){
   const history=typeof MTToolsCore!=='undefined'?MTToolsCore.sanitizeDiagnostics(ticket?.diagnosticHistory||[]):(Array.isArray(ticket?.diagnosticHistory)?ticket.diagnosticHistory:[]);
+  if(!history.length)return '';
   const statusLabel=status=>status==='ok'?'✅ Успішно':status==='offline'?'❌ Немає інтернету':'⚠ Часткова проблема';
   const records=history.slice().sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))).map(item=>{
     const r=item.result||{},resources=(r.resources||[]).map(resource=>`${resource.label}: ${resource.ok?'HTTP '+(resource.status||'OK'):resource.state==='timeout'?'таймаут':'обмежено'}`).join(' · ');
     const summary=[r.publicIp?`Public IP: ${r.publicIp}`:'Public IP: недоступно',r.latencyMs!==null&&r.latencyMs!==undefined?`Відгук: ${r.latencyMs} мс`:'',resources].filter(Boolean).join(' · ');
     return `<details style="margin-top:6px;"><summary>${escapeHtml(new Date(item.timestamp).toLocaleString('uk-UA'))} · ${escapeHtml(statusLabel(item.summaryStatus||r.summaryStatus))}</summary><div style="font-size:12px;color:var(--text-dim);margin-top:5px;">${escapeHtml(summary)}</div></details>`;
   }).join('');
-  return `<div class="tc-diagnostic-history" style="margin-top:9px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;"><strong>🛠 Історія діагностик</strong>${records||'<div style="font-size:12px;color:var(--text-faint);margin-top:5px;">Діагностика ще не виконувалась</div>'}</div>`;
+  return `<div class="tc-diagnostic-history" style="margin-top:9px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;"><strong>🛠 Історія діагностик</strong>${records}</div>`;
 }
 
 function ticketMaterialPresentation(ticket,content){
-  const elements=[...(ticket.equipment||[]).filter(e=>e.checked!==false).map(e=>({label:String(e.label||''),qty:Number(e.consumption_qty??e.qty??1),unit:'шт.'})),...(ticket.cables||[]).map(c=>({label:String(c.label||''),qty:Number(c.meters),unit:'м'}))];
+  const elements=[...(ticket.equipment||[]).filter(e=>e.checked!==false).map(e=>({label:String(e.label||''),qty:Number(e.consumption_qty??e.qty??1),unit:'шт.',cost:Number(e.price)})),...(ticket.cables||[]).map(c=>({label:String(c.label||''),qty:Number(c.meters),unit:'м',cost:Number(c.meters)*Number(c.pricePerMeter)}))];
   const lines=String(content||'').split('\n').filter(line=>!elements.some(e=>e.label&&new RegExp('^[\\s🛠️🔌]*'+e.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*:','u').test(line)));
   const visible=elements.filter(e=>Number.isFinite(e.qty)&&e.qty>0);
-  return {content:lines.join('\n'),html:visible.length?'<div class="tc-materials"><strong>Матеріали</strong>'+visible.map(e=>'<div>'+escapeHtml(e.label)+' — '+escapeHtml(e.qty)+' '+e.unit+'</div>').join('')+'</div>':''};
+  return {content:lines.filter(line=>!/^\s*(?:[-—–]\s*){3,}$/.test(line)).join('\n').trim(),html:visible.length?'<div class="tc-materials"><strong>Матеріали</strong>'+visible.map(e=>'<div>'+escapeHtml(e.label)+' — '+escapeHtml(e.qty)+' '+e.unit+(Number.isFinite(e.cost)&&e.cost>0?' — '+escapeHtml(fmtMoney(e.cost)):'')+'</div>').join('')+'</div>':''};
+}
+
+// Split only the local display copy. Stored content and dispatcher text are
+// untouched. Materials precede the existing payment/total/note tail once.
+function ticketWorkContentPresentation(content){
+  const lines=String(content||'').split('\n');
+  const closing=lines.findIndex(line=>/^\s*(?:[💳💵💰🧾🆓]\s*)?(?:Оплата|Сума|Разом|ІТОГО|ИТОГО|Всього)\s*:/iu.test(line)||/^\s*📝/u.test(line));
+  return closing<0?{work:lines.join('\n'),closing:''}:{work:lines.slice(0,closing).join('\n').trim(),closing:lines.slice(closing).join('\n').trim()};
 }
 
 // NEW: стислий опис виконаної роботи (обладнання/кабелі/роботи/нотатка) БЕЗ
@@ -85,6 +94,7 @@ function renderTicketCard(t, opts={}){
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
   const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
   const signalText = formatOnuSignal(t.signal);
+  const hasTechnicalDetails=!!(t.macAddress || signalText);
   const linkedPoints=(typeof toolsNetworkPoints!=='undefined'?toolsNetworkPoints:[]).filter(point=>(Array.isArray(t.networkPointIds)?t.networkPointIds:[]).map(String).includes(String(point.id)));
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
   const mapsUrl=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(t):t.geoLink;
@@ -94,8 +104,10 @@ function renderTicketCard(t, opts={}){
   // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.
   const materialPresentation=ticketMaterialPresentation(t,opts.workOnly ? buildWorkSummaryLines(t).join('\n') : String(t.content||''));
   const displayContent = materialPresentation.content;
-  const detailContent = opts.workOnly ? {before:displayContent,after:''} : splitTicketContentForTechnicalDetails(displayContent);
-  const hasContent = !!(detailContent.before || detailContent.after);
+  const workContent=ticketWorkContentPresentation(displayContent);
+  const detailContent = opts.workOnly ? {before:workContent.work,after:''} : splitTicketContentForTechnicalDetails(workContent.work);
+  const diagnosticHtml=!opts.workOnly?ticketDiagnosticHistoryHtml(t):'';
+  const hasContent = !!(detailContent.before || detailContent.after || workContent.closing);
   const isOther = t.type === 'Інше';
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
   // ✅ означає, що canonical sync engine отримав читабельне підтвердження
@@ -130,7 +142,7 @@ function renderTicketCard(t, opts={}){
       </div>
     </div>
     ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
-    ${(opts.workOnly || hasContent || materialPresentation.html || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
+    ${(opts.workOnly || hasContent || materialPresentation.html || diagnosticHtml || hasTechnicalDetails || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
     <div class="tc-details tc-collapsed" id="tcc-${t.id}">
       ${dispatcherFailureDetails(t)}
       ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
@@ -143,9 +155,10 @@ function renderTicketCard(t, opts={}){
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
       ${(!opts.workOnly&&linkedPoints.length)?`<div class="tc-network-links"><strong>📡 Об’єкти мережі</strong>${linkedPoints.map(point=>`<div class="row between"><button type="button" class="btn btn-sm ticket-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml((typeof MTToolsCore!=='undefined'&&MTToolsCore.networkPointAddress(point))||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger ticket-network-unlink" data-ticket-id="${escapeHtml(t.id)}" data-point-id="${escapeHtml(point.id)}">Відв’язати</button></div>`).join('')}</div>`:''}
-      ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : (!hasContent && opts.workOnly ? `<div style="font-size:12.5px; color:var(--text-faint);">Для цього візиту не відмічено жодного обладнання чи роботи</div>` : '')}
+      ${detailContent.after ? `<div class="tc-content">${escapeHtml(detailContent.after)}</div>` : ''}
       ${materialPresentation.html}
-      ${!opts.workOnly?ticketDiagnosticHistoryHtml(t):''}
+      ${workContent.closing ? `<div class="tc-content">${escapeHtml(workContent.closing)}</div>` : ''}
+      ${diagnosticHtml}
       ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
       ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}

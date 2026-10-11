@@ -59,7 +59,7 @@ test('cards have sections, numeric equipment and payment icons without text gues
   const text=core.render([r]).layout.rows.find(s=>s.kind==='ticket').text;
   for(const label of ['📋 Наряд №1','🕒 12:34','🛠 Ремонт','📍','📦 Матеріали:','💵 Оплата:','💰 Сума:','🧾 Разом:','📝 Диспетчеру:'])assert(text.includes(label));
   assert.equal(core.stats([r]).onu_used,2,'statistics use numeric counters, not material text');assert.equal(core.stats([r]).router_used,1);
-  assert.equal(text.split('- - - - - - - - - - - -').length,4);
+  assert(!text.includes('- - - -'),'no decorative text rules');
   assert(core.render([{...r,payment_cashless:100,payment_cash:0}]).layout.rows.find(s=>s.kind==='ticket').text.includes('💳'));
   assert(core.render([{...r,payment_free_count:1,payment_cash:0,total:0}]).layout.rows.find(s=>s.kind==='ticket').text.includes('🆓'));
 });

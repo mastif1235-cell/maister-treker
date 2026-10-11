@@ -113,7 +113,7 @@ function reportRender_(ss,rows){
   sheet.getRange(1,1,clearRows,5).breakApart().clear();
   sheet.setRowHeights(1,clearRows,21);
   sheet.setColumnWidth(1,8);sheet.setColumnWidth(2,380);[3,4,5].forEach(function(column){sheet.setColumnWidth(column,250);});sheet.setHiddenGridlines(true);
-  var colors={topSpacer:'#FFFFFF',monthHeader:'#DCC4F4',day:'#FFE49C',ticket:'#FFF6E5',daily:'#E5F1FA',dailyHeader:'#C9DFEF',weekly:'#E6F2E2',weeklyHeader:'#C8DFBF',weeklyContinuation:'#E6F2E2',weeklyContinuationHeader:'#C8DFBF',monthly:'#EFE5F7',monthlyHeader:'#DCC9EA'};
+  var colors={topSpacer:'#FFFFFF',monthHeader:'#DCC4F4',day:'#FFE49C',ticket:'#FFF6E5',statsSpacer:'#FFF6E5',daily:'#E5F1FA',dailyHeader:'#C9DFEF',weekly:'#E6F2E2',weeklyHeader:'#C8DFBF',weeklyContinuation:'#E6F2E2',weeklyContinuationHeader:'#C8DFBF',monthly:'#EFE5F7',monthlyHeader:'#DCC9EA'};
   var border='#233E69',thick=SpreadsheetApp.BorderStyle.SOLID_THICK;
   if(!blocks.length){sheet.getRange('B2').setValue('Нарядів поки немає').setFontColor('#243447');return;}
   var range=sheet.getRange(1,2,blocks.length,4);range.setNumberFormat('@').setValues(blocks.map(function(b){return [b.text,'','',''];})).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('left').setFontFamily('Arial').setFontSize(11).setFontColor('#243447');
@@ -128,7 +128,7 @@ function reportRender_(ss,rows){
   layout.spans.forEach(function(s){
     var cell=sheet.getRange(s.row,s.column,s.height,s.width);if(s.height>1||s.width>1)cell.merge();
     cell.setValue(s.text).setBackground(colors[s.kind]);
-    if(/Header$/.test(s.kind))cell.setFontWeight('bold').setFontSize(s.kind==='monthHeader'?16:12).setBorder(null,null,true,null,false,false,border,thick);
+    if(/Header$/.test(s.kind))cell.setFontWeight('bold').setFontSize(s.kind==='monthHeader'?16:12).setBorder(true,true,true,true,false,false,border,thick);
     if(s.kind==='monthHeader')cell.setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true,true,true,true,false,false,border,thick);
   });
   layout.statFrames.forEach(function(s){sheet.getRange(s.row,s.column,s.height,1).setBorder(true,true,true,true,null,null,border,thick);});
@@ -139,14 +139,19 @@ function reportRender_(ss,rows){
     sheet.getRange(s.row,2,1,1).setFontSize(12).setBorder(null,null,true,null,null,null,border,thick);
   });
   // Visible thick separator BETWEEN adjacent наряды only; the inner card
-  // rules stay thin text lines so the two never get confused.
+  // content has no decorative text rules.
   blocks.forEach(function(b,i){if(b.kind==='ticket'&&i>0&&blocks[i-1].kind==='ticket')sheet.getRange(i+1,2,1,1).setBorder(true,null,null,null,false,false,border,thick);});
   // Complete B:E month frames; no statistical merge crosses a title band.
-  layout.monthSeparators.forEach(function(row,i){var end=layout.monthSeparators[i+1]||blocks.length+1;sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);});
-  // B is readable on a phone without shrinking text; C:E are adjacent
-  // horizontally scrollable panels. Guarantee space for a one-ticket day.
-  var heights=blocks.map(function(b){var lines=b.text.split('\n').reduce(function(n,s){return n+Math.max(1,Math.ceil(s.length/48));},0);return b.kind==='topSpacer'?21:b.kind==='monthHeader'?44:b.kind==='day'?64:Math.max(100,lines*18+16);});
-  layout.dayFrames.forEach(function(s){var height=heights.slice(s.row-1,s.row+s.height-1).reduce(function(a,b){return a+b;},0);if(height<370)heights[s.row+s.height-2]+=370-height;});
+  layout.monthSeparators.forEach(function(row,i){
+    var end=layout.monthSeparators[i+1]||blocks.length+1;
+    sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);
+    // Final vertical-edge pass includes panel headers and padding, but never
+    // divides the merged month title. Shared cell borders replace, not stack.
+    sheet.getRange(row+1,2,end-row-1,4).setBorder(null,true,null,true,true,null,border,thick);
+  });
+  // Content-sized tickets; explicit day padding supports adjacent statistics
+  // without stretching a short ticket. C:E retain their readable widths.
+  var heights=blocks.map(function(b){var lines=b.text.split('\n').reduce(function(n,s){return n+Math.max(1,Math.ceil(s.length/48));},0);return b.kind==='topSpacer'?21:b.kind==='monthHeader'?44:b.kind==='day'?64:b.kind==='statsSpacer'?b.height:Math.max(58,lines*18+16);});
   for(var start=0;start<heights.length;){var end=start+1;while(end<heights.length&&heights[end]===heights[start])end++;sheet.setRowHeights(start+1,end-start,heights[start]);start=end;}
 }
 function reportAudit_(c,code){

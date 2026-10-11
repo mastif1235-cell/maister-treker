@@ -11,7 +11,7 @@ const form=read('js/ticket-form-domain.js'),app=read('app.js'),security=read('js
 assert.match(form,/diagnosticHistory:\[\]/,'new and legacy-compatible tickets default to an empty history');
 assert.match(app,/diagnosticHistory:typeof MTToolsCore[^\n]+sanitizeDiagnostics/,'ticket sync fullDataJson carries sanitized history');
 assert.match(security,/sanitizeDiagnostics\(t\.diagnosticHistory\|\|\[\]\)\.slice\(-200\)/,'imported/restored history is bounded and sanitized');
-assert.match(ui,/Історія діагностик/);assert.match(ui,/Діагностика ще не виконувалась/);
+assert.match(ui,/Історія діагностик/);assert.doesNotMatch(ui,/Діагностика ще не виконувалась/,'empty history has no placeholder');
 assert.match(domain,/async function toolsSaveCurrentDiagnostic/);assert.match(domain,/draft\.state\.diagnosticHistory=MTToolsCore\.appendDiagnosticHistory\(previousDraft,record\)/);assert.match(domain,/!ticket\|\|await saveTickets\(\)/,'saving history keeps the active draft and reuses canonical ticket persistence when one exists');
 assert.doesNotMatch(domain,/toolsDiagnostics\.push\(record\)/,'new diagnostics are no longer written only to the legacy profile store');
 assert.match(share,/Історія\\s\+діагностик/,'dispatcher sanitizer excludes diagnostic history labels');
