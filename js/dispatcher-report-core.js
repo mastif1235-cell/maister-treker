@@ -8,7 +8,28 @@
   const PRIVATE=/(?:masterNote|privateNote|private\s+notes?|приватн[а-яіїєґ\s]*(?:заметка|примітка)|password|пароль|login|лог[іи]н|bearer|token|токен|secret|секрет|local[-_ ]only|private\s+(?:photo|url)|diagnostics?|діагностика\s+мережі|internal[-_ ]only|fullDataJson)/iu;
   const SENSITIVE=/(?:geo(?:lat|lng|link|location)?|latitude|longitude|(?<![\p{L}])(?:lat|lng|location)(?![\p{L}])|координат[ыи]|геолокац[іяи]|ONU\s*signal|onuSignal|signal(?:_before|_after|\s+before|\s+after)?|optical\s+(?:level|power)|сигнал\s*(?:onu|ону)|dBm|https?:\/\/|www\.)/iu;
   const MONEY_MAX=1e9;
+  const MATERIAL_FIELD='materials_json';
+  const ALL_FIELDS=Object.freeze([...FIELDS,MATERIAL_FIELD]);
   function fail(code){const e=new Error(code);e.code=code;throw e;}
+  function materialJSON(entries,aggregate=false){
+    const grouped=new Map();
+    for(const e of entries){
+      const label=String(e.label||'').normalize('NFKC').trim().replace(/\s+/gu,' '),quantity=Number(e.quantity),unit=e.unit;
+      if(!label||label.length>160||sanitize(label)!==label||/[\r\n\u0000-\u001f]/u.test(label)||/^\s*[=+@-]/u.test(label)||PRIVATE.test(label)||SENSITIVE.test(label))fail('PRIVACY_REJECTED');
+      if(!['шт.','м'].includes(unit)||!Number.isFinite(quantity)||quantity<=0||quantity>MONEY_MAX||(unit==='шт.'&&!Number.isSafeInteger(quantity)))fail('INVALID_MATERIAL');
+      const key=JSON.stringify([label,unit]),old=grouped.get(key);
+      grouped.set(key,{label,quantity:Math.round(((old?.quantity||0)+quantity)*1e6)/1e6,unit});
+    }
+    if(!aggregate&&grouped.size>100)fail('INVALID_MATERIAL');
+    const result=JSON.stringify([...grouped.values()].sort((a,b)=>a.label<b.label?-1:a.label>b.label?1:a.unit<b.unit?-1:a.unit>b.unit?1:0));
+    if(!aggregate&&result.length>20000)fail('INVALID_MATERIAL');return result;
+  }
+  function readMaterials(value){
+    if(typeof value!=='string'||value.length>20000)fail('INVALID_MATERIAL');
+    let entries;try{entries=JSON.parse(value);}catch(_){fail('INVALID_MATERIAL');}
+    if(!Array.isArray(entries)||entries.length>100||entries.some(e=>!e||typeof e!=='object'||Array.isArray(e)||Object.keys(e).sort().join(',')!=='label,quantity,unit'||typeof e.label!=='string'||typeof e.quantity!=='number'))fail('INVALID_MATERIAL');
+    if(materialJSON(entries)!==value)fail('INVALID_MATERIAL');return entries;
+  }
   function dateKey(value){
     const s=String(value||'');
     // Explicit parsing, never browser-locale dependent.
@@ -39,7 +60,7 @@
   }
   function validate(dto){
     if(!dto||typeof dto!=='object'||Array.isArray(dto))fail('INVALID_DTO');
-    if(Object.keys(dto).some(k=>!FIELDS.includes(k))||FIELDS.some(k=>!Object.prototype.hasOwnProperty.call(dto,k)))fail('UNKNOWN_OR_MISSING_FIELD');
+    if(Object.keys(dto).some(k=>!ALL_FIELDS.includes(k))||FIELDS.some(k=>!Object.prototype.hasOwnProperty.call(dto,k)))fail('UNKNOWN_OR_MISSING_FIELD');
     const out={};
     for(const k of FIELDS){
       const v=dto[k];
@@ -50,6 +71,7 @@
         if(PRIVATE.test(v)||SENSITIVE.test(v))fail('PRIVACY_REJECTED');out[k]=v;
       }
     }
+    if(Object.prototype.hasOwnProperty.call(dto,MATERIAL_FIELD)){readMaterials(dto.materials_json);out.materials_json=dto.materials_json;}
     if(!/^[\p{L}\p{N}_:.@-]{1,128}$/u.test(out.ticket_id))fail('INVALID_ID');
     if(dateKey(out.work_date)!==out.work_date)fail('INVALID_DATE');timeKey(out.work_time);
     if(!['connection','repair','other'].includes(out.work_category))fail('INVALID_CATEGORY');
@@ -61,14 +83,21 @@
     if(out.payment_free_count>1)fail('INVALID_COUNTERS');
     return out;
   }
-  function content(dto){const out={};for(const k of FIELDS)if(!['source_version','source_hash','updated_at'].includes(k))out[k]=dto[k];return JSON.stringify(out);}
+  function content(dto){const out={};for(const k of ALL_FIELDS)if(!['source_version','source_hash','updated_at'].includes(k)&&dto[k]!==undefined)out[k]=dto[k];return JSON.stringify(out);}
   function weekKey(day){const dt=new Date(day+'T00:00:00Z');dt.setUTCDate(dt.getUTCDate()-(dt.getUTCDay()+6)%7);return dt.toISOString().slice(0,10);}
   function sorted(rows){return rows.filter(r=>!r.deleted_at).slice().sort((a,b)=>b.work_date.localeCompare(a.work_date)||b.work_time.localeCompare(a.work_time)||(a.ticket_id<b.ticket_id?-1:a.ticket_id>b.ticket_id?1:0));}
   function stats(rows){
     const s={ticket_count:rows.length,connections:0,repairs:0,other:0,onu_used:0,onu_replacement:0,router_used:0,total:0,payment_cash:0,payment_cashless:0,payment_free_amount:0,payment_free_count:0,working_days:new Set(rows.map(r=>r.work_date)).size};
     for(const r of rows){s[r.work_category==='connection'?'connections':r.work_category==='repair'?'repairs':'other']++;for(const k of ['onu_used','onu_replacement','router_used','total','payment_cash','payment_cashless','payment_free_amount','payment_free_count'])s[k]+=r[k];}
     for(const k of ['total','payment_cash','payment_cashless','payment_free_amount'])s[k]=Math.round(s[k]*100)/100;
-    return s;
+    // Structured usage is canonical. Only rows predating this optional field
+    // fall back to their physical counters; never parse display text or notes.
+    const materials=[];
+    for(const r of rows){
+      if(r.materials_json!==undefined)materials.push(...readMaterials(r.materials_json));
+      else for(const [key,label] of [['onu_used','ONU'],['router_used','Роутер']])if(r[key]>0)materials.push({label,quantity:r[key],unit:'шт.'});
+    }
+    s.materials=JSON.parse(materialJSON(materials,true));return s;
   }
   function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
   function money(n){return Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';}
@@ -81,14 +110,18 @@
     list.slice().sort((a,b)=>a.work_time.localeCompare(b.work_time)||(a.ticket_id<b.ticket_id?-1:a.ticket_id>b.ticket_id?1:0)).forEach((r,i)=>m.set(r.ticket_id,i+1));
     return m;
   }
-  function statsText(title,s){return title+'\n'+[['Всього нарядів',s.ticket_count],['Підключень',s.connections],['Ремонтів',s.repairs],['Інших робіт',s.other],['ONU',s.onu_used],['Замін ONU',s.onu_replacement],['Роутерів',s.router_used],['Загальна сума',money(s.total)],['Готівка',money(s.payment_cash)],['Безготівка',money(s.payment_cashless)],['Безкоштовно',s.payment_free_count+' · '+money(s.payment_free_amount)],['Робочих днів',s.working_days]].map(([k,v])=>k+': '+v).join('\n');}
+  function materialLines(s){return s.materials.length?['📦 Матеріали:',...s.materials.map(m=>m.label+' — '+m.quantity+' '+m.unit)]:[];}
+  function statsText(title,s){return title+'\n'+statsBody(s);}
+  function statsBody(s){return ['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
+    ...materialLines(s),'🔄 Заміна ONU: '+s.onu_replacement,
+    '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),'📅 Робочих днів: '+s.working_days].join('\n');}
   function card(r,n){
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
-    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment,'💰 Сума: '+money(r.total)].filter(Boolean).join('\n');
+    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment,'💰 Разом: '+money(r.total)].filter(Boolean).join('\n');
     return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
       r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
-      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Сума: '+money(r.amount),'🧾 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
+      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
   function render(rows){
     const data=sorted(rows),days=group(data,r=>r.work_date),weeks=group(data,r=>weekKey(r.work_date)),months=group(data,r=>r.work_date.slice(0,7)),blocks=[];
@@ -107,10 +140,6 @@
     // whitelist are shared with the existing vertical formatter above.
     const layout={rows:[],spans:[],dayFrames:[],statFrames:[],monthSeparators:[]},weekSpans=new Map(),monthSpans=new Map();
     const monthNames=['СІЧЕНЬ','ЛЮТИЙ','БЕРЕЗЕНЬ','КВІТЕНЬ','ТРАВЕНЬ','ЧЕРВЕНЬ','ЛИПЕНЬ','СЕРПЕНЬ','ВЕРЕСЕНЬ','ЖОВТЕНЬ','ЛИСТОПАД','ГРУДЕНЬ'];
-    const statsBody=s=>['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
-      '🔌 ONU: '+s.onu_used,'🔄 Заміна ONU: '+s.onu_replacement,'📶 Роутерів: '+s.router_used,
-      '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),
-      '📅 Робочих днів: '+s.working_days].join('\n');
     function panel(kind,key,row,end,column,title,body){
       layout.spans.push({kind:kind+'Header',key,row,column,height:1,width:1,text:title});
       if(end>row)layout.spans.push({kind,key,row:row+1,column,height:end-row,width:1,text:body});
@@ -170,6 +199,6 @@
     if(row.deleted_at){row.source_version=Math.max(row.source_version,version);return 'unchanged';}if(row.source_version>=version)fail('STALE_VERSION');
     row.deleted_at=now;row.sync_status='DELETED';row.source_version=version;return 'deleted';
   }
-  const api=Object.freeze({FIELDS,sanitize,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
+  const api=Object.freeze({FIELDS,ALL_FIELDS,materialJSON,readMaterials,sanitize,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.MTDispatcherReportCore=api;
 })(typeof globalThis==='object'?globalThis:this);

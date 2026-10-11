@@ -69,6 +69,6 @@ assert.doesNotMatch(read('js/ui-orchestration.js'),/toolsStopConnectionCheck/);
 assert.match(domain,/tools-router-grid/);assert.match(read('styles.css'),/\.tools-router-grid\{display:grid; grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 assert.equal((domain.match(/data-router-ip=/g)||[]).length,1,'router grid renders from one canonical list');
 
-assert.match(sw,/maister-treker-v76-runtime-146/);
-assert.match(read('app.js'),/v92\.01 · 2026-10-11/);
+assert.match(sw,/maister-treker-v77-runtime-147/);
+assert.match(read('app.js'),/v92\.02 · 2026-10-11/);
 console.log('PASS v82 map hierarchy, point Telegram/photo lifecycle, naryad UX, backup and compact diagnostics screen');

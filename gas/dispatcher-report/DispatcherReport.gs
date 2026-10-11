@@ -9,7 +9,20 @@
    Script Properties: REPORT_SPREADSHEET_ID, REPORT_ALLOWED_EMAIL,
    REPORT_ALLOWED_ORIGINS (comma-separated origins), MT_DISPATCHER_HMAC_SECRET.
    No other client secrets. */
-var REPORT_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
+var REPORT_LEGACY_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
+// Append only: every existing column and legacy content hash stays unchanged.
+var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json']);
+function reportStoredHeaders_(sheet){
+  if(JSON.stringify(sheet.getRange(1,1,1,REPORT_LEGACY_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_LEGACY_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
+  var extra=sheet.getMaxColumns()>REPORT_LEGACY_HEADERS.length?sheet.getRange(1,REPORT_HEADERS.length,1,1).getValues()[0][0]:'';
+  if(extra&&extra!=='materials_json')throw new Error('REPORT_SCHEMA_CONFLICT');
+  return extra?REPORT_HEADERS:REPORT_LEGACY_HEADERS;
+}
+function reportExtendHeaders_(sheet){
+  if(sheet.getLastRow()>0)reportStoredHeaders_(sheet);
+  if(sheet.getMaxColumns()<REPORT_HEADERS.length)sheet.insertColumnsAfter(sheet.getMaxColumns(),REPORT_HEADERS.length-sheet.getMaxColumns());
+  sheet.getRange(1,1,1,REPORT_HEADERS.length).setValues([REPORT_HEADERS]);
+}
 var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status','report_receipt'];
 // Durable write-ahead receipts, separate from ticket schema and CacheService.
 // No payload/PII: identity/hash, exact item ACKs and commit evidence only.
@@ -77,25 +90,24 @@ function reportSetup(){
   var visible=ss.getSheetByName('Отчет');
   if(!visible){var existing=ss.getSheets();if(existing.length===1&&existing[0].getLastRow()===0){visible=existing[0];visible.setName('Отчет');}else visible=ss.insertSheet('Отчет');}
   var data=ss.getSheetByName('_DispatcherData')||ss.insertSheet('_DispatcherData');
-  if(data.getMaxColumns()<REPORT_HEADERS.length){if(data.getLastRow()>0)throw new Error('REPORT_SCHEMA_CONFLICT');data.insertColumnsAfter(data.getMaxColumns(),REPORT_HEADERS.length-data.getMaxColumns());}
-  if(data.getLastRow()>0&&JSON.stringify(data.getRange(1,1,1,REPORT_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
-  data.getRange(1,1,1,REPORT_HEADERS.length).setValues([REPORT_HEADERS]);data.hideSheet();
+  reportExtendHeaders_(data);data.hideSheet();
   var store=reportStore_(c);reportRender_(ss,store.rows);return {ok:true,code:'READY',active_count:store.rows.filter(function(r){return !r.deleted_at;}).length};
 }
 function reportStore_(c){
   var ss=SpreadsheetApp.openById(c.id);
   if(ss.getSheetByName('Заявки')||ss.getSheetByName('Зміни'))throw new Error('LEGACY_WORKBOOK_FORBIDDEN');
   var sheet=ss.getSheetByName('_DispatcherData');if(!sheet||!ss.getSheetByName('Отчет'))throw new Error('REPORT_NOT_INITIALIZED');
-  var head=sheet.getRange(1,1,1,REPORT_HEADERS.length).getValues()[0];if(JSON.stringify(head)!==JSON.stringify(REPORT_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
+  var headers=reportStoredHeaders_(sheet);
   if(sheet.getLastRow()>10001)throw new Error('REPORT_CAPACITY');
-  var values=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,REPORT_HEADERS.length).getValues():[];
-  var rows=values.map(function(v){var r={};REPORT_HEADERS.forEach(function(k,i){r[k]=v[i];});return r;});
-  var seen=new Set();rows.forEach(function(r){if(seen.has(r.ticket_id))throw new Error('DUPLICATE_STORED_ID');seen.add(r.ticket_id);if(!r.deleted_at){var dto={};MTDispatcherReportCore.FIELDS.forEach(function(k){dto[k]=r[k];});MTDispatcherReportCore.validate(dto);if(reportHash_(dto)!==dto.source_hash)throw new Error('HASH_MISMATCH');}});
+  var values=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,headers.length).getValues():[];
+  var rows=values.map(function(v){var r={};headers.forEach(function(k,i){if(k!=='materials_json'||v[i]!=='')r[k]=v[i];});return r;});
+  var seen=new Set();rows.forEach(function(r){if(seen.has(r.ticket_id))throw new Error('DUPLICATE_STORED_ID');seen.add(r.ticket_id);if(!r.deleted_at){var dto={};MTDispatcherReportCore.ALL_FIELDS.forEach(function(k){if(r[k]!==undefined)dto[k]=r[k];});MTDispatcherReportCore.validate(dto);if(reportHash_(dto)!==dto.source_hash)throw new Error('HASH_MISMATCH');}});
   return {ss:ss,sheet:sheet,rows:rows};
 }
 function reportHash_(dto){return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,MTDispatcherReportCore.content(dto),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');}
 function reportWrite_(store){
   var rows=store.rows;if(rows.length>10000)throw new Error('REPORT_CAPACITY');
+  reportExtendHeaders_(store.sheet);
   if(store.sheet.getMaxRows()<rows.length+1)store.sheet.insertRowsAfter(store.sheet.getMaxRows(),rows.length+1-store.sheet.getMaxRows());
   if(rows.length){var range=store.sheet.getRange(2,1,rows.length,REPORT_HEADERS.length);range.setNumberFormat('@');
     // Reject formula-looking text BEFORE storage; never rely on formatting

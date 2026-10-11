@@ -63,10 +63,21 @@ export function projectTicket(ticket,core,now=Date.now()){
     onu_used:quantity('onu'),onu_replacement:quantity('onu','replace'),router_used:quantity('router'),payment_cash:cash,payment_cashless:card,
     // Free amount is the saved monetary amount, not a guessed inventory price.
     payment_free_amount:free?total:0,payment_free_count:free?1:0,updated_at:new Date(now).toISOString(),source_version:now,source_hash:''};
+  // Optional hash-bound material usage, independent of display/price strings.
+  // Historical raw imports retain the existing physical-counter fallback.
+  if(Array.isArray(ticket.equipment)||Array.isArray(ticket.cables)){
+    const equipment=ticket.equipment||[],cables=ticket.cables||[];
+    if(!ticket.cloudImported||equipment.length||cables.length){
+      const entries=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>({label:text(e.label),quantity:Number(e.consumption_qty??e.qty??1),unit:'шт.'})),
+        ...cables.filter(c=>Number(c.meters)>0).map(c=>({label:text(c.label),quantity:Number(c.meters),unit:'м'}))].filter(e=>e.label);
+      dto.materials_json=core.materialJSON(entries);
+    }
+  }
   if(type==='Інше'){
     for(const key of ['city','street','house','apartment','address_display','materials_display','mac_onu','partner_display'])dto[key]='';
     dto.dispatcher_comment=text(publicBackupText(ticket.otherNote||ticket.note||''));
     dto.onu_used=0;dto.onu_replacement=0;dto.router_used=0;
+    if(dto.materials_json!==undefined)dto.materials_json='[]';
   }
   return dto;
 }

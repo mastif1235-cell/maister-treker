@@ -9,10 +9,10 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v92.01 · 2026-10-11';
+const APP_VERSION = 'v92.02 · 2026-10-11';
 // Runtime revision of the app shell, checked with module/SW revisions by the
 // mixed-runtime guard (js/runtime-guard.js). Bump together with sw.js CACHE_NAME.
-globalThis.MTAppRuntimeRevision = 'runtime-146';
+globalThis.MTAppRuntimeRevision = 'runtime-147';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні

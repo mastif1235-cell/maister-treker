@@ -204,7 +204,7 @@ nav.tabbar{
 }
 .btn:active{transform:scale(.97);}
 .btn-accent{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
-.btn-danger{background:var(--danger); color:#fff; border-color:var(--danger);}
+.btn-danger,.ticket-card .tc-sync-badge[data-delivery-state="error"]{background:var(--danger); color:#fff; border-color:var(--danger);}
 .btn-ghost{background:transparent;}
 .btn-block{width:100%;}
 .btn-icon{width:44px; height:44px; padding:0; flex:0 0 44px; font-size:18px;}
@@ -293,8 +293,8 @@ input::placeholder, textarea::placeholder{color:var(--text-faint);}
 }
 .ticket-card .tc-photo-wrap img{display:block;}
 .ticket-card .tc-sync-badge{font-size:12px; padding:2px 7px; border-radius:8px; font-weight:600; font-family:inherit; line-height:1.6;}
-.ticket-card .tc-sync-ok{color:#3fbf6f; background:rgba(63,191,111,0.12);}
-.ticket-card .tc-sync-pending{color:#ffb84d; background:rgba(255,184,77,0.12); cursor:pointer;}
+.ticket-card .tc-sync-ok,.ticket-card .tc-sync-badge[data-delivery-state="sent"]{color:#3fbf6f; background:rgba(63,191,111,0.12);}
+.ticket-card .tc-sync-pending,.ticket-card .tc-sync-badge[data-delivery-state="pending"]{color:#ffb84d; background:rgba(255,184,77,0.12); cursor:pointer;}
 
 .empty-state{text-align:center; padding:40px 16px; color:var(--text-dim);}
 .empty-state .es-icon{font-size:34px; margin-bottom:8px;}
