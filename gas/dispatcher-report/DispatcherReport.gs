@@ -128,7 +128,7 @@ function reportRender_(ss,rows){
   layout.spans.forEach(function(s){
     var cell=sheet.getRange(s.row,s.column,s.height,s.width);if(s.height>1||s.width>1)cell.merge();
     cell.setValue(s.text).setBackground(colors[s.kind]);
-    if(/Header$/.test(s.kind))cell.setFontWeight('bold').setFontSize(s.kind==='monthHeader'?16:12).setBorder(null,null,true,null,false,false,border,thick);
+    if(/Header$/.test(s.kind))cell.setFontWeight('bold').setFontSize(s.kind==='monthHeader'?16:12).setBorder(true,true,true,true,false,false,border,thick);
     if(s.kind==='monthHeader')cell.setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true,true,true,true,false,false,border,thick);
   });
   layout.statFrames.forEach(function(s){sheet.getRange(s.row,s.column,s.height,1).setBorder(true,true,true,true,null,null,border,thick);});
@@ -142,7 +142,13 @@ function reportRender_(ss,rows){
   // content has no decorative text rules.
   blocks.forEach(function(b,i){if(b.kind==='ticket'&&i>0&&blocks[i-1].kind==='ticket')sheet.getRange(i+1,2,1,1).setBorder(true,null,null,null,false,false,border,thick);});
   // Complete B:E month frames; no statistical merge crosses a title band.
-  layout.monthSeparators.forEach(function(row,i){var end=layout.monthSeparators[i+1]||blocks.length+1;sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);});
+  layout.monthSeparators.forEach(function(row,i){
+    var end=layout.monthSeparators[i+1]||blocks.length+1;
+    sheet.getRange(row,2,end-row,4).setBorder(true,true,true,true,null,null,border,thick);
+    // Final vertical-edge pass includes panel headers and padding, but never
+    // divides the merged month title. Shared cell borders replace, not stack.
+    sheet.getRange(row+1,2,end-row-1,4).setBorder(null,true,null,true,true,null,border,thick);
+  });
   // Content-sized tickets; explicit day padding supports adjacent statistics
   // without stretching a short ticket. C:E retain their readable widths.
   var heights=blocks.map(function(b){var lines=b.text.split('\n').reduce(function(n,s){return n+Math.max(1,Math.ceil(s.length/48));},0);return b.kind==='topSpacer'?21:b.kind==='monthHeader'?44:b.kind==='day'?64:b.kind==='statsSpacer'?b.height:Math.max(58,lines*18+16);});

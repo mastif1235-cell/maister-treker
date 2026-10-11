@@ -188,6 +188,38 @@ test('наряд title bold via rich text and thick separators only between adja
   const ticketText=String(ticketRows[0][0].text);
   assert(!ticketText.includes('- - - -'),'no decorative inner rules');
 });
+test('closed month/day/panel perimeters and continuous B|C|D|E thick edges',()=>{
+  c.SpreadsheetApp=spreadsheetAppMock();
+  const input=[dto('a'),dto('b'),{...dto('other-day'),work_date:'2026-10-01'},{...dto('other-month'),work_date:'2026-09-30'}];
+  const mock=renderSheet(),layout=core.render(input).layout;
+  actualRender(mock.ss,input);
+  // Resolve successive Sheets border calls to their final physical edges.
+  // This catches a later false/thin overwrite, not just presence of a call.
+  const edges=new Map();
+  const edge=(axis,row,col,value,call)=>{if(value!==null&&value!==undefined)edges.set(axis+':'+row+':'+col,value?call.args.slice(6):null);};
+  for(const call of mock.calls.filter(x=>x.method==='setBorder')){
+    const {row:r,col:c,height:h,width:w,args:a}=call;
+    for(let col=c;col<c+w;col++){edge('h',r,col,a[0],call);edge('h',r+h,col,a[2],call);}
+    for(let row=r;row<r+h;row++){edge('v',row,c,a[1],call);edge('v',row,c+w,a[3],call);}
+    for(let col=c+1;col<c+w;col++)for(let row=r;row<r+h;row++)edge('v',row,col,a[4],call);
+    for(let row=r+1;row<r+h;row++)for(let col=c;col<c+w;col++)edge('h',row,col,a[5],call);
+  }
+  const thick=(axis,row,col)=>assert.deepEqual(edges.get(axis+':'+row+':'+col),['#233E69','thick'],axis+' edge '+row+':'+col);
+  const closed=(row,col,height,width)=>{
+    for(let c=col;c<col+width;c++){thick('h',row,c);thick('h',row+height,c);}
+    for(let r=row;r<row+height;r++){thick('v',r,col);thick('v',r,col+width);}
+  };
+  layout.monthSeparators.forEach((row,i)=>{
+    const end=layout.monthSeparators[i+1]||layout.rows.length+1;
+    closed(row,2,end-row,4);
+    for(let r=row+1;r<end;r++)for(const col of [3,4,5])thick('v',r,col);
+    for(const col of [3,4,5])assert.equal(edges.get('v:'+row+':'+col),null,'merged month title has no internal lines');
+  });
+  for(const day of layout.dayFrames)closed(day.row,2,day.height,1);
+  for(const panel of layout.statFrames)closed(panel.row,panel.column,panel.height,1);
+  for(const header of layout.spans.filter(s=>/Header$/.test(s.kind)))closed(header.row,header.column,header.height,header.width);
+  layout.rows.forEach((b,i)=>{if(b.kind==='ticket'&&layout.rows[i-1]?.kind==='ticket')thick('h',i+1,2);});
+});
 test('short Інше row sizes depend on content, not a minimum day panel height',()=>{
   c.SpreadsheetApp=spreadsheetAppMock();
   const mock=renderSheet(),input=[{...dto('short'),work_type:'Інше',dispatcher_comment:'TEST',amount:0,total:0}];

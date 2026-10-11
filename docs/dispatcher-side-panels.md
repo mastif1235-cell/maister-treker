@@ -18,6 +18,18 @@ The B:E renderer is restored from base
 - Adjacent ticket cells in B have an actual dark-blue SOLID_THICK top border.
   No decorative text rules remain in cards or statistics.
 
+Final border-only pass closes every statistics header and reapplies continuous
+SOLID_THICK dark-blue B|C, C|D and D|E edges over each month's body, including
+headers and padding. The merged B:E month title is never divided. Month,
+day and statistics frames stay closed to their last row; shared physical cell
+edges are replaced, not doubled. Existing ticket separators remain unchanged.
+GAS tests resolve all successive border writes to final horizontal/vertical
+edges and verify full perimeters, not just the presence of styling calls.
+The visual fixture uses collapsed borders and checks all four edges of panels,
+day endings and continuous column boundaries. Layout/text/aggregator, row
+heights, widths, colors, frontend assets and runtime proof are unchanged by
+this final border-only correction.
+
 Ticket heights follow their actual text, with a 58 px minimum rather than the
 previous 100 px minimum / 370 px minimum day stretched into the last ticket.
 For a very short day only, one separate beige padding row reserves exactly

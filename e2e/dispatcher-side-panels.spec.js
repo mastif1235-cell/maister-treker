@@ -51,11 +51,12 @@ test('generated sheet fixture: restored B:E side panels and thick ticket separat
       const [title,...rest]=text.split('\n'),bold=kind==='ticket'||kind==='day'||/Header$/.test(kind);
       const content=bold?'<strong>'+escape(title)+'</strong>'+(rest.length?'\n'+escape(rest.join('\n')):''):escape(text);
       const separator=c===2&&b.kind==='ticket'&&i>0&&layout.rows[i-1].kind==='ticket';
-      cells+='<td data-column="'+c+'" class="'+kind+(separator?' ticket-separator':'')+'" style="background:'+(colors[kind]||'#FFFFFF')+'" rowspan="'+(s?s.height:1)+'" colspan="'+(s?s.width:1)+'">'+content+'</td>';
+      const dayEnd=c===2&&layout.dayFrames.some(f=>f.row+f.height-1===r);
+      cells+='<td data-column="'+c+'" class="'+kind+(separator?' ticket-separator':'')+(dayEnd?' day-end':'')+'" style="background:'+(colors[kind]||'#FFFFFF')+'" rowspan="'+(s?s.height:1)+'" colspan="'+(s?s.width:1)+'">'+content+'</td>';
     }
     return '<tr data-row="'+r+'" style="height:'+height+'px">'+cells+'</tr>';
   }).join('');
-  const html='<html lang="uk"><meta charset="utf-8"><style>body{margin:12px;font:11pt/18px Arial;color:#243447}p{font:12px Arial;margin:0 0 8px}table{border-collapse:collapse;table-layout:fixed;width:1138px}td{box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px;vertical-align:top;border:1px solid #E0D2B3}td.gutter{padding:0;border:0}td.monthHeader{text-align:center;vertical-align:middle;font-size:16pt;border:3px solid #233E69}td.day,td[class$="Header"]{font-size:12pt;border-bottom:3px solid #233E69}td.ticket-separator{border-top:3px solid #233E69}td.daily,td.weekly,td.weeklyContinuation,td.monthly{border:3px solid #233E69}td.statsSpacer{border-top:0}th{font:12px Arial;color:#666;background:#eee;padding:5px}</style><p>Візуальний тестовий макет B:E — не live Google Sheet</p><table><colgroup><col style="width:8px"><col style="width:380px"><col span="3" style="width:250px"></colgroup><thead><tr><th>A</th><th>B · Наряди</th><th>C · День</th><th>D · Тиждень</th><th>E · Місяць</th></tr></thead><tbody>'+body+'</tbody></table></html>';
+  const html='<html lang="uk"><meta charset="utf-8"><style>body{margin:12px;font:11pt/18px Arial;color:#243447}p{font:12px Arial;margin:0 0 8px}table{border-collapse:collapse;table-layout:fixed;width:1138px}td{box-sizing:border-box;white-space:pre-wrap;overflow-wrap:anywhere;padding:7px;vertical-align:top;border:1px solid #E0D2B3}td.gutter{padding:0;border:0}td.monthHeader{text-align:center;vertical-align:middle;font-size:16pt;border:3px solid #233E69}td.day,td[class$="Header"]{font-size:12pt;border:3px solid #233E69}td.ticket,td.statsSpacer,td[data-column="3"]:not(.empty),td[data-column="4"]:not(.empty),td[data-column="5"]:not(.empty){border-left:3px solid #233E69;border-right:3px solid #233E69}td.day-end{border-bottom:3px solid #233E69}td.ticket-separator{border-top:3px solid #233E69}td.daily,td.weekly,td.weeklyContinuation,td.monthly{border:3px solid #233E69}td.statsSpacer{border-top:0}th{font:12px Arial;color:#666;background:#eee;padding:5px}</style><p>Візуальний тестовий макет B:E — не live Google Sheet</p><table><colgroup><col style="width:8px"><col style="width:380px"><col span="3" style="width:250px"></colgroup><thead><tr><th>A</th><th>B · Наряди</th><th>C · День</th><th>D · Тиждень</th><th>E · Місяць</th></tr></thead><tbody>'+body+'</tbody></table></html>';
   await page.setViewportSize({width:1200,height:900});
   await page.setContent(html);
   await expect(page.locator('td.ticket')).toHaveCount(7);
@@ -70,6 +71,16 @@ test('generated sheet fixture: restored B:E side panels and thick ticket separat
   expect(daily.y).toBe(weekly.y);expect(weekly.y).toBe(monthly.y);
   expect(await page.locator('td.ticket-separator').count()).toBe(3);
   expect(await page.locator('td.ticket-separator').first().evaluate(n=>getComputedStyle(n).borderTopWidth)).toBe('3px');
+  for(const selector of ['td.day','td.monthHeader','td.dailyHeader','td.weeklyHeader','td.weeklyContinuationHeader','td.monthlyHeader','td.daily','td.weekly','td.weeklyContinuation','td.monthly']){
+    const borders=await page.locator(selector).evaluateAll(nodes=>nodes.map(n=>{const s=getComputedStyle(n);return [s.borderTopWidth,s.borderRightWidth,s.borderBottomWidth,s.borderLeftWidth];}));
+    for(const border of borders)expect(border).toEqual(['3px','3px','3px','3px']);
+  }
+  for(const column of [2,3,4,5]){
+    const borders=await page.locator('td[data-column="'+column+'"]:not(.monthHeader):not(.topSpacer):not(.empty)').evaluateAll(nodes=>nodes.map(n=>{const s=getComputedStyle(n);return [s.borderLeftWidth,s.borderRightWidth,s.borderLeftColor,s.borderRightColor];}));
+    for(const border of borders)expect(border).toEqual(['3px','3px','rgb(35, 62, 105)','rgb(35, 62, 105)']);
+  }
+  await expect(page.locator('td.day-end')).toHaveCount(layout.dayFrames.length);
+  for(const border of await page.locator('td.day-end').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n).borderBottomWidth)))expect(border).toBe('3px');
   expect(await page.locator('table').innerText()).not.toMatch(/(?:-\s*){4}/);
   const ticketText=await page.locator('td.ticket').first().innerText();
   expect(ticketText.indexOf('Матеріали:')).toBeLessThan(ticketText.indexOf('Оплата:'));
