@@ -10,7 +10,52 @@
    REPORT_ALLOWED_ORIGINS (comma-separated origins), MT_DISPATCHER_HMAC_SECRET.
    No other client secrets. */
 var REPORT_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
-var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status'];
+var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status','report_receipt'];
+// Durable write-ahead receipts, separate from ticket schema and CacheService.
+// No payload/PII: identity/hash, exact item ACKs and commit evidence only.
+function reportReceiptJournal_(store){
+  var headers=['request_key','request_hash','result_json','evidence_json','state','created_at'];
+  var sheet=store.ss.getSheetByName('_DispatcherReceipts');
+  if(sheet&&JSON.stringify(sheet.getRange(1,1,1,6).getValues()[0])!==JSON.stringify(headers))throw new Error('REPORT_RECEIPT_SCHEMA');
+  var last=sheet?sheet.getLastRow():1,values=sheet&&last>1?sheet.getRange(2,1,last-1,6).getValues():[];
+  return {pending:function(){return values.map(function(v,i){return {v:v,row:i+2};}).filter(function(r){return r.v[4]==='PREPARED';});},
+    find:function(id){var key='request:'+id,found=values.map(function(v,i){return {v:v,row:i+2};}).filter(function(r){return r.v[0]===key;});if(found.length>1)throw new Error('REPORT_RECEIPT_CONFLICT');return found[0]||null;},
+    prepare:function(id,hash,result,evidence){
+      var resultJson=JSON.stringify(result),evidenceJson=JSON.stringify(evidence);
+      if(last>=100001||resultJson.length>45000||evidenceJson.length>45000)throw new Error('REPORT_RECEIPT_CAPACITY');
+      // Lazy creation: checking a missing receipt before nonce verification
+      // must be read-only, including for a rejected replayed nonce.
+      if(!sheet){sheet=store.ss.insertSheet('_DispatcherReceipts');sheet.getRange(1,1,1,6).setValues([headers]);sheet.hideSheet();}
+      if(sheet.getMaxRows()<last+1)sheet.insertRowsAfter(sheet.getMaxRows(),1);
+      var row=last+1;sheet.getRange(row,1,1,6).setNumberFormat('@').setValues([['request:'+id,hash,resultJson,evidenceJson,'PREPARED',new Date().toISOString()]]);
+      SpreadsheetApp.flush();return {v:['request:'+id,hash,resultJson,evidenceJson,'PREPARED'],row:row};
+    },commit:function(receipt){sheet.getRange(receipt.row,5).setValue('COMMITTED');SpreadsheetApp.flush();}};
+}
+function reportEvidence_(rows,result){return result.items.filter(function(i){return i.code==='OK';}).map(function(i){var r=rows.find(function(r){return r.ticket_id===i.ticket_id;});return {ticket_id:r.ticket_id,source_version:r.source_version,source_hash:r.source_hash,sync_status:r.sync_status,deleted_at:r.deleted_at||''};});}
+function reportEvidenceMatches_(rows,evidence){return evidence.every(function(e){var r=rows.find(function(r){return r.ticket_id===e.ticket_id;});return !!r&&r.source_version===e.source_version&&r.source_hash===e.source_hash&&r.sync_status===e.sync_status&&(r.deleted_at||'')===e.deleted_at;});}
+function reportRecoverPrepared_(store,request,evidence){
+  if(reportEvidenceMatches_(store.rows,evidence))return;
+  // A write that definitely did not persist may be resumed, but only for the
+  // originally successful items and with the original stale-version fences.
+  // Never re-evaluate rejected siblings or overwrite a newer/conflicting row.
+  var dtos=request.action==='report_upsert'?[request.ticket]:request.tickets||[];
+  try{
+    evidence.forEach(function(e){
+      if(reportEvidenceMatches_(store.rows,[e]))return;
+      if(e.deleted_at){
+        if(!(request.deletes||[]).some(function(d){return d.ticket_id===e.ticket_id&&d.source_version===e.source_version;}))throw new Error('REPORT_COMMIT_UNRESOLVED');
+        MTDispatcherReportCore.remove(store.rows,e.ticket_id,e.source_version,e.deleted_at);
+      }else{
+        var dto=dtos.find(function(d){return d&&d.ticket_id===e.ticket_id&&d.source_version===e.source_version&&d.source_hash===e.source_hash;});
+        if(!dto||reportHash_(dto)!==e.source_hash)throw new Error('REPORT_COMMIT_UNRESOLVED');
+        MTDispatcherReportCore.upsert(store.rows,dto);
+      }
+    });
+    if(!reportEvidenceMatches_(store.rows,evidence))throw new Error('REPORT_COMMIT_UNRESOLVED');
+  }catch(_){throw new Error('REPORT_COMMIT_UNRESOLVED');}
+  reportWrite_(store);SpreadsheetApp.flush();
+}
+function reportBestEffort_(c,code,fn){try{fn();return true;}catch(_){try{console.warn(JSON.stringify({scope:'dispatcher-report',code:code}));c.p.setProperty('REPORT_LAST_ERROR',code);}catch(ignored){}return false;}}
 function reportConfig_(){
   var p=PropertiesService.getScriptProperties(),email=String(p.getProperty('REPORT_ALLOWED_EMAIL')||'').toLowerCase();
   var id=String(p.getProperty('REPORT_SPREADSHEET_ID')||''),origins=String(p.getProperty('REPORT_ALLOWED_ORIGINS')||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
@@ -134,15 +179,45 @@ function reportDispatch(request){
 // BEFORE the first mutation, so a same-request retry answers from the receipt
 // cache while a reused nonce can never execute twice.
 function reportExecute_(c,request,envelopeNonce){
-  if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
+  if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild','proof'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
   if(typeof request.request_id!=='string'||!/^[a-zA-Z0-9-]{8,80}$/.test(request.request_id))throw new Error('INVALID_REQUEST_ID');
   if(JSON.stringify(request).length>500000)throw new Error('INVALID_SIZE');
   var cache=CacheService.getScriptCache(),cached=cache.get('REPORT_ACK_'+request.request_id);
   var requestHash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(request),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
   if(cached){var ack=JSON.parse(cached);if(ack.hash!==requestHash)throw new Error('INVALID_REQUEST_ID');return ack.result;}
+  var store=reportStore_(c),journal=null,receipt=null;
+  if(!['report_status','report_receipt','report_rebuild'].includes(request.action)){
+    journal=reportReceiptJournal_(store);receipt=journal.find(request.request_id);
+    if(receipt){
+      if(receipt.v[1]!==requestHash)throw new Error('INVALID_REQUEST_ID');
+      var saved=JSON.parse(receipt.v[2]),evidence=JSON.parse(receipt.v[3]);
+      if(receipt.v[4]!=='COMMITTED'){
+        // A process may have stopped between the data flush and receipt marker.
+        // Only exact durable evidence can promote a PREPARED receipt to ACK.
+        reportRecoverPrepared_(store,request,evidence);
+        journal.commit(receipt);
+        if(request.rebuild!==false)reportBestEffort_(c,'REPORT_RENDER_FAILED',function(){reportRender_(store.ss,store.rows);});
+      }
+      return saved;
+    }
+  }
   if(envelopeNonce!==undefined&&!reportConsumeNonce_(envelopeNonce))throw new Error('AUTH_FAILED');
+  // New requests pass nonce verification before ANY receipt mutation. No
+  // newer data mutation may destroy unresolved write-ahead commit evidence.
+  if(journal)journal.pending().forEach(function(pending){
+    if(!reportEvidenceMatches_(store.rows,JSON.parse(pending.v[3])))throw new Error('REPORT_COMMIT_UNRESOLVED');
+    journal.commit(pending);
+  });
   var minute=Math.floor(Date.now()/60000),rateKey='REPORT_RATE_'+minute,count=Number(cache.get(rateKey)||0);if(count>=40)throw new Error('RATE_LIMITED');cache.put(rateKey,String(count+1),120);
-  var store=reportStore_(c),result={ok:true,code:'OK',inserted:0,updated:0,unchanged:0,deleted:0,rejected:0,privacy_violations:0,errors:0},now=new Date().toISOString();
+  var result={ok:true,code:'OK',inserted:0,updated:0,unchanged:0,deleted:0,rejected:0,privacy_violations:0,errors:0},now=new Date().toISOString();
+  if(request.action!=='report_receipt'&&request.proof!==undefined)throw new Error('INVALID_ACTION');
+  if(request.action==='report_receipt'){
+    var proof=request.proof;
+    if(request.ticket||request.tickets||request.deletes||request.rebuild!==undefined||!proof||Object.keys(proof).sort().join(',')!=='source_hash,source_version,ticket_id'||typeof proof.ticket_id!=='string'||!/^[\p{L}\p{N}_:.@-]{1,128}$/u.test(proof.ticket_id)||!Number.isSafeInteger(proof.source_version)||!/^[a-f0-9]{64}$/.test(proof.source_hash))throw new Error('INVALID_PROOF');
+    var row=store.rows.find(function(r){return r.ticket_id===proof.ticket_id;});
+    if(!row||row.deleted_at||row.sync_status!=='SYNCED'||row.source_version!==proof.source_version||row.source_hash!==proof.source_hash)return {ok:false,code:'REPORT_RECEIPT_MISMATCH'};
+    return {ok:true,code:'OK',ticket_id:row.ticket_id,source_version:row.source_version,source_hash:row.source_hash,sync_status:'SYNCED'};
+  }
   if(request.action==='report_status'){
     if(request.ticket||request.tickets||request.deletes||request.rebuild!==undefined)throw new Error('INVALID_ACTION');
     result={ok:true,code:'OK',active_count:store.rows.filter(function(r){return !r.deleted_at;}).length,deleted_count:store.rows.filter(function(r){return !!r.deleted_at;}).length,rejected_count:Number(c.p.getProperty('REPORT_REJECTED_COUNT')||0),last_sync:c.p.getProperty('REPORT_LAST_SYNC')||'',last_rebuild:c.p.getProperty('REPORT_LAST_REBUILD')||'',last_error:c.p.getProperty('REPORT_LAST_ERROR')||'',pending_retry:0};
@@ -185,11 +260,24 @@ function reportExecute_(c,request,envelopeNonce){
     }
     items.forEach(function(dto){applyItem(dto,'upsert');});
     deletes.forEach(function(dto){applyItem(dto,'delete');});
-    if(result.inserted+result.updated+result.unchanged+result.deleted){reportWrite_(store);c.p.setProperty('REPORT_LAST_SYNC',now);}
     if(result.errors)result.code='PARTIAL';
-    if(request.action==='report_rebuild'||request.rebuild!==false){reportRender_(store.ss,store.rows);c.p.setProperty('REPORT_LAST_REBUILD',now);}
-    if(result.errors)result.items.filter(function(item){return item.code!=='OK';}).forEach(function(item){reportAudit_(c,item.code);});
-    else c.p.deleteProperty('REPORT_LAST_ERROR');
+    if(journal)receipt=journal.prepare(request.request_id,requestHash,result,reportEvidence_(store.rows,result));
+    if(result.inserted+result.updated+result.unchanged+result.deleted){reportWrite_(store);SpreadsheetApp.flush();}
+    // No success ACK before the write/flush. A durable PREPARED record allows
+    // exact recovery even if marking COMMITTED fails after the data commit.
+    if(journal)reportBestEffort_(c,'REPORT_RECEIPT_MARK_FAILED',function(){journal.commit(receipt);});
+    if(journal)reportBestEffort_(c,'REPORT_ACK_CACHE_FAILED',function(){cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);});
+    reportBestEffort_(c,'REPORT_METADATA_FAILED',function(){
+      if(result.inserted+result.updated+result.unchanged+result.deleted)c.p.setProperty('REPORT_LAST_SYNC',now);
+      if(result.errors)result.items.filter(function(item){return item.code!=='OK';}).forEach(function(item){reportAudit_(c,item.code);});
+      else c.p.deleteProperty('REPORT_LAST_ERROR');
+    });
+    if(request.action==='report_rebuild'||request.rebuild!==false){
+      var rendered=reportBestEffort_(c,'REPORT_RENDER_FAILED',function(){reportRender_(store.ss,store.rows);});
+      if(rendered)reportBestEffort_(c,'REPORT_METADATA_FAILED',function(){c.p.setProperty('REPORT_LAST_REBUILD',now);});
+      else if(request.action==='report_rebuild')return {ok:false,code:'REPORT_RENDER_FAILED'};
+    }
+    if(journal)return result;
   }
   cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
 }
