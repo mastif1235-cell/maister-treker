@@ -79,6 +79,15 @@ function read(){return JSON.parse(raw);}
   q=reset();for(const t of tickets)q.enqueueUpsert(t);
   const send=deps.send;deps.send=async()=>({ok:true,items:Array(3).fill({ticket_id:'valid-2650',action:'upsert',source_version:1000,status:'synced',code:'OK'})});
   await q.flush();assert.equal(q.status().unresolved,3);assert.equal(read().receipts.length,0);deps.send=send;
+  for(const bad of ['missing','foreign','action','version','empty']){
+    q=reset();for(const t of tickets)q.enqueueUpsert(t);
+    deps.send=async()=>{const items=tickets.map(t=>({ticket_id:t.id,action:'upsert',source_version:1000,status:'synced',code:'OK'}));
+      if(bad==='missing')items.pop();if(bad==='foreign')items[0].ticket_id='foreign';if(bad==='action')items[0].action='delete';if(bad==='version')items[0].source_version++;return bad==='empty'?{ok:true}:{ok:true,items};};
+    await q.flush();assert.equal(q.status().unresolved,3,bad);assert.equal(read().receipts.length,0,bad);deps.send=send;
+  }
+  q=reset();for(const t of tickets)q.enqueueUpsert(t);
+  deps.send=async(...args)=>{const response=await send(...args);return {...response,items:[...response.items].reverse()};};
+  await q.flush();assert.equal(q.status().unresolved,0,'ACK order is not significant; exact identities are');deps.send=send;
   // Monotonic version fence, including unchanged-content updates: an older
   // different-content edit must never overwrite a newer accepted version.
   cache.clear();rows=[{...dto('fenced',10),deleted_at:'',sync_status:'SYNCED'}];

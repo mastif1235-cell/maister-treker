@@ -68,6 +68,36 @@ function harness(){
   // No data write when the durable intent cannot be stored.
   const unavailable=harness();unavailable.c.reportReceiptJournal_=()=>({find:()=>null,pending:()=>[],prepare:()=>{throw Error('journal unavailable');}});
   assert.throws(()=>unavailable.execute(unavailable.request([unavailable.dto('no-write')])),/journal unavailable/);assert.equal(unavailable.writes(),0);
+  // A failed data flush never returns success or publishes a COMMITTED ACK.
+  // Subsequent exact persisted evidence may safely recover the original ACK.
+  const flush=harness(),flushReq=flush.request([flush.dto('flush-failure')]);let flushes=0;
+  flush.c.SpreadsheetApp.flush=()=>{if(++flushes===2)throw Error('flush unavailable');};
+  assert.throws(()=>flush.execute(flushReq),/flush unavailable/);
+  assert(!flush.cache.has('REPORT_ACK_'+flushReq.request_id));
+  assert.equal(flush.journal.sheets.get('_DispatcherReceipts').cells[1][4],'PREPARED');
+  flush.c.SpreadsheetApp.flush=()=>{};
+  assert.equal(flush.execute(flushReq).items[0].status,'synced');assert.equal(flush.writes(),1);
+  // Property/cache failure after commit is secondary, like rendering failure.
+  const metadata=harness(),metadataReq=metadata.request([metadata.dto('metadata')]),mc=metadata.c.reportConfig_();
+  mc.p.setProperty=()=>{throw Error('PRIVATE-CANARY metadata failure');};
+  metadata.c.CacheService.getScriptCache=()=>({get:k=>metadata.cache.get(k),put:(k,v)=>{if(k.startsWith('REPORT_ACK_'))throw Error('cache unavailable');metadata.cache.set(k,v);}});
+  const metadataAck=metadata.c.reportExecute_(mc,metadataReq);assert.equal(metadataAck.items[0].status,'synced');assert.equal(metadata.writes(),1);
+  metadata.cache.clear();assert.equal(JSON.stringify(metadata.execute(metadataReq)),JSON.stringify(metadataAck));assert.equal(metadata.writes(),1);
+  // Restart the GAS globals while keeping only isolated sheet/property state.
+  const persistedRead=metadata.c.reportStore_,persistedWrite=metadata.c.reportWrite_,render=metadata.c.reportRender_;
+  vm.runInContext(read('gas/dispatcher-report/DispatcherReport.gs'),metadata.c);
+  metadata.c.reportStore_=persistedRead;metadata.c.reportWrite_=persistedWrite;metadata.c.reportRender_=render;
+  assert.equal(JSON.stringify(metadata.execute(metadataReq)),JSON.stringify(metadataAck));assert.equal(metadata.writes(),1);
+  for(const defect of ['duplicate','schema','capacity']){
+    const broken=harness(),original=broken.request([broken.dto('journal-original')]);broken.execute(original);broken.cache.clear();
+    const sheet=broken.journal.sheets.get('_DispatcherReceipts');
+    if(defect==='duplicate')sheet.cells.push([...sheet.cells[1]]);
+    if(defect==='schema')sheet.cells[0][0]='wrong-header';
+    if(defect==='capacity')sheet.getLastRow=()=>100001;
+    const before=broken.writes();
+    assert.throws(()=>broken.execute(defect==='duplicate'?original:broken.request([broken.dto('journal-new')])),new RegExp('REPORT_RECEIPT_'+({duplicate:'CONFLICT',schema:'SCHEMA',capacity:'CAPACITY'}[defect])));
+    assert.equal(broken.writes(),before,'journal '+defect+' fails closed before mutation');
+  }
   // Orphan path: only signed read-only proof, exact ID/version/hash/SYNCED,
   // no mutation, only the selected REPORT_INTERNAL_ERROR operation is removed.
   for(const mismatch of ['none','hash','version','status','missing','edited','storage']){

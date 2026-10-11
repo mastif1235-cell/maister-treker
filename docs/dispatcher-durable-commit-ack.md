@@ -1,4 +1,4 @@
-# Dispatcher durable commit ACK — v91.99 / runtime-144
+# Dispatcher durable commit ACK — v92.00 / runtime-145
 
 Candidate only. No production deployment, queue retry, rebuild or real-ticket
 reconciliation has been performed as part of this patch.
@@ -56,16 +56,27 @@ only new candidate requests gain durable journal receipts.
 Ticket `ab60a3df-c5c4-4927-8ee8-7bea835fbd2c`, version `1791703794130`:
 
 - A deliberate operator call to `outbox.reconcileStored(ticketId)` is allowed
-  only for an upsert currently marked `REPORT_INTERNAL_ERROR`.
+  only for an exhausted upsert (`attempts === 3`) with a narrowly allowed
+  transient failure. Android's actual persisted shape is supported: item
+  `error === ''`, with `state.lastError === REPORT_INTERNAL_ERROR`. Attempts
+  alone never authorize recovery; permanent item errors always refuse it.
 - Project the actual local ticket using the exact queued version. Never invent
   its hash from the supplied incident description.
 - Send signed **read-only** `report_receipt` with exact ticket_id/source_version/
   source_hash. This is an HTTP POST read query, NOT a mutation POST.
 - GAS reads and validates the store. It confirms only an active row with exact
   ID, version, content hash and `sync_status === SYNCED`; otherwise mismatch.
-- Client checks every response field and re-projects after the asynchronous
+- Client accepts only the exact six-field proof response with boolean
+  `ok === true`, `code === 'OK'` and exact ID/version/hash/SYNCED. Non-boolean
+  `ok`, unknown/ambiguous fields, arrays and incomplete responses are rejected.
+  It re-projects after the asynchronous
   query. Endpoint/generation, ticket content and exact queue operation must still
   match. Only then persist its local receipt and remove that exact operation.
+- Targeted completion does not call general batch completion. An unrelated
+  inflight request remains identical; a mixed request loses only the exact
+  proven operation, retaining request_id/action/rebuild/timestamp and neighbors.
+  Only the matching sync.expected ID/action/version is acknowledged. Other
+  attempts, errors, receipts and sync entries are unchanged.
 - Storage failure leaves the operation recoverable. No new version, enqueue,
   mutation, global retry or AUTO setting change occurs. The method is not wired
   into startup/lifecycle/retry; operator approval/use is a later separate step.
@@ -74,12 +85,27 @@ ID/version alone is NEVER sufficient. A changed projection/hash needs review,
 not overwrite or optimistic completion. The real STALE_VERSION, both earlier
 false-positive items and historical INVALID_DTO operations are untouched.
 
+## Final safety fix regressions
+
+`dispatcher-orphan-safety.test.js` covers strict boolean/shape rejection,
+the real Android persisted shape, no/unrelated/mixed/last inflight, exact sync
+accounting, permanent-error refusal, supersession/edit/config races and local
+persistence failure. Browser E2E repeats real-shape and strict/inflight checks
+using isolated in-memory storage, never the user's PWA profile.
+
+`dispatcher-commit-ack.test.js` additionally covers data flush failure, secondary
+property/cache failures, journal duplicate/schema/capacity failure and fresh GAS
+globals with persisted journal evidence. `dispatcher-per-item.test.js` rejects
+missing/foreign/wrong-action/wrong-version/empty ACKs and accepts reordered exact
+per-item ACKs. The durable server architecture and formatter are unchanged by
+this final client safety patch.
+
 ## Release / rollback
 
 Review/CI first. A later separately authorized coordinated rollout must publish
 the dispatcher GAS candidate before using `report_receipt` from the new client.
 Keep existing Web App URL, properties/secret and private spreadsheet permissions.
-Frontend candidate: v91.99 / runtime-144 / maister-treker-v74-runtime-144,
+Frontend candidate: v92.00 / runtime-145 / maister-treker-v75-runtime-145,
 runtime-proof eight assets. No Worker/AI/legacy/Telegram/maps/backup changes.
 
 Rollback points: frontend main before this patch; current dispatcher GAS v12.
