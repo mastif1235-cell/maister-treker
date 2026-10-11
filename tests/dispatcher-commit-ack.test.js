@@ -18,6 +18,9 @@ function harness(){
   return {c,cache,properties,journal,dto,execute,request,deps,config,tickets,rows:()=>rows,writes:()=>writes,renders:()=>renders,writeFailure:v=>writeFails=v,renderFailure:v=>renderFails=v,seed:v=>raw=JSON.stringify(v),raw:()=>JSON.parse(raw),q:()=>c.MTDispatcherReportClient.createOutbox(deps)};
 }
 (async()=>{
+  const replayDenied=harness();replayDenied.c.reportConsumeNonce_=()=>false;
+  assert.throws(()=>replayDenied.c.reportExecute_(replayDenied.c.reportConfig_(),replayDenied.request([replayDenied.dto('denied')]),'reused-nonce'),/AUTH_FAILED/);
+  assert.equal(replayDenied.journal.sheets.size,0,'nonce rejection cannot even create receipt metadata');assert.equal(replayDenied.writes(),0);
   // A/B: successful data commit is independent of render; durable replay
   // survives cache eviction and never calls the mutation writer again.
   const h=harness();h.renderFailure(true);
