@@ -6,6 +6,7 @@ const c={Date,Map,Set,JSON,URL,console,PropertiesService:{getScriptProperties:()
 vm.createContext(c);
 for(const f of ['js/dispatcher-report-core.js','gas/dispatcher-report/DispatcherReport.gs','js/dispatcher-report-client.js'])vm.runInContext(fs.readFileSync(f,'utf8'),c);
 c.reportStore_=()=>({rows:structuredClone(rows),ss:{}});c.reportWrite_=s=>{rows=structuredClone(s.rows);writes++;};c.reportRender_=()=>{};
+const receiptSheets=require('./helpers/dispatcher-receipt-sheet.cjs')(c);
 function dto(id,v,note=''){
   const d=Object.fromEntries(c.MTDispatcherReportCore.FIELDS.map(k=>[k,'']));
   Object.assign(d,{ticket_id:id,work_date:'2026-10-10',work_time:'21:36',work_type:'Ремонт',work_category:'repair',amount:0,total:0,onu_used:0,onu_replacement:0,router_used:0,payment_cash:0,payment_cashless:0,payment_free_amount:0,payment_free_count:1,updated_at:'2026-10-10T00:00:00.000Z',source_version:v,dispatcher_comment:note});
@@ -18,7 +19,7 @@ const deps={storage:{getItem:()=>raw,setItem:(_k,v)=>{raw=v;}},settings:()=>({di
   lastResponse=c.reportExecute_(c.reportConfig_(),r);
   if(mode==='lost'){mode='';throw new Error('GOOGLE_CONNECTION_REQUIRED');}return lastResponse;
 }};
-function reset(){rows=[];writes=0;cache.clear();raw=null;clock=1000;mode='';return c.MTDispatcherReportClient.createOutbox(deps);}
+function reset(){rows=[];writes=0;cache.clear();receiptSheets.clear();raw=null;clock=1000;mode='';return c.MTDispatcherReportClient.createOutbox(deps);}
 function read(){return JSON.parse(raw);}
 (async()=>{
   let q=reset();rows=[{...dto('stale',1000,'different hash'),deleted_at:'',sync_status:'SYNCED'}];

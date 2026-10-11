@@ -85,6 +85,29 @@
         return true;
       }catch(_){return false;}
     }
+    // Explicit operator-only orphan recovery. Never scheduled by lifecycle,
+    // retry or AUTO. The signed server query is read-only; ID/version alone
+    // are insufficient. Recheck projection and queue identity after the await.
+    async function reconcileStored(ticketId){
+      if(running)return false;
+      const o=state.operations.find(o=>o.id===String(ticketId));
+      if(!o||o.action!=='upsert'||o.error!=='REPORT_INTERNAL_ERROR')return false;
+      const settings=deps.settings(),url=endpoint(settings.dispatcherReportEndpoint),epoch=generation;
+      const t=deps.ticket(o.id);if(!t)return false;
+      const dto=await deps.dto(t,o.version);
+      if(dto.ticket_id!==o.id||dto.source_version!==o.version||!/^[a-f0-9]{64}$/.test(dto.source_hash))return false;
+      const proof={ticket_id:o.id,source_version:o.version,source_hash:dto.source_hash};
+      const result=await deps.send(url,{action:'report_receipt',proof,request_id:deps.requestId()});
+      if(!result?.ok||result.code!=='OK'||result.ticket_id!==proof.ticket_id||result.source_version!==proof.source_version||result.source_hash!==proof.source_hash||result.sync_status!=='SYNCED')return false;
+      if(running||epoch!==generation||url!==endpoint(deps.settings().dispatcherReportEndpoint)||!state.operations.includes(o))return false;
+      const current=deps.ticket(o.id);if(!current)return false;
+      const projected=await deps.dto(current,o.version);
+      if(running||epoch!==generation||url!==endpoint(deps.settings().dispatcherReportEndpoint)||!state.operations.includes(o)||projected.ticket_id!==proof.ticket_id||projected.source_version!==proof.source_version||projected.source_hash!==proof.source_hash)return false;
+      const previous=JSON.parse(JSON.stringify(state));
+      completeSent([o],result);
+      if(!durable){state=previous;state.lastError='LOCAL_QUEUE_UNAVAILABLE';deps.changed?.(status());return false;}
+      return true;
+    }
     // AUTO permission is checked again at execution time (including timers and
     // after async projection). MANUAL permission is scoped to explicit IDs.
     const autoIntent=()=>({reason:'auto'});
@@ -258,7 +281,7 @@
       dates.sort();const acknowledged=live.filter(t=>delivery(t.id).state==='sent').length;
       return {source_tickets:live.length,projected_tickets:projected,acknowledged_tickets:acknowledged,missing_receipts:live.length-acknowledged,earliest_source:dates[0]||'',latest_source:dates.at(-1)||'',projection_errors:errors,...status()};
     }
-    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure,reconcile});
+    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure,reconcile,reconcileStored});
   }
   // v91.95 direct transport (the normal send path): the request is wrapped in
   // the SAME signed MT-SYNC-HMAC-V3 envelope the legacy ticket/shift sync uses
@@ -414,7 +437,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-143',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-144',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -467,7 +490,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v73-runtime-143'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-143');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v74-runtime-144'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-144');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -488,7 +511,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v73-runtime-143'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-143');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v74-runtime-144'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-144');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}

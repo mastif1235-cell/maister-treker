@@ -8,6 +8,7 @@ const DISPATCHER_SECRET='dispatcher-only-secret-0123456789abcdef';
 properties.set('REPORT_ALLOWED_EMAIL',email);properties.set('REPORT_SPREADSHEET_ID','only-report-target');properties.set('REPORT_ALLOWED_ORIGINS','https://mastif1235-cell.github.io');properties.set('MT_DISPATCHER_HMAC_SECRET',DISPATCHER_SECRET);
 c.reportStore_=()=>({rows:structuredClone(rows),ss:{},sheet:{}});c.reportWrite_=store=>{rows=structuredClone(store.rows);writes++;};c.reportRender_=()=>{rebuilds++;};
 const core=c.MTDispatcherReportCore;
+require('./helpers/dispatcher-receipt-sheet.cjs')(c);
 function dto(id='test-1',version=1){const d=Object.fromEntries(core.FIELDS.map(k=>[k,'']));Object.assign(d,{ticket_id:id,work_date:'2026-09-30',work_time:'12:30',work_type:'Ремонт',work_category:'repair',amount:0,total:0,onu_used:1,onu_replacement:1,router_used:0,payment_cash:0,payment_cashless:0,payment_free_amount:0,payment_free_count:1,updated_at:'2026-10-06T00:00:00.000Z',source_version:version});d.source_hash=c.reportHash_(d);return d;}
 let tests=0,seq=0;function test(name,fn){cache.clear();fn();tests++;}function call(action,extra={},id){return c.reportDispatch({action,...extra,request_id:id||'synthetic-'+(++seq)});}
 // Signed direct path (the PRODUCTION mutation channel): the same canonical
@@ -47,6 +48,15 @@ test('4. bridge reportDispatch mutation DENY: Google identity grants no write ca
   assert.equal(JSON.stringify(rows),oldRows,'store unchanged');
 });
 test('5. bridge report_status/read-only PASS',()=>{const r=call('report_status');assert(r.ok);assert.equal(typeof r.active_count,'number');});
+test('signed orphan proof is read-only, hash-bound and unavailable through bridge',()=>{
+  const d=dto('proof-only',100);assert(direct('report_upsert',{ticket:d}).ok);
+  const before=writes,proof={ticket_id:d.ticket_id,source_version:d.source_version,source_hash:d.source_hash};
+  assert.equal(direct('report_receipt',{proof}).sync_status,'SYNCED');
+  assert.equal(direct('report_receipt',{proof:{...proof,source_hash:'f'.repeat(64)}}).code,'REPORT_RECEIPT_MISMATCH');
+  assert.equal(call('report_receipt',{proof}).code,'REPORT_DIRECT_TRANSPORT_REQUIRED');
+  assert.equal(post(envelope('report_receipt',{action:'report_receipt',proof,request_id:'invalid-proof-auth'},{secret:'invalid-secret'})).code,'AUTH_FAILED');
+  assert.equal(writes,before);
+});
 test('437 historical rows survive paged sync, repeated rebuild and tombstones',()=>{
   const baseline=structuredClone(rows);cache.clear();rows=[];
   const history=Array.from({length:437},(_,i)=>{const d=dto('history-'+i,10);d.work_date=i<200?'2026-02-19':i<400?'2026-07-15':'2026-10-08';d.source_hash=c.reportHash_(d);return d;});
