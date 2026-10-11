@@ -65,10 +65,11 @@ test('browser DTO is privacy whitelist, local data unchanged, independent of leg
   const result=await page.evaluate(async()=>{
     const t={id:'report-e2e',date:'06.10.2026',time:'12:10',type:'Ремонт',city:'Тест',address:'Тестова 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',note:'Замінено ONU, geoLat: 48.45, geoLng: 35.05, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY',geoLat:48.45,geoLng:35.05,signal:'-18'};
     const before=JSON.stringify(t),{buildDTO}=await import('/js/dispatcher-report-projection.mjs'),dto=await buildDTO(t,MTDispatcherReportCore);
-    return{unchanged:JSON.stringify(t)===before,dto,fields:MTDispatcherReportCore.FIELDS};
+    return{unchanged:JSON.stringify(t)===before,dto,fields:MTDispatcherReportCore.ALL_FIELDS};
   });
   expect(result.unchanged).toBe(true);expect(Object.keys(result.dto)).toEqual(result.fields);expect(result.dto.onu_used).toBe(1);expect(result.dto.onu_replacement).toBe(1);expect(result.dto.mac_onu).toBe('AA:BB:CC:DD:EE:FF');
   expect(result.dto.dispatcher_comment).toBe('Замінено ONU, працює');
+  expect(JSON.parse(result.dto.materials_json)).toEqual([{label:'ONU',quantity:1,unit:'шт.'}]);
   const payload=JSON.stringify(result.dto);for(const value of ['PRIVATE-CANARY','PHONE-CANARY','geoLat','geoLng','48.45','35.05','dBm'])expect(payload).not.toContain(value);
 });
 test('offline boot retains new modules and local save without report backend',async({page,context,appEnv})=>{

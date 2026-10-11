@@ -32,6 +32,6 @@ assert.match(html,/id="f_city" name="mt-f-a"[^>]+autocomplete="one-time-code"/);
 assert.match(domain,/options\.placement\?'tools-point-editor-overlay':'tools-point-editor-modal'/);
 assert.match(styles,/tools-point-editor-modal #modalBody\{[^}]*padding:2px 6px[^}]*overflow-x:hidden/);
 assert.match(styles,/tools-point-editor-footer\{position:sticky/);
-assert.match(app,/v92\.01 · 2026-10-11/);assert.match(sw,/maister-treker-v76-runtime-146/);
+assert.match(app,/v92\.03 · 2026-10-11/);assert.match(sw,/maister-treker-v78-runtime-148/);
 
 console.log('PASS v85 viewer, Telegram media refs, profile coordinate flow, autofill semantics and mobile editor regressions');
