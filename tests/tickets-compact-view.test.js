@@ -58,6 +58,13 @@ const fullRenderer=t=>`<div class="ticket-card" data-id="${t.id}"><button class=
 }
 
 const html=read('index.html'),sw=read('sw.js'),domain=read('js/tickets-domain.js'),bindings=read('js/tickets-bindings.js');
+const css=read('styles.css');
+for(const [selector,row,column] of [['.ticket-compact-meta',1,1],['.ticket-compact-sum',1,2],['.ticket-compact-address',2,1],['.ticket-compact-card .ticket-view-expand-btn',2,2]]){
+  const rule=css.slice(css.indexOf(selector+'{')+selector.length+1).split('}')[0];
+  assert(rule.includes('grid-row:'+row+';')&&rule.includes('grid-column:'+column+';'),'shared slot '+selector);
+  assert(!rule.includes('position:absolute'),'no absolute compact slot');
+}
+assert(!css.includes('.ticket-compact-other'),'no special note action layout');
 assert.ok(html.indexOf('js/tickets-render.js')<html.indexOf('js/tickets-compact-view.js'));
 assert.ok(html.indexOf('js/tickets-compact-view.js')<html.indexOf('js/tickets-domain.js'));
 assert.ok(sw.includes("'./js/tickets-compact-view.js'"));
@@ -66,6 +73,6 @@ assert.ok(html.indexOf('class="ticket-view-actions"')<html.indexOf('id="quickDia
 assert.ok(domain.includes('visible.map(t=>MTTicketCompactView.renderItem(t,renderTicketCard))'),'the same filtered/sorted list selects either presentation');
 assert.ok(bindings.includes("document.getElementById('showVizitkaBtn').addEventListener('click', showVizitka)"),'existing Vizitka action remains bound');
 assert.ok(!read('js/tickets-compact-view.js').includes('function renderTicketCard('),'full renderer is not duplicated');
-assert.ok(read('app.js').includes("APP_VERSION = 'v92.05 · 2026-10-12'"));
-assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v80-runtime-150'"));
+assert.ok(read('app.js').includes("APP_VERSION = 'v92.06 · 2026-10-12'"));
+assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v81-runtime-151'"));
 console.log('PASS compact ticket mode state, safe markup, renderer reuse, wiring and release pins');

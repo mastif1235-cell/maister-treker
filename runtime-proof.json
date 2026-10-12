@@ -1,12 +1,12 @@
 {
-  "cacheName": "maister-treker-v80-runtime-150",
+  "cacheName": "maister-treker-v81-runtime-151",
   "assets": {
     "./index.html": "40391f13017c0be7051f2036f7b9e60b4159a5a2ffaec0836f101299b37edc76",
-    "./app.js": "a1ec49907f9d0696ce36fc636017d0bc55c81e6273c876cc0230387a23f06f7c",
-    "./styles.css": "a0eeb3124c91115ea8ae8710f4f114796803ae4dd92583bf11b305e53691212d",
-    "./js/tickets-render.js": "c179b3e4d2bc4d03518a86b6ad7adbdcb8b5447b8cb223e9891883f0c9998725",
-    "./js/tickets-compact-view.js": "a8f51abb8a9e230eac7e9b04a678be67c15f3aa5e5b6fbe0686e5dd0e8cd08b0",
-    "./js/dispatcher-report-client.js": "560c1c747fd48eae8910908d9c2fd59d48aa5ddd52081eefe9b6199b22ff579b",
+    "./app.js": "60d20cb523bbb38c3f5b9ee3954faeb370ab461f46365a2d7cb230bfd066c0c3",
+    "./styles.css": "81443434bf891278679523a64e50ce2ddb6e0c5532dc2c6f3c47755040a997b1",
+    "./js/tickets-render.js": "af331bf7c617e73706f2f39952e26c8b3a1902b9d7cafe393b90db2bb778bd2f",
+    "./js/tickets-compact-view.js": "42dbd9ec428618aa3f64fccc0a5916efb1352f85cd13e4b4e08a683ffce8df2f",
+    "./js/dispatcher-report-client.js": "f956d89237e462091d9609240baa37398d31bfc5b5032c1f2f9b4e7230037744",
     "./js/dispatcher-report-core.js": "014b84b46778f9ba32ce8e972fd8f4240f787db5d675171792aae3e7d8450e01",
     "./js/dispatcher-report-projection.mjs": "16a58eb24a3442e8012cb421e3e9af09c149109f59c5ccfe0a150c9eaad0e948"
   }
