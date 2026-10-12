@@ -220,6 +220,22 @@ test('Інше rich report block contains only title/note without financial line
   for(const word of ['Разом','Сума','Оплата'])assert(!ticket.text.includes(word));
 });
 
+test('deployable GAS bundle includes merged note no-money renderer, normal totals unchanged',()=>{
+  const bundled={...c,SpreadsheetApp:spreadsheetAppMock()};
+  vm.createContext(bundled);
+  vm.runInContext(require('../scripts/build-dispatcher-report.cjs').bundle(),bundled);
+  const before=JSON.stringify(rows),oldWrites=writes;
+  for(const type of ['Інше','Ремонт','Підключення']){
+    const mock=renderSheet();
+    bundled.reportRender_(mock.ss,[{...dto('bundle-note'),work_type:type,dispatcher_comment:'Bundled note renderer regression'}]);
+    const ticket=mock.calls.find(x=>x.method==='setRichTextValues').args[0].flat().find(x=>x.text.startsWith('📋 Наряд'));
+    assert(ticket.text.includes(type)&&ticket.text.includes('Bundled note renderer regression'));
+    if(type==='Інше')for(const word of ['Разом','Сума','Оплата'])assert(!ticket.text.includes(word),'bundle omits '+word);
+    else assert.equal((ticket.text.match(/💰 Разом:/gu)||[]).length,1,'normal bundled ticket keeps one total');
+  }
+  assert.equal(JSON.stringify(rows),before);assert.equal(writes,oldWrites,'bundle render is presentation only');
+});
+
 test('closed month/day/panel perimeters and continuous B|C|D|E thick edges',()=>{
   c.SpreadsheetApp=spreadsheetAppMock();
   const input=[dto('a'),dto('b'),{...dto('other-day'),work_date:'2026-10-01'},{...dto('other-month'),work_date:'2026-09-30'}];

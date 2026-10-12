@@ -68,5 +68,20 @@
     "runtime": "runtime-150",
     "fingerprint": "248f6e061b69d600f6a190d975752571ba5eeaad25d423780a04976658c2d6ba",
     "assets": 8
+  },
+  "maister-treker-v81-runtime-151": {
+    "runtime": "runtime-151",
+    "fingerprint": "5275a6e99e96470d500edc2f6116cc58e4562c0e918bbbc56ad3ee502f23ccca",
+    "assets": 8
+  },
+  "maister-treker-v82-runtime-152": {
+    "runtime": "runtime-152",
+    "fingerprint": "ffe0ce389032c304a9c8197d5c2f66ffca2dfb1715338569c7777210b875e70a",
+    "assets": 8
+  },
+  "maister-treker-v83-runtime-153": {
+    "runtime": "runtime-153",
+    "fingerprint": "27636f4279a973ca7957e1049f971cc484cad7aa69ab936cf0017a23a706a22c",
+    "assets": 8
   }
 }

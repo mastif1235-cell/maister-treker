@@ -65,12 +65,33 @@ test('browser DTO is privacy whitelist, local data unchanged, independent of leg
   const result=await page.evaluate(async()=>{
     const t={id:'report-e2e',date:'06.10.2026',time:'12:10',type:'Ремонт',city:'Тест',address:'Тестова 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',note:'Замінено ONU, geoLat: 48.45, geoLng: 35.05, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY',geoLat:48.45,geoLng:35.05,signal:'-18'};
     const before=JSON.stringify(t),{buildDTO}=await import('/js/dispatcher-report-projection.mjs'),dto=await buildDTO(t,MTDispatcherReportCore);
-    return{unchanged:JSON.stringify(t)===before,dto,fields:MTDispatcherReportCore.ALL_FIELDS};
+    return{unchanged:JSON.stringify(t)===before,dto,fields:[...MTDispatcherReportCore.FIELDS,'materials_json'],allowed:MTDispatcherReportCore.ALL_FIELDS};
   });
   expect(result.unchanged).toBe(true);expect(Object.keys(result.dto)).toEqual(result.fields);expect(result.dto.onu_used).toBe(1);expect(result.dto.onu_replacement).toBe(1);expect(result.dto.mac_onu).toBe('AA:BB:CC:DD:EE:FF');
   expect(result.dto.dispatcher_comment).toBe('Замінено ONU, працює');
+  expect(Object.keys(result.dto).every(k=>result.allowed.includes(k))).toBe(true);
+  for(const field of ['contract_number','service_fee','tariff_amount'])expect(result.dto).not.toHaveProperty(field);
   expect(JSON.parse(result.dto.materials_json)).toEqual([{label:'ONU',quantity:1,unit:'шт.'}]);
   const payload=JSON.stringify(result.dto);for(const value of ['PRIVATE-CANARY','PHONE-CANARY','geoLat','geoLng','48.45','35.05','dBm'])expect(payload).not.toContain(value);
+});
+
+test('connection DTO keeps structured breakdown, canonical total and dispatcher note last',async({page,appEnv})=>{
+  await gotoApp(page,appEnv.url);
+  const result=await page.evaluate(async()=>{
+    const ticket={id:'connection-browser-only',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',baseCallFee:999,callFee:500,tariff:300,city:'Тестове',address:'Тестова 4',connectMasters:['Майстер'],equipment:[{label:'ONU',price:1700},{label:'Роутер',price:2300}],cables:[],payment:'Готівка',sum:4800,note:'Публічна нотатка'};
+    const before=JSON.stringify(ticket),{buildDTO}=await import('/js/dispatcher-report-projection.mjs');
+    const dto=await buildDTO({...ticket,macAddress:'AA:BB:CC:DD:EE:FF'},MTDispatcherReportCore,100);
+    const text=MTDispatcherReportCore.render([dto]).layout.rows.find(b=>b.kind==='ticket').text;
+    return {dto,text,unchanged:before===JSON.stringify(ticket)};
+  });
+  expect(result.unchanged).toBe(true);
+  expect(result.dto).toMatchObject({contract_number:'123456',service_fee:500,tariff_amount:300,total:4800,payment_cash:4800,dispatcher_comment:'Публічна нотатка'});
+  let previous=-1;const text=result.text.replace(/[\u00a0\u202f]/g,'');
+  for(const label of ['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','🔢 MAC: AA:BB:CC:DD:EE:FF','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','Диспетчеру:']){
+    const at=text.indexOf(label);expect(at,label).toBeGreaterThan(previous);previous=at;
+  }
+  expect(text.endsWith('Публічна нотатка')).toBe(true);
+  expect(text).not.toContain('🏙');expect(text.split('Тестове').length-1).toBe(1);
 });
 test('offline boot retains new modules and local save without report backend',async({page,context,appEnv})=>{
   await gotoApp(page,appEnv.url);await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
