@@ -42,7 +42,7 @@ test('structured contacts are hash-bound data: leading + phone allowed, formula/
   }
   const tampered={...d,client_phone:'+380000000002'};
   assert.equal(direct('report_upsert',{ticket:tampered}).items[0].code,'HASH_MISMATCH');
-  for(const note of ['phone: +380000000001','Зателефонувати +380000000001']){
+  for(const note of ['phone: +380000000001','Зателефонувати +380000000001','123 45 67','123-456-789','phone: 1234567']){
     const bad={...dto('note-phone'),dispatcher_comment:note};bad.source_hash=c.reportHash_(bad);
     assert.equal(direct('report_upsert',{ticket:bad}).items[0].code,'PRIVACY_REJECTED');
   }

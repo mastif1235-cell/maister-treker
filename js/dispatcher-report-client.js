@@ -455,7 +455,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-154',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-155',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -508,7 +508,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v84-runtime-154'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-154');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v85-runtime-155'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-155');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -529,7 +529,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v84-runtime-154'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-154');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v85-runtime-155'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-155');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}

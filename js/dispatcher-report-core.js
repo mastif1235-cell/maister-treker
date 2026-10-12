@@ -68,7 +68,7 @@
   function sanitizeComment(value){
     // Only public notes: keep material labels/counters and their sanitizer
     // unchanged. Unlabelled phones cannot bypass the contact allowlist.
-    return sanitize(value).replace(/(?<![\p{L}\d])\+?\d(?:[ ()-]*\d){9,14}(?![\p{L}\d])/gu,'').replace(/[ \t]{2,}/g,' ').trim();
+    return sanitize(value).replace(/(?<![\p{L}\d])\+?\d(?:[ ()-]*\d){6,14}(?![\p{L}\d])/gu,'').replace(/[ \t]{2,}/g,' ').trim();
   }
   function validate(dto){
     if(!dto||typeof dto!=='object'||Array.isArray(dto))fail('INVALID_DTO');

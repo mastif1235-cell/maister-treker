@@ -97,7 +97,7 @@ test('structured contacts render in order; free fees omitted without changing sa
   const errors=await gotoApp(page,appEnv.url);
   const result=await page.evaluate(async()=>{
     const {buildDTO}=await import('/js/dispatcher-report-projection.mjs'),core=MTDispatcherReportCore;
-    const ticket={id:'contact-browser-only',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',clientName:'Тестовий Тест',phone:'+380 (00) 000-00-01',city:'Тестове',address:'Тестова 4',macAddress:'AA:BB:CC:DD:EE:FF',connectMasters:['Майстер'],equipment:[{label:'ONU',qty:1,price:800}],callFee:500,tariff:300,payment:'Готівка',sum:1600,note:'Публічна нотатка. phone: +380000000002'};
+    const ticket={id:'contact-browser-only',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',clientName:'Тестовий Тест',phone:'+380 (00) 000-00-01',city:'Тестове',address:'Тестова 4',macAddress:'AA:BB:CC:DD:EE:FF',connectMasters:['Майстер'],equipment:[{label:'ONU',qty:1,price:800}],callFee:500,tariff:300,payment:'Готівка',sum:1600,note:'Публічна нотатка. phone: +380000000002\n123 45 67\n123-456-789\n25 м; 300 грн; 1 шт.; 12:34; 12.10.2026; AA:BB:CC:DD:EE:FF'};
     const before=JSON.stringify(ticket),paid=await buildDTO(ticket,core,100),free=await buildDTO({...ticket,type:'Ремонт',payment:'Безкоштовно',sum:0,callFee:300},core,100);
     const card=d=>core.render([d]).layout.rows.find(r=>r.kind==='ticket').text.replace(/[\u00a0\u202f]/g,'');
     return {paid,free,paidText:card(paid),freeText:card(free),unchanged:before===JSON.stringify(ticket)};
@@ -105,6 +105,8 @@ test('structured contacts render in order; free fees omitted without changing sa
   expect(result.unchanged).toBe(true);expect(result.paid.client_phone).toBe('+380 (00) 000-00-01');
   let at=-1;for(const label of ['Договір','📍','ПІБ:','Телефон:','MAC:','Напарник:','Матеріали:','Підключення — 500','Тариф — 300','Оплата:','Разом: 1600','Диспетчеру:']){const next=result.paidText.indexOf(label);expect(next,label).toBeGreaterThan(at);at=next;}
   expect(result.paidText).not.toContain('380000000002');expect(result.paidText.split(result.paid.client_phone).length-1).toBe(1);
+  expect(result.paidText).not.toContain('123 45 67');expect(result.paidText).not.toContain('123-456-789');
+  expect(result.paidText).toContain('25 м; 300 грн; 1 шт.; 12:34; 12.10.2026; AA:BB:CC:DD:EE:FF');
   expect(result.free).not.toHaveProperty('service_fee');expect(result.freeText).not.toContain('Виклик —');
   expect(result.freeText).toContain('Оплата: Безкоштовно');expect(result.freeText).toContain('Разом: 0 грн');
   expect(result.freeText).toContain('Тариф — 300 грн');expect(result.free.materials_json).toBe(result.paid.materials_json);

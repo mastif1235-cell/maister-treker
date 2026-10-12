@@ -35,6 +35,16 @@ const ordered=(text,parts)=>{let at=-1;for(const part of parts){const next=text.
     assert(!/380|000-00-01/.test(d.dispatcher_comment),'free-text phone removed');assert.equal(d.client_phone,ticket.phone);
     assert.equal(card(d).split(ticket.phone).length-1,1);
   }
+  for(const note of ['+380 (67) 123-45-67','123 45 67','123-456-789','Телефон: +380 (67) 123-45-67','phone: 1234567']){
+    assert.equal(core.sanitizeComment(note),'','7–15 digit free-text phone removed');
+    const d=await buildDTO({...ticket,note},core,100);
+    assert.equal(d.dispatcher_comment,'');assert.equal(d.client_phone,ticket.phone);
+    assert.equal(card(d).split(ticket.phone).length-1,1,'structured phone still renders exactly once');
+  }
+  const numericNote='25 м; 300 грн; 1 шт.; 12:34; 12.10.2026; AA:BB:CC:DD:EE:FF';
+  assert.equal(core.sanitizeComment(numericNote),numericNote,'quantities/money/time/date/MAC intact');
+  assert.equal((await buildDTO({...ticket,note:numericNote},core,100)).dispatcher_comment,numericNote);
+  for(const value of ['a1234567b','1234567890123456'])assert.equal(core.sanitizeComment(value),value,'retain original token boundaries');
   const raw=await buildDTO({...ticket,clientName:'',phone:'',cloudImported:true,note:undefined,content:'👤 ПІБ: Тестовий Тест\n📞 Телефон: +380000000001\n📝 phone: +380000000001'},core,100);
   assert(!('client_name' in raw));assert(!('client_phone' in raw));assert(!raw.dispatcher_comment.includes('380'));
   const other=await buildDTO({...ticket,type:'Інше',otherNote:'Лише нотатка'},core,100);

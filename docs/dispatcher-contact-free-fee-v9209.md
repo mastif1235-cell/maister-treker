@@ -1,6 +1,6 @@
 # Dispatcher contact / free-service presentation hotfix
 
-Candidate: **v92.09 / runtime-154 / maister-treker-v84-runtime-154**.
+Candidate: **v92.10 / runtime-155 / maister-treker-v85-runtime-155**.
 Base: `45f27f46c27ef68732f9f3a3d7e04ea54f748a8a` (merged PR #93).
 Review only: no production deployment, user-data changes or queue operations.
 
@@ -37,7 +37,9 @@ the existing `_DispatcherData` writer stores cells as text. Arbitrary strings
 still pass the existing formula guard. HMAC/authentication code is unchanged.
 
 Public-note projection retains the previous sanitizer and additionally removes
-unlabelled international-length phone numbers. Incoming signed DTOs cannot
+unlabelled phone-like values with 7–15 digits, allowing spaces, parentheses and
+hyphens while preserving letter/digit token boundaries. Quantities, money,
+dates, times and MAC values remain unchanged. Incoming signed DTOs cannot
 bypass that boundary with a phone in `dispatcher_comment`. This check is only
 on incoming upserts: historical row reads/hashes are not changed or rewritten.
 Material sanitization and material aggregation use the original code.
