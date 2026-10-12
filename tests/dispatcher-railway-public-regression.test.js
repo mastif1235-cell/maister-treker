@@ -23,14 +23,15 @@ const core=require('../js/dispatcher-report-core.js');
     assert.equal(dto.address_display,'Сурсько-Михайлівка, пров. Залізничний, 4');
     // v91.95: quantity + informational line price (raw and structured agree).
     assert.equal(dto.materials_display,'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн');
-    assert.equal(dto.dispatcher_comment,'Тариф: 400 грн\n'+note);
+    assert.equal(dto.dispatcher_comment,note);assert.equal(dto.tariff_amount,400);
     assert.equal(dto.payment_type,'Готівка');assert.equal(dto.payment_cash,3500);
     assert.equal(dto.payment_cashless,0);assert.equal(dto.total,3500);
     if(ticket===publicTicket){assert.equal(dto.onu_used,1);assert.equal(dto.router_used,1);}
     assert.equal(dto.mac_onu,'');
     for(const field of ['phone','macAddress','masterNote','geoLat','geoLng','content','fullDataJson'])assert(!Object.hasOwn(dto,field));
     const text=core.render([dto]).blocks.find(b=>b.kind==='ticket').text;
-    for(const value of ['ONU — 1 шт.','Роутер — 1 шт.','Тариф: 400 грн',note])assert(text.includes(value));
+    for(const value of ['ONU — 1 шт.','Роутер — 1 шт.','Тариф — 400 грн',note])assert(text.includes(value));
+    assert(text.endsWith(note),'public note is the final optional block');
     assert(text.replace(/\s/g,'').includes('3500грн'));
     assert(!text.includes('MAC:'));assert(!text.includes('Нульовий матеріал'));assert(!text.includes('UTP'));
     assert.equal(JSON.stringify(ticket),original,'presentation must not mutate the ticket');

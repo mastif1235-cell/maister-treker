@@ -11,12 +11,17 @@
    No other client secrets. */
 var REPORT_LEGACY_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
 // Append only: every existing column and legacy content hash stays unchanged.
-var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json']);
+var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json','contract_number','service_fee','tariff_amount']);
 function reportStoredHeaders_(sheet){
   if(JSON.stringify(sheet.getRange(1,1,1,REPORT_LEGACY_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_LEGACY_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
-  var extra=sheet.getMaxColumns()>REPORT_LEGACY_HEADERS.length?sheet.getRange(1,REPORT_HEADERS.length,1,1).getValues()[0][0]:'';
-  if(extra&&extra!=='materials_json')throw new Error('REPORT_SCHEMA_CONFLICT');
-  return extra?REPORT_HEADERS:REPORT_LEGACY_HEADERS;
+  var headers=REPORT_LEGACY_HEADERS.slice(),gap=false;
+  for(var i=REPORT_LEGACY_HEADERS.length;i<REPORT_HEADERS.length;i++){
+    var value=sheet.getMaxColumns()>i?sheet.getRange(1,i+1,1,1).getValues()[0][0]:'';
+    if(!value){gap=true;continue;}
+    if(gap||value!==REPORT_HEADERS[i])throw new Error('REPORT_SCHEMA_CONFLICT');
+    headers.push(value);
+  }
+  return headers;
 }
 function reportExtendHeaders_(sheet){
   if(sheet.getLastRow()>0)reportStoredHeaders_(sheet);
@@ -100,7 +105,7 @@ function reportStore_(c){
   var headers=reportStoredHeaders_(sheet);
   if(sheet.getLastRow()>10001)throw new Error('REPORT_CAPACITY');
   var values=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,headers.length).getValues():[];
-  var rows=values.map(function(v){var r={};headers.forEach(function(k,i){if(k!=='materials_json'||v[i]!=='')r[k]=v[i];});return r;});
+  var rows=values.map(function(v){var r={};headers.forEach(function(k,i){if(MTDispatcherReportCore.FIELDS.includes(k)||k==='deleted_at'||k==='sync_status'||v[i]!=='')r[k]=v[i];});return r;});
   var seen=new Set();rows.forEach(function(r){if(seen.has(r.ticket_id))throw new Error('DUPLICATE_STORED_ID');seen.add(r.ticket_id);if(!r.deleted_at){var dto={};MTDispatcherReportCore.ALL_FIELDS.forEach(function(k){if(r[k]!==undefined)dto[k]=r[k];});MTDispatcherReportCore.validate(dto);if(reportHash_(dto)!==dto.source_hash)throw new Error('HASH_MISMATCH');}});
   return {ss:ss,sheet:sheet,rows:rows};
 }

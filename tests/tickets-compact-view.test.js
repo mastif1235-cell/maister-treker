@@ -73,6 +73,6 @@ assert.ok(html.indexOf('class="ticket-view-actions"')<html.indexOf('id="quickDia
 assert.ok(domain.includes('visible.map(t=>MTTicketCompactView.renderItem(t,renderTicketCard))'),'the same filtered/sorted list selects either presentation');
 assert.ok(bindings.includes("document.getElementById('showVizitkaBtn').addEventListener('click', showVizitka)"),'existing Vizitka action remains bound');
 assert.ok(!read('js/tickets-compact-view.js').includes('function renderTicketCard('),'full renderer is not duplicated');
-assert.ok(read('app.js').includes("APP_VERSION = 'v92.06 · 2026-10-12'"));
-assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v81-runtime-151'"));
+assert.ok(read('app.js').includes("APP_VERSION = 'v92.07 · 2026-10-12'"));
+assert.ok(sw.includes("CACHE_NAME = 'maister-treker-v82-runtime-152'"));
 console.log('PASS compact ticket mode state, safe markup, renderer reuse, wiring and release pins');

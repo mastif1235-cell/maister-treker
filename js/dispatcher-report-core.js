@@ -9,7 +9,8 @@
   const SENSITIVE=/(?:geo(?:lat|lng|link|location)?|latitude|longitude|(?<![\p{L}])(?:lat|lng|location)(?![\p{L}])|координат[ыи]|геолокац[іяи]|ONU\s*signal|onuSignal|signal(?:_before|_after|\s+before|\s+after)?|optical\s+(?:level|power)|сигнал\s*(?:onu|ону)|dBm|https?:\/\/|www\.)/iu;
   const MONEY_MAX=1e9;
   const MATERIAL_FIELD='materials_json';
-  const ALL_FIELDS=Object.freeze([...FIELDS,MATERIAL_FIELD]);
+  const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount']);
+  const ALL_FIELDS=Object.freeze([...FIELDS,MATERIAL_FIELD,...PRESENTATION_FIELDS]);
   function fail(code){const e=new Error(code);e.code=code;throw e;}
   function materialJSON(entries,aggregate=false){
     const grouped=new Map();
@@ -78,6 +79,15 @@
       }
     }
     if(Object.prototype.hasOwnProperty.call(dto,MATERIAL_FIELD)){readMaterials(dto.materials_json);out.materials_json=dto.materials_json;}
+    for(const k of PRESENTATION_FIELDS){
+      if(!Object.prototype.hasOwnProperty.call(dto,k))continue;
+      const v=dto[k];
+      if(k==='contract_number'){
+        if(typeof v!=='string'||!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{0,79}$/u.test(v))fail('INVALID_CONTRACT');
+        if(PRIVATE.test(v)||SENSITIVE.test(v))fail('PRIVACY_REJECTED');
+      }else if(typeof v!=='number'||!Number.isFinite(v)||v<=0||v>MONEY_MAX)fail('INVALID_NUMBER');
+      out[k]=v;
+    }
     if(!/^[\p{L}\p{N}_:.@-]{1,128}$/u.test(out.ticket_id))fail('INVALID_ID');
     if(dateKey(out.work_date)!==out.work_date)fail('INVALID_DATE');timeKey(out.work_time);
     if(!['connection','repair','other'].includes(out.work_category))fail('INVALID_CATEGORY');
@@ -125,9 +135,12 @@
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
     if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment].filter(Boolean).join('\n');
-    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
+    const structured=r.work_category==='connection'||r.work_category==='repair';
+    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
       r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
-      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
+      structured&&r.service_fee>0&&'🛠 '+(r.work_category==='connection'?'Підключення':'Виклик')+' — '+money(r.service_fee),
+      structured&&r.tariff_amount>0&&'💎 Тариф — '+money(r.tariff_amount),
+      r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,(r.work_category!=='connection'||r.total>0)&&'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
   function render(rows){
     const data=sorted(rows),days=group(data,r=>r.work_date),weeks=group(data,r=>weekKey(r.work_date)),months=group(data,r=>r.work_date.slice(0,7)),blocks=[];

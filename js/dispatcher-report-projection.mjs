@@ -35,8 +35,10 @@ export function reportPresentation(ticket,core){
   const header=raw?field(/^\s*📋\s*ЗАЯВКА:\s*(ПІДКЛЮЧЕННЯ|РЕМОНТ)\s*$/u):'';
   const type=header==='РЕМОНТ'?'Ремонт':header==='ПІДКЛЮЧЕННЯ'?'Підключення':String(ticket.type||'');
   const payment=String(ticket.payment||'')||(raw?field(/^\s*💳\s*Оплата:\s*(Готівка|Безготівка|Безкоштовно|Змішана)\s*$/u):'');
-  const tariff=Number(ticket.tariff)>0?'Тариф: '+Number(ticket.tariff)+' грн':raw?field(/^\s*💎\s*(Тариф:\s*\d+(?:[.,]\d+)?\s*грн)\s*$/u):'';
-  return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:[tariff,core.sanitize(publicBackupText(note,ticket.masterNote))].filter(Boolean).join('\n'),type,payment,
+  // Preserve only the existing exact app-labelled raw-import tariff fallback,
+  // now in its dedicated field rather than contaminating the public note.
+  const tariff=Number(ticket.tariff)>0?Number(ticket.tariff):raw?Number(field(/^\s*💎\s*Тариф:\s*(\d+(?:[.,]\d+)?)\s*грн\s*$/u).replace(',','.')):0;
+  return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:core.sanitize(publicBackupText(note,ticket.masterNote)),type,payment,tariff,
     city:core.sanitize(ticket.city)|| (raw?field(/^\s*🏙️?\s*Місто:\s*(.+)$/u):''),address:core.sanitize(ticket.address)|| (raw?field(/^\s*📍\s*Адреса:\s*(.+)$/u):'')};
 }
 export function projectTicket(ticket,core,now=Date.now()){
@@ -63,6 +65,22 @@ export function projectTicket(ticket,core,now=Date.now()){
     onu_used:quantity('onu'),onu_replacement:quantity('onu','replace'),router_used:quantity('router'),payment_cash:cash,payment_cashless:card,
     // Free amount is the saved monetary amount, not a guessed inventory price.
     payment_free_amount:free?total:0,payment_free_count:free?1:0,updated_at:new Date(now).toISOString(),source_version:now,source_hash:''};
+  if(category==='connection'||category==='repair'){
+    const contract=String(ticket.contractNumber??'').trim();
+    // Keep structured identity intact; validate rather than sanitizing private
+    // fragments into a different contract number. No extraction from notes.
+    if(contract)dto.contract_number=contract;
+    // saveTicket persists the effective fee in callFee. baseCallFee is only
+    // the calculator input and must never revive a waived/missing saved fee.
+    for(const [field,value] of [['service_fee',ticket.callFee],['tariff_amount',ticket.tariff]]){
+      if(value!==undefined&&value!==null&&value!==''){
+        const amount=Number(value);
+        if(!Number.isFinite(amount)||amount<0)throw new Error('INVALID_NUMBER');
+        if(amount>0)dto[field]=amount;
+      }
+    }
+    if(dto.tariff_amount===undefined&&presentation.tariff>0)dto.tariff_amount=presentation.tariff;
+  }
   // Optional hash-bound material usage, independent of display/price strings.
   // Historical raw imports retain the existing physical-counter fallback.
   if(Array.isArray(ticket.equipment)||Array.isArray(ticket.cables)){
