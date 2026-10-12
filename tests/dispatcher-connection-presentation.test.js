@@ -14,7 +14,22 @@ const ordered=(s,parts)=>{let previous=-1;for(const p of parts){const at=s.index
   assert.equal(d.dispatcher_comment,ticket.note);assert(!d.dispatcher_comment.includes('Тариф'));
   assert.equal(d.total,4800);assert.equal(d.payment_cash,4800);assert.equal(d.payment_cashless,0);
   const text=card(d);
+  assert(!text.includes('🏙'));assert.equal(text.split('Тестове').length-1,1,'city appears only once in full address');
+  assert(card({...d,address_display:''}).includes('🏙 Тестове'),'city-only fallback');
+  assert(!card({...d,address_display:'',city:''}).includes('🏙'),'empty city fallback omitted');
   ordered(text,['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','📝 Диспетчеру:']);
+  assert(!text.includes('🔢 MAC:'),'absent MAC omitted');
+  const mac='AA:BB:CC:DD:EE:FF';
+  for(const type of ['Підключення','Ремонт']){
+    const value=await buildDTO({...ticket,type,macAddress:mac},core,100),s=card(value);
+    ordered(s,['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','🔢 MAC: '+mac,type==='Ремонт'?'Виклик — 500':'Підключення — 500','Тариф — 300','Оплата:','Разом:','Диспетчеру:']);
+    assert.equal(s.split('🔢 MAC:').length-1,1);assert(s.endsWith(ticket.note));assert(!s.includes('🏙'));
+    assert(card({...value,address_display:''}).includes('🏙 Тестове'));
+    if(type==='Ремонт')assert(!s.includes('Підключення —'));
+  }
+  const hostileOther=card({...d,work_type:'Інше',mac_onu:mac});
+  assert(hostileOther.endsWith(ticket.note));
+  for(const label of ['MAC:','Договір','Тариф','Оплата','Разом','Матеріали:'])assert(!hostileOther.includes(label));
   assert(text.endsWith(ticket.note),'dispatcher comment is always final');
   for(const type of ['Підключення','Ремонт']){
     const value=await buildDTO({...ticket,type},core,100),s=card(value);

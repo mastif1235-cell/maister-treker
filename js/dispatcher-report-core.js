@@ -136,7 +136,7 @@
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
     if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment].filter(Boolean).join('\n');
     const structured=r.work_category==='connection'||r.work_category==='repair';
-    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
+    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.address_display?'📍 '+r.address_display:r.city&&'🏙 '+r.city,r.partner_display&&'👷 Напарник: '+r.partner_display,
       r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
       structured&&r.service_fee>0&&'🛠 '+(r.work_category==='connection'?'Підключення':'Виклик')+' — '+money(r.service_fee),
       structured&&r.tariff_amount>0&&'💎 Тариф — '+money(r.tariff_amount),

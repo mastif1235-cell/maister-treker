@@ -42,9 +42,9 @@ assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:t
 assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:{...tampered,'./js/dispatcher-report-client.js':'1'.repeat(64)},identity}),/RELEASE_IDENTITY_CHANGED/,'the rule covers the report client itself');
 
 // 5. The required remedy — a NEW cache/runtime for changed bytes — passes.
-const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v83-runtime-153',assets:tampered,identity});
+const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v84-runtime-154',assets:tampered,identity});
 assert.equal(bumped.recorded,false,'new cache name is not yet recorded');
-assert.equal(bumped.runtime,'runtime-153','bumped release keeps the runtime token');
+assert.equal(bumped.runtime,'runtime-154','bumped release keeps the runtime token');
 
 // 6. Ledger history: every recorded release keeps its own immutable fingerprint pair.
 const names=Object.keys(identity);
@@ -61,7 +61,8 @@ assert.ok(names.includes('maister-treker-v78-runtime-148'),'the priced-material 
 assert.ok(names.includes('maister-treker-v79-runtime-149'),'the note presentation candidate is recorded');
 assert.ok(names.includes('maister-treker-v80-runtime-150'),'the single-toggle note candidate is recorded');
 assert.ok(names.includes('maister-treker-v81-runtime-151'),'the shared compact grid patch remains recorded');
-assert.ok(names.includes('maister-treker-v82-runtime-152'),'the structured dispatcher presentation release is recorded');
+assert.ok(names.includes('maister-treker-v82-runtime-152'),'the structured dispatcher presentation release remains recorded');
+assert.ok(names.includes('maister-treker-v83-runtime-153'),'the final city/MAC presentation cleanup is recorded');
 assert.notEqual(identity['maister-treker-v73-runtime-143'].fingerprint,identity['maister-treker-v67-runtime-137'].fingerprint,'the two releases differ in bytes AND in cache name');
 assert.notEqual(identity['maister-treker-v73-runtime-143'].fingerprint,identity['maister-treker-v68-runtime-138'].fingerprint,'every release keeps its own immutable fingerprint');
 assert.notEqual(identity['maister-treker-v73-runtime-143'].fingerprint,identity['maister-treker-v69-runtime-139'].fingerprint,'v91.95 bytes are fingerprinted under their own cache name');

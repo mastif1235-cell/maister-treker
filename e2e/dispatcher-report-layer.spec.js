@@ -80,17 +80,18 @@ test('connection DTO keeps structured breakdown, canonical total and dispatcher 
   const result=await page.evaluate(async()=>{
     const ticket={id:'connection-browser-only',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',baseCallFee:999,callFee:500,tariff:300,city:'Тестове',address:'Тестова 4',connectMasters:['Майстер'],equipment:[{label:'ONU',price:1700},{label:'Роутер',price:2300}],cables:[],payment:'Готівка',sum:4800,note:'Публічна нотатка'};
     const before=JSON.stringify(ticket),{buildDTO}=await import('/js/dispatcher-report-projection.mjs');
-    const dto=await buildDTO(ticket,MTDispatcherReportCore,100);
+    const dto=await buildDTO({...ticket,macAddress:'AA:BB:CC:DD:EE:FF'},MTDispatcherReportCore,100);
     const text=MTDispatcherReportCore.render([dto]).layout.rows.find(b=>b.kind==='ticket').text;
     return {dto,text,unchanged:before===JSON.stringify(ticket)};
   });
   expect(result.unchanged).toBe(true);
   expect(result.dto).toMatchObject({contract_number:'123456',service_fee:500,tariff_amount:300,total:4800,payment_cash:4800,dispatcher_comment:'Публічна нотатка'});
   let previous=-1;const text=result.text.replace(/[\u00a0\u202f]/g,'');
-  for(const label of ['Договір №123456','📍','Напарник:','Матеріали:','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','Диспетчеру:']){
+  for(const label of ['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','🔢 MAC: AA:BB:CC:DD:EE:FF','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','Диспетчеру:']){
     const at=text.indexOf(label);expect(at,label).toBeGreaterThan(previous);previous=at;
   }
   expect(text.endsWith('Публічна нотатка')).toBe(true);
+  expect(text).not.toContain('🏙');expect(text.split('Тестове').length-1).toBe(1);
 });
 test('offline boot retains new modules and local save without report backend',async({page,context,appEnv})=>{
   await gotoApp(page,appEnv.url);await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
