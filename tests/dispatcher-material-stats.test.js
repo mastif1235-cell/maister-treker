@@ -71,10 +71,10 @@ assert(css.includes('.btn-danger,.ticket-card .tc-sync-badge[data-delivery-state
 assert(fs.readFileSync('js/tickets-render.js','utf8').includes('class="tc-sync-badge" data-dispatcher-ticket-status='),'shared badge base class');
 (async()=>{
   const {buildDTO}=await import('../js/dispatcher-report-projection.mjs');
-  const ticket={id:'projection',date:'11.10.2026',time:'12:00',type:'Ремонт',payment:'Готівка',sum:3500,equipment:[{label:'Роутер 1500',qty:2},{label:'Роутер 2300',qty:3},{label:'ДБЖ',qty:1},{label:'БП',qty:0},{label:'Вимкнений',qty:5,checked:false},{label:'ONU',qty:9,consumption_qty:1},{label:'https://example.invalid',qty:1}],cables:[{label:'UTP',meters:10},{label:'Оптика',meters:0}],masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY'};
+  const ticket={id:'projection',date:'11.10.2026',time:'12:00',type:'Ремонт',payment:'Готівка',sum:3500,equipment:[{label:'Роутер 1500',qty:2},{label:'Роутер 2300',qty:3},{label:'ДБЖ',qty:1},{label:'БП',qty:0},{label:'Вимкнений',qty:5,checked:false},{label:'ONU',qty:9,consumption_qty:1},{label:'https://example.invalid',qty:1}],cables:[{label:'UTP',meters:10},{label:'Оптика',meters:0}],masterNote:'PRIVATE-CANARY',phone:'+380000000001'};
   const snapshot=JSON.stringify(ticket),projected=await buildDTO(ticket,core,10);
   assert.equal(JSON.stringify(ticket),snapshot);assert.deepEqual(usage(core.stats([projected])),{'ONU|шт.':1,'UTP|м':10,'ДБЖ|шт.':1,'Роутер 1500|шт.':2,'Роутер 2300|шт.':3});
-  for(const value of ['PRIVATE-CANARY','PHONE-CANARY','example.invalid','Вимкнений','БП'])assert(!projected.materials_json.includes(value));
+  for(const value of ['PRIVATE-CANARY',ticket.phone,'example.invalid','Вимкнений','БП'])assert(!projected.materials_json.includes(value));
   const imported=await buildDTO({...ticket,id:'imported',cloudImported:true,equipment:[],cables:[]},core,10);assert(!('materials_json' in imported),'legacy raw import retains safe fallback');
   const other=await buildDTO({...ticket,id:'other',type:'Інше',otherNote:'Нотатка'},core,10);assert.equal(other.materials_json,'[]');
   console.log('PASS material stats A-O; projection/privacy/hash; legacy storage append/read/roundtrip; badge style reuse');

@@ -63,7 +63,7 @@ test('parallel dispatcher settings: endpoint validation, no secrets, legacy unch
 test('browser DTO is privacy whitelist, local data unchanged, independent of legacy sync',async({page,appEnv})=>{
   await gotoApp(page,appEnv.url);
   const result=await page.evaluate(async()=>{
-    const t={id:'report-e2e',date:'06.10.2026',time:'12:10',type:'Ремонт',city:'Тест',address:'Тестова 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',note:'Замінено ONU, geoLat: 48.45, geoLng: 35.05, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY',geoLat:48.45,geoLng:35.05,signal:'-18'};
+    const t={id:'report-e2e',date:'06.10.2026',time:'12:10',type:'Ремонт',city:'Тест',address:'Тестова 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',note:'Замінено ONU, geoLat: 48.45, geoLng: 35.05, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',phone:'',geoLat:48.45,geoLng:35.05,signal:'-18'};
     const before=JSON.stringify(t),{buildDTO}=await import('/js/dispatcher-report-projection.mjs'),dto=await buildDTO(t,MTDispatcherReportCore);
     return{unchanged:JSON.stringify(t)===before,dto,fields:[...MTDispatcherReportCore.FIELDS,'materials_json'],allowed:MTDispatcherReportCore.ALL_FIELDS};
   });
@@ -87,12 +87,32 @@ test('connection DTO keeps structured breakdown, canonical total and dispatcher 
   expect(result.unchanged).toBe(true);
   expect(result.dto).toMatchObject({contract_number:'123456',service_fee:500,tariff_amount:300,total:4800,payment_cash:4800,dispatcher_comment:'Публічна нотатка'});
   let previous=-1;const text=result.text.replace(/[\u00a0\u202f]/g,'');
-  for(const label of ['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','🔢 MAC: AA:BB:CC:DD:EE:FF','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','Диспетчеру:']){
+  for(const label of ['Наряд №1','Договір №123456','📍','🔢 MAC: AA:BB:CC:DD:EE:FF','Напарник:','Матеріали:','Підключення — 500 грн','Тариф — 300 грн','Оплата:','Разом: 4800 грн','Диспетчеру:']){
     const at=text.indexOf(label);expect(at,label).toBeGreaterThan(previous);previous=at;
   }
   expect(text.endsWith('Публічна нотатка')).toBe(true);
   expect(text).not.toContain('🏙');expect(text.split('Тестове').length-1).toBe(1);
 });
+test('structured contacts render in order; free fees omitted without changing saved ticket or materials',async({page,appEnv})=>{
+  const errors=await gotoApp(page,appEnv.url);
+  const result=await page.evaluate(async()=>{
+    const {buildDTO}=await import('/js/dispatcher-report-projection.mjs'),core=MTDispatcherReportCore;
+    const ticket={id:'contact-browser-only',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',clientName:'Тестовий Тест',phone:'+380 (00) 000-00-01',city:'Тестове',address:'Тестова 4',macAddress:'AA:BB:CC:DD:EE:FF',connectMasters:['Майстер'],equipment:[{label:'ONU',qty:1,price:800}],callFee:500,tariff:300,payment:'Готівка',sum:1600,note:'Публічна нотатка. phone: +380000000002\n123 45 67\n123-456-789\n25 м; 300 грн; 1 шт.; 12:34; 12.10.2026; AA:BB:CC:DD:EE:FF'};
+    const before=JSON.stringify(ticket),paid=await buildDTO(ticket,core,100),free=await buildDTO({...ticket,type:'Ремонт',payment:'Безкоштовно',sum:0,callFee:300},core,100);
+    const card=d=>core.render([d]).layout.rows.find(r=>r.kind==='ticket').text.replace(/[\u00a0\u202f]/g,'');
+    return {paid,free,paidText:card(paid),freeText:card(free),unchanged:before===JSON.stringify(ticket)};
+  });
+  expect(result.unchanged).toBe(true);expect(result.paid.client_phone).toBe('+380 (00) 000-00-01');
+  let at=-1;for(const label of ['Договір','📍','ПІБ:','Телефон:','MAC:','Напарник:','Матеріали:','Підключення — 500','Тариф — 300','Оплата:','Разом: 1600','Диспетчеру:']){const next=result.paidText.indexOf(label);expect(next,label).toBeGreaterThan(at);at=next;}
+  expect(result.paidText).not.toContain('380000000002');expect(result.paidText.split(result.paid.client_phone).length-1).toBe(1);
+  expect(result.paidText).not.toContain('123 45 67');expect(result.paidText).not.toContain('123-456-789');
+  expect(result.paidText).toContain('25 м; 300 грн; 1 шт.; 12:34; 12.10.2026; AA:BB:CC:DD:EE:FF');
+  expect(result.free).not.toHaveProperty('service_fee');expect(result.freeText).not.toContain('Виклик —');
+  expect(result.freeText).toContain('Оплата: Безкоштовно');expect(result.freeText).toContain('Разом: 0 грн');
+  expect(result.freeText).toContain('Тариф — 300 грн');expect(result.free.materials_json).toBe(result.paid.materials_json);
+  expect(errors).toEqual([]);
+});
+
 test('offline boot retains new modules and local save without report backend',async({page,context,appEnv})=>{
   await gotoApp(page,appEnv.url);await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!window.MTDispatcherReportCore);

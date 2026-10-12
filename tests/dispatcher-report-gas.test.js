@@ -30,6 +30,24 @@ test('hash mismatch rejected before write',()=>{const old=writes;assert.equal(di
 test('arbitrary sheet/legacy action forbidden',()=>{assert.equal(call('save_ticket',{ticket:dto()}).code,'INVALID_ACTION');assert.equal(direct('report_upsert',{ticket:dto(),spreadsheet_id:'legacy'}).code,'INVALID_ACTION');});
 test('formula injection blocked',()=>{const d={...dto(),dispatcher_comment:'=IMPORTXML("https://evil")'};d.source_hash=c.reportHash_(d);assert.equal(direct('report_upsert',{ticket:d}).items[0].code,'PRIVACY_REJECTED');d.dispatcher_comment='=SUM(1,2)';d.source_hash=c.reportHash_(d);assert.equal(direct('report_upsert',{ticket:d}).items[0].code,'FORMULA_REJECTED');});
 test('formula injection in ID blocked',()=>assert.equal(direct('report_upsert',{ticket:dto('@evil')}).items[0].code,'FORMULA_REJECTED'));
+test('structured contacts are hash-bound data: leading + phone allowed, formula/PII bypass denied',()=>{
+  const d={...dto('typed-contacts'),client_name:'Тестовий Тест',client_phone:'+380 (00) 000-00-01'};
+  d.source_hash=c.reportHash_(d);
+  const result=direct('report_upsert',{ticket:d});assert.equal(result.items[0].code,'OK');
+  assert.equal(rows.find(r=>r.ticket_id===d.ticket_id).client_phone,d.client_phone);
+  const oldWrites=writes;
+  for(const phone of ['+380=1','+380000000001\n=1','@evil','https://example.invalid']){
+    const bad={...d,client_phone:phone};bad.source_hash=c.reportHash_(bad);
+    assert.equal(direct('report_upsert',{ticket:bad}).items[0].code,'INVALID_CLIENT_PHONE');
+  }
+  const tampered={...d,client_phone:'+380000000002'};
+  assert.equal(direct('report_upsert',{ticket:tampered}).items[0].code,'HASH_MISMATCH');
+  for(const note of ['phone: +380000000001','Зателефонувати +380000000001','123 45 67','123-456-789','phone: 1234567']){
+    const bad={...dto('note-phone'),dispatcher_comment:note};bad.source_hash=c.reportHash_(bad);
+    assert.equal(direct('report_upsert',{ticket:bad}).items[0].code,'PRIVACY_REJECTED');
+  }
+  assert.equal(writes,oldWrites,'all unsafe contacts/notes rejected before write');
+});
 test('upsert cannot hide delete action',()=>assert.equal(direct('report_upsert',{ticket:dto(),deletes:[{ticket_id:'test-1',source_version:2}]}).code,'INVALID_ACTION'));
 test('status cannot mutate',()=>assert.equal(call('report_status',{deletes:[{ticket_id:'test-1',source_version:2}]}).code,'INVALID_ACTION'));
 test('lock released for rejected requests',()=>assert.equal(locked,false));
