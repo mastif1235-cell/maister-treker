@@ -49,13 +49,13 @@ const loaded=gas.reportStore_({id:'synthetic'}).rows;assert.equal(writes,0);asse
 cells[2][29]=changed.materials_json;assert.throws(()=>gas.reportStore_({id:'synthetic'}),/HASH_MISMATCH/);
 (async()=>{
   const {buildDTO}=await import('../js/dispatcher-report-projection.mjs');
-  const ticket={id:'real-app-shape',date:'11.10.2026',time:'12:00',type:'Ремонт',sum:3500,payment:'Готівка',equipment:[{label:'Роутер',qty:1,price:1500},{label:'Роутер',qty:1,price:2300},{label:'БП',qty:0,price:100}],cables:[{label:'UTP',meters:10,pricePerMeter:10},{label:'UTP',meters:15,pricePerMeter:10},{label:'UTP',meters:20,pricePerMeter:15}],note:'Роутер 9999 грн',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY'};
+  const ticket={id:'real-app-shape',date:'11.10.2026',time:'12:00',type:'Ремонт',sum:3500,payment:'Готівка',equipment:[{label:'Роутер',qty:1,price:1500},{label:'Роутер',qty:1,price:2300},{label:'БП',qty:0,price:100}],cables:[{label:'UTP',meters:10,pricePerMeter:10},{label:'UTP',meters:15,pricePerMeter:10},{label:'UTP',meters:20,pricePerMeter:15}],note:'Роутер 9999 грн',masterNote:'PRIVATE-CANARY',phone:'+380000000001'};
   const snapshot=JSON.stringify(ticket),projected=await buildDTO(ticket,core,10),materials=core.stats([projected]).materials;
   assert.equal(JSON.stringify(ticket),snapshot);assert.deepEqual(materials.filter(m=>m.label==='Роутер'),entries,'real equipment same label/different price');
   assert.deepEqual(materials.filter(m=>m.label==='UTP'),[item('UTP',25,'м',10),item('UTP',20,'м',15)],'pricePerMeter, never total cable cost');
   assert(!materials.some(m=>m.label==='БП'));assert.equal(materials.filter(m=>m.label==='Роутер').reduce((n,m)=>n+m.quantity,0),2,'L no fixed/router double count');
   assert(!projected.materials_json.includes('9999'),'no prices inferred from notes');
-  for(const text of ['PRIVATE-CANARY','PHONE-CANARY','masterNote','phone'])assert(!projected.materials_json.includes(text));
+  for(const text of ['PRIVATE-CANARY',ticket.phone,'masterNote','phone'])assert(!projected.materials_json.includes(text));
   const zero=await buildDTO({...ticket,equipment:[{label:'ONU',qty:1,price:0}],cables:[]},core,10);assert.equal(zero.materials_json,core.materialJSON([item('ONU',1)]));
   console.log('PASS material-price A-M: real app shape, cable variants, zero/no-price, canonical/hash/legacy storage/privacy');
 })().catch(e=>{console.error(e);process.exitCode=1;});

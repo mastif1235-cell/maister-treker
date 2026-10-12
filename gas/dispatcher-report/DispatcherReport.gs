@@ -11,7 +11,7 @@
    No other client secrets. */
 var REPORT_LEGACY_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
 // Append only: every existing column and legacy content hash stays unchanged.
-var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json','contract_number','service_fee','tariff_amount']);
+var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone']);
 function reportStoredHeaders_(sheet){
   if(JSON.stringify(sheet.getRange(1,1,1,REPORT_LEGACY_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_LEGACY_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
   var headers=REPORT_LEGACY_HEADERS.slice(),gap=false;
@@ -270,7 +270,12 @@ function reportExecute_(c,request,envelopeNonce){
         if(action==='upsert'){
           var v=MTDispatcherReportCore.validate(dto);
           if(reportHash_(v)!==v.source_hash)throw new Error('HASH_MISMATCH');
-          Object.keys(v).forEach(function(k){if(typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});
+          // Enforce the new contact boundary for incoming DTOs only. Reading
+          // old stored rows/hashes must not rewrite or reclassify history.
+          if(MTDispatcherReportCore.sanitizeComment(v.dispatcher_comment)!==v.dispatcher_comment)throw new Error('PRIVACY_REJECTED');
+          // validate() has already constrained client_phone to phone digits/
+          // punctuation; its leading + is data, not a general formula escape.
+          Object.keys(v).forEach(function(k){if(k!=='client_phone'&&typeof v[k]==='string'&&/^[\s]*[=+@-]/.test(v[k]))throw new Error('FORMULA_REJECTED');});
           if(store.rows.length>=10000&&!store.rows.some(function(r){return r.ticket_id===v.ticket_id;}))throw new Error('REPORT_CAPACITY');
           outcome=MTDispatcherReportCore.upsert(store.rows,v);
         }else{

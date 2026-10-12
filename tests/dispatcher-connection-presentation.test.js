@@ -7,7 +7,7 @@ const card=d=>core.render([d]).layout.rows.find(b=>b.kind==='ticket').text.repla
 const ordered=(s,parts)=>{let previous=-1;for(const p of parts){const at=s.indexOf(p);assert(at>previous,'missing/order: '+p);previous=at;}};
 (async()=>{
   const {buildDTO}=await import('../js/dispatcher-report-projection.mjs');
-  const ticket={id:'connection-structure',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',baseCallFee:999,callFee:500,tariff:300,city:'Тестове',address:'Тестова 4',connectMasters:['Майстер'],equipment:[{label:'ONU',price:1700},{label:'Роутер',price:2300}],cables:[],payment:'Готівка',sum:4800,note:'Публічне примітка',masterNote:'PRIVATE-CANARY',phone:'PHONE-CANARY',login:'LOGIN-CANARY',password:'PASSWORD-CANARY'};
+  const ticket={id:'connection-structure',date:'12.10.2026',time:'12:34',type:'Підключення',contractNumber:'123456',baseCallFee:999,callFee:500,tariff:300,city:'Тестове',address:'Тестова 4',connectMasters:['Майстер'],equipment:[{label:'ONU',price:1700},{label:'Роутер',price:2300}],cables:[],payment:'Готівка',sum:4800,note:'Публічне примітка',masterNote:'PRIVATE-CANARY',phone:'',login:'LOGIN-CANARY',password:'PASSWORD-CANARY'};
   const before=JSON.stringify(ticket),d=await buildDTO(ticket,core,100);
   assert.equal(JSON.stringify(ticket),before);
   assert.equal(d.contract_number,'123456');assert.equal(d.service_fee,500);assert.equal(d.tariff_amount,300);
@@ -22,7 +22,7 @@ const ordered=(s,parts)=>{let previous=-1;for(const p of parts){const at=s.index
   const mac='AA:BB:CC:DD:EE:FF';
   for(const type of ['Підключення','Ремонт']){
     const value=await buildDTO({...ticket,type,macAddress:mac},core,100),s=card(value);
-    ordered(s,['Наряд №1','Договір №123456','📍','Напарник:','Матеріали:','🔢 MAC: '+mac,type==='Ремонт'?'Виклик — 500':'Підключення — 500','Тариф — 300','Оплата:','Разом:','Диспетчеру:']);
+    ordered(s,['Наряд №1','Договір №123456','📍','🔢 MAC: '+mac,'Напарник:','Матеріали:',type==='Ремонт'?'Виклик — 500':'Підключення — 500','Тариф — 300','Оплата:','Разом:','Диспетчеру:']);
     assert.equal(s.split('🔢 MAC:').length-1,1);assert(s.endsWith(ticket.note));assert(!s.includes('🏙'));
     assert(card({...value,address_display:''}).includes('🏙 Тестове'));
     if(type==='Ремонт')assert(!s.includes('Підключення —'));
@@ -68,14 +68,15 @@ const ordered=(s,parts)=>{let previous=-1;for(const p of parts){const at=s.index
     vm.createContext(gas);vm.runInContext(fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8'),gas);
     const loaded=gas.reportStore_({id:'synthetic'}).rows[0];assert.equal(writes,0);assert.equal(loaded.source_hash,value.source_hash);assert.equal(hash(loaded),value.source_hash);
     gas.reportExtendHeaders_(sheet);assert.equal(JSON.stringify(cells[1]),snapshot,'migration does not rewrite historical rows');
-    assert.deepEqual(cells[0],[...baseHeaders,'materials_json','contract_number','service_fee','tariff_amount']);
+    assert.deepEqual(cells[0],[...baseHeaders,'materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone']);
     assert.equal(gas.reportStore_({id:'synthetic'}).rows[0].source_hash,value.source_hash,'blank optional cells omitted, old hash unchanged');
-    const store=gas.reportStore_({id:'synthetic'});store.rows.push({...d,ticket_id:'new-structured',deleted_at:'',sync_status:'SYNCED'});
+    const store=gas.reportStore_({id:'synthetic'});store.rows.push({...d,ticket_id:'new-structured',client_name:'Тестовий Тест',client_phone:'+380000000001',deleted_at:'',sync_status:'SYNCED'});
     store.rows[1].source_hash=hash(store.rows[1]);gas.reportWrite_(store);
     const reloaded=gas.reportStore_({id:'synthetic'}).rows[1];
-    for(const field of ['contract_number','service_fee','tariff_amount','source_hash'])assert.equal(reloaded[field],store.rows[1][field],'actual GAS write/read: '+field);
+    for(const field of ['contract_number','service_fee','tariff_amount','client_name','client_phone','source_hash'])assert.equal(reloaded[field],store.rows[1][field],'actual GAS write/read: '+field);
     assert(card(reloaded).endsWith(ticket.note));
     cells[2][32]=301;assert.throws(()=>gas.reportStore_({id:'synthetic'}),/HASH_MISMATCH/,'new storage fields are hash-bound');cells[2][32]=300;
+    cells[2][34]='+380000000002';assert.throws(()=>gas.reportStore_({id:'synthetic'}),/HASH_MISMATCH/,'stored contact is hash-bound');cells[2][34]='+380000000001';
     cells[0][baseHeaders.length+1]='unrelated';assert.throws(()=>gas.reportStoredHeaders_(sheet),/REPORT_SCHEMA_CONFLICT/);
   }
   const bundled={console,SpreadsheetApp:{}};vm.createContext(bundled);vm.runInContext(require('../scripts/build-dispatcher-report.cjs').bundle(),bundled);

@@ -38,7 +38,7 @@ export function reportPresentation(ticket,core){
   // Preserve only the existing exact app-labelled raw-import tariff fallback,
   // now in its dedicated field rather than contaminating the public note.
   const tariff=Number(ticket.tariff)>0?Number(ticket.tariff):raw?Number(field(/^\s*💎\s*Тариф:\s*(\d+(?:[.,]\d+)?)\s*грн\s*$/u).replace(',','.')):0;
-  return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:core.sanitize(publicBackupText(note,ticket.masterNote)),type,payment,tariff,
+  return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:core.sanitizeComment(publicBackupText(note,ticket.masterNote)),type,payment,tariff,
     city:core.sanitize(ticket.city)|| (raw?field(/^\s*🏙️?\s*Місто:\s*(.+)$/u):''),address:core.sanitize(ticket.address)|| (raw?field(/^\s*📍\s*Адреса:\s*(.+)$/u):'')};
 }
 export function projectTicket(ticket,core,now=Date.now()){
@@ -70,9 +70,15 @@ export function projectTicket(ticket,core,now=Date.now()){
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.
     if(contract)dto.contract_number=contract;
+    // Explicitly allowed contacts ONLY from saved structured fields. Never
+    // extract contacts from raw imports, notes or dispatcher_comment.
+    const clientName=String(ticket.clientName??'').trim(),clientPhone=String(ticket.phone??'').trim();
+    if(clientName)dto.client_name=clientName;
+    if(clientPhone)dto.client_phone=clientPhone;
     // saveTicket persists the effective fee in callFee. baseCallFee is only
     // the calculator input and must never revive a waived/missing saved fee.
     for(const [field,value] of [['service_fee',ticket.callFee],['tariff_amount',ticket.tariff]]){
+      if(field==='service_fee'&&free)continue;
       if(value!==undefined&&value!==null&&value!==''){
         const amount=Number(value);
         if(!Number.isFinite(amount)||amount<0)throw new Error('INVALID_NUMBER');
@@ -93,7 +99,7 @@ export function projectTicket(ticket,core,now=Date.now()){
   }
   if(type==='Інше'){
     for(const key of ['city','street','house','apartment','address_display','materials_display','mac_onu','partner_display'])dto[key]='';
-    dto.dispatcher_comment=text(publicBackupText(ticket.otherNote||ticket.note||''));
+    dto.dispatcher_comment=core.sanitizeComment(publicBackupText(ticket.otherNote||ticket.note||''));
     dto.onu_used=0;dto.onu_replacement=0;dto.router_used=0;
     if(dto.materials_json!==undefined)dto.materials_json='[]';
   }

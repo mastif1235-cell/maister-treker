@@ -9,7 +9,7 @@
   const SENSITIVE=/(?:geo(?:lat|lng|link|location)?|latitude|longitude|(?<![\p{L}])(?:lat|lng|location)(?![\p{L}])|координат[ыи]|геолокац[іяи]|ONU\s*signal|onuSignal|signal(?:_before|_after|\s+before|\s+after)?|optical\s+(?:level|power)|сигнал\s*(?:onu|ону)|dBm|https?:\/\/|www\.)/iu;
   const MONEY_MAX=1e9;
   const MATERIAL_FIELD='materials_json';
-  const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount']);
+  const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount','client_name','client_phone']);
   const ALL_FIELDS=Object.freeze([...FIELDS,MATERIAL_FIELD,...PRESENTATION_FIELDS]);
   function fail(code){const e=new Error(code);e.code=code;throw e;}
   function materialJSON(entries,aggregate=false){
@@ -65,6 +65,11 @@
       return PRIVATE.test(s)||SENSITIVE.test(s)?'':s;
     }).filter(Boolean).join('\n');
   }
+  function sanitizeComment(value){
+    // Only public notes: keep material labels/counters and their sanitizer
+    // unchanged. Unlabelled phones cannot bypass the contact allowlist.
+    return sanitize(value).replace(/(?<![\p{L}\d])\+?\d(?:[ ()-]*\d){9,14}(?![\p{L}\d])/gu,'').replace(/[ \t]{2,}/g,' ').trim();
+  }
   function validate(dto){
     if(!dto||typeof dto!=='object'||Array.isArray(dto))fail('INVALID_DTO');
     if(Object.keys(dto).some(k=>!ALL_FIELDS.includes(k))||FIELDS.some(k=>!Object.prototype.hasOwnProperty.call(dto,k)))fail('UNKNOWN_OR_MISSING_FIELD');
@@ -85,6 +90,13 @@
       if(k==='contract_number'){
         if(typeof v!=='string'||!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{0,79}$/u.test(v))fail('INVALID_CONTRACT');
         if(PRIVATE.test(v)||SENSITIVE.test(v))fail('PRIVACY_REJECTED');
+      }else if(k==='client_name'){
+        if(typeof v!=='string'||v!==v.trim()||!/^[\p{L}][\p{L}\p{M} .'’ʼ-]{0,159}$/u.test(v))fail('INVALID_CLIENT_NAME');
+        if(PRIVATE.test(v)||SENSITIVE.test(v))fail('PRIVACY_REJECTED');
+      }else if(k==='client_phone'){
+        // A leading + is allowed ONLY in this typed phone field, never in
+        // arbitrary spreadsheet text. Preserve the saved readable spelling.
+        if(typeof v!=='string'||v!==v.trim()||v.length>40||!/^\+?[\d(][\d ()-]*$/.test(v)||!/^(?:\D*\d){7,15}\D*$/.test(v))fail('INVALID_CLIENT_PHONE');
       }else if(typeof v!=='number'||!Number.isFinite(v)||v<=0||v>MONEY_MAX)fail('INVALID_NUMBER');
       out[k]=v;
     }
@@ -136,9 +148,10 @@
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
     if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment].filter(Boolean).join('\n');
     const structured=r.work_category==='connection'||r.work_category==='repair';
-    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.address_display?'📍 '+r.address_display:r.city&&'🏙 '+r.city,r.partner_display&&'👷 Напарник: '+r.partner_display,
-      r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
-      structured&&r.service_fee>0&&'🛠 '+(r.work_category==='connection'?'Підключення':'Виклик')+' — '+money(r.service_fee),
+    return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.address_display?'📍 '+r.address_display:r.city&&'🏙 '+r.city,
+      structured&&r.client_name&&'👤 ПІБ: '+r.client_name,structured&&r.client_phone&&'📞 Телефон: '+r.client_phone,r.mac_onu&&'🔢 MAC: '+r.mac_onu,r.partner_display&&'👷 Напарник: '+r.partner_display,
+      r.materials_display&&'📦 Матеріали:\n'+r.materials_display,
+      structured&&r.payment_type!=='Безкоштовно'&&!r.payment_free_count&&r.service_fee>0&&'🛠 '+(r.work_category==='connection'?'Підключення':'Виклик')+' — '+money(r.service_fee),
       structured&&r.tariff_amount>0&&'💎 Тариф — '+money(r.tariff_amount),
       r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,(r.work_category!=='connection'||r.total>0)&&'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
   }
@@ -218,6 +231,6 @@
     if(row.deleted_at){row.source_version=Math.max(row.source_version,version);return 'unchanged';}if(row.source_version>=version)fail('STALE_VERSION');
     row.deleted_at=now;row.sync_status='DELETED';row.source_version=version;return 'deleted';
   }
-  const api=Object.freeze({FIELDS,ALL_FIELDS,materialJSON,readMaterials,sanitize,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
+  const api=Object.freeze({FIELDS,ALL_FIELDS,materialJSON,readMaterials,sanitize,sanitizeComment,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.MTDispatcherReportCore=api;
 })(typeof globalThis==='object'?globalThis:this);
