@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-148';
+globalThis.MTTicketRendererRevision='runtime-150';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -90,25 +90,24 @@ function ticketWorkContentPresentation(content){
 // імені, телефону, адреси — для картки під "профілем абонента", де ці дані
 // вже показані один раз вище, а не в кожній заявці окремо.
 function renderTicketCard(t, opts={}){
-  if(t.type==='Інше')return `<div class="ticket-card" data-id="${escapeHtml(t.id)}"><div class="tc-head"><div class="tc-type">Інше</div><div class="tc-time">${escapeHtml(t.date)} ${escapeHtml(t.time||'')}</div><div class="tc-sum tabular">${fmtMoney(t.sum)}</div></div><div class="tc-content">${escapeHtml(t.otherNote||t.note||'')}</div><div class="tc-actions"><button type="button" class="btn btn-sm edit-ticket-btn" data-id="${escapeHtml(t.id)}">✏️ Редагувати</button><button type="button" class="btn btn-sm share-ticket-btn" data-id="${escapeHtml(t.id)}">📤 Переслати</button><button type="button" class="btn btn-sm btn-danger delete-ticket-btn" data-id="${escapeHtml(t.id)}">🗑️ Видалити</button></div></div>`;
+  const isOther = t.type === 'Інше';
   const tagsHtml = (t.tags||[]).map(tag=>`<span class="chip">${escapeHtml(tag)}</span>`).join('');
-  const sub = [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
-  const signalText = formatOnuSignal(t.signal);
-  const hasTechnicalDetails=!!(t.macAddress || signalText);
-  const linkedPoints=(typeof toolsNetworkPoints!=='undefined'?toolsNetworkPoints:[]).filter(point=>(Array.isArray(t.networkPointIds)?t.networkPointIds:[]).map(String).includes(String(point.id)));
+  const sub = isOther ? '' : [t.city, t.address].filter(Boolean).join(', '); // NEW: у шапці лишили тільки адресу — ім'я/телефон і так є в повному тексті нижче (Розгорнути)
+  const signalText = isOther ? '' : formatOnuSignal(t.signal);
+  const hasTechnicalDetails=!isOther&&!!(t.macAddress || signalText);
+  const linkedPoints=isOther?[]:(typeof toolsNetworkPoints!=='undefined'?toolsNetworkPoints:[]).filter(point=>(Array.isArray(t.networkPointIds)?t.networkPointIds:[]).map(String).includes(String(point.id)));
   const dayNum = getDailyTicketNumber(t); // NEW: № заявки за день
-  const mapsUrl=typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(t):t.geoLink;
+  const mapsUrl=isOther?'':typeof MTToolsCore!=='undefined'?MTToolsCore.googleMapsUrl(t):t.geoLink;
   const geoBtn = mapsUrl ? `<a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;">🗺️ Відкрити в Google Maps</a>` : '';
   // NEW: opts.workOnly — режим для картки "профілю абонента" (навігатор адрес):
   // замість повного тексту заявки (де є ім'я/телефон/адреса) показуємо лише
   // короткий перелік виконаних робіт — решта вже видно один раз у шапці профілю.
-  const materialPresentation=ticketMaterialPresentation(t,opts.workOnly ? buildWorkSummaryLines(t).join('\n') : String(t.content||''));
+  const materialPresentation=isOther?{content:String(t.otherNote||t.note||''),html:''}:ticketMaterialPresentation(t,opts.workOnly ? buildWorkSummaryLines(t).join('\n') : String(t.content||''));
   const displayContent = materialPresentation.content;
-  const workContent=ticketWorkContentPresentation(displayContent);
-  const detailContent = opts.workOnly ? {before:workContent.work,after:''} : splitTicketContentForTechnicalDetails(workContent.work);
-  const diagnosticHtml=!opts.workOnly?ticketDiagnosticHistoryHtml(t):'';
+  const workContent=isOther?{work:displayContent,closing:''}:ticketWorkContentPresentation(displayContent);
+  const detailContent = (isOther||opts.workOnly) ? {before:workContent.work,after:''} : splitTicketContentForTechnicalDetails(workContent.work);
+  const diagnosticHtml=!isOther&&!opts.workOnly?ticketDiagnosticHistoryHtml(t):'';
   const hasContent = !!(detailContent.before || detailContent.after || workContent.closing);
-  const isOther = t.type === 'Інше';
   // Індикатор синхронізації показується лише якщо синхронізація взагалі налаштована.
   // ✅ означає, що canonical sync engine отримав читабельне підтвердження
   // або відновив його через підписаний getEntityState після втраченої відповіді.
@@ -141,17 +140,19 @@ function renderTicketCard(t, opts={}){
         ${isOther ? '' : `<div class="tc-sum tabular">${fmtMoney(t.sum)}</div>`}
       </div>
     </div>
-    ${(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
-    ${(opts.workOnly || hasContent || materialPresentation.html || diagnosticHtml || hasTechnicalDetails || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">▼ Розгорнути</button>` : ''}
-    <div class="tc-details tc-collapsed" id="tcc-${t.id}">
+    ${isOther&&displayContent ? `<div class="tc-content tc-note-preview">${escapeHtml(displayContent.slice(0,160))}${displayContent.length>160?'…':''}</div>` : ''}
+    ${!isOther&&(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
+    ${!(isOther&&opts.expanded&&opts.suppressExpandToggle)&&(isOther || opts.workOnly || hasContent || materialPresentation.html || diagnosticHtml || hasTechnicalDetails || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">${isOther&&opts.expanded?'▲ Згорнути':'▼ Розгорнути'}</button>` : ''}
+    <div class="tc-details${isOther&&opts.expanded?'':' tc-collapsed'}" id="tcc-${t.id}">
       ${dispatcherFailureDetails(t)}
-      ${(t.contractNumber && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
+      ${(t.contractNumber && !isOther && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}
       ${detailContent.before ? `<div class="tc-content">${escapeHtml(detailContent.before)}</div>` : ''}
-      ${((t.macAddress || signalText) && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
+      ${isOther&&(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
+      ${((t.macAddress || signalText) && !isOther && !opts.workOnly) ? `<div class="tc-tech" style="margin-top:8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);">
         ${t.macAddress ? `<div>MAC: <span style="font-family:var(--mono);">${escapeHtml(t.macAddress)}</span></div>` : ''}
         ${signalText ? `<div>📶 Сигнал ONU: ${escapeHtml(normalizeOnuSignal(t.signal))} dBm</div>` : ''}
       </div>` : ''}
-      ${((t.login || t.password) && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
+      ${((t.login || t.password) && !isOther && !opts.workOnly) ? `<div class="tc-creds" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--accent); font-size:14px; line-height:1.5;">
         ${t.login ? `👤 <strong>Логін:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.login)}</span>` : ''}${t.login && t.password ? '<br>' : ''}${t.password ? `🔑 <strong>Пароль:</strong> <span style="font-family:var(--mono);">${escapeHtml(t.password)}</span>` : ''}
       </div>` : ''}
       ${(!opts.workOnly&&linkedPoints.length)?`<div class="tc-network-links"><strong>📡 Об’єкти мережі</strong>${linkedPoints.map(point=>`<div class="row between"><button type="button" class="btn btn-sm ticket-network-open" data-point-id="${escapeHtml(point.id)}">${escapeHtml(point.type)} · ${escapeHtml((typeof MTToolsCore!=='undefined'&&MTToolsCore.networkPointAddress(point))||point.name||point.id)}</button><button type="button" class="btn btn-sm btn-danger ticket-network-unlink" data-ticket-id="${escapeHtml(t.id)}" data-point-id="${escapeHtml(point.id)}">Відв’язати</button></div>`).join('')}</div>`:''}
@@ -159,8 +160,8 @@ function renderTicketCard(t, opts={}){
       ${materialPresentation.html}
       ${workContent.closing ? `<div class="tc-content">${escapeHtml(workContent.closing)}</div>` : ''}
       ${diagnosticHtml}
-      ${t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
-      ${(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}
+      ${!isOther&&t.masterNote ? `<div class="tc-master-note" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px dashed var(--text-dim); font-size:13px; color:var(--text-dim);">🔒 <strong>Тільки для вас:</strong> ${escapeHtml(t.masterNote)}</div>` : ''}
+      ${!isOther&&(t.tags||[]).length?`<div class="tc-tags" style="margin-top:9px;">${tagsHtml}</div>`:''}
       ${opts.workOnly ? `<button type="button" class="btn btn-sm view-full-ticket-btn" data-id="${t.id}" style="margin-top:8px;">🔍 Повна заявка</button>` : ''}
     </div>
     ${hasPhotos ? `<div class="tc-photo-wrap hidden row wrap" style="gap:8px;" id="tcp-${t.id}"></div>` : ''}
@@ -168,7 +169,7 @@ function renderTicketCard(t, opts={}){
       <button type="button" class="btn btn-sm edit-ticket-btn" data-id="${t.id}">✏️ Редагувати</button>
       ${opts.workOnly
         ? `<button type="button" class="btn btn-sm jump-to-date-btn" data-id="${t.id}" title="Перейти на цю дату в списку заявок">🗓️ На дату</button>`
-        : `<button type="button" class="btn btn-sm goto-profile-btn" data-id="${t.id}" title="Перейти до профілю абонента">👤 В профіль</button>`}
+        : isOther?'':`<button type="button" class="btn btn-sm goto-profile-btn" data-id="${t.id}" title="Перейти до профілю абонента">👤 В профіль</button>`}
       ${opts.workOnly ? '' : geoBtn}
       <button type="button" class="btn btn-sm share-ticket-btn" data-id="${t.id}">📤 Переслати</button>
       ${opts.workOnly ? `<button type="button" class="btn btn-sm tg-dispatcher-btn" data-id="${t.id}" title="Надіслати диспетчеру через Telegram-бота">✈️ Диспетчеру</button>` : ''}

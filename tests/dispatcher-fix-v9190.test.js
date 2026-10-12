@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const core=require('../js/dispatcher-report-core.js');
 const read=p=>fs.readFileSync(p,'utf8');
-const ctx={globalThis:{},MTStorageRegistry:{key:()=> 'view'},localStorage:{getItem:()=>null,setItem(){}},escapeHtml:v=>String(v??'').replace(/</g,'&lt;'),fmtMoney:v=>Number(v||0)+' грн'};
+const ctx={globalThis:{},getDailyTicketNumber:()=>1,getScriptUrl:()=>'',settings:{},MTStorageRegistry:{key:()=> 'view'},localStorage:{getItem:()=>null,setItem(){}},escapeHtml:v=>String(v??'').replace(/</g,'&lt;'),fmtMoney:v=>Number(v||0)+' грн'};
 ctx.globalThis=ctx;
 vm.runInNewContext(read('js/tickets-compact-view.js'),ctx);
 const other={id:'test-other',type:'Інше',date:'08.10.2026',time:'12:00',sum:0,otherNote:'Забрати ONU завтра',city:'SHOULD_NOT_DISPLAY',address:'SHOULD_NOT_DISPLAY',equipment:[{label:'ONU',qty:1}],diagnosticHistory:[{}],connectMasters:['PRIVATE_PARTNER']};
@@ -11,7 +11,8 @@ assert(compact.includes('Забрати ONU завтра'));
 for(const s of ['SHOULD_NOT_DISPLAY','Адресу не вказано','tc-status-row','Telegram','Таблиця'])assert(!compact.includes(s));
 vm.runInNewContext(read('js/tickets-render.js'),ctx);
 const expanded=ctx.renderTicketCard(other);
-for(const s of ['Забрати ONU завтра','Редагувати','Переслати','Видалити','0 грн'])assert(expanded.includes(s));
+for(const s of ['Забрати ONU завтра','Редагувати','Переслати','Видалити'])assert(expanded.includes(s));
+assert(!expanded.includes('tc-sum'),'note cards have no monetary header');
 for(const s of ['SHOULD_NOT_DISPLAY','діагности','Напарник','Матеріали','PRIVATE_PARTNER','В профіль','Google Maps'])assert(!expanded.includes(s));
 assert.equal(JSON.stringify(other),before);
 const materials=ctx.ticketMaterialPresentation({equipment:[{label:'ONU',qty:0},{label:'Роутер',qty:1},{label:'Кріплення',qty:4}],cables:[{label:'UTP',meters:37},{label:'Оптика',meters:0}]},'🛠️ ONU: 1 шт. х 0 грн\n🛠️ Роутер: 1 шт. х 100 грн\n🔌 UTP: 37м\nАдреса: Будинок 0');

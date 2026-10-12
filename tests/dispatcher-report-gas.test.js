@@ -210,6 +210,16 @@ test('наряд title bold via rich text and thick separators only between adja
   const ticketText=String(ticketRows[0][0].text);
   assert(!ticketText.includes('- - - -'),'no decorative inner rules');
 });
+test('Інше rich report block contains only title/note without financial lines',()=>{
+  c.SpreadsheetApp=spreadsheetAppMock();
+  const mock=renderSheet();
+  actualRender(mock.ss,[{...dto('note-render'),work_type:'Інше',work_category:'other',dispatcher_comment:'Note-only renderer regression'}]);
+  const rich=mock.calls.find(x=>x.method==='setRichTextValues');
+  const ticket=rich.args[0].flat().find(x=>x.text.startsWith('📋 Наряд'));
+  assert(ticket.text.includes('Note-only renderer regression'));
+  for(const word of ['Разом','Сума','Оплата'])assert(!ticket.text.includes(word));
+});
+
 test('closed month/day/panel perimeters and continuous B|C|D|E thick edges',()=>{
   c.SpreadsheetApp=spreadsheetAppMock();
   const input=[dto('a'),dto('b'),{...dto('other-day'),work_date:'2026-10-01'},{...dto('other-month'),work_date:'2026-09-30'}];

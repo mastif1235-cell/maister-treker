@@ -124,7 +124,7 @@
   function card(r,n){
     // Display the validated numeric DTO counters; never infer usage from notes.
     const paymentIcon=r.payment_free_count?'🆓':r.payment_cashless?'💳':'💵';
-    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment,'💰 Разом: '+money(r.total)].filter(Boolean).join('\n');
+    if(r.work_type==='Інше')return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · Інше',r.dispatcher_comment].filter(Boolean).join('\n');
     return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,r.city&&'🏙 '+r.city,r.address_display&&'📍 '+r.address_display,r.partner_display&&'👷 Напарник: '+r.partner_display,
       r.materials_display&&'📦 Матеріали:\n'+r.materials_display,r.mac_onu&&'🔢 MAC: '+r.mac_onu,
       r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');

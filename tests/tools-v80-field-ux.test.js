@@ -23,6 +23,6 @@ assert.deepEqual(core.sanitizeOfflineAreas([areaA,areaB]).map(item=>item.id),['a
 assert.ok(core.offlineBoundsOverlap(areaA,{minLat:47.9,minLon:36.9,maxLat:48.2,maxLon:37.2})>.9);assert.equal(core.offlineBoundsOverlap(areaA,{minLat:10,minLon:10,maxLat:11,maxLon:11}),0);
 assert.match(domain,/Вибрати область/);assert.match(map,/root\.L\.rectangle/);assert.match(domain,/не завантажує плитки масово з OpenStreetMap або MapTiler/);
 assert.match(styles,/\.modal #modalBody\{[^}]*overflow-y:auto/);assert.match(styles,/\.tools-map-picker\{height:240px/);assert.match(styles,/max-width:600px[^}]*\.tools-map-picker\{height:280px/);assert.match(domain,/tools-point-editor-footer/);assert.match(domain,/toolsPointCancelBtn/);
-assert.match(ticketsRender,/class="tc-details tc-collapsed"[\s\S]*class="tc-tags"/);assert.doesNotMatch(ticketsRender,/tc-tags-details/);
+assert.match(ticketsRender,/class="tc-details[^\n]*tc-collapsed[^\n]*[\s\S]*class="tc-tags"/);assert.doesNotMatch(ticketsRender,/tc-tags-details/);
 assert.match(domain,/Зберегти область/);assert.match(domain,/toolsSaveOfflineArea/);assert.match(domain,/toolsEditOfflineArea/);assert.match(domain,/toolsDeleteOfflineArea/);assert.match(domain,/toolsImportOfflineArea/);assert.match(domain,/Показати межі/);assert.match(domain,/Карта не встановлена/);assert.match(domain,/Офлайн-карта встановлена/);assert.match(map,/drawBounds/);
 console.log('PASS v80 draft return, unified geolocation, network-point UX, location and offline bounds');

@@ -30,7 +30,7 @@ assert.match(sw,/vendor\/pmtiles\/pmtiles\.js/);assert.match(sw,/js\/offline-map
 
 const statusStart=render.indexOf('<div class="tc-status-row">');
 assert.ok(statusStart>0 && render.indexOf('${photoBadge}',statusStart)>statusStart,'photo action sits with Sheets/Telegram statuses');
-assert.match(render,/class="tc-details tc-collapsed"[\s\S]*class="tc-tags"/,'tags live inside the existing collapsed ticket details');
+assert.match(render,/class="tc-details[^\n]*tc-collapsed[^\n]*[\s\S]*class="tc-tags"/,'tags live inside the existing collapsed ticket details');
 assert.doesNotMatch(render,/tc-tags-details/,'compact card has no separate tags row');
 assert.match(styles,/\.tools-map-filters\{display:flex;[^}]*overflow-x:auto/,'map filters stay compact on mobile');
 console.log('PASS interactive OSM map, filters, precise point picker, privacy, compact tags and photo action');
