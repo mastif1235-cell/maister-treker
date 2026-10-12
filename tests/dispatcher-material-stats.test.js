@@ -36,7 +36,7 @@ const empty=row('empty','2026-10-11',[]);
 assert(!core.render([empty]).blocks.find(x=>x.kind==='daily').text.includes('Матеріали:'),'explicit empty usage overrides legacy counters');
 for(const type of ['Ремонт','Інше']){
   const ticket=core.render([{...empty,work_type:type,dispatcher_comment:'Нотатка'}]).blocks.find(x=>x.kind==='ticket').text;
-  assert.equal((ticket.match(/💰 Разом:/g)||[]).length,1);assert(!ticket.includes('Сума:'));assert(!ticket.includes('🧾 Разом:'));
+  assert.equal((ticket.match(/💰 Разом:/g)||[]).length,type==='Інше'?0:1);assert(!ticket.includes('Сума:'));assert(!ticket.includes('🧾 Разом:'));
 }
 assert.equal(core.materialJSON([material('  ДБЖ   12V ',1),material('ДБЖ 12V',2)]),core.materialJSON([material('ДБЖ 12V',3)]));
 assert.equal(core.materialJSON([material('Кабель',0.1,'м'),material('Кабель',0.2,'м')]),core.materialJSON([material('Кабель',0.3,'м')]));

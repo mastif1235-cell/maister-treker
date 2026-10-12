@@ -11,8 +11,8 @@ const ordered=(text,parts)=>{let previous=-1;for(const p of parts){const at=text
 ordered(card(dto),['Наряд №1','Тестове місто','Тестова 4','Напарник: Майстер','Матеріали:','ONU — 1 шт. — 800 грн','UTP — 10 м — 100 грн','Оплата:','Разом:']);
 for(const [field,label] of [['materials_display','Матеріали:'],['partner_display','Напарник:'],['mac_onu','MAC:'],['dispatcher_comment','Диспетчеру:'],['address_display','📍'],['payment_type','Оплата:']])assert(!card({...dto,[field]:''}).includes(label),field+' absent = no block');
 const other=card({...dto,work_type:'Інше',dispatcher_comment:'Тестова нотатка',amount:0,total:0});
-ordered(other,['Наряд №1','Тестова нотатка','Разом: 0 грн']);
-for(const label of ['Матеріали:','Напарник:','MAC:','Оплата:','📍','Сума:','- - - -'])assert(!other.includes(label));
+ordered(other,['Наряд №1','Тестова нотатка']);
+for(const label of ['Матеріали:','Напарник:','MAC:','Оплата:','📍','Сума','Разом','- - - -'])assert(!other.includes(label));
 assert.equal(context.ticketDiagnosticHistoryHtml({}), '');
 assert.equal(context.ticketDiagnosticHistoryHtml({diagnosticHistory:[]}), '');
 const history=[{timestamp:'2026-10-11T12:00:00Z',summaryStatus:'ok',result:{latencyMs:12,resources:[]}}];
