@@ -1,6 +1,6 @@
 /* ---- Пасивний візуальний рендеринг заявок ----
    Читає готові дані та оновлює лише DOM. */
-globalThis.MTTicketRendererRevision='runtime-149';
+globalThis.MTTicketRendererRevision='runtime-150';
 function ticketDeliveryBadges(t){
   let legacy;
   if(!getScriptUrl())legacy='';
@@ -142,7 +142,7 @@ function renderTicketCard(t, opts={}){
     </div>
     ${isOther&&displayContent ? `<div class="tc-content tc-note-preview">${escapeHtml(displayContent.slice(0,160))}${displayContent.length>160?'…':''}</div>` : ''}
     ${!isOther&&(syncBadge || tgBadge || photoBadge) ? `<div class="tc-status-row">${syncBadge}${tgBadge}${photoBadge}</div>` : ''}
-    ${(isOther || opts.workOnly || hasContent || materialPresentation.html || diagnosticHtml || hasTechnicalDetails || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">${isOther&&opts.expanded?'▲ Згорнути':'▼ Розгорнути'}</button>` : ''}
+    ${!(isOther&&opts.expanded&&opts.suppressExpandToggle)&&(isOther || opts.workOnly || hasContent || materialPresentation.html || diagnosticHtml || hasTechnicalDetails || t.contractNumber || t.login || t.password || t.masterNote || (t.tags||[]).length || linkedPoints.length) ? `<button type="button" class="tc-expand-btn" data-id="${t.id}">${isOther&&opts.expanded?'▲ Згорнути':'▼ Розгорнути'}</button>` : ''}
     <div class="tc-details${isOther&&opts.expanded?'':' tc-collapsed'}" id="tcc-${t.id}">
       ${dispatcherFailureDetails(t)}
       ${(t.contractNumber && !isOther && !opts.workOnly) ? `<div class="tc-sub" style="color:var(--accent);">📄 № ${escapeHtml(t.contractNumber)}</div>` : ''}

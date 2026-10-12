@@ -1,6 +1,14 @@
 # Note-ticket presentation patch
 
-Candidate: v92.04 / runtime-149 / maister-treker-v79-runtime-149.
+Candidate: v92.05 / runtime-150 / maister-treker-v80-runtime-150.
+
+PR #92 follow-up: compact-expanded `Інше` uses only the outer collapse button.
+The embedded renderer suppresses its own toggle only when the note is already
+expanded. Full-mode notes and repair/connection cards retain their controls.
+Unit and isolated browser regressions cover immediate details/status/photo
+visibility, collapse round-trip with no orphan wrapper, and the full-mode toggle.
+The new cache/runtime records changed renderer bytes without reusing the prior
+candidate fingerprint. Dispatcher client changes are release literals only.
 Base: ab56d3666332fea2d04cb941c8ccc296ea43b1ac (v92.03).
 
 ## Scope

@@ -45,7 +45,7 @@
     if(!isExpanded(ticket.id)) return renderCard(ticket);
     return `<div class="ticket-compact-expanded" data-id="${escapeHtml(ticket.id)}">
       <button type="button" class="btn ticket-view-collapse-btn" data-id="${escapeHtml(ticket.id)}">▲ Згорнути картку</button>
-      ${ticket.type==='Інше'?fullRenderer(ticket,{expanded:true}):fullRenderer(ticket)}
+      ${ticket.type==='Інше'?fullRenderer(ticket,{expanded:true,suppressExpandToggle:true}):fullRenderer(ticket)}
     </div>`;
   }
   function updateModeButton(button){
@@ -56,5 +56,5 @@
     button.setAttribute('aria-pressed',String(compact));
     button.classList.toggle('btn-accent',compact);
   }
-  root.MTTicketCompactView=Object.freeze({runtimeRevision:'runtime-149',mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
+  root.MTTicketCompactView=Object.freeze({runtimeRevision:'runtime-150',mode:()=>mode,setMode,toggleMode,toggleExpanded,isExpanded,addressLabel,renderCard,renderItem,updateModeButton});
 })(typeof window!=='undefined'?window:globalThis);
