@@ -143,11 +143,11 @@
     list.slice().sort((a,b)=>a.work_time.localeCompare(b.work_time)||(a.ticket_id<b.ticket_id?-1:a.ticket_id>b.ticket_id?1:0)).forEach((r,i)=>m.set(r.ticket_id,i+1));
     return m;
   }
-  function materialLines(s){return s.materials.length?['📦 Матеріали:',...s.materials.map(m=>m.label+' — '+m.quantity+' '+m.unit+(m.unit_price?' — '+money(m.unit_price)+(m.unit==='м'?'/м':''):''))]:[];}
+  function materialLines(s){const materials=s.materials.filter(m=>!isOnuEquipment(m));return materials.length?['📦 Матеріали:',...materials.map(m=>m.label+' — '+m.quantity+' '+m.unit+(m.unit_price?' — '+money(m.unit_price)+(m.unit==='м'?'/м':''):''))]:[];}
   function statsText(title,s){return title+'\n'+statsBody(s);}
   function statsBody(s){return ['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
-    '📦 ONU — '+s.onu_regular+' шт.','📦 ONU на підключенні — '+s.onu_connection+' шт.','📦 Разом ONU — '+s.onu_total+' шт.',
-    ...materialLines(s),'🔄 Заміна ONU: '+s.onu_replacement,
+    '📦 ONU на підключеннях — '+s.onu_connection+' шт.','📦 ONU на ремонтах — '+s.onu_regular+' шт.',
+    ...materialLines(s),
     '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),'📅 Робочих днів: '+s.working_days].join('\n');}
   function card(r,n){
     // Display the validated numeric DTO counters; never infer usage from notes.

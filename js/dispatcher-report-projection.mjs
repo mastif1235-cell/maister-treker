@@ -66,7 +66,24 @@ export function projectWorks(ticket,core){
   }
   return rows;
 }
-export function projectTicket(ticket,core,now=Date.now()){
+export const HISTORICAL_ONU_OVERRIDES=Object.freeze({
+  '1778579833958':'NO_ONU',
+  '1776093623146':'NO_ONU',
+  '1787044186198':'OUR_ONU',
+  'cca10ba0-41a2-4571-ac3c-02b57e2a19bc':'UNKNOWN',
+  '1774458317609':'UNKNOWN'
+});
+export const HISTORICAL_ONU_OVERRIDE_STATES=Object.freeze(['OUR_ONU','NO_ONU','UNKNOWN']);
+export const HISTORICAL_ONU_MISSING_TICKET_IDS=Object.freeze(['1786990035908','1786951228806']);
+
+function overrideFor(ticketId,overrides){
+  const value=overrides instanceof Map?overrides.get(String(ticketId)):overrides?.[String(ticketId)];
+  if(value===undefined||value===null||value==='')return undefined;
+  if(!HISTORICAL_ONU_OVERRIDE_STATES.includes(value))throw new Error('INVALID_HISTORICAL_ONU_OVERRIDE');
+  return value;
+}
+
+export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
   const text=v=>core.sanitize(v);
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
   // Saved equipment contains selected rows (checked may be absent). An explicit
@@ -143,9 +160,59 @@ export function projectTicket(ticket,core,now=Date.now()){
     dto.onu_used=0;dto.onu_replacement=0;dto.router_used=0;
     if(dto.materials_json!==undefined)dto.materials_json='[]';
   }
+  // Explicit historical decisions affect only repair ONU physical counters.
+  // UNKNOWN intentionally behaves like no override for projection; it only
+  // excludes that ticket from the separate evidence-confirmed statistic.
+  if(category==='repair'){
+    const historicalOverride=overrideFor(ticket.id,overrides);
+    if(historicalOverride==='NO_ONU'){dto.onu_used=0;dto.onu_replacement=0;}
+    else if(historicalOverride==='OUR_ONU'){dto.onu_used=1;dto.onu_replacement=0;}
+  }
   return dto;
 }
-export async function buildDTO(ticket,core,now=Date.now()){
-  const dto=projectTicket(ticket,core,now),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(core.content(dto)));
+export async function buildDTO(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
+  const dto=projectTicket(ticket,core,now,overrides),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(core.content(dto)));
   dto.source_hash=Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');return core.validate(dto);
+}
+
+// Count only physical ONU evidence: explicit user decisions, structured
+// equipment/materials, or a precise legacy material line. Notes, MAC and the
+// text-parser counter are deliberately not evidence for this confirmed total.
+export function confirmedRepairOnuCount(records,core,overrides=HISTORICAL_ONU_OVERRIDES){
+  const seen=new Set();let total=0;
+  const quantityOf=(items)=>items.filter(item=>core.isOnuEquipment(item)&&item.checked!==false)
+    .reduce((sum,item)=>sum+Number(item.consumption_qty??item.qty??1),0);
+  for(const record of records||[]){
+    const id=String(record?.ticket_id??record?.id??'');
+    if(!id||seen.has(id))continue;seen.add(id);
+    if(record.work_category!=='repair'&&!/^ремонт$/iu.test(String(record.work_type??record.type??'')))continue;
+    const decision=overrideFor(id,overrides);
+    if(decision==='NO_ONU'||decision==='UNKNOWN')continue;
+    if(decision==='OUR_ONU'){total++;continue;}
+    if(Array.isArray(record.equipment)&&(!record.cloudImported||record.equipment.length)){
+      total+=quantityOf(record.equipment);continue;
+    }
+    if(record.materials_json!==undefined){
+      total+=core.readMaterials(record.materials_json).filter(item=>core.isOnuEquipment(item)).reduce((sum,item)=>sum+item.quantity,0);
+      continue;
+    }
+    const lines=String(record.materials_display??'').split(/\r?\n/u);
+    for(const line of lines){
+      const match=/^\s*ONU\s*[—-]\s*(\d+(?:[.,]\d+)?)\s*шт\.(?:\s*[—×x].*)?\s*$/iu.exec(line);
+      if(match)total+=Number(match[1].replace(',','.'));
+    }
+  }
+  return total;
+}
+
+// Builds, but never sends or persists, a normal projection for the two
+// confirmed missing records. Callers must supply each complete canonical
+// ticket object; no DTO is reconstructed from display text here.
+export async function prepareAddressedHistoricalUpsert(ticket,core,now=Date.now(),requestId=crypto.randomUUID()){
+  const id=String(ticket?.id??'');
+  if(!HISTORICAL_ONU_MISSING_TICKET_IDS.includes(id))throw new Error('HISTORICAL_TICKET_NOT_ALLOWLISTED');
+  if(!requestId||typeof requestId!=='string')throw new Error('INVALID_REQUEST_ID');
+  const savedSum=Number(ticket.sum??0),dto=await buildDTO(ticket,core,now);
+  if(dto.ticket_id!==id||dto.total!==savedSum)throw new Error('HISTORICAL_PROJECTION_MISMATCH');
+  return {action:'report_upsert',request_id:requestId,tickets:[dto]};
 }
