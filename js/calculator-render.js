@@ -5,7 +5,7 @@ function renderEquipmentList(){
   wrap.innerHTML = calcState.equipment.map((eq,i)=>`
     <div class="eq-row">
       <label><input type="checkbox" data-eqidx="${i}" class="eq-check" ${eq.checked?'checked':''}> ${escapeHtml(eq.label)}</label>
-      <input type="number" min="0" data-eqidx="${i}" class="eq-price" value="${eq.price}">
+      <input type="number" min="0" data-eqidx="${i}" class="eq-price" value="${ticketEquipmentPrice(calcState,eq)}" ${calcState.type==='Підключення'&&isTicketOnuEquipment(eq)?'disabled title="Включено у вартість підключення"':''}>
     </div>`).join('');
   updateEquipmentSummary();
 }
@@ -14,7 +14,7 @@ function renderEquipmentList(){
 // щоб не збивати фокус/курсор під час введення ціни
 function updateEquipmentSummary(){
   const checkedCount = calcState.equipment.filter(e=>e.checked).length;
-  const sum = calcState.equipment.reduce((s,e)=> s + (e.checked ? safeNonNegativeNumber(e.price) : 0), 0);
+  const sum = calcState.equipment.reduce((s,e)=> s + (e.checked ? ticketEquipmentPrice(calcState,e) : 0), 0);
   document.getElementById('equipmentSummary').textContent = checkedCount ? `— обрано: ${checkedCount}, ${fmtMoney(sum)}` : '';
 }
 

@@ -13,6 +13,9 @@ function blankCalcState(){
   // у самій заявці), тут, у стані ЖИВОЇ форми, одразу розгортаємо повний
   // каталог обладнання/кабелів/робіт — щоб було з чого вибирати чекбоксами.
   t.equipment = mergeEquipmentWithCatalog([], getEquipmentConfig());
+  if(t.type==='Підключення'){
+    const onu=t.equipment.find(isTicketOnuEquipment);if(onu)onu.checked=true;
+  }
   t.cables = mergeCablesWithCatalog([], getCableTypesConfig());
   t.presetWorks = mergePresetWorksWithCatalog([], getWorkTypesConfig());
   return t;

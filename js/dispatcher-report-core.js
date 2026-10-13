@@ -9,7 +9,8 @@
   const SENSITIVE=/(?:geo(?:lat|lng|link|location)?|latitude|longitude|(?<![\p{L}])(?:lat|lng|location)(?![\p{L}])|координат[ыи]|геолокац[іяи]|ONU\s*signal|onuSignal|signal(?:_before|_after|\s+before|\s+after)?|optical\s+(?:level|power)|сигнал\s*(?:onu|ону)|dBm|https?:\/\/|www\.)/iu;
   const MONEY_MAX=1e9;
   const MATERIAL_FIELD='materials_json';
-  const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount','client_name','client_phone']);
+  const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount','client_name','client_phone','works_display']);
+  function isOnuEquipment(item){return item.id==='onu'||(!item.id&&/^(?:ONU|ONT|ОНУ)$/iu.test(String(item.label||'').trim()));}
   const ALL_FIELDS=Object.freeze([...FIELDS,MATERIAL_FIELD,...PRESENTATION_FIELDS]);
   function fail(code){const e=new Error(code);e.code=code;throw e;}
   function materialJSON(entries,aggregate=false){
@@ -87,7 +88,9 @@
     for(const k of PRESENTATION_FIELDS){
       if(!Object.prototype.hasOwnProperty.call(dto,k))continue;
       const v=dto[k];
-      if(k==='contract_number'){
+      if(k==='works_display'){
+        if(typeof v!=='string'||!v||v.length>4000||sanitizeComment(v)!==v||/^\s*[=+@-]/u.test(v)||/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/u.test(v))fail('PRIVACY_REJECTED');
+      }else if(k==='contract_number'){
         if(typeof v!=='string'||!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{0,79}$/u.test(v))fail('INVALID_CONTRACT');
         if(PRIVATE.test(v)||SENSITIVE.test(v))fail('PRIVACY_REJECTED');
       }else if(k==='client_name'){
@@ -125,6 +128,8 @@
       if(r.materials_json!==undefined)materials.push(...readMaterials(r.materials_json));
       else for(const [key,label] of [['onu_used','ONU'],['router_used','Роутер']])if(r[key]>0)materials.push({label,quantity:r[key],unit:'шт.'});
     }
+    s.onu_connection=rows.filter(r=>r.work_category==='connection').reduce((n,r)=>n+r.onu_used,0);
+    s.onu_regular=s.onu_used-s.onu_connection;s.onu_total=s.onu_used;
     s.materials=JSON.parse(materialJSON(materials,true));return s;
   }
   function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
@@ -141,6 +146,7 @@
   function materialLines(s){return s.materials.length?['📦 Матеріали:',...s.materials.map(m=>m.label+' — '+m.quantity+' '+m.unit+(m.unit_price?' — '+money(m.unit_price)+(m.unit==='м'?'/м':''):''))]:[];}
   function statsText(title,s){return title+'\n'+statsBody(s);}
   function statsBody(s){return ['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
+    '📦 ONU — '+s.onu_regular+' шт.','📦 ONU на підключенні — '+s.onu_connection+' шт.','📦 Разом ONU — '+s.onu_total+' шт.',
     ...materialLines(s),'🔄 Заміна ONU: '+s.onu_replacement,
     '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),'📅 Робочих днів: '+s.working_days].join('\n');}
   function card(r,n){
@@ -151,6 +157,7 @@
     return ['📋 Наряд №'+n+' · 🕒 '+r.work_time+' · 🛠 '+r.work_type,structured&&r.contract_number&&'📄 Договір №'+r.contract_number,r.address_display?'📍 '+r.address_display:r.city&&'🏙 '+r.city,
       structured&&r.client_name&&'👤 ПІБ: '+r.client_name,structured&&r.client_phone&&'📞 Телефон: '+r.client_phone,r.mac_onu&&'🔢 MAC: '+r.mac_onu,r.partner_display&&'👷 Напарник: '+r.partner_display,
       r.materials_display&&'📦 Матеріали:\n'+r.materials_display,
+      r.works_display&&'🛠 Роботи:\n'+r.works_display,
       structured&&r.payment_type!=='Безкоштовно'&&!r.payment_free_count&&r.service_fee>0&&'🛠 '+(r.work_category==='connection'?'Підключення':'Виклик')+' — '+money(r.service_fee),
       structured&&r.tariff_amount>0&&'💎 Тариф — '+money(r.tariff_amount),
       r.payment_type&&paymentIcon+' Оплата: '+r.payment_type,(r.work_category!=='connection'||r.total>0)&&'💰 Разом: '+money(r.total),r.dispatcher_comment&&'📝 Диспетчеру:\n'+r.dispatcher_comment].filter(Boolean).join('\n');
@@ -231,6 +238,6 @@
     if(row.deleted_at){row.source_version=Math.max(row.source_version,version);return 'unchanged';}if(row.source_version>=version)fail('STALE_VERSION');
     row.deleted_at=now;row.sync_status='DELETED';row.source_version=version;return 'deleted';
   }
-  const api=Object.freeze({FIELDS,ALL_FIELDS,materialJSON,readMaterials,sanitize,sanitizeComment,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
+  const api=Object.freeze({FIELDS,ALL_FIELDS,isOnuEquipment,materialJSON,readMaterials,sanitize,sanitizeComment,validate,dateKey,timeKey,content,weekKey,sorted,stats,render,upsert,remove});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.MTDispatcherReportCore=api;
 })(typeof globalThis==='object'?globalThis:this);

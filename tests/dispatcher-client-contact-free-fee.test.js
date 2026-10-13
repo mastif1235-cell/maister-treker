@@ -23,7 +23,8 @@ const ordered=(text,parts)=>{let at=-1;for(const part of parts){const next=text.
     assert(s.includes('Оплата: Безкоштовно'));if(type==='Ремонт')assert(s.includes('Разом: 0 грн'));
     assert(!card({...free,service_fee:original.callFee}).includes(type==='Ремонт'?'Виклик —':'Підключення —'),'legacy positive fee hidden by formatter too');
     assert.equal(free.tariff_amount,300,'tariff semantics unchanged');assert(s.includes('Тариф — 300 грн'));
-    assert.equal(free.materials_json,paid.materials_json);assert.equal(free.materials_display,paid.materials_display);
+    const sameType=await buildDTO({...ticket,type},core,100);
+    assert.equal(free.materials_json,sameType.materials_json);assert.equal(free.materials_display,sameType.materials_display);
     assert.equal(core.stats([free]).onu_used,core.stats([paid]).onu_used);assert.equal(JSON.stringify(original),snapshot);
   }
   for(const [patch,label,field] of [[{clientName:''},'ПІБ:','client_name'],[{phone:''},'Телефон:','client_phone'],[{macAddress:''},'MAC:'],[{contractNumber:''},'Договір'],[{connectMasters:[]},'Напарник:'],[{equipment:[]},'Матеріали:'],[{callFee:0},'Підключення —'],[{tariff:0},'Тариф —'],[{note:''},'Диспетчеру:']]){

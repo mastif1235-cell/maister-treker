@@ -11,7 +11,7 @@
    No other client secrets. */
 var REPORT_LEGACY_HEADERS=MTDispatcherReportCore.FIELDS.concat(['deleted_at','sync_status']);
 // Append only: every existing column and legacy content hash stays unchanged.
-var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone']);
+var REPORT_HEADERS=REPORT_LEGACY_HEADERS.concat(['materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone','works_display']);
 function reportStoredHeaders_(sheet){
   if(JSON.stringify(sheet.getRange(1,1,1,REPORT_LEGACY_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_LEGACY_HEADERS))throw new Error('REPORT_SCHEMA_CONFLICT');
   var headers=REPORT_LEGACY_HEADERS.slice(),gap=false;

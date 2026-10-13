@@ -43,6 +43,17 @@ export function reportPresentation(ticket,core){
 }
 export function projectTicket(ticket,core,now=Date.now()){
   const text=v=>core.sanitize(v);
+  const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
+  // Saved equipment contains selected rows (checked may be absent). An explicit
+  // empty/unchecked list means customer-owned ONU; never infer it from notes.
+  const hasEquipment=Array.isArray(ticket.equipment)&&(!ticket.cloudImported||ticket.equipment.length>0);
+  const selectedOnu=(ticket.equipment||[]).find(e=>core.isOnuEquipment(e)&&e.checked!==false);
+  let seenOnu=false;
+  const equipment=connection&&hasEquipment?ticket.equipment.flatMap(e=>{
+    if(!core.isOnuEquipment(e))return [e];
+    if(e.checked===false||seenOnu)return [];seenOnu=true;return [{...e,qty:1,consumption_qty:1,price:0}];
+  }):ticket.equipment;
+  const projected=connection&&hasEquipment?{...ticket,equipment}:ticket;
   const safePublic={id:ticket.id,date:ticket.date,type:ticket.type,macAddress:ticket.macAddress,
     equipment:(ticket.equipment||[]).map(e=>({label:publicBackupText(e.label),checked:e.checked,qty:e.qty,consumption_qty:e.consumption_qty})).map(e=>Object.fromEntries(Object.entries(e).filter(([,v])=>v!==undefined))),
     cables:(ticket.cables||[]).map(c=>({label:publicBackupText(c.label),meters:c.meters})),
@@ -51,7 +62,7 @@ export function projectTicket(ticket,core,now=Date.now()){
     note:publicBackupText(ticket.note),otherNote:publicBackupText(ticket.otherNote)};
   const analysis=workEvents(safePublic,publicBackupText(ticket.content,ticket.masterNote),{profile:'physical_consumption'});
   const quantity=(entity,action)=>analysis.events.filter(e=>e.category==='definite'&&e.entity===entity&&(!action||e.action===action)).reduce((s,e)=>s+(e.quantity||0),0);
-  const presentation=reportPresentation(ticket,core);
+  const presentation=reportPresentation(projected,core);
   const total=Number(ticket.sum??0),payment=presentation.payment,free=payment==='Безкоштовно';
   const cash=free?0:payment==='Готівка'?total:payment==='Змішана'?Number(ticket.cashAmount||0):0;
   const card=free?0:payment==='Безготівка'?total:payment==='Змішана'?Number(ticket.cardAmount||0):0;
@@ -66,6 +77,9 @@ export function projectTicket(ticket,core,now=Date.now()){
     // Free amount is the saved monetary amount, not a guessed inventory price.
     payment_free_amount:free?total:0,payment_free_count:free?1:0,updated_at:new Date(now).toISOString(),source_version:now,source_hash:''};
   if(category==='connection'||category==='repair'){
+    const works=[...new Set((ticket.presetWorks||[]).filter(w=>w.checked!==false).map(w=>core.sanitizeComment(publicBackupText(w.label,ticket.masterNote)).trim()).filter(Boolean))];
+    if(works.length)dto.works_display=works.join('\n');
+    if(category==='connection'&&hasEquipment){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
     const contract=String(ticket.contractNumber??'').trim();
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.
@@ -90,7 +104,7 @@ export function projectTicket(ticket,core,now=Date.now()){
   // Optional hash-bound material usage, independent of display/price strings.
   // Historical raw imports retain the existing physical-counter fallback.
   if(Array.isArray(ticket.equipment)||Array.isArray(ticket.cables)){
-    const equipment=ticket.equipment||[],cables=ticket.cables||[];
+    const equipment=projected.equipment||[],cables=ticket.cables||[];
     if(!ticket.cloudImported||equipment.length||cables.length){
       const entries=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>({label:text(e.label),quantity:Number(e.consumption_qty??e.qty??1),unit:'шт.',...(e.price!==undefined?{unit_price:Number(e.price)}:{})})),
         ...cables.filter(c=>Number(c.meters)>0).map(c=>({label:text(c.label),quantity:Number(c.meters),unit:'м',...(c.pricePerMeter!==undefined?{unit_price:Number(c.pricePerMeter)}:{})}))].filter(e=>e.label);

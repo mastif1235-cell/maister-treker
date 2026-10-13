@@ -121,6 +121,9 @@ function resetCalcForm(presetDate, overrides){
   // навігатора адрес) у щойно відкриту порожню форму — застосовується ДО
   // логіки тегу за типом нижче, щоб автотег теж підхопив правильний тип.
   if(overrides) Object.assign(calcState, overrides);
+  if(overrides&&overrides.type&&overrides.type!=='Підключення'&&!Object.prototype.hasOwnProperty.call(overrides,'equipment')){
+    for(const e of calcState.equipment)if(isTicketOnuEquipment(e))e.checked=false;
+  }
   if(overrides && !Object.prototype.hasOwnProperty.call(overrides,'baseCallFee') && Object.prototype.hasOwnProperty.call(overrides,'callFee')){
     calcState.baseCallFee=safeNonNegativeNumber(overrides.callFee);
   }
@@ -463,6 +466,13 @@ function applyDefaultTypeTag(){
     if(!calcState.tags.includes(newTag)) calcState.tags.push(newTag);
   }
   calcState.type = newType;
+  if(newType==='Підключення'&&prevType!==newType&&!editingTicketId&&!calcState.cloudImported){
+    const onu=(calcState.equipment||[]).find(isTicketOnuEquipment);if(onu)onu.checked=true;
+  }
+  if(prevType==='Підключення'&&newType!=='Підключення'&&!editingTicketId&&!calcState.cloudImported){
+    for(const e of calcState.equipment||[])if(isTicketOnuEquipment(e))e.checked=false;
+  }
+  renderEquipmentList();
   renderCalcTagChips();
 }
 function applyDefaultCallFee(){

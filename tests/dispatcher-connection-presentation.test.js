@@ -68,7 +68,7 @@ const ordered=(s,parts)=>{let previous=-1;for(const p of parts){const at=s.index
     vm.createContext(gas);vm.runInContext(fs.readFileSync('gas/dispatcher-report/DispatcherReport.gs','utf8'),gas);
     const loaded=gas.reportStore_({id:'synthetic'}).rows[0];assert.equal(writes,0);assert.equal(loaded.source_hash,value.source_hash);assert.equal(hash(loaded),value.source_hash);
     gas.reportExtendHeaders_(sheet);assert.equal(JSON.stringify(cells[1]),snapshot,'migration does not rewrite historical rows');
-    assert.deepEqual(cells[0],[...baseHeaders,'materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone']);
+    assert.deepEqual(cells[0],[...baseHeaders,'materials_json','contract_number','service_fee','tariff_amount','client_name','client_phone','works_display']);
     assert.equal(gas.reportStore_({id:'synthetic'}).rows[0].source_hash,value.source_hash,'blank optional cells omitted, old hash unchanged');
     const store=gas.reportStore_({id:'synthetic'});store.rows.push({...d,ticket_id:'new-structured',client_name:'Тестовий Тест',client_phone:'+380000000001',deleted_at:'',sync_status:'SYNCED'});
     store.rows[1].source_hash=hash(store.rows[1]);gas.reportWrite_(store);
