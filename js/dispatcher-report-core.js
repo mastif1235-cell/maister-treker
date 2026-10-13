@@ -129,7 +129,10 @@
       else for(const [key,label] of [['onu_used','ONU'],['router_used','Роутер']])if(r[key]>0)materials.push({label,quantity:r[key],unit:'шт.'});
     }
     s.onu_connection=rows.filter(r=>r.work_category==='connection').reduce((n,r)=>n+r.onu_used,0);
-    s.onu_regular=s.onu_used-s.onu_connection;s.onu_total=s.onu_used;
+    s.onu_repair=rows.filter(r=>r.work_category==='repair').reduce((n,r)=>n+r.onu_used,0);
+    // Keep legacy aggregate properties for read compatibility, but render only
+    // the two work-type-specific physical consumption counts.
+    s.onu_regular=s.onu_repair;s.onu_total=s.onu_connection+s.onu_repair;
     s.materials=JSON.parse(materialJSON(materials,true));return s;
   }
   function group(rows,key){const m=new Map();for(const r of rows){const k=key(r);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;}
@@ -146,7 +149,7 @@
   function materialLines(s){const materials=s.materials.filter(m=>!isOnuEquipment(m));return materials.length?['📦 Матеріали:',...materials.map(m=>m.label+' — '+m.quantity+' '+m.unit+(m.unit_price?' — '+money(m.unit_price)+(m.unit==='м'?'/м':''):''))]:[];}
   function statsText(title,s){return title+'\n'+statsBody(s);}
   function statsBody(s){return ['📋 Всього нарядів: '+s.ticket_count,'✅ Підключень: '+s.connections,'🛠 Ремонтів: '+s.repairs,'⚙ Інших робіт: '+s.other,
-    '📦 ONU на підключеннях — '+s.onu_connection+' шт.','📦 ONU на ремонтах — '+s.onu_regular+' шт.',
+    '📦 ONU на підключеннях — '+s.onu_connection+' шт.','📦 ONU на ремонтах — '+s.onu_repair+' шт.',
     ...materialLines(s),
     '💰 Загальна сума: '+money(s.total),'💵 Готівка: '+money(s.payment_cash),'💳 Безготівка: '+money(s.payment_cashless),'🆓 Безкоштовно: '+s.payment_free_count+' · '+money(s.payment_free_amount),'📅 Робочих днів: '+s.working_days].join('\n');}
   function card(r,n){

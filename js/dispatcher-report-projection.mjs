@@ -86,16 +86,16 @@ function overrideFor(ticketId,overrides){
 export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
   const text=v=>core.sanitize(v);
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
-  // Saved equipment contains selected rows (checked may be absent). An explicit
-  // empty/unchecked list means customer-owned ONU; never infer it from notes.
-  const hasEquipment=Array.isArray(ticket.equipment)&&(!ticket.cloudImported||ticket.equipment.length>0);
+  // A connection's ONU count is owned by the canonical equipment checkbox,
+  // not the physical-consumption text parser (which can derive from MAC/text).
+  // Saved selected rows may omit `checked`; an absent/empty list is not proof.
   const selectedOnu=(ticket.equipment||[]).find(e=>core.isOnuEquipment(e)&&e.checked!==false);
   let seenOnu=false;
-  const equipment=connection&&hasEquipment?ticket.equipment.flatMap(e=>{
+  const equipment=connection&&Array.isArray(ticket.equipment)?ticket.equipment.flatMap(e=>{
     if(!core.isOnuEquipment(e))return [e];
     if(e.checked===false||seenOnu)return [];seenOnu=true;return [{...e,qty:1,consumption_qty:1,price:0}];
   }):ticket.equipment;
-  const projected=connection&&hasEquipment?{...ticket,equipment}:ticket;
+  const projected=connection&&Array.isArray(ticket.equipment)?{...ticket,equipment}:ticket;
   const safePublic={id:ticket.id,date:ticket.date,type:ticket.type,macAddress:ticket.macAddress,
     equipment:(ticket.equipment||[]).map(e=>({label:publicBackupText(e.label),checked:e.checked,qty:e.qty,consumption_qty:e.consumption_qty})).map(e=>Object.fromEntries(Object.entries(e).filter(([,v])=>v!==undefined))),
     cables:(ticket.cables||[]).map(c=>({label:publicBackupText(c.label),meters:c.meters})),
@@ -122,7 +122,7 @@ export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ON
     const money=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';
     const works=projectWorks(ticket,core).map(w=>w.label+(w.quantity!==1?' — '+w.quantity+' шт.'+(w.unit_price>0?' · '+money(w.unit_price)+'/шт.':''):'')+(w.line_total>0?' — '+money(w.line_total):''));
     if(works.length)dto.works_display=works.join('\n');
-    if(category==='connection'&&hasEquipment){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
+    if(category==='connection'){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
     const contract=String(ticket.contractNumber??'').trim();
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.

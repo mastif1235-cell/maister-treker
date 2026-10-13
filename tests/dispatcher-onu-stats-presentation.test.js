@@ -27,7 +27,7 @@ for(const block of rendered.blocks.filter(b=>b.kind==='ticket'))assert(block.tex
 assert.equal(JSON.stringify(rows),before,'render never mutates data');
 assert.equal(JSON.stringify(core.stats(rows)),statsBefore,'aggregator unchanged');
 assert.deepEqual(rows.map(r=>crypto.createHash('sha256').update(core.content(r)).digest('hex')),hashes,'canonical hashes unchanged');
-assert.equal(core.stats(rows).onu_total,20);assert.equal(core.stats(rows).onu_replacement,7);assert.equal(core.stats(rows).total,1600);
+assert.equal(core.stats(rows).onu_connection,13);assert.equal(core.stats(rows).onu_repair,7);assert.equal(core.stats(rows).onu_total,20);assert.equal(core.stats(rows).onu_replacement,7);assert.equal(core.stats(rows).total,1600);
 const onuOnly=core.render([rows[0]]).blocks.find(b=>b.kind==='daily').text;
 assert(!onuOnly.includes('📦 Матеріали:'),'no empty materials heading after ONU filtering');
 const zero=core.render([{...rows[0],onu_used:0,materials_json:'[]'}]).blocks.find(b=>b.kind==='daily').text;
