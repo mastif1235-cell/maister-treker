@@ -30,8 +30,8 @@ assert.equal(usage(report.weekly['2026-10-05'])['UTP|м'],25);
 assert.equal(usage(report.monthly['2026-10'])['Оптика|м'],120);
 assert(!('UTP|м' in usage(report.daily['2026-10-12'])));
 const daily=report.blocks.find(x=>x.kind==='daily'&&x.key==='2026-10-11').text;
-assert.equal((daily.match(/^ONU — /gm)||[]).length,1,'no fixed-counter/dynamic double counting');
-assert(daily.includes('🔄 Заміна ONU: 2'));assert(!daily.includes('БП'));
+assert.equal((daily.match(/^ONU — /gm)||[]).length,0,'ONU appears only in the two summary counters');
+assert(daily.includes('📦 ONU на ремонтах — 2 шт.'));assert(!daily.includes('Заміна ONU'));assert(!daily.includes('БП'));
 const empty=row('empty','2026-10-11',[]);
 assert(!core.render([empty]).blocks.find(x=>x.kind==='daily').text.includes('Матеріали:'),'explicit empty usage overrides legacy counters');
 for(const type of ['Ремонт','Інше']){
