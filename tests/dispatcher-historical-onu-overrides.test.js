@@ -61,6 +61,9 @@ assert.equal(prepared.request_id,'request-test-1');assert.equal(prepared.tickets
 assert.equal(prepared.tickets[0].total,1400);assert.equal(prepared.tickets[0].source_version,200);
 assert.match(prepared.tickets[0].source_hash,/^[a-f\d]{64}$/);
 await assert.rejects(()=>prepareAddressedHistoricalUpsert({...missing,id:'unrelated'},core,201,'request-test-2'),/HISTORICAL_TICKET_NOT_ALLOWLISTED/);
+const secondMissing={...missing,id:'1786951228806',sum:800};
+const secondPrepared=await prepareAddressedHistoricalUpsert(secondMissing,core,202,'request-test-3');
+assert.equal(secondPrepared.tickets[0].ticket_id,secondMissing.id);assert.equal(secondPrepared.tickets[0].total,800);
 
 console.log('PASS historical ONU overrides, confirmed count and read-only addressed projection');
 })().catch(error=>{console.error(error);process.exitCode=1;});
