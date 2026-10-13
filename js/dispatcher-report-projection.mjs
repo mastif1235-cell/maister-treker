@@ -41,6 +41,31 @@ export function reportPresentation(ticket,core){
   return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:core.sanitizeComment(publicBackupText(note,ticket.masterNote)),type,payment,tariff,
     city:core.sanitize(ticket.city)|| (raw?field(/^\s*🏙️?\s*Місто:\s*(.+)$/u):''),address:core.sanitize(ticket.address)|| (raw?field(/^\s*📍\s*Адреса:\s*(.+)$/u):'')};
 }
+// Presentation-only work breakdown. Never add these amounts to ticket.sum.
+export function projectWorks(ticket,core){
+  const rows=[],seen=new Set();
+  const number=(value,fallback)=>{
+    if(value===undefined||value===null||value==='')return fallback;
+    const n=Number(value);if(!Number.isFinite(n)||n<0)throw new Error('INVALID_NUMBER');return n;
+  };
+  for(const [source,items] of [['catalog',ticket.presetWorks||[]],['manual',ticket.additionalWork||[]]]){
+    items.forEach((w,index)=>{
+      if(w.checked===false)return;
+      const label=core.sanitizeComment(publicBackupText(source==='catalog'?w.label:w.desc,ticket.masterNote)).trim();
+      if(!label)return;
+      const quantity=number(w.qty,1)||1,unit_price=number(w.price,0);
+      const line_total=Math.round(number(w.sum,quantity*unit_price)*100)/100;
+      const id=w.id===undefined||w.id===null||w.id===''?null:String(w.id);
+      // Shared explicit id + identical data can be a mirrored record. Different
+      // ids or different amounts remain distinct, even with the same label.
+      // Anonymous manual rows are independent; do not guess their identity.
+      const key=JSON.stringify([id===null?(source==='manual'?source+':'+index:source):'id:'+id,label,quantity,line_total]);
+      if(seen.has(key))return;seen.add(key);
+      rows.push({source,id,label,quantity,unit_price,line_total});
+    });
+  }
+  return rows;
+}
 export function projectTicket(ticket,core,now=Date.now()){
   const text=v=>core.sanitize(v);
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
@@ -77,7 +102,8 @@ export function projectTicket(ticket,core,now=Date.now()){
     // Free amount is the saved monetary amount, not a guessed inventory price.
     payment_free_amount:free?total:0,payment_free_count:free?1:0,updated_at:new Date(now).toISOString(),source_version:now,source_hash:''};
   if(category==='connection'||category==='repair'){
-    const works=[...new Set((ticket.presetWorks||[]).filter(w=>w.checked!==false).map(w=>core.sanitizeComment(publicBackupText(w.label,ticket.masterNote)).trim()).filter(Boolean))];
+    const money=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';
+    const works=projectWorks(ticket,core).map(w=>w.label+(w.quantity!==1?' — '+w.quantity+' шт.'+(w.unit_price>0?' · '+money(w.unit_price)+'/шт.':''):'')+(w.line_total>0?' — '+money(w.line_total):''));
     if(works.length)dto.works_display=works.join('\n');
     if(category==='connection'&&hasEquipment){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
     const contract=String(ticket.contractNumber??'').trim();
