@@ -113,5 +113,20 @@
     "runtime": "runtime-159",
     "fingerprint": "e0fdade2445542ba05cd6f1bde30150a2ed4f189d64c5dbba53ca6cfb7026113",
     "assets": 8
+  },
+  "maister-treker-v90-runtime-160": {
+    "runtime": "runtime-160",
+    "fingerprint": "89c96c79e824240d3047802fa89f4c310ab56b87974066ca15673347f82bd3b4",
+    "assets": 8
+  },
+  "maister-treker-v91-runtime-161": {
+    "runtime": "runtime-161",
+    "fingerprint": "9bc29776c75d63c5b51cf0d2b9809d3389e4c726b8f1a19844bc76ff874cefff",
+    "assets": 8
+  },
+  "maister-treker-v92-runtime-162": {
+    "runtime": "runtime-162",
+    "fingerprint": "084c1535372602c45855bc17478b9fdc54f3e7cc0fa206cfeb483020b52dac3b",
+    "assets": 8
   }
 }

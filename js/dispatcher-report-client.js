@@ -8,7 +8,7 @@
   function createOutbox(deps){
     let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:'',inflight:null},running=false,timer=null,generation=0,blocked=false,flight=null;
     try{const saved=JSON.parse(deps.storage.getItem(KEY)||'null');if(saved&&Array.isArray(saved.operations)&&saved.operations.length<=10000){state={...state,...saved};state.operations=saved.operations.filter(o=>o&&typeof o.id==='string'&&['upsert','delete'].includes(o.action)&&Number.isSafeInteger(o.version)&&Number.isInteger(o.attempts)&&o.attempts>=0&&o.attempts<=3).map(o=>({id:o.id,action:o.action,version:o.version,attempts:o.attempts,next:Number(o.next)||0,error:String(o.error||'')}));}}catch(_){state.lastError='LOCAL_QUEUE_UNAVAILABLE';}
-    let durable=true;
+    let durable=true,targetedCorrection='';
     const now=()=>deps.now?.()??Date.now();
     // Recover v91.88's per-ticket failures caused by ONE shared connection
     // failure. Keep all operation IDs/versions, never tickets or private DTOs.
@@ -164,11 +164,14 @@
     function reconfigure(){generation++;for(const o of state.operations){if(o.error==='REPORT_NOT_CONFIGURED'||o.error==='INVALID_ENDPOINT'){o.error='';o.attempts=0;o.next=0;}}blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();if(deps.settings().dispatcherReportEnabled&&!blocked)schedule();return status();}
     let autoWaiting=false;
     function flush(intent={reason:'manual'}){
-      const scoped=intent.reason==='auto'?autoIntent():{reason:'manual',ids:intent.ids||state.operations.map(o=>o.id)};
-      if(flight){if(scoped.reason==='auto'){autoWaiting=true;return flight;}return flight.then(()=>flush(scoped));}
+      const scoped=intent.reason==='auto'?autoIntent():{...intent,reason:'manual',ids:intent.ids||state.operations.map(o=>o.id)};
+      if(targetedCorrection&&scoped.reason==='auto')return Promise.resolve();
+      if(targetedCorrection&&scoped.reason==='manual'&&(scoped.ids.length!==1||scoped.ids[0]!==targetedCorrection))return Promise.resolve();
+      if(flight){if(scoped.reason==='auto'){if(targetedCorrection)return Promise.resolve();autoWaiting=true;return flight;}return flight.then(()=>flush(scoped));}
       flight=flushBatch(scoped).finally(()=>{flight=null;if(autoWaiting){autoWaiting=false;schedule();}});return flight;
     }
     async function flushBatch(intent){
+      if(targetedCorrection&&(intent.reason==='auto'||intent.historicalCorrection!==targetedCorrection||intent.ids?.length!==1||intent.ids[0]!==targetedCorrection))return;
       if(!permitted(intent)||running||blocked||!configured()||deps.online?.()===false)return;
       if(runtimeBlocked()){telemetry('flush_attempt',{code:'RUNTIME_GUARD',store_ready:storeReady(),pending:status().pending,failed:status().failed,unresolved:status().unresolved});return;}
       if(!storeReady()){
@@ -210,7 +213,7 @@
         const batchOps=sent.map(o=>({id:o.id,action:o.action,version:o.version}));
         const batchKey=JSON.stringify(batchOps.map(o=>o.id+'#'+o.action+'#'+o.version).sort());
         const reuse=!!(state.inflight&&state.inflight.action==='report_sync_all'&&JSON.stringify(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version).sort())===batchKey);
-        const rebuild=reuse?state.inflight.rebuild:!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&!o.error);
+        const rebuild=reuse?state.inflight.rebuild:intent.skipRebuild!==true&&!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&!o.error);
         if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
         const request={action:'report_sync_all',tickets:dtos,deletes,request_id:reuse?state.inflight.request_id:deps.requestId(),rebuild};
         state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};
@@ -257,7 +260,7 @@
         else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
         persist();
       }finally{
-        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
+        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(intent.historicalCorrection!==targetedCorrection&&durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
       }
     }
     function fullSync(){
@@ -273,6 +276,42 @@
       if(operations.length>10000)throw new Error('REPORT_CAPACITY');state.operations=operations;state.inflight=null;state.sync={expected:operations.map(o=>({id:o.id,action:o.action,version:o.version,acknowledged:false})),batch_count:0,final_validation:'PENDING'};state.receipts=state.receipts.filter(r=>!ids.has(r.id));persist();if(!blocked)schedule(0,{reason:'manual',ids:operations.map(o=>o.id)});return status();
     }
     function retry(id){const ids=[];for(const o of state.operations){if(id!==undefined&&o.id!==String(id))continue;if(o.error==='INVALID_DTO')continue;if(id===undefined&&!o.error&&o.attempts<3)continue;ids.push(o.id);o.attempts=0;o.next=0;o.error='';}if(state.sync&&ids.length)state.sync.final_validation='PENDING';state.lastError='';blocked=false;persist();if(!ids.length)return Promise.resolve();const intent={reason:'manual',ids};return flight?flight.then(()=>flush(intent)):flush(intent);}
+    async function correctHistoricalOnu(id,expectedSnapshotHash){
+      id=String(id);
+      const allowlist=['1778579833958','1776093623146'];
+      if(!allowlist.includes(id))throw new Error('HISTORICAL_TICKET_NOT_ALLOWLISTED');
+      if(running||flight||state.inflight||targetedCorrection)throw new Error('REPORT_QUEUE_BUSY');
+      if(state.operations.some(o=>o.id===id))throw new Error('HISTORICAL_OPERATION_EXISTS');
+      if(blocked||!configured()||deps.online?.()===false||!storeReady()||runtimeBlocked())throw new Error('REPORT_CHANNEL_NOT_READY');
+      if(typeof deps.authorizedDirect!=='function'||deps.authorizedDirect()!==true)throw new Error('REPORT_DIRECT_AUTH_REQUIRED');
+      targetedCorrection=id;
+      try{
+        const url=align(),all=deps.tickets(),matches=all.filter(ticket=>String(ticket?.id??'')===id);
+        if(matches.length!==1)throw new Error(matches.length?'HISTORICAL_DUPLICATE_LOCAL_TICKET':'HISTORICAL_TICKET_NOT_FOUND');
+        const ticket=matches[0],version=Math.max(now(),(state.receipts.find(r=>r.id===id)?.version||0)+1);
+        if(!Number.isSafeInteger(version))throw new Error('INVALID_SOURCE_VERSION');
+        if(!/^[a-f0-9]{64}$/.test(String(expectedSnapshotHash||'')))throw new Error('HISTORICAL_PREVIEW_REQUIRED');
+        const snapshot=await deps.dto(ticket,1);
+        if(snapshot?.source_hash!==expectedSnapshotHash)throw new Error('HISTORICAL_SOURCE_CHANGED');
+        const dto=await deps.dto(ticket,version);
+        const expected=id==='1778579833958'?{date:'2026-05-12',time:'12:57',total:1600}:{date:'2026-04-13',time:'18:20',total:300};
+        if(!dto||dto.ticket_id!==id||dto.source_version!==version||dto.work_date!==expected.date||dto.work_time!==expected.time||dto.work_category!=='repair'||dto.onu_used!==0||dto.onu_replacement!==0||dto.total!==expected.total||dto.total!==Number(ticket.sum??0)||!/^[a-f0-9]{64}$/.test(dto.source_hash))throw new Error('HISTORICAL_PROJECTION_MISMATCH');
+        if(deps.settings().dispatcherReportEndpoint!==url)throw new Error('REPORT_ENDPOINT_CHANGED');
+        const operation={id,action:'upsert',version,attempts:0,next:0,error:''};
+        state.receipts=state.receipts.filter(r=>r.id!==id);
+        state.operations.push(operation);state.lastError='';persist();
+        const intent={reason:'manual',ids:[id],historicalCorrection:id,skipRebuild:true};
+        await flush(intent);
+        if(state.operations.includes(operation)||!state.receipts.some(r=>r.id===id&&r.version===version))throw new Error(operation.error||state.lastError||'HISTORICAL_ACK_MISSING');
+        const current=deps.ticket(id);if(!current)throw new Error('HISTORICAL_TICKET_NOT_FOUND');
+        const readbackDto=await deps.dto(current,version);
+        if(readbackDto.ticket_id!==id||readbackDto.source_version!==version||readbackDto.source_hash!==dto.source_hash||readbackDto.total!==dto.total)throw new Error('HISTORICAL_LOCAL_CHANGED');
+        const proof={ticket_id:id,source_version:version,source_hash:dto.source_hash};
+        const result=await deps.send(url,{action:'report_receipt',proof,request_id:deps.requestId()});
+        if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).sort().join(',')!=='code,ok,source_hash,source_version,sync_status,ticket_id'||result.ok!==true||result.code!=='OK'||result.ticket_id!==id||result.source_version!==version||result.source_hash!==dto.source_hash||result.sync_status!=='SYNCED')throw new Error(result?.ok===false&&/^[A-Z_]{1,64}$/.test(result?.code||'')?result.code:'HISTORICAL_READBACK_MISMATCH');
+        return Object.freeze({ok:true,ticket_id:id,source_version:version,source_hash:dto.source_hash,total:dto.total,onu_used:0,onu_replacement:0});
+      }finally{targetedCorrection='';}
+    }
     function connectionReady(){blocked=false;if(CONNECTION.test(state.lastError))state.lastError='';persist();schedule();}
     function delivery(id){id=String(id);if(!configured())return{state:'not_configured',code:'REPORT_NOT_CONFIGURED'};if(state.endpoint&&state.endpoint!==deps.settings().dispatcherReportEndpoint)return{state:'not_configured',code:'GOOGLE_CONNECTION_REQUIRED'};const o=state.operations.find(o=>o.id===id);if(o)return{state:o.error||o.attempts>=3?'error':'pending',code:o.error||(!o.error&&o.attempts>=3?'REPORT_NETWORK_ERROR':''),ticket_id:id,attempts:o.attempts,channel:'dispatcher',server_response:o.error&&/^[A-Z_]{1,64}$/.test(o.error)?o.error:''};if(state.receipts.some(r=>r.id===id))return{state:'sent',code:''};return{state:deps.settings().dispatcherReportEnabled?'pending':'disabled',code:''};}
     async function syncAll(){
@@ -299,7 +338,7 @@
       dates.sort();const acknowledged=live.filter(t=>delivery(t.id).state==='sent').length;
       return {source_tickets:live.length,projected_tickets:projected,acknowledged_tickets:acknowledged,missing_receipts:live.length-acknowledged,earliest_source:dates[0]||'',latest_source:dates.at(-1)||'',projection_errors:errors,...status()};
     }
-    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure,reconcile,reconcileStored});
+    return Object.freeze({enqueueUpsert:t=>enqueue(t.id,'upsert'),enqueueDelete:id=>enqueue(id,'delete'),flush,fullSync,syncAll,confirmArchive,archiveDiagnostics,retry,status,delivery,connectionReady,reconfigure,reconcile,reconcileStored,correctHistoricalOnu});
   }
   // v91.95 direct transport (the normal send path): the request is wrapped in
   // the SAME signed MT-SYNC-HMAC-V3 envelope the legacy ticket/shift sync uses
@@ -455,7 +494,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-159',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-162',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -464,7 +503,7 @@
   const directMode=()=>String(cfg().dispatcherHmacSecret||'').length>=32;
   const directSend=createDirectSend({settings:cfg,now:()=>Date.now(),postTimeoutMs:20000});
   const sendRequest=(value,request,interactive=false)=>directMode()?directSend(value,request):bridge.send(value,request,interactive);
-  const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),
+  const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),authorizedDirect:directMode,
     dto:async(t,v)=>(await import('./dispatcher-report-projection.mjs')).buildDTO(t,root.MTDispatcherReportCore,v),send:(value,request,canSend)=>directMode()?directSend(value,request,canSend):bridge.send(value,request,false,canSend),requestId:()=>crypto.randomUUID(),online:()=>navigator.onLine,
     // Browser timers require Window as receiver, not the dependency object.
     setTimeout:(fn,ms)=>window.setTimeout(fn,ms),clearTimeout:id=>window.clearTimeout(id),changed:x=>{record('queue_state',{pending:x.pending,failed:x.failed,unresolved:x.unresolved});refreshUI();},
@@ -508,10 +547,41 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v89-runtime-159'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-159');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v92-runtime-162'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-162');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
+  }
+  async function openHistoricalOnuCorrection(){
+    try{
+      const projection=await import('./dispatcher-report-projection.mjs');
+      const preview=await projection.previewHistoricalOnuCorrection(typeof tickets==='undefined'?[]:tickets,root.MTDispatcherReportCore);
+      const lines=preview.map(item=>`<div class="card" style="margin:8px 0;"><strong>${escapeHtml(item.ticket_id)} · ${escapeHtml(item.date)} ${escapeHtml(item.time)}</strong><div>ONU: ${item.before.onu_used} → ${item.after.onu_used} шт.</div><div>Заміна ONU: ${item.before.onu_replacement} → ${item.after.onu_replacement}</div><div>Разом: ${item.before.total} → ${item.after.total} грн</div></div>`).join('');
+      openModal('Dry-run · історичний облік ONU',`<p>«До» — підтверджений попередній знімок Таблиці Д; «Після» — projection із локальної canonical-заявки. Перевірені лише дві дозволені заявки. До окремого підтвердження запитів не надсилається.</p>${lines}<div id="historicalOnuCorrectionStatus" role="status"></div><button type="button" class="btn btn-accent btn-block" id="historicalOnuCorrectionConfirm">Підтвердити й виправити обидві заявки</button><button type="button" class="btn btn-block" id="historicalOnuCorrectionCancel">Скасувати</button>`,{onOpen:modal=>{
+        const confirm=modal.querySelector('#historicalOnuCorrectionConfirm'),cancel=modal.querySelector('#historicalOnuCorrectionCancel'),status=modal.querySelector('#historicalOnuCorrectionStatus');
+        cancel.onclick=()=>closeModal();
+        confirm.onclick=async()=>{
+          confirm.disabled=true;cancel.disabled=true;confirm.setAttribute('aria-busy','true');
+          try{
+            for(const item of preview){
+              status.textContent=`Виправляється ${item.ticket_id}…`;
+              const result=await outbox.correctHistoricalOnu(item.ticket_id,item.snapshot_hash);
+              if(!result?.ok||result.ticket_id!==item.ticket_id||result.total!==item.after.total||result.onu_used!==0||result.onu_replacement!==0)throw new Error('HISTORICAL_VERIFY_FAILED');
+              status.textContent=`✅ ${item.ticket_id}: ACK і точне read-back підтверджені; сума не змінилася.`;
+            }
+            status.textContent='✅ Обидві адресні корекції підтверджені. Інші заявки й черги не змінювалися.';
+            message('Історичний облік ONU виправлено для двох підтверджених заявок.');
+          }catch(error){
+            const code=/^[A-Z_]{1,64}$/.test(error?.message||'')?error.message:'HISTORICAL_VERIFY_FAILED';
+            status.textContent=`❌ Зупинено після безпечної перевірки: ${code}. Наступна заявка не надсилалася.`;
+            message(`Адресну корекцію зупинено: ${code}. Перевірте стан конкретної заявки.`);
+          }finally{confirm.removeAttribute('aria-busy');refreshUI();}
+        };
+      }});
+    }catch(error){
+      const code=/^[A-Z_]{1,64}$/.test(error?.message||'')?error.message:'HISTORICAL_DRY_RUN_FAILED';
+      message(`Dry-run не пройшов: ${code}. Жодних змін не виконано.`);
+    }
   }
   const activeActions=new Set();
   document.addEventListener('click',async event=>{
@@ -529,7 +599,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v89-runtime-159'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-159');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v92-runtime-162'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-162');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
@@ -552,6 +622,7 @@
         }
         message(copied?'Діагностику скопійовано. Приватні дані заявок не включаються.':'Не вдалося скопіювати. '+text);return;
       }
+      if(action==='historicalOnuCorrection'){await openHistoricalOnuCorrection();return;}
       const response=await sendRequest(cfg().dispatcherReportEndpoint,{action:action==='rebuild'?'report_rebuild':'report_status',request_id:crypto.randomUUID()},true);
       if(!response?.ok)throw new Error(response?.code||'REPORT_NETWORK_ERROR');
       // Preflight the authenticated connection before adding every ticket.

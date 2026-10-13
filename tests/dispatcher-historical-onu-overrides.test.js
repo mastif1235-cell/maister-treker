@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const core=require('../js/dispatcher-report-core.js');
 (async()=>{
-const {buildDTO,confirmedRepairOnuCount,prepareAddressedHistoricalUpsert}=await import('../js/dispatcher-report-projection.mjs');
+const {buildDTO,confirmedRepairOnuCount,previewHistoricalOnuCorrection,HISTORICAL_ONU_CORRECTION_IDS}=await import('../js/dispatcher-report-projection.mjs');
 
 const base={date:'18.08.2026',time:'12:00',type:'Ремонт',sum:800,payment:'Готівка',note:'',equipment:[],cables:[]};
 const record=(id,patch={})=>({ticket_id:id,work_category:'repair',onu_used:0,onu_replacement:0,...patch});
@@ -52,18 +52,22 @@ const sameA=await buildDTO({...base,id:'1787044186198'},core,103),sameB=await bu
 assert.equal(sameA.total,sumBefore);assert.equal(sameA.amount,sumBefore);assert.equal(base.sum,sumBefore);
 assert.equal(sameA.source_hash,sameB.source_hash);assert.equal(core.content(sameA),core.content(sameB));
 
-// Missing-row preparation uses the ordinary canonical projection, preserves
-// ticket id/saved sum, and returns a request envelope without writing/sending.
-const missing={...base,id:'1786990035908',sum:1400,equipment:[{label:'ONU',checked:true,qty:1}]};
-const snapshot=JSON.stringify(missing),prepared=await prepareAddressedHistoricalUpsert(missing,core,200,'request-test-1');
-assert.equal(JSON.stringify(missing),snapshot);assert.equal(prepared.action,'report_upsert');
-assert.equal(prepared.request_id,'request-test-1');assert.equal(prepared.tickets[0].ticket_id,missing.id);
-assert.equal(prepared.tickets[0].total,1400);assert.equal(prepared.tickets[0].source_version,200);
-assert.match(prepared.tickets[0].source_hash,/^[a-f\d]{64}$/);
-await assert.rejects(()=>prepareAddressedHistoricalUpsert({...missing,id:'unrelated'},core,201,'request-test-2'),/HISTORICAL_TICKET_NOT_ALLOWLISTED/);
-const secondMissing={...missing,id:'1786951228806',sum:800};
-const secondPrepared=await prepareAddressedHistoricalUpsert(secondMissing,core,202,'request-test-3');
-assert.equal(secondPrepared.tickets[0].ticket_id,secondMissing.id);assert.equal(secondPrepared.tickets[0].total,800);
+// Dry-run is canonical-ticket-only, read-only, and restricted to the two
+// manually approved IDs/dates/current parser values. It never returns a DTO.
+const corrections=[
+  {...base,id:'1778579833958',date:'12.05.2026',time:'12:57',sum:1600,content:'Поменял ONU, поставил блок питания'},
+  {...base,id:'1776093623146',date:'13.04.2026',time:'18:20',sum:300,content:'ONU куплена клиентом'}
+];
+const snapshot=JSON.stringify(corrections),preview=await previewHistoricalOnuCorrection(corrections,core,300);
+assert.deepEqual([...HISTORICAL_ONU_CORRECTION_IDS],['1778579833958','1776093623146']);
+assert.equal(JSON.stringify(corrections),snapshot,'dry-run leaves canonical tickets untouched');
+assert.deepEqual(preview.map(x=>[x.ticket_id,x.date,x.time,x.before.onu_used,x.before.onu_replacement,x.after.onu_used,x.after.onu_replacement,x.before.total,x.after.total]),[
+  ['1778579833958','2026-05-12','12:57',1,1,0,0,1600,1600],
+  ['1776093623146','2026-04-13','18:20',1,0,0,0,300,300]
+]);
+await assert.rejects(()=>previewHistoricalOnuCorrection([...corrections,{...corrections[0]}],core,301),/HISTORICAL_DUPLICATE_LOCAL_TICKET/);
+await assert.rejects(()=>previewHistoricalOnuCorrection([corrections[0]],core,301),/HISTORICAL_TICKET_NOT_FOUND/);
+await assert.rejects(()=>previewHistoricalOnuCorrection(corrections.map(t=>({...t,id:'1786990035908'})),core,301),/HISTORICAL_TICKET_NOT_FOUND/);
 
 console.log('PASS historical ONU overrides, confirmed count and read-only addressed projection');
 })().catch(error=>{console.error(error);process.exitCode=1;});

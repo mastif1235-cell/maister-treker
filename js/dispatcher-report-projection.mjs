@@ -74,7 +74,7 @@ export const HISTORICAL_ONU_OVERRIDES=Object.freeze({
   '1774458317609':'UNKNOWN'
 });
 export const HISTORICAL_ONU_OVERRIDE_STATES=Object.freeze(['OUR_ONU','NO_ONU','UNKNOWN']);
-export const HISTORICAL_ONU_MISSING_TICKET_IDS=Object.freeze(['1786990035908','1786951228806']);
+export const HISTORICAL_ONU_CORRECTION_IDS=Object.freeze(['1778579833958','1776093623146']);
 
 function overrideFor(ticketId,overrides){
   const value=overrides instanceof Map?overrides.get(String(ticketId)):overrides?.[String(ticketId)];
@@ -175,6 +175,27 @@ export async function buildDTO(ticket,core,now=Date.now(),overrides=HISTORICAL_O
   dto.source_hash=Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');return core.validate(dto);
 }
 
+// Read-only preview for the two manually approved NO_ONU corrections. The
+// baseline intentionally omits historical overrides so it shows what the old
+// parser would currently project; the after projection uses the production map.
+export async function previewHistoricalOnuCorrection(tickets,core,now=Date.now()){
+  const expected={
+    // BEFORE values are the user's confirmed read-only server snapshot.
+    '1778579833958':{date:'2026-05-12',time:'12:57',before_used:1,before_replacement:1,total:1600},
+    '1776093623146':{date:'2026-04-13',time:'18:20',before_used:1,before_replacement:0,total:300}
+  };
+  if(!Array.isArray(tickets))throw new Error('HISTORICAL_SOURCE_UNAVAILABLE');
+  return Promise.all(HISTORICAL_ONU_CORRECTION_IDS.map(async id=>{
+    const matches=tickets.filter(ticket=>String(ticket?.id??'')===id);
+    if(matches.length!==1)throw new Error(matches.length?'HISTORICAL_DUPLICATE_LOCAL_TICKET':'HISTORICAL_TICKET_NOT_FOUND');
+    const ticket=matches[0],baseline=await buildDTO(ticket,core,now,{}),after=await buildDTO(ticket,core,now),snapshot=await buildDTO(ticket,core,1);
+    const rule=expected[id];
+    if(baseline.work_category!=='repair'||baseline.work_date!==rule.date||baseline.work_time!==rule.time||baseline.total!==rule.total||Number(ticket.sum??0)!==rule.total)throw new Error('HISTORICAL_BEFORE_MISMATCH');
+    if(after.ticket_id!==id||after.onu_used!==0||after.onu_replacement!==0||after.total!==rule.total)throw new Error('HISTORICAL_AFTER_MISMATCH');
+    return Object.freeze({ticket_id:id,date:baseline.work_date,time:baseline.work_time,snapshot_hash:snapshot.source_hash,before:{onu_used:rule.before_used,onu_replacement:rule.before_replacement,total:rule.total},after:{onu_used:after.onu_used,onu_replacement:after.onu_replacement,total:after.total}});
+  }));
+}
+
 // Count only physical ONU evidence: explicit user decisions, structured
 // equipment/materials, or a precise legacy material line. Notes, MAC and the
 // text-parser counter are deliberately not evidence for this confirmed total.
@@ -205,14 +226,3 @@ export function confirmedRepairOnuCount(records,core,overrides=HISTORICAL_ONU_OV
   return total;
 }
 
-// Builds, but never sends or persists, a normal projection for the two
-// confirmed missing records. Callers must supply each complete canonical
-// ticket object; no DTO is reconstructed from display text here.
-export async function prepareAddressedHistoricalUpsert(ticket,core,now=Date.now(),requestId=crypto.randomUUID()){
-  const id=String(ticket?.id??'');
-  if(!HISTORICAL_ONU_MISSING_TICKET_IDS.includes(id))throw new Error('HISTORICAL_TICKET_NOT_ALLOWLISTED');
-  if(!requestId||typeof requestId!=='string')throw new Error('INVALID_REQUEST_ID');
-  const savedSum=Number(ticket.sum??0),dto=await buildDTO(ticket,core,now);
-  if(dto.ticket_id!==id||dto.total!==savedSum)throw new Error('HISTORICAL_PROJECTION_MISMATCH');
-  return {action:'report_upsert',request_id:requestId,tickets:[dto]};
-}
