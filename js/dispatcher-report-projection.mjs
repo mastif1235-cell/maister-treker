@@ -41,8 +41,44 @@ export function reportPresentation(ticket,core){
   return {materials:materials.filter(line=>!line.startsWith(' —')).join('\n'),note:core.sanitizeComment(publicBackupText(note,ticket.masterNote)),type,payment,tariff,
     city:core.sanitize(ticket.city)|| (raw?field(/^\s*🏙️?\s*Місто:\s*(.+)$/u):''),address:core.sanitize(ticket.address)|| (raw?field(/^\s*📍\s*Адреса:\s*(.+)$/u):'')};
 }
+// Presentation-only work breakdown. Never add these amounts to ticket.sum.
+export function projectWorks(ticket,core){
+  const rows=[],seen=new Set();
+  const number=(value,fallback)=>{
+    if(value===undefined||value===null||value==='')return fallback;
+    const n=Number(value);if(!Number.isFinite(n)||n<0)throw new Error('INVALID_NUMBER');return n;
+  };
+  for(const [source,items] of [['catalog',ticket.presetWorks||[]],['manual',ticket.additionalWork||[]]]){
+    items.forEach((w,index)=>{
+      if(w.checked===false)return;
+      const label=core.sanitizeComment(publicBackupText(source==='catalog'?w.label:w.desc,ticket.masterNote)).trim();
+      if(!label)return;
+      const quantity=number(w.qty,1)||1,unit_price=number(w.price,0);
+      const line_total=Math.round(number(w.sum,quantity*unit_price)*100)/100;
+      const id=w.id===undefined||w.id===null||w.id===''?null:String(w.id);
+      // Shared explicit id + identical data can be a mirrored record. Different
+      // ids or different amounts remain distinct, even with the same label.
+      // Anonymous manual rows are independent; do not guess their identity.
+      const key=JSON.stringify([id===null?(source==='manual'?source+':'+index:source):'id:'+id,label,quantity,line_total]);
+      if(seen.has(key))return;seen.add(key);
+      rows.push({source,id,label,quantity,unit_price,line_total});
+    });
+  }
+  return rows;
+}
 export function projectTicket(ticket,core,now=Date.now()){
   const text=v=>core.sanitize(v);
+  const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
+  // Saved equipment contains selected rows (checked may be absent). An explicit
+  // empty/unchecked list means customer-owned ONU; never infer it from notes.
+  const hasEquipment=Array.isArray(ticket.equipment)&&(!ticket.cloudImported||ticket.equipment.length>0);
+  const selectedOnu=(ticket.equipment||[]).find(e=>core.isOnuEquipment(e)&&e.checked!==false);
+  let seenOnu=false;
+  const equipment=connection&&hasEquipment?ticket.equipment.flatMap(e=>{
+    if(!core.isOnuEquipment(e))return [e];
+    if(e.checked===false||seenOnu)return [];seenOnu=true;return [{...e,qty:1,consumption_qty:1,price:0}];
+  }):ticket.equipment;
+  const projected=connection&&hasEquipment?{...ticket,equipment}:ticket;
   const safePublic={id:ticket.id,date:ticket.date,type:ticket.type,macAddress:ticket.macAddress,
     equipment:(ticket.equipment||[]).map(e=>({label:publicBackupText(e.label),checked:e.checked,qty:e.qty,consumption_qty:e.consumption_qty})).map(e=>Object.fromEntries(Object.entries(e).filter(([,v])=>v!==undefined))),
     cables:(ticket.cables||[]).map(c=>({label:publicBackupText(c.label),meters:c.meters})),
@@ -51,7 +87,7 @@ export function projectTicket(ticket,core,now=Date.now()){
     note:publicBackupText(ticket.note),otherNote:publicBackupText(ticket.otherNote)};
   const analysis=workEvents(safePublic,publicBackupText(ticket.content,ticket.masterNote),{profile:'physical_consumption'});
   const quantity=(entity,action)=>analysis.events.filter(e=>e.category==='definite'&&e.entity===entity&&(!action||e.action===action)).reduce((s,e)=>s+(e.quantity||0),0);
-  const presentation=reportPresentation(ticket,core);
+  const presentation=reportPresentation(projected,core);
   const total=Number(ticket.sum??0),payment=presentation.payment,free=payment==='Безкоштовно';
   const cash=free?0:payment==='Готівка'?total:payment==='Змішана'?Number(ticket.cashAmount||0):0;
   const card=free?0:payment==='Безготівка'?total:payment==='Змішана'?Number(ticket.cardAmount||0):0;
@@ -66,6 +102,10 @@ export function projectTicket(ticket,core,now=Date.now()){
     // Free amount is the saved monetary amount, not a guessed inventory price.
     payment_free_amount:free?total:0,payment_free_count:free?1:0,updated_at:new Date(now).toISOString(),source_version:now,source_hash:''};
   if(category==='connection'||category==='repair'){
+    const money=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';
+    const works=projectWorks(ticket,core).map(w=>w.label+(w.quantity!==1?' — '+w.quantity+' шт.'+(w.unit_price>0?' · '+money(w.unit_price)+'/шт.':''):'')+(w.line_total>0?' — '+money(w.line_total):''));
+    if(works.length)dto.works_display=works.join('\n');
+    if(category==='connection'&&hasEquipment){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
     const contract=String(ticket.contractNumber??'').trim();
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.
@@ -90,7 +130,7 @@ export function projectTicket(ticket,core,now=Date.now()){
   // Optional hash-bound material usage, independent of display/price strings.
   // Historical raw imports retain the existing physical-counter fallback.
   if(Array.isArray(ticket.equipment)||Array.isArray(ticket.cables)){
-    const equipment=ticket.equipment||[],cables=ticket.cables||[];
+    const equipment=projected.equipment||[],cables=ticket.cables||[];
     if(!ticket.cloudImported||equipment.length||cables.length){
       const entries=[...equipment.filter(e=>e.checked!==false&&Number(e.consumption_qty??e.qty??1)>0).map(e=>({label:text(e.label),quantity:Number(e.consumption_qty??e.qty??1),unit:'шт.',...(e.price!==undefined?{unit_price:Number(e.price)}:{})})),
         ...cables.filter(c=>Number(c.meters)>0).map(c=>({label:text(c.label),quantity:Number(c.meters),unit:'м',...(c.pricePerMeter!==undefined?{unit_price:Number(c.pricePerMeter)}:{})}))].filter(e=>e.label);

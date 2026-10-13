@@ -42,9 +42,9 @@ assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:t
 assert.throws(()=>core.verifyReleaseIdentity({cacheName:proof.cacheName,assets:{...tampered,'./js/dispatcher-report-client.js':'1'.repeat(64)},identity}),/RELEASE_IDENTITY_CHANGED/,'the rule covers the report client itself');
 
 // 5. The required remedy — a NEW cache/runtime for changed bytes — passes.
-const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v86-runtime-156',assets:tampered,identity});
+const bumped=core.verifyReleaseIdentity({cacheName:'maister-treker-v88-runtime-158',assets:tampered,identity});
 assert.equal(bumped.recorded,false,'new cache name is not yet recorded');
-assert.equal(bumped.runtime,'runtime-156','bumped release keeps the runtime token');
+assert.equal(bumped.runtime,'runtime-158','bumped release keeps the runtime token');
 
 // 6. Ledger history: every recorded release keeps its own immutable fingerprint pair.
 const names=Object.keys(identity);

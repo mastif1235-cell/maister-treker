@@ -18,12 +18,16 @@ function buildCalendarGridHtml({year, month, tickets, selectedDate, todayStr, fo
 
 function buildMonthlyEquipmentLines(list){
   const eqCounts = {}, cableMeters = {}, workCounts = {};
+  let onuRegular=0,onuConnection=0;
   list.forEach(t=>{
-    (t.equipment||[]).forEach(e=>{ if(e.checked!==false) eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
+    const selected=(t.equipment||[]).filter(e=>e.checked!==false);
+    if(t.type==='Підключення'&&selected.some(isTicketOnuEquipment))onuConnection++;
+    selected.forEach(e=>{ if(isTicketOnuEquipment(e)){if(t.type!=='Підключення')onuRegular++;}else eqCounts[e.label] = (eqCounts[e.label]||0) + 1; });
     (t.cables||[]).forEach(c=>{ const m = Number(c.meters)||0; if(m>0) cableMeters[c.label] = (cableMeters[c.label]||0) + m; });
     (t.presetWorks||[]).forEach(w=>{ if(w.checked!==false) workCounts[w.label] = (workCounts[w.label]||0) + (Number(w.qty)||1); });
   });
   const lines = [];
+  if(onuRegular||onuConnection)lines.push(`ONU — ${onuRegular} шт.`,`ONU на підключенні — ${onuConnection} шт.`,`Разом ONU — ${onuRegular+onuConnection} шт.`);
   Object.entries(eqCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,c])=> lines.push(`${label} — ${c} шт.`));
   Object.entries(cableMeters).sort((a,b)=>b[1]-a[1]).forEach(([label,m])=> lines.push(`${label} — ${m} м`));
   Object.entries(workCounts).sort((a,b)=>b[1]-a[1]).forEach(([label,q])=> lines.push(`${label} — ${q} шт.`));

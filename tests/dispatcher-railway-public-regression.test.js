@@ -22,7 +22,9 @@ const core=require('../js/dispatcher-report-core.js');
     assert.equal(dto.city,'Сурсько-Михайлівка');
     assert.equal(dto.address_display,'Сурсько-Михайлівка, пров. Залізничний, 4');
     // v91.95: quantity + informational line price (raw and structured agree).
-    assert.equal(dto.materials_display,'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн');
+    // New structured connections include ONU at +0; historical raw rows keep
+    // their saved display and canonical total without a migration/recalculation.
+    assert.equal(dto.materials_display,ticket===publicTicket?'ONU — 1 шт.\nРоутер — 1 шт. — 2300 грн':'ONU — 1 шт. — 800 грн\nРоутер — 1 шт. — 2300 грн');
     assert.equal(dto.dispatcher_comment,note);assert.equal(dto.tariff_amount,400);
     assert.equal(dto.payment_type,'Готівка');assert.equal(dto.payment_cash,3500);
     assert.equal(dto.payment_cashless,0);assert.equal(dto.total,3500);

@@ -58,7 +58,7 @@ assert.equal(paidCalculation.total,1000,'F: below-threshold repair total is unch
 const connection = {...freeCall,type:'Підключення'};
 const connectionCalculation = context.calculateTicketTotal(connection);
 assert.equal(connectionCalculation.callFee,300,'G: repair threshold never makes another ticket type free');
-assert.equal(connectionCalculation.total,1200,'G: non-repair total includes its call fee');
+assert.equal(connectionCalculation.total,300,'G: connection ONU is included; call fee remains paid');
 
 assert.match(
   editorSource,
