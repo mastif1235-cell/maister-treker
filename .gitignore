@@ -5,3 +5,6 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# Local historical audit input contains private canonical data; never commit it.
+/audit-input/
+/historical-onu-dry-run*.json

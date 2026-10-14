@@ -70,6 +70,24 @@ export const HISTORICAL_ONU_OVERRIDES=Object.freeze({
   '1778579833958':'NO_ONU',
   '1776093623146':'NO_ONU',
   '1787044186198':'OUR_ONU',
+  '1782135770715':'OUR_ONU',
+  '1775815433108':'OUR_ONU',
+  '1774458317644':'OUR_ONU',
+  '1774458317627':'OUR_ONU',
+  '1774458317606':'OUR_ONU',
+  '1774458317612':'OUR_ONU',
+  '1774458317619':'OUR_ONU',
+  '1783937356212':'OUR_ONU',
+  '1783336285098':'NO_ONU',
+  '1781882915421':'NO_ONU',
+  '1781880526066':'NO_ONU',
+  '1781871158184':'NO_ONU',
+  '1781716436224':'NO_ONU',
+  '1781179383203':'NO_ONU',
+  '1781104713848':'NO_ONU',
+  '1780498750666':'NO_ONU',
+  '1780498841441':'NO_ONU',
+  '1779469363834':'NO_ONU',
   'cca10ba0-41a2-4571-ac3c-02b57e2a19bc':'UNKNOWN',
   '1774458317609':'UNKNOWN'
 });
@@ -91,6 +109,7 @@ const CUSTOMER_ONU_PATTERNS=Object.freeze([
   new RegExp(`(?<![\\p{L}\\p{N}_])(?:сам(?:остоятельно)?|сама|самостійно)\\s+(?:купил|купила|купили|покупал|покупала|приобрел|приобрела|придбав|придбала|купив)\\s+(?:(?:себе|собі)\\s+)?${ONU_WORD}(?![\\p{L}\\p{N}_])`,'iu'),
   new RegExp(`(?<![\\p{L}\\p{N}_])${ONU_WORD}\\s+(?:сам|сама)\\s+(?:купил|купила|купили|покупал|покупала|приобрел|приобрела|придбав|придбала|купив)(?![\\p{L}\\p{N}_])`,'iu')
 ]);
+export const HISTORICAL_CONNECTION_ONU_OVERRIDES=Object.freeze({'1783937356209':'CUSTOMER_ONU'});
 
 function customerOnuEvidence(ticket){
   const source=[ticket?.content,ticket?.note,ticket?.otherNote,...(Array.isArray(ticket?.equipment)?ticket.equipment.map(item=>item?.label):[])]
@@ -114,6 +133,7 @@ function customerOnuEvidence(ticket){
 // customer ownership wins; unchecked/absent equipment is never negative proof.
 // Do not infer a modern format from date, cloudImported, or equipment presence.
 export function classifyConnectionOnu(ticket,core){
+  if(HISTORICAL_CONNECTION_ONU_OVERRIDES[String(ticket?.id)]==='CUSTOMER_ONU')return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'approved_customer_ownership',evidence:'своя onu'});
   const equipment=Array.isArray(ticket?.equipment)?ticket.equipment:[];
   const onuItems=equipment.filter(item=>core.isOnuEquipment(item));
   const customerEvidence=customerOnuEvidence(ticket);
@@ -128,16 +148,19 @@ export function classifyConnectionOnu(ticket,core){
   return Object.freeze({classification:'LEGACY_DEFAULT_OUR_ONU',onu_connection:1,reason:'approved_legacy_connection_default',evidence:'legacy connection default'});
 }
 
-export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
+export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES,workTypeOverride){
+  const resolvedWorkType=workTypeOverride??HISTORICAL_WORK_TYPE_OVERRIDES[String(ticket.id)];
+  if(resolvedWorkType!==undefined&&!['CONNECTION','REPAIR','OTHER'].includes(resolvedWorkType))throw new Error('UNRESOLVED_HISTORICAL_WORK_TYPE');
+  const effectiveType=resolvedWorkType===undefined?ticket.type:{CONNECTION:'Підключення',REPAIR:'Ремонт',OTHER:'Інше'}[resolvedWorkType];
   const text=v=>core.sanitize(v);
-  const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
+  const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(effectiveType||''));
   let seenOnu=false;
   const equipment=connection&&Array.isArray(ticket.equipment)?ticket.equipment.flatMap(e=>{
     if(!core.isOnuEquipment(e))return [e];
     if(e.checked===false||seenOnu)return [];seenOnu=true;return [{...e,qty:1,consumption_qty:1,price:0}];
   }):ticket.equipment;
   const projected=connection&&Array.isArray(ticket.equipment)?{...ticket,equipment}:ticket;
-  const safePublic={id:ticket.id,date:ticket.date,type:ticket.type,macAddress:ticket.macAddress,
+  const safePublic={id:ticket.id,date:ticket.date,type:effectiveType,macAddress:ticket.macAddress,
     equipment:(ticket.equipment||[]).map(e=>({label:publicBackupText(e.label),checked:e.checked,qty:e.qty,consumption_qty:e.consumption_qty})).map(e=>Object.fromEntries(Object.entries(e).filter(([,v])=>v!==undefined))),
     cables:(ticket.cables||[]).map(c=>({label:publicBackupText(c.label),meters:c.meters})),
     presetWorks:(ticket.presetWorks||[]).map(w=>({label:publicBackupText(w.label),qty:w.qty,checked:w.checked})),
@@ -146,6 +169,7 @@ export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ON
   const analysis=workEvents(safePublic,publicBackupText(ticket.content,ticket.masterNote),{profile:'physical_consumption'});
   const quantity=(entity,action)=>analysis.events.filter(e=>e.category==='definite'&&e.entity===entity&&(!action||e.action===action)).reduce((s,e)=>s+(e.quantity||0),0);
   const presentation=reportPresentation(projected,core);
+  if(resolvedWorkType!==undefined)presentation.type=effectiveType;
   const total=Number(ticket.sum??0),payment=presentation.payment,free=payment==='Безкоштовно';
   const cash=free?0:payment==='Готівка'?total:payment==='Змішана'?Number(ticket.cashAmount||0):0;
   const card=free?0:payment==='Безготівка'?total:payment==='Змішана'?Number(ticket.cardAmount||0):0;
@@ -211,8 +235,8 @@ export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ON
   }
   return dto;
 }
-export async function buildDTO(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
-  const dto=projectTicket(ticket,core,now,overrides),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(core.content(dto)));
+export async function buildDTO(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES,workTypeOverride){
+  const dto=projectTicket(ticket,core,now,overrides,workTypeOverride),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(core.content(dto)));
   dto.source_hash=Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');return core.validate(dto);
 }
 
@@ -274,7 +298,29 @@ export const HISTORICAL_WORK_TYPE_OVERRIDES=Object.freeze({
   '1784048596976':'REPAIR',
   '1783937356216':'REPAIR',
   '1777287852811':'REPAIR',
-  '1775815433108':'REPAIR'
+  '1775815433108':'REPAIR',
+  '1783937356212':'REPAIR',
+  '1783336285098':'REPAIR',
+  '1781882915421':'REPAIR',
+  '1781880526066':'REPAIR',
+  '1781871158184':'REPAIR',
+  '1781716436224':'REPAIR',
+  '1781179383203':'REPAIR',
+  '1781104713848':'REPAIR',
+  '1780498750666':'REPAIR',
+  '1780498841441':'REPAIR',
+  '1779469363834':'REPAIR',
+  '1774458317619':'REPAIR',
+  '1774458317612':'REPAIR'
+});
+export const HISTORICAL_REBUILD_EXCLUDED_IDS=Object.freeze(['1786990035908','1786951228806']);
+export const HISTORICAL_PHYSICAL_ALIASES=Object.freeze({
+  '1783435135970':'1783937356200','1783420836005':'1783937356201',
+  '1783343460359':'1783937356203','1783075798413':'1783937356205',
+  '1782994943831':'1783937356209','1782905435476':'1783937356210',
+  '1782829354711':'1783937356211','1782381630879':'1783937356224',
+  '1782308060945':'1783937356225','1782297313220':'1783937356226',
+  '1782744999128':'1783937356212'
 });
 const HISTORICAL_WORK_TYPES=Object.freeze(['CONNECTION','REPAIR','OTHER','UNKNOWN_TYPE']);
 const normalizeHistoricalText=value=>String(value??'').normalize('NFKC').toLocaleLowerCase('uk-UA').replace(/ё/gu,'е').trim();
@@ -338,7 +384,7 @@ export function resolveHistoricalWorkType(ticket,overrides=HISTORICAL_WORK_TYPE_
 // or material-text comparison. Missing content/time cannot prove duplication.
 export function reconcileHistoricalTickets(current,archive,core){
   if(!Array.isArray(current)||!Array.isArray(archive))throw new Error('HISTORICAL_SOURCE_UNAVAILABLE');
-  const byId=new Map(),byPhysicalJob=new Map(),duplicates=[],records=[];
+  const byId=new Map(),byPhysicalJob=new Map(),duplicates=[],records=[],unresolvedAliases=[];
   const normalizeTime=value=>core.timeKey(String(value).trim().replace(/^(\d):/u,'0$1:'));
   for(const [source,tickets] of [['current',current],['archive',archive]]){
     for(const ticket of [...tickets].sort((a,b)=>String(a?.id??'').localeCompare(String(b?.id??'')))){
@@ -353,12 +399,27 @@ export function reconcileHistoricalTickets(current,archive,core){
   }
   for(const record of byId.values()){
     const ticket=record.ticket,id=String(ticket.id);
+    const preferred=HISTORICAL_PHYSICAL_ALIASES[id],preferredRecord=preferred&&byId.get(preferred);
+    if(preferred){
+      if(preferredRecord?.source==='current'){
+        duplicates.push(Object.freeze({reason:'APPROVED_PHYSICAL_ALIAS',kept_id:preferred,suppressed_id:id,kept_source:preferredRecord.source,suppressed_source:record.source}));continue;
+      }
+      unresolvedAliases.push(Object.freeze({ticket_id:id,preferred_id:preferred,reason:'PREFERRED_CANONICAL_RECORD_UNAVAILABLE'}));
+    }
     const key=typeof ticket.content==='string'&&ticket.content.trim()&&ticket.time?JSON.stringify([core.dateKey(ticket.date),normalizeTime(ticket.time),ticket.content.replace(/\r\n?/gu,'\n')]):null;
-    const existing=key&&byPhysicalJob.get(key);
+    const compatible=(a,b)=>{
+      const aType=resolveHistoricalWorkType(a),bType=resolveHistoricalWorkType(b);
+      if(aType!=='UNKNOWN_TYPE'&&bType!=='UNKNOWN_TYPE'&&aType!==bType)return false;
+      return ['city','street','house','apartment','address','address_display','contractNumber','sum','payment','cashAmount','cardAmount','callFee','tariff'].every(field=>{
+        const av=a[field],bv=b[field];
+        return av===undefined||av===null||av===''||bv===undefined||bv===null||bv===''||String(av).normalize('NFKC').trim()===String(bv).normalize('NFKC').trim();
+      });
+    };
+    const existing=key&&(byPhysicalJob.get(key)||[]).find(candidate=>compatible(candidate.ticket,ticket));
     if(existing){duplicates.push(Object.freeze({reason:'EXACT_PHYSICAL_JOB',kept_id:String(existing.ticket.id),suppressed_id:id,kept_source:existing.source,suppressed_source:record.source}));continue;}
-    if(key)byPhysicalJob.set(key,record);records.push(Object.freeze(record));
+    if(key){if(!byPhysicalJob.has(key))byPhysicalJob.set(key,[]);byPhysicalJob.get(key).push(record);}records.push(Object.freeze(record));
   }
-  return Object.freeze({records:Object.freeze(records),duplicates:Object.freeze(duplicates)});
+  return Object.freeze({records:Object.freeze(records),duplicates:Object.freeze(duplicates),unresolvedAliases:Object.freeze(unresolvedAliases)});
 }
 
 // Pure full-history pipeline. Array input remains a current-only preview;
@@ -366,8 +427,9 @@ export function reconcileHistoricalTickets(current,archive,core){
 // UNKNOWN_TYPE jobs never enter connection or repair ONU counts.
 export function dryRunHistoricalOnu(source,core){
   const reconciled=Array.isArray(source)?reconcileHistoricalTickets(source,[],core):reconcileHistoricalTickets(source?.current,source?.archive,core);
-  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[],unknownTypes=[],typeConflicts=[];
+  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[],unknownTypes=[],typeConflicts=[],excluded=[];
   for(const {ticket,source:origin} of reconciled.records){
+    if(HISTORICAL_REBUILD_EXCLUDED_IDS.includes(String(ticket.id))){excluded.push(Object.freeze({ticket_id:String(ticket.id),reason:'CLOSED_PERIOD_NOT_RESTORING'}));continue;}
     const date=core.dateKey(ticket.date),time=core.timeKey(ticket.time||'00:00'),month=date.slice(0,7),type=resolveHistoricalWorkType(ticket),e=historicalWorkTypeEvidence(ticket);
     const reference={ticket_id:String(ticket.id),date,time,source:origin};
     if(e.type_conflict)typeConflicts.push(Object.freeze({...reference,resolved_type:type,evidence:e}));
@@ -391,6 +453,6 @@ export function dryRunHistoricalOnu(source,core){
   for(const [month,rows] of repairRows)monthly.get(month).repair_onu=confirmedRepairOnuCount(rows,core);
   const sort=(a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.ticket_id.localeCompare(b.ticket_id);
   const months=[...monthly.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(summary=>Object.freeze({...summary,total_physical_onu:summary.connection_our_onu+summary.repair_onu}));
-  return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason==='EXACT_PHYSICAL_JOB').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
+  return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason!=='SAME_TICKET_ID').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,unresolvedAliases:reconciled.unresolvedAliases,excluded:Object.freeze(excluded),type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
 }
 

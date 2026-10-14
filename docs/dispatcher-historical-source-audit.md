@@ -1,5 +1,11 @@
 # Historical source reconciliation and ONU dry-run
 
+Historical implementation notes for v92.19, superseded by
+[the final v92.20 policy and release gates](dispatcher-historical-final-release.md).
+All 13 formerly unresolved work types now have explicit REPAIR decisions;
+the final candidate applies approved ID-specific type decisions in projection.
+Use the final document for current behavior and readiness.
+
 Code-only candidate v92.19 / runtime-166. No network, storage, mutation POST,
 canonical-ticket changes, migration, rebuild, sync, or production writes occur
 in these helpers. The normal delivery projector does not call the historical

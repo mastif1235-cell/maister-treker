@@ -53,14 +53,15 @@ const assert=require('node:assert/strict'),core=require('../js/dispatcher-report
     .map((id,i)=>connection(id,{time:'14:'+String(i).padStart(2,'0'),tags:['ремонт'],content:'Fixture repair evidence '+id}));
   const conflicts=dryRunHistoricalOnu({current:[...strong,...otherConflicts],archive:[]},core);
   assert.equal(conflicts.type_conflict_count,18);
-  assert.equal(conflicts.unknownTypes.length,13);
-  assert.deepEqual(conflicts.unknownTypes.map(t=>t.ticket_id).sort(),['1783937356212',...otherConflicts.map(t=>t.id)].sort());
+  assert.equal(conflicts.unknownTypes.length,0,'all thirteen formerly unknown types were manually confirmed REPAIR');
   assert.equal(conflicts.months[0].connections_physical,0,'UNKNOWN_TYPE does not receive default connection ONU');
-  assert.deepEqual(Object.keys(HISTORICAL_WORK_TYPE_OVERRIDES).sort(),['1784113153627','1784048596976','1783937356216','1777287852811','1775815433108'].sort());
+  assert.equal(Object.keys(HISTORICAL_WORK_TYPE_OVERRIDES).length,18);
+  for(const ticket of [...strong,...otherConflicts])assert.equal(resolveHistoricalWorkType(ticket),'REPAIR');
   assert.equal(resolveHistoricalWorkType(strong[0],{}),'REPAIR','heading + repair tag overrides old JSON connection');
   assert.equal(resolveHistoricalWorkType(strong[4],{}),'REPAIR','JSON repair + replacement tag remains repair');
   assert.equal(resolveHistoricalWorkType(strong[5],{}),'REPAIR','JSON repair + replacement text remains repair');
-  assert.equal(resolveHistoricalWorkType(strong[2]),'UNKNOWN_TYPE','restore/ONU with connection heading is unresolved');
+  assert.equal(resolveHistoricalWorkType(strong[2]),'REPAIR','explicit user confirmation wins');
+  assert.equal(resolveHistoricalWorkType(strong[2],{}),'UNKNOWN_TYPE','without approval the evidence remains conflicting');
   assert.equal(resolveHistoricalWorkType(connection('type-only',{tags:[],content:'',callFee:500,tariff:300})),'UNKNOWN_TYPE','canonical type alone is insufficient');
   assert.equal(resolveHistoricalWorkType(connection('header-finance',{type:'',tags:[],content:'📋 ЗАЯВКА: ПІДКЛЮЧЕННЯ',callFee:500,tariff:300})),'CONNECTION');
   assert.equal(resolveHistoricalWorkType(connection('header-other-conflict',{type:'',tags:['other'],content:'📋 ЗАЯВКА: ПІДКЛЮЧЕННЯ',callFee:500,tariff:300})),'UNKNOWN_TYPE');
@@ -76,5 +77,5 @@ const assert=require('node:assert/strict'),core=require('../js/dispatcher-report
   const octBefore=JSON.stringify(october),oct=dryRunHistoricalOnu({current:october,archive:[]},core).months[0];
   assert.equal(oct.connections_physical,6);assert.equal(oct.connection_our_onu,6);assert.equal(oct.connection_customer_onu,0);assert.equal(oct.unknown_type,0);assert.equal(oct.repair_onu,4);assert.equal(oct.total_physical_onu,10);
   assert.equal(JSON.stringify(october),octBefore);
-  console.log('PASS historical source audit: 10 exact pairs, current precedence, one customer job, 18 type conflicts / 13 held UNKNOWN in supplied-evidence fixture, October 6+4, source/sums unchanged');
+  console.log('PASS historical source audit: 10 approved pairs, current precedence, one customer job, 18 repaired type conflicts, October 6+4, source/sums unchanged');
 })().catch(error=>{console.error(error);process.exitCode=1;});
