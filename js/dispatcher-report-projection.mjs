@@ -83,13 +83,58 @@ function overrideFor(ticketId,overrides){
   return value;
 }
 
+const ONU_WORD='(?:onu|ont|онт|ону)';
+const CUSTOMER_OWNER_WORD='(?:сво(?:я|й|ю|е|и|его|ей)|его|её|ее|її|його|собственн(?:ая|ый|ую|ое|ой|ого)|власн(?:а|ий|у|е|ої|ого)|клиентск(?:ая|ий|ую|ое)|абонентск(?:ая|ий|ую|ое)|клиент|абонент|користувач)';
+const CUSTOMER_ONU_PATTERNS=Object.freeze([
+  new RegExp(`(?<![\\p{L}\\p{N}_])${CUSTOMER_OWNER_WORD}\\s+${ONU_WORD}(?![\\p{L}\\p{N}_])`,'iu'),
+  new RegExp(`(?<![\\p{L}\\p{N}_])${ONU_WORD}\\s+(?:клиента|клиенту|абонента|абоненту|пользователя|користувача|користувачу)(?![\\p{L}\\p{N}_])`,'iu'),
+  new RegExp(`(?<![\\p{L}\\p{N}_])(?:сам(?:остоятельно)?|сама|самостійно)\\s+(?:купил|купила|купили|покупал|покупала|приобрел|приобрела|придбав|придбала|купив)\\s+(?:(?:себе|собі)\\s+)?${ONU_WORD}(?![\\p{L}\\p{N}_])`,'iu'),
+  new RegExp(`(?<![\\p{L}\\p{N}_])${ONU_WORD}\\s+(?:сам|сама)\\s+(?:купил|купила|купили|покупал|покупала|приобрел|приобрела|придбав|придбала|купив)(?![\\p{L}\\p{N}_])`,'iu')
+]);
+
+function customerOnuEvidence(ticket){
+  const source=[ticket?.content,ticket?.note,ticket?.otherNote,...(Array.isArray(ticket?.equipment)?ticket.equipment.map(item=>item?.label):[])]
+    .filter(value=>typeof value==='string'&&value.trim())
+    .join('\n')
+    .normalize('NFKC').toLocaleLowerCase('uk-UA').replace(/ё/gu,'е').replace(/[’‘`]/gu,"'");
+  for(const sentence of source.split(/[\n.!?;]+/u)){
+    for(const pattern of CUSTOMER_ONU_PATTERNS){
+      const match=pattern.exec(sentence);
+      if(!match)continue;
+      // Negated ownership is not evidence that the customer's ONU was used.
+      if(/(?:^|[^\p{L}\p{N}_])не\s*$/u.test(sentence.slice(0,match.index)))continue;
+      return match[0];
+    }
+  }
+  return '';
+}
+
+// Conservative, deterministic classification for a connection ticket.
+// The selected canonical inventory item is strongest; explicit customer-owned
+// evidence is next. Default-to-our-ONU applies only to identifiable legacy
+// records, never to a modern structured ticket with an empty/ambiguous list.
+export function classifyConnectionOnu(ticket,core){
+  const equipment=Array.isArray(ticket?.equipment)?ticket.equipment:[];
+  const onuItems=equipment.filter(item=>core.isOnuEquipment(item));
+  const customerEvidence=customerOnuEvidence(ticket);
+  const customerLabel=onuItems.find(item=>customerOnuEvidence({equipment:[item]}));
+  if(customerLabel){
+    const evidence=customerOnuEvidence({equipment:[customerLabel]});
+    return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'customer_ownership_in_canonical_equipment',evidence});
+  }
+  const selected=onuItems.find(item=>item.checked!==false);
+  if(selected)return Object.freeze({classification:'OUR_ONU_EXPLICIT',onu_connection:1,reason:'canonical_onu_selected',evidence:'canonical ONU selected'});
+  if(onuItems.length)return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'canonical_onu_checkbox_off',evidence:'canonical ONU checkbox off'});
+  if(customerEvidence)return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'explicit_customer_ownership_text',evidence:customerEvidence});
+  if(ticket?.cloudImported===true||!Array.isArray(ticket?.equipment))return Object.freeze({classification:'LEGACY_PROVABLE_OUR_ONU',onu_connection:1,reason:'approved_legacy_connection_default',evidence:'legacy connection default'});
+  return Object.freeze({classification:'UNKNOWN',onu_connection:0,reason:'modern_connection_has_no_explicit_onu_evidence',evidence:''});
+}
+
 export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
   const text=v=>core.sanitize(v);
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
-  // A connection's ONU count is owned by the canonical equipment checkbox,
-  // not the physical-consumption text parser (which can derive from MAC/text).
-  // Saved selected rows may omit `checked`; an absent/empty list is not proof.
-  const selectedOnu=(ticket.equipment||[]).find(e=>core.isOnuEquipment(e)&&e.checked!==false);
+  const connectionOnu=connection?classifyConnectionOnu(ticket,core):null;
+  const selectedOnu=connectionOnu?.onu_connection===1;
   let seenOnu=false;
   const equipment=connection&&Array.isArray(ticket.equipment)?ticket.equipment.flatMap(e=>{
     if(!core.isOnuEquipment(e))return [e];
@@ -224,5 +269,34 @@ export function confirmedRepairOnuCount(records,core,overrides=HISTORICAL_ONU_OV
     }
   }
   return total;
+}
+
+// Pure full-history preview. It accepts an already-read canonical ticket list,
+// performs no storage/network calls, and returns only safe customer-evidence
+// phrases rather than surrounding note/content text.
+export function dryRunHistoricalOnu(tickets,core,now=0){
+  if(!Array.isArray(tickets))throw new Error('HISTORICAL_SOURCE_UNAVAILABLE');
+  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[];
+  for(const ticket of tickets){
+    const dto=projectTicket(ticket,core,now),month=String(dto.work_date||'').slice(0,7);
+    if(!/^\d{4}-\d{2}$/u.test(month)||!['connection','repair'].includes(dto.work_category))continue;
+    if(!monthly.has(month))monthly.set(month,{month,connections_total:0,connection_our_onu:0,connection_customer_onu:0,connection_unknown:0,repair_onu:0,total_physical_onu:0});
+    const summary=monthly.get(month);
+    if(dto.work_category==='connection'){
+      summary.connections_total++;
+      const result=classifyConnectionOnu(ticket,core);
+      if(result.classification==='OUR_ONU_EXPLICIT'||result.classification==='LEGACY_PROVABLE_OUR_ONU')summary.connection_our_onu++;
+      else if(result.classification==='CUSTOMER_ONU_EXPLICIT'){
+        summary.connection_customer_onu++;
+        if(result.reason==='explicit_customer_ownership_text'||result.reason==='customer_ownership_in_canonical_equipment')customerOnuTickets.push(Object.freeze({ticket_id:String(ticket.id),date:dto.work_date,time:dto.work_time,reason:result.reason,evidence:result.evidence}));
+      }else summary.connection_unknown++;
+    }else{
+      if(!repairRows.has(month))repairRows.set(month,[]);
+      repairRows.get(month).push(dto);
+    }
+  }
+  for(const [month,rows] of repairRows)monthly.get(month).repair_onu=confirmedRepairOnuCount(rows,core);
+  const months=[...monthly.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(summary=>Object.freeze({...summary,total_physical_onu:summary.connection_our_onu+summary.repair_onu}));
+  return Object.freeze({months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.ticket_id.localeCompare(b.ticket_id)))});
 }
 

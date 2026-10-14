@@ -14,7 +14,7 @@ const card=d=>core.render([d]).blocks.find(b=>b.kind==='ticket').text;
  const zeroPrice=await buildDTO({...ticket,equipment:[{id:'onu',label:'ONU',checked:true,price:0}]},core,101);
  assert.equal(zeroPrice.onu_used,1,'physical connection ONU is independent of item price');assert.equal(zeroPrice.total,ticket.sum);
  const oldUnstructured=await buildDTO({...ticket,id:'old-connection',cloudImported:true,equipment:undefined,macAddress:'AA:BB:CC:DD:EE:FF',content:'📋 ЗАЯВКА: ПІДКЛЮЧЕННЯ\nONU сигнал -20 dBm'},core,101);
- assert.equal(oldUnstructured.onu_used,0,'MAC/text without the canonical selected checkbox is not proof of our ONU');
+ assert.equal(oldUnstructured.onu_used,1,'approved legacy default applies when no explicit customer-ONU evidence exists');
  assert.equal(JSON.parse(on.materials_json)[0].unit_price,undefined);assert(!on.materials_display.includes('9876'));
  assert.equal(JSON.stringify(ticket),before);
  const repair={...ticket,id:'repair',type:'Ремонт',note:'Замінено ONU',equipment:[{id:'onu',label:'ONU',price:300}],sum:800};

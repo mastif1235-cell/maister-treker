@@ -1,4 +1,4 @@
-const CACHE_NAME = 'maister-treker-v93-runtime-163';
+const CACHE_NAME = 'maister-treker-v94-runtime-164';
 const CORE_ASSETS = [
   './js/dispatcher-report-core.js','./js/dispatcher-report-client.js','./js/dispatcher-report-projection.mjs','./js/dispatcher-telemetry.js','./js/runtime-guard.js',
   './mcp/src/ask/work-events.js','./mcp/src/ask/work-reconciliation.js','./mcp/src/ask/physical-consumption.js','./mcp/src/gas/mappers.js',
