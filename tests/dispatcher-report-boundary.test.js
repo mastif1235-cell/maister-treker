@@ -38,6 +38,7 @@ const before=JSON.stringify(ticket);
  const nodes={reportFullToggle:{checked:true},reportCommentInput:{value:comment},reportOutput:{},copyReportBtn:{},shareReportBtn:{}};
  Object.assign(ctx,{document:{getElementById:id=>nodes[id]||null},currentTicketDate:'05.10.2026',parseDate:()=>new Date(2026,9,5),fmtMoney:v=>v+' грн',buildMonthlyEquipmentLines:()=>[],escapeHtml:v=>v});
  for(const f of ['js/report-utils.js','js/calendar-stats-render.js','js/reports-domain.js'])vm.runInContext(read(f),ctx);
+ ctx.MTDispatcherReportCore=require('../js/dispatcher-report-core.js');ctx.__testProjection=await import('../js/dispatcher-report-projection.mjs');vm.runInContext('mtLocalReportProjection=__testProjection',ctx);
  ctx.renderReport('all');await nodes.copyReportBtn.onclick();await nodes.shareReportBtn.onclick();
  assert.equal(nodes.reportCommentInput.value,comment,'original comment is unchanged');
  ctx.chooseDispatcherAndSend=fn=>fn(['fixture-chat']);ctx.sendToTelegramChat=async(_id,text)=>{sent.push(text);return{ok:true};};

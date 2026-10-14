@@ -1,5 +1,5 @@
 'use strict';
-/* v92.21 / runtime-168. Обов'язкова регресія №8: змішаний runtime (модулі/SW
+/* v92.23 / runtime-170. Обов'язкова регресія №8: змішаний runtime (модулі/SW
    різних ревізій) → один безпечний reload із sessionStorage-обмежувачем циклу;
    повторний mismatch → fail closed (flush не запускається, дані не чіпаються);
    консистентний runtime → без reload. Плюс: SW-кеш з тим самим runtime-токеном
@@ -9,7 +9,7 @@ const root=path.join(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'
 
 function bootGuard(opts={}){
   const store=new Map(Object.entries(opts.initialStore||{})),reloads=[],channels=[],timers=[],events={},swEvents={};
-  const revisions=Object.assign({app:'runtime-168',report:'runtime-168',renderer:'runtime-168',compact:'runtime-168'},opts.revisions||{});
+  const revisions=Object.assign({app:'runtime-170',report:'runtime-170',renderer:'runtime-170',compact:'runtime-170'},opts.revisions||{});
   const ctx={
     setTimeout:opts.manualTimers?(fn=>{timers.push(fn);return timers.length;}):setTimeout,clearTimeout,
     addEventListener:(name,fn)=>{events[name]=fn;},
@@ -21,7 +21,7 @@ function bootGuard(opts={}){
     MessageChannel:class{constructor(){const s=this;this.port1={onmessage:null};this.port2={close(){}};channels.push(s);this.deliver=data=>{if(typeof s.port1.onmessage==='function')s.port1.onmessage({data});};}},
     location:{reload:()=>{reloads.push(Date.now());}}
   };
-  ctx.navigator={serviceWorker:opts.noController?{}:{addEventListener:(name,fn)=>{swEvents[name]=fn;},controller:{postMessage:(msg,ports)=>{assert.equal(msg.type,'MT_RUNTIME_STATUS');const channel=channels.at(-1);if(!opts.manualTimers)queueMicrotask(()=>channel.deliver(opts.swAnswer===undefined?{cacheName:'maister-treker-v98-runtime-168'}:opts.swAnswer));}}}};
+  ctx.navigator={serviceWorker:opts.noController?{}:{addEventListener:(name,fn)=>{swEvents[name]=fn;},controller:{postMessage:(msg,ports)=>{assert.equal(msg.type,'MT_RUNTIME_STATUS');const channel=channels.at(-1);if(!opts.manualTimers)queueMicrotask(()=>channel.deliver(opts.swAnswer===undefined?{cacheName:'maister-treker-v100-runtime-170'}:opts.swAnswer));}}}};
   vm.runInNewContext(read('js/runtime-guard.js'),ctx,{filename:'js/runtime-guard.js'});
   return {guard:ctx.MTDispatcherRuntimeGuard,reloads,store,ctx,channels,timers,events,swEvents};
 }
@@ -58,7 +58,7 @@ function bootGuard(opts={}){
   }
   // 4) SW-кеш з тим самим runtime-токеном + release-суфікс (e2e-update) → узгоджений.
   {
-    const h=bootGuard({swAnswer:{cacheName:'maister-treker-v98-runtime-168-e2e-update'}});
+    const h=bootGuard({swAnswer:{cacheName:'maister-treker-v100-runtime-170-e2e-update'}});
     await new Promise(r=>setTimeout(r,10));
     assert.equal(h.guard.blocked(),false,'same runtime token with a release suffix is consistent');
     assert.deepEqual(h.reloads,[],'no reload for an e2e-renamed cache');
@@ -66,9 +66,9 @@ function bootGuard(opts={}){
   // 5) evaluate(): чиста функція сумісності модулів.
   {
     const h=bootGuard({noController:true});
-    assert.equal(h.guard.evaluate({app:'runtime-168',report:'runtime-168',renderer:'runtime-168',compact:'runtime-168'},'maister-treker-v98-runtime-168').ok,true);
-    assert.equal(h.guard.evaluate({app:'runtime-168',report:'runtime-136',renderer:'runtime-168',compact:'runtime-168'},'maister-treker-v98-runtime-168').ok,false);
-    assert.equal(h.guard.evaluate({app:'runtime-168',report:'runtime-168',renderer:'runtime-168',compact:'runtime-168'},'maister-treker-v67-runtime-136').ok,false);
+    assert.equal(h.guard.evaluate({app:'runtime-170',report:'runtime-170',renderer:'runtime-170',compact:'runtime-170'},'maister-treker-v100-runtime-170').ok,true);
+    assert.equal(h.guard.evaluate({app:'runtime-170',report:'runtime-136',renderer:'runtime-170',compact:'runtime-170'},'maister-treker-v100-runtime-170').ok,false);
+    assert.equal(h.guard.evaluate({app:'runtime-170',report:'runtime-170',renderer:'runtime-170',compact:'runtime-170'},'maister-treker-v67-runtime-136').ok,false);
   }
   {
     const h=bootGuard({swAnswer:{}});await new Promise(r=>setTimeout(r,10));
@@ -78,14 +78,14 @@ function bootGuard(opts={}){
   {
     const h=bootGuard({manualTimers:true});h.timers[0]();
     assert.equal(h.guard.blocked(),true,'SW timeout must fail closed');
-    h.events.focus();h.channels.at(-1).deliver({cacheName:'maister-treker-v98-runtime-168'});
+    h.events.focus();h.channels.at(-1).deliver({cacheName:'maister-treker-v100-runtime-170'});
     assert.equal(h.guard.blocked(),false,'focus can recover verification without deleting data');
     const old=h.channels.at(-1);
     h.ctx.navigator.serviceWorker.controller={postMessage:()=>{}};h.swEvents.controllerchange();
     assert.equal(h.guard.blocked(),true,'new controller requires new identity ACK');
-    old.deliver({cacheName:'maister-treker-v98-runtime-168'});
+    old.deliver({cacheName:'maister-treker-v100-runtime-170'});
     assert.equal(h.guard.blocked(),true,'old controller ACK cannot authorize new controller');
-    h.channels.at(-1).deliver({cacheName:'maister-treker-v98-runtime-168'});
+    h.channels.at(-1).deliver({cacheName:'maister-treker-v100-runtime-170'});
     assert.equal(h.guard.blocked(),false);
   }
   // 6) flush-зв'язка: заблокований runtime-guard зупиняє flush і syncAll, але

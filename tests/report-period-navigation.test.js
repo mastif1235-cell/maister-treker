@@ -94,6 +94,7 @@ const domainSource=fs.readFileSync(path.join(REPO,'js','reports-domain.js'),'utf
   vm.runInContext(utilsSource,context);
   vm.runInContext(fs.readFileSync('js/share-domain.js','utf8'),context);
   vm.runInContext(domainSource,context);
+  vm.runInContext('mtLocalReportProjection={LOCAL_REPORT_TEST_IDS:[],localOnuStatistics:()=>({connection:0,repair:0,unknown:[]})}',context);
   context.openModal=(title,html,opts)=>{context.__modalHtml=html;opts.onOpen({querySelectorAll:(sel)=>sel==='[data-rep]'?context.__repButtons:[]});};
   // Фейкові кнопки періодів
   context.__repButtons=['day','week','month','all'].map(rep=>({dataset:{rep},onclick:null}));
