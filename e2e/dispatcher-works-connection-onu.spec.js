@@ -45,6 +45,7 @@ test('modern ONU OFF/ON survives real save, edit, IndexedDB restart and sync ser
  saved=await inspect();expect(saved).toMatchObject({marker:1,used:1,total:800,syncMarker:1,syncUsed:1});
  await page.evaluate(id=>editTicket(id),saved.id);await openEquipment();await expect(await onuCheckbox()).toBeChecked();
  await (await onuCheckbox()).uncheck();await page.click('#saveTicketBtn');await expect(page.locator('#screen-tickets')).toBeVisible();
+ await page.context().setOffline(true);
  await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.__mtAppInitDone===true);
  saved=await inspect();expect(saved).toMatchObject({marker:1,used:0,total:800,syncMarker:1,syncUsed:0});
  await page.evaluate(id=>editTicket(id),saved.id);await openEquipment();await expect(await onuCheckbox()).not.toBeChecked();
@@ -55,5 +56,14 @@ test('modern ONU OFF/ON survives real save, edit, IndexedDB restart and sync ser
  });expect(legacy).toEqual({source:false,editor:false});
  await page.evaluate(()=>resetCalcForm());
  expect(await page.evaluate(()=>calcState.onuAccountingVersion)).toBe(1);
+ await openEquipment();await (await onuCheckbox()).uncheck();
+ await page.fill('#f_client','Synthetic after restart');await page.fill('#f_callFee','500');await page.fill('#f_tariff','300');await page.selectOption('#f_payment','Готівка');
+ await page.click('#saveTicketBtn');await expect(page.locator('#screen-tickets')).toBeVisible();
+ expect(await page.evaluate(async()=>{
+  const t=tickets.find(t=>t.clientName==='Synthetic after restart');
+  const {buildDTO}=await import('/js/dispatcher-report-projection.mjs');
+  return {marker:t.onuAccountingVersion,used:(await buildDTO(t,MTDispatcherReportCore,100)).onu_used,total:t.sum};
+ })).toEqual({marker:1,used:0,total:800});
+ await page.context().setOffline(false);
  expect(errors).toEqual([]);
 });

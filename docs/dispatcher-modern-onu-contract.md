@@ -63,3 +63,12 @@ deduplication. Review-required IDs block the planner. No write executor is added
 Do not treat synthetic 6+4=10 or preliminary 185 as a verified historical total.
 No historical recalculation is ready until real monthly and per-ID diffs have
 been reviewed. No merge/deploy without separate user approval.
+
+## Completed local verification
+
+- Full unit: 252/252 PASS, including 34 dispatcher regression files.
+- MCP: 716/716 PASS.
+- Full E2E: 87/87 PASS. Focused ON/OFF and offline-restart/new-save tests: 2/2 PASS.
+- Runtime-proof 8/8; JS syntax 105 files; MCP check.sh and diff-check PASS.
+- No production data or historical counts were written. These tests do not
+  substitute for the real three-source historical dry-run.
