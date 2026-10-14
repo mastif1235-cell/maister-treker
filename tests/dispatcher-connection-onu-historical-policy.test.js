@@ -4,7 +4,7 @@ const core=require('../js/dispatcher-report-core.js');
 (async()=>{
 const {classifyConnectionOnu,projectTicket,dryRunHistoricalOnu}=await import('../js/dispatcher-report-projection.mjs');
 
-const base={id:'conn',date:'13.10.2026',time:'12:00',type:'Підключення',sum:800,payment:'Готівка',equipment:[],cables:[]};
+const base={id:'conn',date:'13.10.2026',time:'12:00',type:'Підключення',tags:['connect'],content:'📋 ЗАЯВКА: ПІДКЛЮЧЕННЯ',sum:800,payment:'Готівка',equipment:[],cables:[]};
 const classify=t=>classifyConnectionOnu({...base,...t},core);
 
 // No reliable schema marker exists. Legacy false/empty is not customer proof;
@@ -45,17 +45,17 @@ assert.equal(projectTicket({...headerOnly,note:'у них своя ONU'},core,10
 
 const fixture=[
   {...base,id:'legacy-our',date:'13.10.2026',equipment:undefined,cloudImported:true,note:'Обычное подключение'},
-  {...base,id:'customer',date:'13.10.2026',equipment:undefined,cloudImported:true,note:'Клиент сам купил ONU; телефон +380501234567'},
-  {...base,id:'empty-legacy',date:'13.10.2026',equipment:[],cloudImported:false,note:'Подключение'},
+  {...base,id:'customer',date:'13.10.2026',time:'12:01',equipment:undefined,cloudImported:true,note:'Клиент сам купил ONU; телефон +380501234567'},
+  {...base,id:'empty-legacy',date:'13.10.2026',time:'12:02',equipment:[],cloudImported:false,note:'Подключение'},
   // User-confirmed fragment only, not a fetched production canonical object.
   {...base,id:'1783937356209',date:'02.07.2026',time:'15:17',equipment:[{id:'onu',label:'ONU',checked:false}],note:'у них своя ONU'},
-  {...base,id:'repair-onu',date:'13.10.2026',type:'Ремонт',equipment:[{id:'onu',label:'ONU',checked:true,qty:1}],note:''}
+  {...base,id:'repair-onu',date:'13.10.2026',time:'12:03',type:'Ремонт',tags:['repair'],content:'📋 ЗАЯВКА: РЕМОНТ',equipment:[{id:'onu',label:'ONU',checked:true,qty:1}],note:''}
 ];
 const dryRun=dryRunHistoricalOnu(fixture,core);
 assert.deepEqual(JSON.parse(JSON.stringify(dryRun.months)),[{
-  month:'2026-07',connections_total:1,connection_our_onu:0,connection_customer_onu:1,connection_unknown:0,repair_onu:0,total_physical_onu:0
+  month:'2026-07',connections_total:1,connections_physical:1,connection_our_onu:0,connection_customer_onu:1,connection_unknown:0,unknown_type:0,repair_onu:0,total_physical_onu:0
 },{
-  month:'2026-10',connections_total:3,connection_our_onu:2,connection_customer_onu:1,connection_unknown:0,repair_onu:1,total_physical_onu:3
+  month:'2026-10',connections_total:3,connections_physical:3,connection_our_onu:2,connection_customer_onu:1,connection_unknown:0,unknown_type:0,repair_onu:1,total_physical_onu:3
 }]);
 assert.equal(dryRun.customerOnuTickets.length,2);
 assert.equal(dryRun.customerOnuTickets[0].ticket_id,'1783937356209');

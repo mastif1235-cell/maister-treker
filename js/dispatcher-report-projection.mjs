@@ -267,32 +267,130 @@ export function confirmedRepairOnuCount(records,core,overrides=HISTORICAL_ONU_OV
   return total;
 }
 
-// Pure full-history preview. It accepts an already-read canonical ticket list,
-// performs no storage/network calls, and returns only safe customer-evidence
-// phrases rather than surrounding note/content text.
-export function dryRunHistoricalOnu(tickets,core,now=0){
-  if(!Array.isArray(tickets))throw new Error('HISTORICAL_SOURCE_UNAVAILABLE');
-  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[];
-  for(const ticket of tickets){
-    const dto=projectTicket(ticket,core,now),month=String(dto.work_date||'').slice(0,7);
-    if(!/^\d{4}-\d{2}$/u.test(month)||!['connection','repair'].includes(dto.work_category))continue;
-    if(!monthly.has(month))monthly.set(month,{month,connections_total:0,connection_our_onu:0,connection_customer_onu:0,connection_unknown:0,repair_onu:0,total_physical_onu:0});
+// User-approved work-type decisions from the historical source audit. No
+// inferred decision is persisted back to a ticket, DTO, receipt or server row.
+export const HISTORICAL_WORK_TYPE_OVERRIDES=Object.freeze({
+  '1784113153627':'REPAIR',
+  '1784048596976':'REPAIR',
+  '1783937356216':'REPAIR',
+  '1777287852811':'REPAIR',
+  '1775815433108':'REPAIR'
+});
+const HISTORICAL_WORK_TYPES=Object.freeze(['CONNECTION','REPAIR','OTHER','UNKNOWN_TYPE']);
+const normalizeHistoricalText=value=>String(value??'').normalize('NFKC').toLocaleLowerCase('uk-UA').replace(/ё/gu,'е').trim();
+function historicalType(value){
+  const text=normalizeHistoricalText(value).replace(/[\s_-]+/gu,'');
+  if(['connection','connect','підключення','подключение'].includes(text))return 'CONNECTION';
+  if(['repair','ремонт'].includes(text))return 'REPAIR';
+  if(['other','інше','другое'].includes(text))return 'OTHER';
+  return null;
+}
+const historicalHeading=line=>/^\s*(?:📋\s*)?(?:(?:заявка|наряд)\s*[:—-]\s*)?(підключення|подключение|ремонт|інше|другое)\s*[.!:]?\s*$/iu.exec(line)?.[1];
+
+export function historicalWorkTypeEvidence(ticket){
+  const canonical=[...new Set([historicalType(ticket?.type),historicalType(ticket?.work_category)].filter(Boolean))];
+  const content=publicBackupText(ticket?.content,ticket?.masterNote).replace(/\r\n?/gu,'\n');
+  const lines=content.split('\n');
+  const headings=[...new Set(lines.map(historicalHeading).map(historicalType).filter(Boolean))];
+  const tags=[],repairEvidence=[];
+  for(const raw of Array.isArray(ticket?.tags)?ticket.tags:[]){
+    const value=typeof raw==='string'?raw:raw?.label??raw?.name??raw?.id;
+    const type=historicalType(value);if(type&&!tags.includes(type))tags.push(type);
+    if(/^(?:замена|заміна)(?:onu|ону|ont)$/iu.test(normalizeHistoricalText(value).replace(/[\s_-]+/gu,''))){
+      if(!tags.includes('REPAIR'))tags.push('REPAIR');repairEvidence.push('ONU_REPLACEMENT_TAG');
+    }
+  }
+  const body=normalizeHistoricalText([...lines.filter(line=>!historicalHeading(line)),publicBackupText(ticket?.note,ticket?.masterNote),publicBackupText(ticket?.otherNote,ticket?.masterNote)].join('\n'));
+  if(/(?:замен[\p{L}]*|замін[\p{L}]*|поменя[\p{L}]*|міня[\p{L}]*)\s+(?:(?:стар[\p{L}]*|нов[\p{L}]*)\s+)?(?:onu|ont|ону)(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])(?:onu|ont|ону)\s+(?:замен[\p{L}]*|замін[\p{L}]*)/iu.test(body))repairEvidence.push('ONU_REPLACEMENT_TEXT');
+  if(/(?<![\p{L}\p{N}_])ремонт[\p{L}]*/iu.test(body))repairEvidence.push('REPAIR_TEXT');
+  if(/(?<![\p{L}\p{N}_])(?:red\s*loss?|los)(?![\p{L}\p{N}_])|(?:красн|червон)[\p{L}]*\s+(?:los|ламп|індикатор)/iu.test(body))repairEvidence.push('RED_LOSS_TEXT');
+  if(/(?:пайка|сварка|зварювання|спая[\p{L}]*)\s+оптик[\p{L}]*/iu.test(body))repairEvidence.push('OPTICAL_SPLICE_TEXT');
+  if(/(?<![\p{L}\p{N}_])(?:восстанов[\p{L}]*|віднов[\p{L}]*)/iu.test(body))repairEvidence.push('RESTORE_TEXT');
+  const positive=value=>Number.isFinite(Number(value))&&Number(value)>0;
+  const connectionFinancials=(positive(ticket?.callFee)&&positive(ticket?.tariff))||lines.some(line=>/^\s*(?:🛠️?\s*)?(?:підключення|подключение)\s*[:—-]\s*[1-9]\d*(?:[.,]\d+)?\s*грн\s*$/iu.test(line));
+  const signals=[...canonical,...headings,...tags];
+  return Object.freeze({canonical:Object.freeze(canonical),headings:Object.freeze(headings),tags:Object.freeze(tags),repairEvidence:Object.freeze([...new Set(repairEvidence)]),connectionFinancials,type_conflict:new Set(signals).size>1});
+}
+
+export function resolveHistoricalWorkType(ticket,overrides=HISTORICAL_WORK_TYPE_OVERRIDES){
+  const id=String(ticket?.id??'');
+  const override=overrides instanceof Map?overrides.get(id):overrides?.[id];
+  if(override!==undefined){if(!HISTORICAL_WORK_TYPES.includes(override))throw new Error('INVALID_HISTORICAL_WORK_TYPE_OVERRIDE');return override;}
+  const e=historicalWorkTypeEvidence(ticket),signals=[...e.canonical,...e.headings,...e.tags];
+  if(e.canonical.length>1||e.headings.length>1||e.tags.length>1)return 'UNKNOWN_TYPE';
+  const repair=e.repairEvidence.length>0,strongReplacement=e.repairEvidence.some(code=>code.startsWith('ONU_REPLACEMENT_'));
+  if(e.headings.includes('REPAIR')&&(e.tags.includes('REPAIR')||repair))return 'REPAIR';
+  if(strongReplacement&&e.canonical.includes('REPAIR'))return 'REPAIR';
+  const kinds=new Set(signals),families=[e.canonical,e.headings,e.tags].filter(values=>values.length).length;
+  if(kinds.size===1){
+    const type=signals[0];
+    if(type==='OTHER'&&families>=2&&!repair)return 'OTHER';
+    if(type==='REPAIR'&&(families>=2||repair))return 'REPAIR';
+    // Splicing can be a normal connection work item; three agreeing type
+    // sources establish a connection without relying on old JSON alone.
+    if(type==='CONNECTION'&&families>=2&&(!repair||(families===3&&e.repairEvidence.every(code=>code==='OPTICAL_SPLICE_TEXT'))))return 'CONNECTION';
+  }
+  if(e.headings.includes('CONNECTION')&&e.connectionFinancials&&!repair&&!e.tags.includes('REPAIR')&&!e.tags.includes('OTHER')&&!e.canonical.includes('REPAIR')&&!e.canonical.includes('OTHER'))return 'CONNECTION';
+  return 'UNKNOWN_TYPE';
+}
+
+// Exact full-content comparison only; no fuzzy matching, MAC/address heuristic
+// or material-text comparison. Missing content/time cannot prove duplication.
+export function reconcileHistoricalTickets(current,archive,core){
+  if(!Array.isArray(current)||!Array.isArray(archive))throw new Error('HISTORICAL_SOURCE_UNAVAILABLE');
+  const byId=new Map(),byPhysicalJob=new Map(),duplicates=[],records=[];
+  const normalizeTime=value=>core.timeKey(String(value).trim().replace(/^(\d):/u,'0$1:'));
+  for(const [source,tickets] of [['current',current],['archive',archive]]){
+    for(const ticket of [...tickets].sort((a,b)=>String(a?.id??'').localeCompare(String(b?.id??'')))){
+      if(!ticket||typeof ticket!=='object'||Array.isArray(ticket)||ticket.id===undefined||ticket.id===null||String(ticket.id)==='')throw new Error('HISTORICAL_SOURCE_INVALID');
+      const id=String(ticket.id),existing=byId.get(id);
+      if(existing){
+        if(existing.source===source)throw new Error('HISTORICAL_DUPLICATE_SOURCE_ID');
+        duplicates.push(Object.freeze({reason:'SAME_TICKET_ID',kept_id:id,suppressed_id:id,kept_source:existing.source,suppressed_source:source}));continue;
+      }
+      byId.set(id,{ticket,source});
+    }
+  }
+  for(const record of byId.values()){
+    const ticket=record.ticket,id=String(ticket.id);
+    const key=typeof ticket.content==='string'&&ticket.content.trim()&&ticket.time?JSON.stringify([core.dateKey(ticket.date),normalizeTime(ticket.time),ticket.content.replace(/\r\n?/gu,'\n')]):null;
+    const existing=key&&byPhysicalJob.get(key);
+    if(existing){duplicates.push(Object.freeze({reason:'EXACT_PHYSICAL_JOB',kept_id:String(existing.ticket.id),suppressed_id:id,kept_source:existing.source,suppressed_source:record.source}));continue;}
+    if(key)byPhysicalJob.set(key,record);records.push(Object.freeze(record));
+  }
+  return Object.freeze({records:Object.freeze(records),duplicates:Object.freeze(duplicates)});
+}
+
+// Pure full-history pipeline. Array input remains a current-only preview;
+// full reconciliation requires {current:[canonical tickets],archive:[tickets]}.
+// UNKNOWN_TYPE jobs never enter connection or repair ONU counts.
+export function dryRunHistoricalOnu(source,core){
+  const reconciled=Array.isArray(source)?reconcileHistoricalTickets(source,[],core):reconcileHistoricalTickets(source?.current,source?.archive,core);
+  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[],unknownTypes=[],typeConflicts=[];
+  for(const {ticket,source:origin} of reconciled.records){
+    const date=core.dateKey(ticket.date),time=core.timeKey(ticket.time||'00:00'),month=date.slice(0,7),type=resolveHistoricalWorkType(ticket),e=historicalWorkTypeEvidence(ticket);
+    const reference={ticket_id:String(ticket.id),date,time,source:origin};
+    if(e.type_conflict)typeConflicts.push(Object.freeze({...reference,resolved_type:type,evidence:e}));
+    if(!monthly.has(month))monthly.set(month,{month,connections_total:0,connections_physical:0,connection_our_onu:0,connection_customer_onu:0,connection_unknown:0,unknown_type:0,repair_onu:0,total_physical_onu:0});
     const summary=monthly.get(month);
-    if(dto.work_category==='connection'){
-      summary.connections_total++;
+    if(type==='UNKNOWN_TYPE'){
+      summary.unknown_type++;unknownTypes.push(Object.freeze({...reference,reason:'CONFLICTING_OR_INSUFFICIENT_TYPE_EVIDENCE',evidence:e}));continue;
+    }
+    if(type==='CONNECTION'){
+      summary.connections_total++;summary.connections_physical++;
       const result=classifyConnectionOnu(ticket,core);
-      if(result.classification==='OUR_ONU_EXPLICIT'||result.classification==='LEGACY_DEFAULT_OUR_ONU')summary.connection_our_onu++;
-      else if(result.classification==='CUSTOMER_ONU_EXPLICIT'){
-        summary.connection_customer_onu++;
-        if(result.reason==='explicit_customer_ownership_text'||result.reason==='customer_ownership_in_canonical_equipment')customerOnuTickets.push(Object.freeze({ticket_id:String(ticket.id),date:dto.work_date,time:dto.work_time,reason:result.reason,evidence:result.evidence}));
-      }else summary.connection_unknown++;
-    }else{
+      if(result.onu_connection===1)summary.connection_our_onu++;
+      else{
+        summary.connection_customer_onu++;customerOnuTickets.push(Object.freeze({...reference,reason:result.reason,evidence:result.evidence}));
+      }
+    }else if(type==='REPAIR'){
       if(!repairRows.has(month))repairRows.set(month,[]);
-      repairRows.get(month).push(dto);
+      repairRows.get(month).push({...ticket,work_category:'repair',type:'Ремонт',materials_display:reportPresentation(ticket,core).materials});
     }
   }
   for(const [month,rows] of repairRows)monthly.get(month).repair_onu=confirmedRepairOnuCount(rows,core);
+  const sort=(a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.ticket_id.localeCompare(b.ticket_id);
   const months=[...monthly.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(summary=>Object.freeze({...summary,total_physical_onu:summary.connection_our_onu+summary.repair_onu}));
-  return Object.freeze({months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.ticket_id.localeCompare(b.ticket_id)))});
+  return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason==='EXACT_PHYSICAL_JOB').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
 }
 
