@@ -109,10 +109,10 @@ function customerOnuEvidence(ticket){
   return '';
 }
 
-// Conservative, deterministic classification for a connection ticket.
-// The selected canonical inventory item is strongest; explicit customer-owned
-// evidence is next. Default-to-our-ONU applies only to identifiable legacy
-// records, never to a modern structured ticket with an empty/ambiguous list.
+// Canonical tickets currently have no reliable ONU-selection schema marker.
+// Thus every existing connection uses the approved historical policy: explicit
+// customer ownership wins; unchecked/absent equipment is never negative proof.
+// Do not infer a modern format from date, cloudImported, or equipment presence.
 export function classifyConnectionOnu(ticket,core){
   const equipment=Array.isArray(ticket?.equipment)?ticket.equipment:[];
   const onuItems=equipment.filter(item=>core.isOnuEquipment(item));
@@ -122,19 +122,15 @@ export function classifyConnectionOnu(ticket,core){
     const evidence=customerOnuEvidence({equipment:[customerLabel]});
     return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'customer_ownership_in_canonical_equipment',evidence});
   }
+  if(customerEvidence)return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'explicit_customer_ownership_text',evidence:customerEvidence});
   const selected=onuItems.find(item=>item.checked!==false);
   if(selected)return Object.freeze({classification:'OUR_ONU_EXPLICIT',onu_connection:1,reason:'canonical_onu_selected',evidence:'canonical ONU selected'});
-  if(onuItems.length)return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'canonical_onu_checkbox_off',evidence:'canonical ONU checkbox off'});
-  if(customerEvidence)return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'explicit_customer_ownership_text',evidence:customerEvidence});
-  if(ticket?.cloudImported===true||!Array.isArray(ticket?.equipment))return Object.freeze({classification:'LEGACY_PROVABLE_OUR_ONU',onu_connection:1,reason:'approved_legacy_connection_default',evidence:'legacy connection default'});
-  return Object.freeze({classification:'UNKNOWN',onu_connection:0,reason:'modern_connection_has_no_explicit_onu_evidence',evidence:''});
+  return Object.freeze({classification:'LEGACY_DEFAULT_OUR_ONU',onu_connection:1,reason:'approved_legacy_connection_default',evidence:'legacy connection default'});
 }
 
 export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ONU_OVERRIDES){
   const text=v=>core.sanitize(v);
   const connection=/^п[іо]дключен(?:ня|ие)$/iu.test(String(ticket.type||''));
-  const connectionOnu=connection?classifyConnectionOnu(ticket,core):null;
-  const selectedOnu=connectionOnu?.onu_connection===1;
   let seenOnu=false;
   const equipment=connection&&Array.isArray(ticket.equipment)?ticket.equipment.flatMap(e=>{
     if(!core.isOnuEquipment(e))return [e];
@@ -167,7 +163,7 @@ export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ON
     const money=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';
     const works=projectWorks(ticket,core).map(w=>w.label+(w.quantity!==1?' — '+w.quantity+' шт.'+(w.unit_price>0?' · '+money(w.unit_price)+'/шт.':''):'')+(w.line_total>0?' — '+money(w.line_total):''));
     if(works.length)dto.works_display=works.join('\n');
-    if(category==='connection'){dto.onu_used=selectedOnu?1:0;dto.onu_replacement=0;}
+    if(category==='connection'){dto.onu_used=classifyConnectionOnu(ticket,core).onu_connection;dto.onu_replacement=0;}
     const contract=String(ticket.contractNumber??'').trim();
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.
@@ -285,7 +281,7 @@ export function dryRunHistoricalOnu(tickets,core,now=0){
     if(dto.work_category==='connection'){
       summary.connections_total++;
       const result=classifyConnectionOnu(ticket,core);
-      if(result.classification==='OUR_ONU_EXPLICIT'||result.classification==='LEGACY_PROVABLE_OUR_ONU')summary.connection_our_onu++;
+      if(result.classification==='OUR_ONU_EXPLICIT'||result.classification==='LEGACY_DEFAULT_OUR_ONU')summary.connection_our_onu++;
       else if(result.classification==='CUSTOMER_ONU_EXPLICIT'){
         summary.connection_customer_onu++;
         if(result.reason==='explicit_customer_ownership_text'||result.reason==='customer_ownership_in_canonical_equipment')customerOnuTickets.push(Object.freeze({ticket_id:String(ticket.id),date:dto.work_date,time:dto.work_time,reason:result.reason,evidence:result.evidence}));

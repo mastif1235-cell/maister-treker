@@ -7,7 +7,7 @@ const ticket={id:'synthetic-onu',date:'13.10.2026',time:'12:34',type:'Підкл
 const card=d=>core.render([d]).blocks.find(b=>b.kind==='ticket').text;
 (async()=>{
  const {buildDTO}=await import('../js/dispatcher-report-projection.mjs');
- const before=JSON.stringify(ticket),on=await buildDTO(ticket,core,100),offTicket={...ticket,equipment:[{...ticket.equipment[0],checked:false}]},off=await buildDTO(offTicket,core,101);
+ const before=JSON.stringify(ticket),on=await buildDTO(ticket,core,100),offTicket={...ticket,note:'ONU абонента',equipment:[{...ticket.equipment[0],checked:false}]},off=await buildDTO(offTicket,core,101);
  assert.equal(ctx.calculateTicketTotal(ticket).total,500);assert.equal(ctx.calculateTicketTotal(offTicket).total,500);
  assert.equal(ctx.buildMixedPaymentItemsFromTicket(ticket).find(i=>i.key==='eq_onu').amount,0);
  assert.equal(on.onu_used,1);assert.equal(off.onu_used,0);assert.equal(on.total,500);assert.equal(off.total,500);
