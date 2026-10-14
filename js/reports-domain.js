@@ -223,6 +223,8 @@ async function runBulkImport(text){
   return imported;
 }/* ---- Звіти ---- */
 let mtReportState={range:'day',anchor:null};
+let mtReportRenderRevision=0;
+let mtLocalReportProjection=null;
 function openReportModal(){
   openModal('Звіти', `
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
@@ -271,7 +273,9 @@ function openReportModal(){
   }});
 }
 
-function renderReport(range){
+async function renderReport(range){
+  const revision=++mtReportRenderRevision;
+  for(const id of ['copyReportBtn','shareReportBtn']){const button=document.getElementById(id);if(button)button.onclick=null;}
   // v91.32: усі періоди рахуються від якоря mtReportState.anchor (за замовчуванням
   // — обрана дата заявок). Сам якір ←/→ зсувають; розрахунки сум не змінено.
   const anchorStr = mtReportState.anchor || currentTicketDate;
@@ -292,6 +296,20 @@ function renderReport(range){
   if(navRow)navRow.style.display = range==='all' ? 'none' : 'flex';
   const labelEl=document.getElementById('reportPeriodLabel');
   if(labelEl)labelEl.textContent = reportPeriodLabel(range, anchorStr);
+  let onuStats;
+  try{
+    const projection=mtLocalReportProjection||(mtLocalReportProjection=await import('./dispatcher-report-projection.mjs'));
+    if(revision!==mtReportRenderRevision||!document.getElementById('reportOutput'))return;
+    // Display-time computation only: no save, enqueue, sync or report rebuild.
+    list=list.filter(t=>!projection.LOCAL_REPORT_TEST_IDS.includes(String(t.id)));
+    onuStats=projection.localOnuStatistics(list,globalThis.MTDispatcherReportCore);
+  }catch(_){
+    if(revision===mtReportRenderRevision&&document.getElementById('reportOutput')){
+      document.getElementById('reportOutput').textContent='Не вдалося обчислити локальну статистику. Дані не змінено. Спробуйте відкрити звіт ще раз.';
+      for(const id of ['copyReportBtn','shareReportBtn']){const button=document.getElementById(id);if(button)button.onclick=null;}
+    }
+    return;
+  }
   list = list.sort((a,b)=> parseDate(a.date)-parseDate(b.date) || (a.time||'').localeCompare(b.time||''));
   const {count, total, cashTotal, cardTotal} = calculateTicketReportTotals(list);
   // NEW: суми окремо готівкою й безготівкою — щоб не рахувати вручну, скільки
@@ -302,7 +320,7 @@ function renderReport(range){
   // такої заявки випадала б із обох підсумків і "загальна" сума не
   // збігалася б із сумою готівки та безготівки.
   const full = document.getElementById('reportFullToggle')?.checked;
-  let text = buildTicketReportText({list, title, full, totals:{count, total, cashTotal, cardTotal}, formatMoney:fmtMoney});
+  let text = buildTicketReportText({list, title, full, totals:{count, total, cashTotal, cardTotal}, formatMoney:fmtMoney,onuStats});
   text = dispatcherForwardText(appendTicketReportComment(text,document.getElementById('reportCommentInput')?.value));
   // NEW: матеріали за період одразу зверху звіту — щоб бачити, скільки саме
   // обладнання/кабелю пішло за день/тиждень/місяць, не гортаючи кожну заявку.

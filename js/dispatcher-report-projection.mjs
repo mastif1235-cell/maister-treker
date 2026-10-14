@@ -468,3 +468,64 @@ export function dryRunHistoricalOnu(source,core){
   return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),connectionReviews:Object.freeze(connectionReviews.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason!=='SAME_TICKET_ID').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,unresolvedAliases:reconciled.unresolvedAliases,excluded:Object.freeze(excluded),type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
 }
 
+// Read-only local-report decisions from the completed source audit. Kept out
+// of projectTicket/buildDTO: opening a report must not change sync hashes,
+// receipts, canonical records or dispatcher operations.
+const LOCAL_ONU_REVIEW_TYPES=Object.freeze({
+  '1774458317620':'CONNECTION','1774458317633':'CONNECTION','1775552919257':'CONNECTION',
+  '1774458317624':'OTHER','1774458317625':'OTHER','1774458317626':'OTHER',
+  '1774628690218':'OTHER','1775480134445':'OTHER','1775660244884':'OTHER',
+  '1776438212349':'OTHER','1776797323194':'OTHER','1776853930120':'OTHER',
+  '1779774198131':'OTHER','1781370027980':'OTHER','1781716479670':'OTHER',
+  '1785702374503':'OTHER','cb55b7b0-cf9e-4c9d-a6f3-1653b5f78f0a':'OTHER','ceaf6cf1-0a1a-4625-8a64-c19320d37c66':'OTHER',
+  '1774458317638':'REPAIR','1774458317655':'REPAIR','1776503311178':'REPAIR',
+  '1777038786488':'REPAIR','1778059754581':'REPAIR','1778163811083':'REPAIR',
+  '1778163907065':'REPAIR','1778667601083':'REPAIR','1779774046364':'REPAIR',
+  '1780976433188':'REPAIR','1781007346592':'REPAIR','1781088809796':'REPAIR',
+  '1781179247584':'REPAIR','1781716414678':'REPAIR','1781716532814':'REPAIR',
+  '1781716587669':'REPAIR','1781788780325':'REPAIR','1782128548219':'REPAIR','1783937356208':'REPAIR',
+  '1783937356227':'REPAIR','1783937356219':'REPAIR',
+  '1774458317639':'UNKNOWN_TYPE','1774534269278':'UNKNOWN_TYPE','1774628565896':'UNKNOWN_TYPE',
+  '1775480931283':'UNKNOWN_TYPE','1776938600051':'UNKNOWN_TYPE','1779202193077':'UNKNOWN_TYPE',
+  '1779460556673':'UNKNOWN_TYPE','1780922851831':'UNKNOWN_TYPE','1781007458879':'UNKNOWN_TYPE','1781716452178':'UNKNOWN_TYPE'
+});
+const LOCAL_ONU_OVERRIDES=Object.freeze({...HISTORICAL_ONU_OVERRIDES,'1783937356227':'OUR_ONU','1783937356219':'OUR_ONU'});
+export const LOCAL_REPORT_TEST_IDS=Object.freeze(['1778319337856']);
+
+// One pure adapter over the existing classifier/repair counter. Its input is
+// ONLY the currently selected local tickets; never Sheets/archive/report rows.
+export function localOnuStatistics(tickets,core){
+  if(!Array.isArray(tickets))throw new Error('LOCAL_TICKETS_REQUIRED');
+  const unique=new Map(),conflicts=new Set(),unknown=[],excluded=[];
+  const reference=t=>({ticket_id:String(t.id),date:String(t.date||''),time:String(t.time||'')});
+  for(const ticket of tickets){
+    if(!ticket||ticket.id===undefined||ticket.id===null||String(ticket.id)==='')throw new Error('LOCAL_TICKET_ID_REQUIRED');
+    const id=String(ticket.id);
+    if(LOCAL_REPORT_TEST_IDS.includes(id)||HISTORICAL_REBUILD_EXCLUDED_IDS.includes(id)){excluded.push(id);continue;}
+    if(unique.has(id)&&JSON.stringify(unique.get(id))!==JSON.stringify(ticket))conflicts.add(id);
+    else if(!unique.has(id))unique.set(id,ticket);
+  }
+  for(const id of conflicts){unknown.push({...reference(unique.get(id)),reason:'DUPLICATE_ID_CONFLICT'});unique.delete(id);}
+  const reconciled=reconcileHistoricalTickets([...unique.values()],[],core);
+  let connection=0,repair=0;
+  for(const {ticket} of reconciled.records){
+    const id=String(ticket.id),ref=reference(ticket);
+    // The explicit modern contract wins historical template defaults.
+    const modernType=ticket.onuAccountingVersion===1?historicalType(ticket.type):null;
+    const type=LOCAL_ONU_REVIEW_TYPES[id]??HISTORICAL_WORK_TYPE_OVERRIDES[id]??modernType??resolveHistoricalWorkType(ticket);
+    if(type==='UNKNOWN_TYPE'){unknown.push({...ref,reason:'UNKNOWN_TYPE'});continue;}
+    if(type==='CONNECTION'){
+      const result=classifyConnectionOnu(ticket,core);
+      if(result.classification==='REVIEW_REQUIRED')unknown.push({...ref,reason:'ONU_SELECTION_REVIEW_REQUIRED'});
+      else connection+=result.onu_connection;
+    }else if(type==='REPAIR'){
+      if(LOCAL_ONU_OVERRIDES[id]==='UNKNOWN'){unknown.push({...ref,reason:'UNKNOWN_ONU_CONSUMPTION'});continue;}
+      const record={...ticket,type:'Ремонт',work_category:'repair',materials_display:reportPresentation(ticket,core).materials};
+      const quantity=confirmedRepairOnuCount([record],core,LOCAL_ONU_OVERRIDES);
+      if(!Number.isFinite(quantity)||quantity<0)unknown.push({...ref,reason:'INVALID_ONU_QUANTITY'});
+      else repair+=quantity;
+    }
+  }
+  return {connection,repair,unknown,excluded:[...new Set(excluded)],duplicates:reconciled.duplicates.length};
+}
+
