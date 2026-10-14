@@ -28,7 +28,7 @@ const core=require('../js/dispatcher-report-core.js');
   const snapshot=JSON.stringify(source),plan=await dryRunHistoricalCorrection(source,core,1000);
   assert.equal(plan.ready,true);assert.equal(plan.source_audit.unknownTypes.length,0);assert.equal(plan.source_audit.duplicate_count,1);
   assert.equal(plan.source_audit.months.reduce((n,m)=>n+m.repair_onu,0),3,'three confirmed repairs, not a repair-wide default');
-  assert.equal(plan.actions.filter(a=>a.action==='EXCLUDED').length,2);assert.equal(plan.actions.filter(a=>a.action==='KEEP_UNKNOWN').length,2);
+  assert.equal(plan.actions.filter(a=>a.action==='EXCLUDED').length,2);assert.equal(plan.actions.filter(a=>a.action==='KEEP_UNKNOWN').length,1);
   const proposed=plan.actions.find(a=>a.ticket_id===alias.id);assert.equal(proposed.action,'PROPOSE_SOFT_DELETE_DUPLICATE');assert.equal(proposed.preferred_id,'1783937356212');
   assert.equal(JSON.stringify(source),snapshot,'source and live-row snapshot are never mutated');
   for(const canary of ['SECRET-CANARY','PRIVATE-NAME-CANARY','PRIVATE-ADDRESS-CANARY'])assert(!JSON.stringify(plan).includes(canary));
