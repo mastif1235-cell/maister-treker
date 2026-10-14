@@ -138,3 +138,18 @@ The 13 decisions and both display/counting defects are implemented in candidate
 code. Local synthetic tests are evidence of implementation behavior only. Full
 real-data dry-run is unavailable until the above CSV transfer is completed.
 Production release and controlled historical recalculation remain NOT READY.
+
+### Final local review blocker
+
+The full local E2E run found a real compatibility failure at
+`e2e/dispatcher-works-connection-onu.spec.js:18`: unchecking ONU in a newly
+created connection still projects `onu_used=1`, expected 0. Existing canonical
+tickets have no reliable modern-selection marker, so the historical default
+currently also reaches new unchecked selections. Do not weaken this test or
+infer a schema boundary from a date. A deliberate modern-selection contract
+is required before release. No production or historical writes are permitted.
+
+Full E2E: 83/86 initially passed; two failures were obsolete runtime/cache test
+pins and were updated to this release. The ONU-checkbox assertion was left
+unchanged. Full unit: 250/251, with the lone monitor timing failure independently
+reproduced on unchanged main. MCP 716/716; dispatcher 33/33; runtime proof 8/8.
