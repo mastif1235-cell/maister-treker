@@ -46,7 +46,7 @@ for(const entry of NEW_FILES.map(file=>'./'+file)){
 }
 assert.doesNotMatch(sw,/vendor\/cloudflare-speedtest/,'отставший движок убран из офлайн-оболочки');
 assert.equal(fs.existsSync(path.join(root,'vendor','cloudflare-speedtest','speedtest.js')),false,'vendored engine removed (заменён собственным адаптивным движком)');
-assert.match(app,/APP_VERSION = 'v92\.22 · 2026-10-14'/,'release identity');
+assert.match(app,/APP_VERSION = 'v92\.23 · 2026-10-14'/,'release identity');
 
 /* Меню Інструментів: дві окремі кнопки-екрани */
 const domain=read('js/tools-domain.js');
