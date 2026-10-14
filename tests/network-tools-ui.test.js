@@ -40,13 +40,13 @@ for(const origin of directOrigins){
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
 /* Офлайн-шелл: нові файли + движок у precache, новий runtime */
-assert.equal((sw.match(/maister-treker-v89-runtime-159/g)||[]).length,1,'release cache pin');
+assert.equal((sw.match(/maister-treker-v98-runtime-168/g)||[]).length,1,'release cache pin');
 for(const entry of NEW_FILES.map(file=>'./'+file)){
   assert.equal(sw.split("'"+entry+"'").length-1,1,'precache entry exactly once: '+entry);
 }
 assert.doesNotMatch(sw,/vendor\/cloudflare-speedtest/,'отставший движок убран из офлайн-оболочки');
 assert.equal(fs.existsSync(path.join(root,'vendor','cloudflare-speedtest','speedtest.js')),false,'vendored engine removed (заменён собственным адаптивным движком)');
-assert.match(app,/APP_VERSION = 'v92\.14 · 2026-10-13'/,'release identity');
+assert.match(app,/APP_VERSION = 'v92\.21 · 2026-10-14'/,'release identity');
 
 /* Меню Інструментів: дві окремі кнопки-екрани */
 const domain=read('js/tools-domain.js');

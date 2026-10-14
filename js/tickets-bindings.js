@@ -486,6 +486,9 @@ const photoCameraBtnEl = document.getElementById('photoCameraBtn');
     if(chk){
       const idx = Number(chk.dataset.eqidx);
       calcState.equipment[idx].checked = chk.checked;
+      // An actual user choice may explicitly opt a legacy connection into the
+      // modern contract. Loading/editing/saving alone does not assign a marker.
+      if(getEffectiveType()==='Підключення'&&isTicketOnuEquipment(calcState.equipment[idx]))calcState.onuAccountingVersion=1;
       syncCatalogTagState(calcState.equipment[idx].label, chk.checked); // NEW: авто-тег за назвою матеріалу
       applyDefaultCallFee(); renderEquipmentList();
     }

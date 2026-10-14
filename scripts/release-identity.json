@@ -113,5 +113,50 @@
     "runtime": "runtime-159",
     "fingerprint": "e0fdade2445542ba05cd6f1bde30150a2ed4f189d64c5dbba53ca6cfb7026113",
     "assets": 8
+  },
+  "maister-treker-v90-runtime-160": {
+    "runtime": "runtime-160",
+    "fingerprint": "89c96c79e824240d3047802fa89f4c310ab56b87974066ca15673347f82bd3b4",
+    "assets": 8
+  },
+  "maister-treker-v91-runtime-161": {
+    "runtime": "runtime-161",
+    "fingerprint": "9bc29776c75d63c5b51cf0d2b9809d3389e4c726b8f1a19844bc76ff874cefff",
+    "assets": 8
+  },
+  "maister-treker-v92-runtime-162": {
+    "runtime": "runtime-162",
+    "fingerprint": "084c1535372602c45855bc17478b9fdc54f3e7cc0fa206cfeb483020b52dac3b",
+    "assets": 8
+  },
+  "maister-treker-v93-runtime-163": {
+    "runtime": "runtime-163",
+    "fingerprint": "b17e59147be11c4c56310d8c20042341ed6689b2e02ea36e0f3d29bbd6a69176",
+    "assets": 8
+  },
+  "maister-treker-v94-runtime-164": {
+    "runtime": "runtime-164",
+    "fingerprint": "e5304f754b74c1854dcf8edede7227c3ccba5ac6c24ca8f4ee9150f1cf9528c5",
+    "assets": 8
+  },
+  "maister-treker-v95-runtime-165": {
+    "runtime": "runtime-165",
+    "fingerprint": "7a3df96d6c5acaa45c2a270bad82f81f9fe42fcf344dabf4bd689ea002894019",
+    "assets": 8
+  },
+  "maister-treker-v96-runtime-166": {
+    "runtime": "runtime-166",
+    "fingerprint": "2f3d0780437833936bdbc069a94bd569f59891e9ddba9dc7d7573cbf4779b1e8",
+    "assets": 8
+  },
+  "maister-treker-v97-runtime-167": {
+    "runtime": "runtime-167",
+    "fingerprint": "17b9f96a34359427ea8a9547254430a72353e526e72a74e6ab843d62b681ae3d",
+    "assets": 8
+  },
+  "maister-treker-v98-runtime-168": {
+    "runtime": "runtime-168",
+    "fingerprint": "524f0311d8aaaa85cdb010b839aa02d573e98f516c92b4c6488ef771402226a0",
+    "assets": 8
   }
 }

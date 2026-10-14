@@ -75,8 +75,8 @@ async function asyncTests(){
   const {buildDTO}=await import('../js/dispatcher-report-projection.mjs');
   const ticket={id:'synthetic-1',date:'30.09.2026',time:'12:34',type:'Ремонт',city:'Місто',address:'Вулиця 106, кв.29',sum:100,payment:'Готівка',equipment:[{label:'ONU',qty:1}],macAddress:'AA:BB:CC:DD:EE:FF',connectMasters:['Майстер'],note:'Замінено ONU, signal -18 dBm, працює',masterNote:'PRIVATE-CANARY',geoLat:48.45,geoLng:35.05,phone:'',photo:'PHOTO-CANARY'};
   const before=JSON.stringify(ticket),dto=await buildDTO(ticket,core);assert.equal(JSON.stringify(ticket),before);assert.equal(dto.onu_used,1);assert.equal(dto.onu_replacement,1);assert.equal(dto.dispatcher_comment,'Замінено ONU, працює');assert.equal(dto.mac_onu,ticket.macAddress);assert.deepEqual(Object.keys(dto),[...core.FIELDS,'materials_json']);for(const v of ['PRIVATE-CANARY','PHONE-CANARY','PHOTO-CANARY','48.45','35.05','dBm'])assert(!JSON.stringify(dto).includes(v));count++;
-  const connection=await buildDTO({...ticket,type:'Підключення',equipment:[],note:'На старій ONU гудять дроселі'},core);assert.equal(connection.onu_used,0);count++;
-  const reuse=await buildDTO({...ticket,type:'Підключення',equipment:[],note:'Залишили стару ONU'},core);assert.equal(reuse.onu_used,0);count++;
+  const connection=await buildDTO({...ticket,type:'Підключення',equipment:[],note:'На старій ONU гудять дроселі'},core);assert.equal(connection.onu_used,1,'old ONU mention alone does not prove customer ownership under approved legacy policy');count++;
+  const reuse=await buildDTO({...ticket,type:'Підключення',equipment:[],note:'Залишили стару ONU абонента'},core);assert.equal(reuse.onu_used,0);count++;
   const formula=await buildDTO({...ticket,note:'=IMPORTXML("evil")'},core);assert.equal(formula.dispatcher_comment,'=IMPORTXML("evil")'); // server must reject, not execute
   const context={globalThis:{},URL,setTimeout,clearTimeout};vm.runInNewContext(fs.readFileSync(path.join(root,'js/dispatcher-report-client.js'),'utf8'),context);
   const {createOutbox,endpoint}=context.globalThis.MTDispatcherReportClient;
