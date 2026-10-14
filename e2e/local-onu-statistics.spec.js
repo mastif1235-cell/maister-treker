@@ -16,11 +16,11 @@ test('local day/week/month/all ONU reports reuse historical policy without write
  for(const period of ['day','week','month']){
   await page.click('[data-rep="'+period+'"]');await expect(output).toContainText('ONU на підключеннях — 2 шт.');await expect(output).toContainText('ONU на ремонтах — 0 шт.');
  }
- await page.click('[data-rep="all"]');await expect(output).toContainText('ONU на ремонтах — 2 шт.');await expect(output).toContainText('Потребують перевірки');await expect(output).toContainText('cca10ba0-41a2-4571-ac3c-02b57e2a19bc');await expect(output).toContainText('1776938600051');await expect(output).not.toContainText('1778319337856');
+ await page.click('[data-rep="all"]');await expect(output).toContainText('ONU на ремонтах — 3 шт.');await expect(output).toContainText('Потребують перевірки');await expect(output).not.toContainText('cca10ba0-41a2-4571-ac3c-02b57e2a19bc');await expect(output).toContainText('1776938600051');await expect(output).not.toContainText('1778319337856');
  const text=await output.innerText();expect(text.split('ONU на підключеннях').length-1).toBe(1);expect(text.split('ONU на ремонтах').length-1).toBe(1);expect(text).not.toMatch(/Разом ONU|Заміна ONU|\n\s*• ONU —/);
  expect(await page.evaluate(async()=>({tickets:JSON.stringify(tickets),stored:JSON.stringify(await ticketsDbGet()),outbox:localStorage.getItem('mtDispatcherReportOutboxV1')}))).toEqual(before);
  await context.setOffline(true);await page.reload({waitUntil:'domcontentloaded'});await waitAppReady(page);
- await page.evaluate(()=>{currentTicketDate='14.10.2026';openReportModal();});await page.click('[data-rep="all"]');await expect(output).toContainText('ONU на підключеннях — 2 шт.');await expect(output).toContainText('ONU на ремонтах — 2 шт.');
+ await page.evaluate(()=>{currentTicketDate='14.10.2026';openReportModal();});await page.click('[data-rep="all"]');await expect(output).toContainText('ONU на підключеннях — 2 шт.');await expect(output).toContainText('ONU на ремонтах — 3 шт.');
  expect(await page.evaluate(()=>JSON.stringify(tickets))).toBe(before.tickets);
  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('mtDispatcherReportOutboxV1')).receipts)).toEqual([{id:'old-receipt',version:99}]);
  expect(gasRequests).toBe(0);expect(errors).toEqual([]);

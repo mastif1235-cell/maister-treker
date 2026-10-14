@@ -40,7 +40,7 @@ for(const origin of directOrigins){
 assert.doesNotMatch(html,/unsafe-eval/,'no eval relaxation');
 
 /* Офлайн-шелл: нові файли + движок у precache, новий runtime */
-assert.equal((sw.match(/maister-treker-v99-runtime-169/g)||[]).length,1,'release cache pin');
+assert.equal((sw.match(/maister-treker-v100-runtime-170/g)||[]).length,1,'release cache pin');
 for(const entry of NEW_FILES.map(file=>'./'+file)){
   assert.equal(sw.split("'"+entry+"'").length-1,1,'precache entry exactly once: '+entry);
 }
