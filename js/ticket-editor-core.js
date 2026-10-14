@@ -2,6 +2,9 @@
 
 function blankCalcState(){
   const t = blankTicketObject();
+  // Only a NEW editor session creates this contract. blankTicketObject is also
+  // used by legacy imports/reads and must never upgrade historical tickets.
+  t.onuAccountingVersion = 1;
   const now = new Date();
   t.date = formatDate(now);
   t.time = formatTime(now);

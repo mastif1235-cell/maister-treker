@@ -1,5 +1,10 @@
 # Historical ONU correction — v92.20 / runtime-167
 
+The v92.20 modern-checkbox blocker below is resolved by the explicit persisted
+[v92.21 / runtime-168 contract](dispatcher-modern-onu-contract.md).
+Use that document for current candidate identity. The real-data audit and
+historical execution approval gates in this document remain required.
+
 Candidate only. Production remains v92.14/runtime-159. No production write,
 merge, deployment, rebuild, sync, queue action or manual Actions invocation is
 part of this task. The full real-data dry-run is still required; fixture totals

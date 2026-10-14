@@ -9,10 +9,10 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v92.20 · 2026-10-14';
+const APP_VERSION = 'v92.21 · 2026-10-14';
 // Runtime revision of the app shell, checked with module/SW revisions by the
 // mixed-runtime guard (js/runtime-guard.js). Bump together with sw.js CACHE_NAME.
-globalThis.MTAppRuntimeRevision = 'runtime-167';
+globalThis.MTAppRuntimeRevision = 'runtime-168';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -195,6 +195,7 @@ function ticketToSyncPayload(t){
     address:t.address, clientName:t.clientName, phone:t.phone, macAddress:t.macAddress,
     payment:t.payment, cashAmount:t.cashAmount, cardAmount:t.cardAmount, itemPayments:t.itemPayments, baseCallFee:t.baseCallFee, callFee:t.callFee, tariff:t.tariff, contractNumber:t.contractNumber,
     equipment:t.equipment, cables:t.cables, presetWorks:t.presetWorks, additionalWork:t.additionalWork,
+    onuAccountingVersion:t.onuAccountingVersion,
     connectMasters:t.connectMasters,
     note:t.note, otherNote:t.otherNote, abonentNote:t.abonentNote, extraPhones:t.extraPhones, masterNote:t.masterNote,
     signal:t.signal, geoLat:t.geoLat, geoLng:t.geoLng, geoLink:t.geoLink,

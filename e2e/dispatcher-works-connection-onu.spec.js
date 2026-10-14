@@ -22,3 +22,38 @@ test('connection ONU checkbox controls inventory at +0; selected works reach dis
  await page.locator('#f_type').selectOption('Підключення');await expect(checkbox).toBeChecked();
  expect(errors).toEqual([]);
 });
+
+test('modern ONU OFF/ON survives real save, edit, IndexedDB restart and sync serialization',async({page,appEnv})=>{
+ const errors=await gotoApp(page,appEnv.url);
+ const openEquipment=async()=>{const details=page.locator('details:has(#equipmentList)');if(!await details.evaluate(el=>el.open))await details.locator('summary').click();};
+ const onuCheckbox=async()=>page.locator('.eq-check[data-eqidx="'+await page.evaluate(()=>calcState.equipment.findIndex(e=>e.id==='onu'))+'"]');
+ const inspect=()=>page.evaluate(async()=>{
+  const t=tickets.find(t=>t.clientName==='Synthetic modern ONU');
+  const {buildDTO}=await import('/js/dispatcher-report-projection.mjs');
+  const dto=await buildDTO(t,MTDispatcherReportCore,100);
+  const roundtrip=MTRestoreFromSheets.cloudTicketToLocal(JSON.parse(JSON.stringify(ticketToSyncPayload(t)))).ticket;
+  const again=await buildDTO(roundtrip,MTDispatcherReportCore,100);
+  return {id:t.id,marker:t.onuAccountingVersion,used:dto.onu_used,total:t.sum,syncMarker:roundtrip.onuAccountingVersion,syncUsed:again.onu_used};
+ });
+ await page.click('.tab-btn[data-tab="calculator"]');await openEquipment();
+ await page.fill('#f_client','Synthetic modern ONU');await page.fill('#f_callFee','500');await page.fill('#f_tariff','300');await page.selectOption('#f_payment','Готівка');
+ await (await onuCheckbox()).uncheck();await page.click('#saveTicketBtn');
+ await expect(page.locator('#screen-tickets')).toBeVisible();
+ let saved=await inspect();expect(saved).toMatchObject({marker:1,used:0,total:800,syncMarker:1,syncUsed:0});
+ await page.evaluate(id=>editTicket(id),saved.id);await openEquipment();await expect(await onuCheckbox()).not.toBeChecked();
+ await (await onuCheckbox()).check();await page.click('#saveTicketBtn');await expect(page.locator('#screen-tickets')).toBeVisible();
+ saved=await inspect();expect(saved).toMatchObject({marker:1,used:1,total:800,syncMarker:1,syncUsed:1});
+ await page.evaluate(id=>editTicket(id),saved.id);await openEquipment();await expect(await onuCheckbox()).toBeChecked();
+ await (await onuCheckbox()).uncheck();await page.click('#saveTicketBtn');await expect(page.locator('#screen-tickets')).toBeVisible();
+ await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.__mtAppInitDone===true);
+ saved=await inspect();expect(saved).toMatchObject({marker:1,used:0,total:800,syncMarker:1,syncUsed:0});
+ await page.evaluate(id=>editTicket(id),saved.id);await openEquipment();await expect(await onuCheckbox()).not.toBeChecked();
+ // Merely opening an old record must never silently install the schema marker.
+ const legacy=await page.evaluate(()=>{
+  const t={...tickets[0],id:'synthetic-legacy',equipment:[{id:'onu',label:'ONU',checked:false}]};delete t.onuAccountingVersion;loadTicketIntoForm(t);
+  return {source:Object.hasOwn(t,'onuAccountingVersion'),editor:Object.hasOwn(calcState,'onuAccountingVersion')};
+ });expect(legacy).toEqual({source:false,editor:false});
+ await page.evaluate(()=>resetCalcForm());
+ expect(await page.evaluate(()=>calcState.onuAccountingVersion)).toBe(1);
+ expect(errors).toEqual([]);
+});

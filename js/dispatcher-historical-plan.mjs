@@ -22,6 +22,7 @@ export async function dryRunHistoricalCorrection(source,core,now=Date.now()){
   }
   const rows=stored.map(row=>({...row})),reconciled=reconcileHistoricalTickets(source.current,source.archive,core),audit=dryRunHistoricalOnu(source,core);
   if(audit.unknownTypes.length)blocks.push({code:'UNKNOWN_WORK_TYPES',ticket_ids:audit.unknownTypes.map(row=>row.ticket_id)});
+  if(audit.connectionReviews.length)blocks.push({code:'ONU_SELECTION_REVIEW_REQUIRED',ticket_ids:audit.connectionReviews.map(row=>row.ticket_id)});
   if(reconciled.unresolvedAliases.length)blocks.push({code:'PREFERRED_CANONICAL_RECORD_UNAVAILABLE',ticket_ids:reconciled.unresolvedAliases.map(row=>row.ticket_id)});
   for(const {ticket} of reconciled.records){
     const id=String(ticket.id),before=stored.find(row=>String(row.ticket_id)===id);

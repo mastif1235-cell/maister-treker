@@ -128,12 +128,17 @@ function customerOnuEvidence(ticket){
   return '';
 }
 
-// Canonical tickets currently have no reliable ONU-selection schema marker.
-// Thus every existing connection uses the approved historical policy: explicit
-// customer ownership wins; unchecked/absent equipment is never negative proof.
-// Do not infer a modern format from date, cloudImported, or equipment presence.
+// Explicit persisted schema contract only. Dates, cloudImported and equipment
+// shape never upgrade legacy records. Modern sparse equipment [] means OFF;
+// legacy unchecked/absent equipment remains subject to the approved default.
 export function classifyConnectionOnu(ticket,core){
   if(HISTORICAL_CONNECTION_ONU_OVERRIDES[String(ticket?.id)]==='CUSTOMER_ONU')return Object.freeze({classification:'CUSTOMER_ONU_EXPLICIT',onu_connection:0,reason:'approved_customer_ownership',evidence:'своя onu'});
+  if(ticket?.onuAccountingVersion!==undefined){
+    if(ticket.onuAccountingVersion!==1||!Array.isArray(ticket.equipment)||ticket.equipment.some(item=>!item||typeof item!=='object'||Array.isArray(item)||('checked' in item&&typeof item.checked!=='boolean')))
+      return Object.freeze({classification:'REVIEW_REQUIRED',onu_connection:null,reason:'INVALID_OR_UNSUPPORTED_ONU_ACCOUNTING_CONTRACT',evidence:'ONU accounting contract requires review'});
+    const selected=ticket.equipment.some(item=>core.isOnuEquipment(item)&&item.checked!==false);
+    return Object.freeze({classification:selected?'OUR_ONU_EXPLICIT':'CUSTOMER_ONU_EXPLICIT',onu_connection:selected?1:0,reason:selected?'modern_onu_selected':'modern_onu_unchecked',evidence:selected?'schema 1 ONU selected':'schema 1 ONU unchecked'});
+  }
   const equipment=Array.isArray(ticket?.equipment)?ticket.equipment:[];
   const onuItems=equipment.filter(item=>core.isOnuEquipment(item));
   const customerEvidence=customerOnuEvidence(ticket);
@@ -187,7 +192,11 @@ export function projectTicket(ticket,core,now=Date.now(),overrides=HISTORICAL_ON
     const money=n=>Number(n).toLocaleString('uk-UA',{maximumFractionDigits:2})+' грн';
     const works=projectWorks(ticket,core).map(w=>w.label+(w.quantity!==1?' — '+w.quantity+' шт.'+(w.unit_price>0?' · '+money(w.unit_price)+'/шт.':''):'')+(w.line_total>0?' — '+money(w.line_total):''));
     if(works.length)dto.works_display=works.join('\n');
-    if(category==='connection'){dto.onu_used=classifyConnectionOnu(ticket,core).onu_connection;dto.onu_replacement=0;}
+    if(category==='connection'){
+      const onu=classifyConnectionOnu(ticket,core);
+      if(onu.classification==='REVIEW_REQUIRED')throw new Error('ONU_SELECTION_REVIEW_REQUIRED');
+      dto.onu_used=onu.onu_connection;dto.onu_replacement=0;
+    }
     const contract=String(ticket.contractNumber??'').trim();
     // Keep structured identity intact; validate rather than sanitizing private
     // fragments into a different contract number. No extraction from notes.
@@ -427,7 +436,7 @@ export function reconcileHistoricalTickets(current,archive,core){
 // UNKNOWN_TYPE jobs never enter connection or repair ONU counts.
 export function dryRunHistoricalOnu(source,core){
   const reconciled=Array.isArray(source)?reconcileHistoricalTickets(source,[],core):reconcileHistoricalTickets(source?.current,source?.archive,core);
-  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[],unknownTypes=[],typeConflicts=[],excluded=[];
+  const monthly=new Map(),repairRows=new Map(),customerOnuTickets=[],connectionReviews=[],unknownTypes=[],typeConflicts=[],excluded=[];
   for(const {ticket,source:origin} of reconciled.records){
     if(HISTORICAL_REBUILD_EXCLUDED_IDS.includes(String(ticket.id))){excluded.push(Object.freeze({ticket_id:String(ticket.id),reason:'CLOSED_PERIOD_NOT_RESTORING'}));continue;}
     const date=core.dateKey(ticket.date),time=core.timeKey(ticket.time||'00:00'),month=date.slice(0,7),type=resolveHistoricalWorkType(ticket),e=historicalWorkTypeEvidence(ticket);
@@ -441,6 +450,9 @@ export function dryRunHistoricalOnu(source,core){
     if(type==='CONNECTION'){
       summary.connections_total++;summary.connections_physical++;
       const result=classifyConnectionOnu(ticket,core);
+      if(result.classification==='REVIEW_REQUIRED'){
+        summary.connection_unknown++;connectionReviews.push(Object.freeze({...reference,reason:result.reason}));continue;
+      }
       if(result.onu_connection===1)summary.connection_our_onu++;
       else{
         summary.connection_customer_onu++;customerOnuTickets.push(Object.freeze({...reference,reason:result.reason,evidence:result.evidence}));
@@ -453,6 +465,6 @@ export function dryRunHistoricalOnu(source,core){
   for(const [month,rows] of repairRows)monthly.get(month).repair_onu=confirmedRepairOnuCount(rows,core);
   const sort=(a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)||a.ticket_id.localeCompare(b.ticket_id);
   const months=[...monthly.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(summary=>Object.freeze({...summary,total_physical_onu:summary.connection_our_onu+summary.repair_onu}));
-  return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason!=='SAME_TICKET_ID').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,unresolvedAliases:reconciled.unresolvedAliases,excluded:Object.freeze(excluded),type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
+  return Object.freeze({source_mode:Array.isArray(source)?'CURRENT_ONLY':'CURRENT_AND_ARCHIVE',current_count:Array.isArray(source)?source.length:source.current.length,archive_count:Array.isArray(source)?0:source.archive.length,physical_jobs:reconciled.records.length,months:Object.freeze(months),customerOnuTickets:Object.freeze(customerOnuTickets.sort(sort)),connectionReviews:Object.freeze(connectionReviews.sort(sort)),duplicate_count:reconciled.duplicates.filter(d=>d.reason!=='SAME_TICKET_ID').length,same_id_count:reconciled.duplicates.filter(d=>d.reason==='SAME_TICKET_ID').length,duplicates:reconciled.duplicates,unresolvedAliases:reconciled.unresolvedAliases,excluded:Object.freeze(excluded),type_conflict_count:typeConflicts.length,typeConflicts:Object.freeze(typeConflicts.sort(sort)),unknownTypes:Object.freeze(unknownTypes.sort(sort))});
 }
 
