@@ -42,7 +42,30 @@ var REPORT_ONU_CORRECTION_TARGETS=Object.freeze({
   'a65dd9a4-fefb-4381-be39-8b1b0ed8d793':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
   'ac5bb18a-cd71-4e9e-97d9-bdf57353d921':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
   '2edc4344-42ed-44d8-9e10-384126505bcf':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
-  '8b933540-b8e2-4493-8020-75754fb5ebec':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1})
+  '8b933540-b8e2-4493-8020-75754fb5ebec':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  // September-only extension. Primary Заявки CSV proves these twenty legacy
+  // connections; the owner helper MUST refresh canonical evidence before apply.
+  // Original eleven journal entries remain byte-compatible and are not replayed.
+  'c20da478-4aa7-48f0-8ed5-c41533b84a17':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '6cd36f12-102c-47d1-b23b-a6ebe4ef3a7f':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '4a318a80-b562-4b8b-b514-c37e279849d8':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '711bbbb6-548b-4f24-87c6-4e920921a890':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '7cf7d72a-aa05-4e03-bfaa-b2dc8344ae58':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '9c7d3974-1165-44dc-bffb-18c8a0b9c3e9':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '98b3d7d8-4735-4adc-b087-4117bc80c7e7':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '7b41c24c-28a2-4bfe-83ee-5196a90d363d':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'de173239-ad84-4ca1-8b2d-40879684f670':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'c2f623a0-e871-49ae-b576-caf938f2e157':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '96973976-f8d8-4d71-b310-9549018e07c7':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '00eb1e82-fd6d-4363-8aba-1edbca528755':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '5e069e10-ddc2-419a-8512-1983f3aee3d1':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '8818f766-97ba-48fd-97ca-bc0363f2093a':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'e665e783-94b8-422b-b576-f707283366d8':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '836df114-ec94-4ee6-a7e2-d23c143d15b6':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'c0c08af5-a103-4ed0-bdad-42f9c6c8e18d':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '1b6e8117-37a4-4d80-b173-da64e189e21b':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'cfbf3824-3f22-4602-8bbd-775f57b72bad':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '585e60f5-88d4-4bbf-88f1-68a043c924e1':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1})
 });
 // Keep the existing phone preview limited to its five repairs. Connections are
 // prepared individually via signed preview(ticket_id), without a frontend release.

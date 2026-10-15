@@ -10,7 +10,8 @@ function bundle(){
   const normalized=backend.replace(/\r\n/g,'\n');
   if(!normalized.includes(original))throw new Error('Bundle template boundary changed');
   backend=normalized.replace(original,"var config=JSON.stringify({origin:origin,channel:channel}).replace(/</g,'\\\\u003c');\n  return HtmlService.createHtmlOutput(REPORT_BRIDGE_HTML.replace('<?!= bridgeConfig ?>',config))");
-  return core+'\nvar REPORT_BRIDGE_HTML = '+JSON.stringify(bridge)+';\n'+backend;
+  const septemberOwner=fs.readFileSync(path.join(root,'gas/dispatcher-report/SeptemberOnuOwner.gs'),'utf8');
+  return core+'\nvar REPORT_BRIDGE_HTML = '+JSON.stringify(bridge)+';\n'+backend+'\n'+septemberOwner;
 }
 module.exports={bundle};
 if(require.main===module){
