@@ -28,7 +28,121 @@ function reportExtendHeaders_(sheet){
   if(sheet.getMaxColumns()<REPORT_HEADERS.length)sheet.insertColumnsAfter(sheet.getMaxColumns(),REPORT_HEADERS.length-sheet.getMaxColumns());
   sheet.getRange(1,1,1,REPORT_HEADERS.length).setValues([REPORT_HEADERS]);
 }
-var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status','report_receipt'];
+var REPORT_ACTIONS=['report_upsert','report_sync_all','report_delete','report_rebuild','report_status','report_receipt','report_onu_correction_preview','report_onu_correction_apply','report_onu_correction_rollback'];
+// User-confirmed repairs and the six connections verified in the current
+// primary Заявки sheet on 2026-10-15. Archive rows and MAC inference are excluded.
+var REPORT_ONU_CORRECTION_TARGETS=Object.freeze({
+  '1774458317612':Object.freeze({work_type:'Ремонт',work_category:'repair',onu_used:1}),
+  '1774458317619':Object.freeze({work_type:'Ремонт',work_category:'repair',onu_used:1}),
+  '1783937356212':Object.freeze({work_type:'Ремонт',work_category:'repair',onu_used:1}),
+  '1783937356227':Object.freeze({work_type:'Ремонт',work_category:'repair',onu_used:1}),
+  '1783937356219':Object.freeze({work_type:'Ремонт',work_category:'repair',onu_used:1}),
+  '9a61c8b5-f8c8-4f0a-9446-d8e7cbfadf21':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'f22710e7-1142-49f5-a2b1-7f4a6e54fe94':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'a65dd9a4-fefb-4381-be39-8b1b0ed8d793':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  'ac5bb18a-cd71-4e9e-97d9-bdf57353d921':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '2edc4344-42ed-44d8-9e10-384126505bcf':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1}),
+  '8b933540-b8e2-4493-8020-75754fb5ebec':Object.freeze({work_type:'Підключення',work_category:'connection',onu_used:1})
+});
+// Keep the existing phone preview limited to its five repairs. Connections are
+// prepared individually via signed preview(ticket_id), without a frontend release.
+var REPORT_ONU_CORRECTION_REPAIR_IDS=Object.keys(REPORT_ONU_CORRECTION_TARGETS).filter(function(id){return REPORT_ONU_CORRECTION_TARGETS[id].work_category==='repair';});
+var REPORT_ONU_CORRECTION_HEADERS=['request_id','request_hash','operation','ticket_id','source_version','source_hash','before_json','after_json','target_request_id','result_json','created_at'];
+function reportOnuCorrectionJournal_(ss,create){
+  var sheet=ss.getSheetByName('_DispatcherOnuCorrections');
+  if(sheet&&JSON.stringify(sheet.getRange(1,1,1,REPORT_ONU_CORRECTION_HEADERS.length).getValues()[0])!==JSON.stringify(REPORT_ONU_CORRECTION_HEADERS))throw new Error('REPORT_ONU_CORRECTION_SCHEMA');
+  if(!sheet&&create){sheet=ss.insertSheet('_DispatcherOnuCorrections');sheet.getRange(1,1,1,REPORT_ONU_CORRECTION_HEADERS.length).setValues([REPORT_ONU_CORRECTION_HEADERS]);sheet.hideSheet();}
+  var last=sheet?sheet.getLastRow():1,values=sheet&&last>1?sheet.getRange(2,1,last-1,REPORT_ONU_CORRECTION_HEADERS.length).getValues():[];
+  return {sheet:sheet,rows:values.map(function(v,i){var row={};REPORT_ONU_CORRECTION_HEADERS.forEach(function(k,j){row[k]=v[j];});row._row=i+2;return row;}),append:function(event){
+    if(!sheet)throw new Error('REPORT_ONU_CORRECTION_JOURNAL_MISSING');
+    if(last>=100001)throw new Error('REPORT_ONU_CORRECTION_CAPACITY');
+    if(sheet.getMaxRows()<last+1)sheet.insertRowsAfter(sheet.getMaxRows(),1);
+    var row=last+1;sheet.getRange(row,1,1,REPORT_ONU_CORRECTION_HEADERS.length).setNumberFormat('@').setValues([REPORT_ONU_CORRECTION_HEADERS.map(function(k){return event[k]===undefined?'':event[k];})]);SpreadsheetApp.flush();
+    var written=sheet.getRange(row,1,1,REPORT_ONU_CORRECTION_HEADERS.length).getValues()[0];return written;
+  }};
+}
+function reportOnuCorrectionActive_(journal){
+  var active=new Map();journal.rows.forEach(function(e){
+    if(e.operation==='APPLY')active.set(String(e.ticket_id),e);
+    else if(e.operation==='ROLLBACK'&&active.get(String(e.ticket_id))&&String(active.get(String(e.ticket_id)).request_id)===String(e.target_request_id))active.delete(String(e.ticket_id));
+  });return active;
+}
+function reportOnuCorrectionEvidence_(row){
+  var evidence={};['work_date','work_time','work_type','work_category','onu_used','onu_replacement','mac_onu','dispatcher_comment'].forEach(function(k){evidence[k]=row[k]===undefined?'':row[k];});
+  // Prices are not physical evidence. Preserve repricing just like total/payment
+  // updates, while guarding material identities/quantities and work descriptions.
+  evidence.materials=(row.materials_json?MTDispatcherReportCore.readMaterials(row.materials_json):[]).map(function(m){return {label:m.label,quantity:m.quantity,unit:m.unit};});
+  function physicalText(value){return String(value||'').replace(/\s*(?:—|×|x)\s*[\d\s.,]+\s*грн(?:\/\S+)?/giu,'').trim();}
+  evidence.materials_display=physicalText(row.materials_display);evidence.works_display=physicalText(row.works_display);return evidence;
+}
+function reportOnuCorrectionBefore_(row){
+  return {work_type:row.work_type,work_category:row.work_category,onu_used:row.onu_used,onu_replacement:row.onu_replacement,total:row.total,source_evidence:reportOnuCorrectionEvidence_(row)};
+}
+function reportOnuCorrectionPatch_(event,row){
+  var before=JSON.parse(event.before_json),after=JSON.parse(event.after_json),id=String(row.ticket_id),target=Object.prototype.hasOwnProperty.call(REPORT_ONU_CORRECTION_TARGETS,id)?REPORT_ONU_CORRECTION_TARGETS[id]:null;
+  if(!before.source_evidence||JSON.stringify(before.source_evidence)!==JSON.stringify(reportOnuCorrectionEvidence_(row)))throw new Error('ONU_CORRECTION_SOURCE_CONFLICT');
+  if(!target||['work_type','work_category','onu_used'].some(function(k){return after[k]!==target[k];}))throw new Error('ONU_CORRECTION_CONFLICT');
+  // Never merge snapshot JSON: money, replacement, materials and every other
+  // field must always come from the current source row, including old journals.
+  return {work_type:after.work_type,work_category:after.work_category,onu_used:after.onu_used};
+}
+function reportOnuCorrectionEffectiveRows_(ss,rows){
+  var active=reportOnuCorrectionActive_(reportOnuCorrectionJournal_(ss,false));
+  return rows.map(function(row){var event=active.get(String(row.ticket_id));return event&&!row.deleted_at?Object.assign({},row,reportOnuCorrectionPatch_(event,row)):row;});
+}
+function reportOnuCorrectionPreview_(store,ticketId){
+  if(ticketId!==undefined&&!Object.prototype.hasOwnProperty.call(REPORT_ONU_CORRECTION_TARGETS,ticketId))throw new Error('INVALID_ONU_CORRECTION');
+  var journal=reportOnuCorrectionJournal_(store.ss,false),active=reportOnuCorrectionActive_(journal),items=(ticketId===undefined?REPORT_ONU_CORRECTION_REPAIR_IDS:[ticketId]).map(function(id){
+    var target=REPORT_ONU_CORRECTION_TARGETS[id],row=store.rows.find(function(r){return String(r.ticket_id)===id;});
+    if(!row||row.deleted_at)return {ticket_id:id,state:'NOT_ACTIVE',code:'ROW_NOT_ACTIVE'};
+    var saved=active.get(id),before=reportOnuCorrectionBefore_(row),after=Object.assign({},before,target),state=saved?'APPLIED':JSON.stringify(before)===JSON.stringify(after)?'NO_CHANGE':'READY',code='OK';
+    if(saved)try{after=Object.assign({},before,reportOnuCorrectionPatch_(saved,row));}catch(e){state='CONFLICT';code=reportErrorCode_(e);after=before;}
+    return {ticket_id:id,date:row.work_date,time:row.work_time,state:state,code:code,source_version:row.source_version,source_hash:row.source_hash,before:before,after:after,total_before:row.total,total_after:row.total,correction_id:saved?String(saved.request_id):''};
+  });
+  return {ok:true,code:'OK',items:items};
+}
+function reportOnuCorrectionExecute_(store,request,requestHash){
+  function renderCurrent(){
+    reportRender_(store.ss,store.rows);
+    var p=PropertiesService.getScriptProperties();if(/^ONU_CORRECTION_[A-Z_]+$/.test(String(p.getProperty('REPORT_LAST_ERROR')||'')))p.deleteProperty('REPORT_LAST_ERROR');
+  }
+  var isApply=request.action==='report_onu_correction_apply',isRollback=request.action==='report_onu_correction_rollback',id=String(request.ticket_id||'');
+  if(typeof request.ticket_id!=='string'||!Object.prototype.hasOwnProperty.call(REPORT_ONU_CORRECTION_TARGETS,id))throw new Error('INVALID_ONU_CORRECTION');
+  var target=REPORT_ONU_CORRECTION_TARGETS[id];
+  if(isApply){
+    if(Object.keys(request).sort().join(',')!=='action,expected,request_id,ticket_id'||!target||!request.expected||Object.keys(request.expected).sort().join(',')!=='before,source_hash,source_version'||!request.expected.before||Object.keys(request.expected.before).sort().join(',')!=='onu_replacement,onu_used,source_evidence,total,work_category,work_type'||!Number.isSafeInteger(request.expected.source_version)||!/^[a-f0-9]{64}$/.test(request.expected.source_hash))throw new Error('INVALID_ONU_CORRECTION');
+  }else if(isRollback){
+    if(Object.keys(request).sort().join(',')!=='action,correction_id,request_id,ticket_id'||!target||typeof request.correction_id!=='string'||!/^[a-zA-Z0-9-]{8,80}$/.test(request.correction_id))throw new Error('INVALID_ONU_CORRECTION');
+  }else throw new Error('INVALID_ONU_CORRECTION');
+  var journal=reportOnuCorrectionJournal_(store.ss,false),priorRequest=journal.rows.find(function(e){return String(e.request_id)===request.request_id;});
+  if(priorRequest&&priorRequest.request_hash!==requestHash)throw new Error('INVALID_REQUEST_ID');
+  var active=reportOnuCorrectionActive_(journal),current=active.get(id),result,operation,before={},after={},source=null,targetRequest='';
+  source=store.rows.find(function(r){return String(r.ticket_id)===id;});if(!source||source.deleted_at)throw new Error('ROW_NOT_ACTIVE');
+  if(priorRequest){
+    if(isApply&&(!current||String(current.request_id)!==request.request_id)||isRollback&&current)throw new Error('ONU_CORRECTION_SUPERSEDED');
+    var replay=isApply?Object.assign({},source,reportOnuCorrectionPatch_(current,source)):source;
+    renderCurrent();return Object.assign({},JSON.parse(priorRequest.result_json),{onu_used:replay.onu_used,onu_replacement:source.onu_replacement,work_type:replay.work_type,work_category:replay.work_category,total:Number(source.total)});
+  }
+  if(isApply){
+    if(current){reportOnuCorrectionPatch_(current,source);renderCurrent();return {ok:true,code:'ALREADY_APPLIED',ticket_id:id,onu_used:target.onu_used,onu_replacement:source.onu_replacement,work_type:target.work_type,work_category:target.work_category,total:Number(source.total),correction_id:String(current.request_id)};}
+    if(source.source_version!==request.expected.source_version||source.source_hash!==request.expected.source_hash)throw new Error('STALE_VERSION');
+    before=reportOnuCorrectionBefore_(source);
+    if(JSON.stringify(before)!==JSON.stringify(request.expected.before))throw new Error('STALE_VERSION');
+    after={work_type:target.work_type,work_category:target.work_category,onu_used:target.onu_used};operation='APPLY';
+  }else{
+    if(!current||String(current.request_id)!==request.correction_id)throw new Error('ONU_CORRECTION_NOT_ACTIVE');
+    source=store.rows.find(function(r){return String(r.ticket_id)===id;});if(!source||source.deleted_at)throw new Error('ROW_NOT_ACTIVE');
+    before=reportOnuCorrectionBefore_(source);after=before;operation='ROLLBACK';targetRequest=String(current.request_id);
+  }
+  result={ok:true,code:operation==='APPLY'?'APPLIED':'ROLLED_BACK',ticket_id:id,onu_used:after.onu_used,onu_replacement:source.onu_replacement,work_type:after.work_type,work_category:after.work_category,total:Number(source.total),correction_id:operation==='APPLY'?request.request_id:targetRequest};
+  var event={request_id:request.request_id,request_hash:requestHash,operation:operation,ticket_id:id,source_version:source.source_version,source_hash:source.source_hash,before_json:JSON.stringify(before),after_json:JSON.stringify(after),target_request_id:targetRequest,result_json:JSON.stringify(result),created_at:new Date().toISOString()};
+  if(!journal.sheet)journal=reportOnuCorrectionJournal_(store.ss,true);
+  journal.append(event);
+  var checked=reportOnuCorrectionJournal_(store.ss,false),nowActive=reportOnuCorrectionActive_(checked).get(id);
+  if(operation==='APPLY'&&(!nowActive||String(nowActive.request_id)!==request.request_id||Object.keys(target).some(function(k){return JSON.parse(nowActive.after_json)[k]!==target[k];})))throw new Error('ONU_CORRECTION_READBACK_MISMATCH');
+  if(operation==='ROLLBACK'&&nowActive)throw new Error('ONU_CORRECTION_READBACK_MISMATCH');
+  renderCurrent();return result;
+}
 // Durable write-ahead receipts, separate from ticket schema and CacheService.
 // No payload/PII: identity/hash, exact item ACKs and commit evidence only.
 function reportReceiptJournal_(store){
@@ -73,7 +187,7 @@ function reportRecoverPrepared_(store,request,evidence){
   }catch(_){throw new Error('REPORT_COMMIT_UNRESOLVED');}
   reportWrite_(store);SpreadsheetApp.flush();
 }
-function reportBestEffort_(c,code,fn){try{fn();return true;}catch(_){try{console.warn(JSON.stringify({scope:'dispatcher-report',code:code}));c.p.setProperty('REPORT_LAST_ERROR',code);}catch(ignored){}return false;}}
+function reportBestEffort_(c,code,fn){try{fn();return true;}catch(error){if(/^ONU_CORRECTION_[A-Z_]+$/.test(String(error&&error.message||'')))code=error.message;try{console.warn(JSON.stringify({scope:'dispatcher-report',code:code}));c.p.setProperty('REPORT_LAST_ERROR',code);}catch(ignored){}return false;}}
 function reportConfig_(){
   var p=PropertiesService.getScriptProperties(),email=String(p.getProperty('REPORT_ALLOWED_EMAIL')||'').toLowerCase();
   var id=String(p.getProperty('REPORT_SPREADSHEET_ID')||''),origins=String(p.getProperty('REPORT_ALLOWED_ORIGINS')||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
@@ -121,6 +235,7 @@ function reportWrite_(store){
 }
 function reportRender_(ss,rows){
   var sheet=ss.getSheetByName('Отчет');if(!sheet)throw new Error('REPORT_NOT_INITIALIZED');
+  rows=reportOnuCorrectionEffectiveRows_(ss,rows);
   var layout=MTDispatcherReportCore.render(rows).layout,blocks=layout.rows;
   // Prepare every RichText value before any sheet mutation. API/build failures
   // must leave the existing visible report intact.
@@ -182,7 +297,7 @@ function reportAudit_(c,code){
   // Safe metadata only; never payload, notes, addresses, identity or MAC.
   console.warn(JSON.stringify({scope:'dispatcher-report',code:code,rejected_count:count}));
 }
-function reportErrorCode_(error){var code=String(error&&error.message||'');return /^(?:UNAUTHORIZED|AUTH_FAILED|REPORT_[A-Z_]+|LEGACY_WORKBOOK_FORBIDDEN|DUPLICATE_STORED_ID|INVALID_[A-Z_]+|UNKNOWN_OR_MISSING_FIELD|PRIVACY_REJECTED|STALE_VERSION|PAYMENT_MISMATCH|RATE_LIMITED|BUSY|HASH_MISMATCH|FORMULA_REJECTED)$/.test(code)?code:'REPORT_INTERNAL_ERROR';}
+function reportErrorCode_(error){var code=String(error&&error.message||'');return /^(?:UNAUTHORIZED|AUTH_FAILED|REPORT_[A-Z_]+|LEGACY_WORKBOOK_FORBIDDEN|DUPLICATE_STORED_ID|INVALID_[A-Z_]+|UNKNOWN_OR_MISSING_FIELD|PRIVACY_REJECTED|STALE_VERSION|PAYMENT_MISMATCH|RATE_LIMITED|BUSY|HASH_MISMATCH|FORMULA_REJECTED|ROW_NOT_ACTIVE|ONU_CORRECTION_[A-Z_]+)$/.test(code)?code:'REPORT_INTERNAL_ERROR';}
 function reportDispatch(request){
   // Interactive HtmlService RPC path — READ-ONLY since the direct-transport
   // security fix: only report_status (diagnostics) may execute here. Google
@@ -207,14 +322,19 @@ function reportDispatch(request){
 // BEFORE the first mutation, so a same-request retry answers from the receipt
 // cache while a reused nonce can never execute twice.
 function reportExecute_(c,request,envelopeNonce){
-  if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild','proof'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
+  if(!request||typeof request!=='object'||Array.isArray(request)||Object.keys(request).some(function(k){return !['action','tickets','ticket','deletes','request_id','rebuild','proof','ticket_id','expected','correction_id'].includes(k);})||!REPORT_ACTIONS.includes(request.action))throw new Error('INVALID_ACTION');
   if(typeof request.request_id!=='string'||!/^[a-zA-Z0-9-]{8,80}$/.test(request.request_id))throw new Error('INVALID_REQUEST_ID');
   if(JSON.stringify(request).length>500000)throw new Error('INVALID_SIZE');
   var cache=CacheService.getScriptCache(),cached=cache.get('REPORT_ACK_'+request.request_id);
   var requestHash=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(request),Utilities.Charset.UTF_8).map(function(n){return ((n+256)%256).toString(16).padStart(2,'0');}).join('');
-  if(cached){var ack=JSON.parse(cached);if(ack.hash!==requestHash)throw new Error('INVALID_REQUEST_ID');return ack.result;}
+  if(cached){var ack=JSON.parse(cached);if(ack.hash!==requestHash)throw new Error('INVALID_REQUEST_ID');
+    // Correction ACKs must recheck current evidence and render/read back current
+    // money. A cached success cannot hide a later source conflict or rollback.
+    if(request.action==='report_onu_correction_apply'||request.action==='report_onu_correction_rollback')return reportOnuCorrectionExecute_(reportStore_(c),request,requestHash);
+    if(request.action==='report_onu_correction_preview')return reportOnuCorrectionPreview_(reportStore_(c),request.ticket_id);
+    return ack.result;}
   var store=reportStore_(c),journal=null,receipt=null;
-  if(!['report_status','report_receipt','report_rebuild'].includes(request.action)){
+  if(['report_upsert','report_sync_all','report_delete'].includes(request.action)){
     journal=reportReceiptJournal_(store);receipt=journal.find(request.request_id);
     if(receipt){
       if(receipt.v[1]!==requestHash)throw new Error('INVALID_REQUEST_ID');
@@ -238,6 +358,17 @@ function reportExecute_(c,request,envelopeNonce){
   });
   var minute=Math.floor(Date.now()/60000),rateKey='REPORT_RATE_'+minute,count=Number(cache.get(rateKey)||0);if(count>=40)throw new Error('RATE_LIMITED');cache.put(rateKey,String(count+1),120);
   var result={ok:true,code:'OK',inserted:0,updated:0,unchanged:0,deleted:0,rejected:0,privacy_violations:0,errors:0},now=new Date().toISOString();
+  if(request.action==='report_onu_correction_preview'){
+    if(!['action,request_id','action,request_id,ticket_id'].includes(Object.keys(request).sort().join(','))||request.ticket_id!==undefined&&typeof request.ticket_id!=='string')throw new Error('INVALID_ACTION');
+    result=reportOnuCorrectionPreview_(store,request.ticket_id);cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
+  }
+  if(request.action==='report_onu_correction_apply'||request.action==='report_onu_correction_rollback'){
+    // These narrowly scoped actions use their own append-only correction log;
+    // they never prepare/modify dispatcher receipts or the ticket outbox.
+    var receiptState=reportReceiptJournal_(store),pendingCorrections=receiptState.pending();
+    if(pendingCorrections.length)throw new Error('REPORT_COMMIT_UNRESOLVED');
+    result=reportOnuCorrectionExecute_(store,request,requestHash);cache.put('REPORT_ACK_'+request.request_id,JSON.stringify({hash:requestHash,result:result}),600);return result;
+  }
   if(request.action!=='report_receipt'&&request.proof!==undefined)throw new Error('INVALID_ACTION');
   if(request.action==='report_receipt'){
     var proof=request.proof;

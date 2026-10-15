@@ -10,7 +10,7 @@
   const MONEY_MAX=1e9;
   // User-held UNKNOWN physical decisions: exclude only from confirmed repair
   // statistics, preserving the historical row, card and hash byte-for-byte.
-  const HISTORICAL_UNRESOLVED_ONU_IDS=Object.freeze(['cca10ba0-41a2-4571-ac3c-02b57e2a19bc','1774458317609']);
+  const HISTORICAL_UNRESOLVED_ONU_IDS=Object.freeze(['1774458317609']);
   const MATERIAL_FIELD='materials_json';
   const PRESENTATION_FIELDS=Object.freeze(['contract_number','service_fee','tariff_amount','client_name','client_phone','works_display']);
   function isOnuEquipment(item){return item.id==='onu'||(!item.id&&/^(?:ONU|ONT|ОНУ)$/iu.test(String(item.label||'').trim()));}
