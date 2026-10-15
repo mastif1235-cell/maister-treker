@@ -79,7 +79,7 @@ function reportOnuCorrectionBefore_(row){
   return {work_type:row.work_type,work_category:row.work_category,onu_used:row.onu_used,onu_replacement:row.onu_replacement,total:row.total,source_evidence:reportOnuCorrectionEvidence_(row)};
 }
 function reportOnuCorrectionPatch_(event,row){
-  var before=JSON.parse(event.before_json),after=JSON.parse(event.after_json),target=REPORT_ONU_CORRECTION_TARGETS[String(row.ticket_id)];
+  var before=JSON.parse(event.before_json),after=JSON.parse(event.after_json),id=String(row.ticket_id),target=Object.prototype.hasOwnProperty.call(REPORT_ONU_CORRECTION_TARGETS,id)?REPORT_ONU_CORRECTION_TARGETS[id]:null;
   if(!before.source_evidence||JSON.stringify(before.source_evidence)!==JSON.stringify(reportOnuCorrectionEvidence_(row)))throw new Error('ONU_CORRECTION_SOURCE_CONFLICT');
   if(!target||['work_type','work_category','onu_used'].some(function(k){return after[k]!==target[k];}))throw new Error('ONU_CORRECTION_CONFLICT');
   // Never merge snapshot JSON: money, replacement, materials and every other
@@ -106,7 +106,9 @@ function reportOnuCorrectionExecute_(store,request,requestHash){
     reportRender_(store.ss,store.rows);
     var p=PropertiesService.getScriptProperties();if(/^ONU_CORRECTION_[A-Z_]+$/.test(String(p.getProperty('REPORT_LAST_ERROR')||'')))p.deleteProperty('REPORT_LAST_ERROR');
   }
-  var isApply=request.action==='report_onu_correction_apply',isRollback=request.action==='report_onu_correction_rollback',id=String(request.ticket_id||''),target=REPORT_ONU_CORRECTION_TARGETS[id];
+  var isApply=request.action==='report_onu_correction_apply',isRollback=request.action==='report_onu_correction_rollback',id=String(request.ticket_id||'');
+  if(typeof request.ticket_id!=='string'||!Object.prototype.hasOwnProperty.call(REPORT_ONU_CORRECTION_TARGETS,id))throw new Error('INVALID_ONU_CORRECTION');
+  var target=REPORT_ONU_CORRECTION_TARGETS[id];
   if(isApply){
     if(Object.keys(request).sort().join(',')!=='action,expected,request_id,ticket_id'||!target||!request.expected||Object.keys(request.expected).sort().join(',')!=='before,source_hash,source_version'||!request.expected.before||Object.keys(request.expected.before).sort().join(',')!=='onu_replacement,onu_used,source_evidence,total,work_category,work_type'||!Number.isSafeInteger(request.expected.source_version)||!/^[a-f0-9]{64}$/.test(request.expected.source_hash))throw new Error('INVALID_ONU_CORRECTION');
   }else if(isRollback){

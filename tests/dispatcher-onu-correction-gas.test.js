@@ -75,6 +75,12 @@ test('stale version/hash and non-allowlisted IDs are rejected before journal cre
   assert.equal(bad.code,'STALE_VERSION');assert.equal(ss.getSheetByName('_DispatcherOnuCorrections'),null);
   assert.equal(direct('report_onu_correction_apply',{ticket_id:'1786990035908',expected:{}},'onu-not-allowed').code,'INVALID_ONU_CORRECTION');
   assert.equal(rawWrites,0);
+  for(const id of ['toString','constructor','__proto__']){
+    const source=dto(id);rows.push(source);
+    const expected={source_version:source.source_version,source_hash:source.source_hash,before:context.reportOnuCorrectionBefore_(source)};
+    assert.equal(direct('report_onu_correction_apply',{ticket_id:id,expected},'not-allowed-'+id.replace(/_/g,'a')).code,'INVALID_ONU_CORRECTION');
+  }
+  assert.equal(ss.getSheetByName('_DispatcherOnuCorrections'),null);
 });
 
 test('request replay is idempotent and conflicting payload cannot reuse request id',()=>{
