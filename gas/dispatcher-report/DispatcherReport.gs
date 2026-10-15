@@ -70,6 +70,18 @@ var REPORT_ONU_CORRECTION_TARGETS=Object.freeze({
 // Keep the existing phone preview limited to its five repairs. Connections are
 // prepared individually via signed preview(ticket_id), without a frontend release.
 var REPORT_ONU_CORRECTION_REPAIR_IDS=Object.keys(REPORT_ONU_CORRECTION_TARGETS).filter(function(id){return REPORT_ONU_CORRECTION_TARGETS[id].work_category==='repair';});
+// Prepared primary-only history targets; embedded in the reviewed GAS bundle.
+// No new request fields and no client-defined targets. Existing phone list stays five.
+if(typeof ONU_HISTORY_PLAN!=='undefined'){
+  var historyTargets=Object.assign({},REPORT_ONU_CORRECTION_TARGETS);
+  ONU_HISTORY_PLAN.entries.forEach(function(e){
+    if(Object.prototype.hasOwnProperty.call(historyTargets,e.ticket_id)||!/^2026-0[2-8]-/.test(e.date)||
+      !e.target||Object.keys(e.target).sort().join(',')!=='onu_used,work_category,work_type'||
+      !Number.isSafeInteger(e.target.onu_used)||e.target.onu_used<0||!['connection','repair'].includes(e.target.work_category))throw new Error('INVALID_HISTORY_PLAN');
+    historyTargets[e.ticket_id]=Object.freeze(e.target);
+  });
+  REPORT_ONU_CORRECTION_TARGETS=Object.freeze(historyTargets);
+}
 var REPORT_ONU_CORRECTION_HEADERS=['request_id','request_hash','operation','ticket_id','source_version','source_hash','before_json','after_json','target_request_id','result_json','created_at'];
 function reportOnuCorrectionJournal_(ss,create){
   var sheet=ss.getSheetByName('_DispatcherOnuCorrections');
@@ -124,8 +136,14 @@ function reportOnuCorrectionPreview_(store,ticketId){
   });
   return {ok:true,code:'OK',items:items};
 }
-function reportOnuCorrectionExecute_(store,request,requestHash){
+var REPORT_ONU_OWNER_BATCH_CAPABILITY=null;
+function reportOnuCorrectionExecute_(store,request,requestHash,ownerDeferRender){
+  // Only an authenticated editor invocation can defer rendering. HTTP/bridge
+  // handlers never pass this internal argument or accept it in request JSON.
+  var deferred=!!ownerDeferRender&&ownerDeferRender===REPORT_ONU_OWNER_BATCH_CAPABILITY;
+  if(ownerDeferRender&&!deferred)throw new Error('UNAUTHORIZED');
   function renderCurrent(){
+    if(deferred)return;
     reportRender_(store.ss,store.rows);
     var p=PropertiesService.getScriptProperties();if(/^ONU_CORRECTION_[A-Z_]+$/.test(String(p.getProperty('REPORT_LAST_ERROR')||'')))p.deleteProperty('REPORT_LAST_ERROR');
   }
