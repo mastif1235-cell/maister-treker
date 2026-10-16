@@ -153,12 +153,23 @@ function mtSnapshotPhotoKeyPairs(t){
 }
 
 /* ---- Аналіз для предпросмотра (чиста функція, без змін даних) ---- */
+function mtSnapshotDeletionEvidence(snapshot){
+  const deletedMap=new Map();
+  const local=typeof deletedTickets!=='undefined'&&Array.isArray(deletedTickets)?deletedTickets:[];
+  [...(Array.isArray(snapshot.deleted)?snapshot.deleted:[]),...local].forEach(d=>{
+    if(d&&d.id!==undefined&&d.id!==null)deletedMap.set(String(d.id),d);
+  });
+  const records=typeof syncEngine!=='undefined'&&syncEngine?.state?.records||{};
+  Object.values(records).forEach(r=>{
+    if(r.entity==='ticket'&&(r.tombstone||r.head?.action==='deleteTicket'||r.tail?.action==='deleteTicket'))deletedMap.set(String(r.id),r);
+  });
+  return deletedMap;
+}
 function analyzeSnapshotForRestore(snapshot){
   const check=validateFullSnapshot(snapshot);
   if(!check.ok)return{ok:false,reason:check.reason};
   const {tickets:uniq,invalid}=dedupeSnapshotTickets(snapshot.tickets);
-  const deletedMap=new Map();
-  (Array.isArray(snapshot.deleted)?snapshot.deleted:[]).forEach(d=>{if(d&&d.id!==undefined&&d.id!==null)deletedMap.set(String(d.id),d);});
+  const deletedMap=mtSnapshotDeletionEvidence(snapshot);
   let newCount=0,existingCount=0,deletedCount=0,photoJobs=0;
   const rows=[];
   uniq.forEach(t=>{
@@ -204,8 +215,7 @@ function mtNormalizeRestoredTicket(s){
 async function restoreFromTelegramFullSnapshot(snapshot,onProgress){
   const check=validateFullSnapshot(snapshot);
   if(!check.ok)return{ok:false,reason:check.reason};
-  const deletedMap=new Map();
-  (Array.isArray(snapshot.deleted)?snapshot.deleted:[]).forEach(d=>{if(d&&d.id!==undefined&&d.id!==null)deletedMap.set(String(d.id),d);});
+  const deletedMap=mtSnapshotDeletionEvidence(snapshot);
   const {tickets:uniq,invalid}=dedupeSnapshotTickets(snapshot.tickets);
   const restored=[],errors=[];
   invalid.forEach(()=>errors.push({id:'(без id)',reason:'некоректний запис у снапшоті (відсутній коректний id)'}));
