@@ -255,7 +255,7 @@ function syncValidTicket_(t) {
   if (!syncValidId_(t.id)) return false;
   if (!syncValidDate_(t.date) || !syncValidTime_(t.time)) return false;
   if (!syncBoundedString_(t.content, 50000) || !syncBoundedString_(t.backupNote, 20000)) return false;
-  if (!syncBoundedString_(t.fullDataJson, 300000)) return false;
+  if (!syncBoundedString_(t.fullDataJson, 300000) || (typeof t.fullDataJson === 'string' && syncLiteralCell_(t.fullDataJson).length > 50000)) return false;
   if (!Number.isFinite(Number(t.sum)) || Math.abs(Number(t.sum)) > 100000000) return false;
   if (t.tags !== undefined && (!Array.isArray(t.tags) || t.tags.length > 50)) return false;
   if (Array.isArray(t.tags) && t.tags.some(function(tag){ return typeof tag !== 'string' || syncUtf8Length_(tag) > 200; })) return false;

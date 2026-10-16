@@ -6,6 +6,9 @@
   'use strict';
   function token(random){ return random().replace(/[^A-Za-z0-9_-]/g,'').slice(0,80); }
   async function signedEnvelope(mutation, secret, random, now){
+    if(mutation.entity==='ticket'&&typeof mutation.body?.fullDataJson==='string'&&mutation.body.fullDataJson.length>50000){
+      const error=new Error('TICKET_CELL_TOO_LARGE');error.code='INVALID_INPUT';throw error;
+    }
     const envelope = {v:contract.VERSION, method:'POST', action:mutation.action, entity:mutation.entity,
       id:String(mutation.id), ts:String(now()), nonce:token(random), requestId:mutation.requestId,
       body:JSON.stringify(mutation.body)};
