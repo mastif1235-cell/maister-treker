@@ -220,7 +220,16 @@ async function restoreFromTelegramFullSnapshot(snapshot,onProgress){
     restored.push(t);
     if(onProgress)onProgress({stage:'ticket',id,done:restored.length});
   }
-  if(restored.length)await saveTicketsLocalOnly(); // durable локально; БЕЗ sync/Sheets (T23)
+  if(restored.length){
+    let durable=false;
+    try{durable=(await saveTicketsLocalOnly())===true;}catch(_error){}
+    if(!durable){
+      const added=new Set(restored);
+      // Preserve unrelated concurrent edits; allow retry of these additions.
+      tickets=tickets.filter(t=>!added.has(t));
+      return{ok:false,reason:'Не вдалося надійно зберегти відновлені заявки. Повторіть відновлення.',restored:0,errors};
+    }
+  }
   // Фото: для ВСІХ заявок снапшота, які є локально (щойно відновлені І вже
   // існуючі — повторний запуск дозавантажує пропущене), гейт photoDbGet робить
   // це ідемпотентним; обмежений паралелізм; fail ≠ fail заявки
