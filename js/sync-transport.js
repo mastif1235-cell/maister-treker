@@ -41,7 +41,9 @@
           const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||1000);
           if(!response.ok) continue;
           const data=await response.json(); const state=data && data.state;
-          if(state && Number(state.revision)>mutation.revision) return {ok:true,state};
+          // A newer state may belong to another device. Only the exact revision
+          // and fingerprint prove this write; otherwise leave it pending so a
+          // retry can recover its idempotent receipt or return a genuine STALE.
           if(state && Number(state.revision)===mutation.revision){
             if(state.fingerprint===expectedFingerprint) return {ok:true,state};
             return {ok:false,result:{status:'error',code:'CONFLICT',state}};
@@ -52,8 +54,7 @@
     }
     // Сувора читана перевірка між спробами (втрачена відповідь): підтверджує
     // лише ТОЧНО цю мутацію — той самий revision І той самий семантичний
-    // fingerprint. На відміну від verify() тут немає правила «revision >
-    // очікуваного → ok»: чужа правка з іншим revision не підтверджується і
+    // fingerprint. Як і verify(), чужа правка з іншим revision не підтверджується і
     // не відхиляється, рішення лишається звичайному POST-шляху
     // (STALE/CONFLICT/REVISION_GAP). Один GET без ретраїв — дешево для рушія,
     // який і так повторює flush.
