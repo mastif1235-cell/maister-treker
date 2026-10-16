@@ -20,6 +20,7 @@ function backupDbPut(key, value){
       tx.objectStore(BACKUP_STORE).put(value, key);
       tx.oncomplete = ()=> resolve(true);
       tx.onerror = ()=> resolve(false);
+      tx.onabort = ()=> resolve(false);
     }catch(e){ resolve(false); }
   });
 }
@@ -42,6 +43,7 @@ function backupDbDelete(key){
       tx.objectStore(BACKUP_STORE).delete(key);
       tx.oncomplete = ()=> resolve(true);
       tx.onerror = ()=> resolve(false);
+      tx.onabort = ()=> resolve(false);
     }catch(e){ resolve(false); }
   });
 }

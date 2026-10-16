@@ -6,7 +6,7 @@
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:unit": "for test in tests/*.test.js; do node \"$test\" || exit $?; done"
+    "test:unit": "node scripts/run-local-tests.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1"

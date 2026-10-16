@@ -4,6 +4,7 @@
   'use strict';
   const KEY='mtDispatcherReportOutboxV1',PERMANENT=/^(?:INVALID_|UNKNOWN_|PRIVACY_|HASH_|FORMULA_|STALE_|REPORT_SCHEMA|LEGACY_|DUPLICATE_)/;
   const CONNECTION=/^(?:GOOGLE_\w+|REPORT_CONNECTION_RESET|REPORT_NOT_CONFIGURED|INVALID_ENDPOINT)$/;
+  const THROTTLED=/^(?:BUSY|RATE_LIMITED)$/;
   function endpoint(value){let url;try{url=new URL(String(value||''));}catch(_){throw new Error('INVALID_ENDPOINT');}if(url.protocol!=='https:'||url.hostname!=='script.google.com'||url.username||url.password||url.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(url.pathname)||url.search||url.hash)throw new Error('INVALID_ENDPOINT');return url.href;}
   function createOutbox(deps){
     let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:'',inflight:null},running=false,timer=null,generation=0,blocked=false,flight=null;
@@ -58,7 +59,7 @@
       completeSent(successful,response,false);
       for(const {o,item} of failed){
         if(!state.operations.includes(o))continue;
-        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=0;
+        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=THROTTLED.test(item.code)?now()+[5000,30000,120000][o.attempts-1]:0;
       }
       state.lastError=failed[0]?.item.code||'';persist();
       return successful.length;
@@ -140,7 +141,7 @@
     function align(){const c=deps.settings(),url=endpoint(c.dispatcherReportEndpoint);if(url!==state.endpoint){generation++;state.endpoint=url;state.receipts=[];state.sync=null;state.lastError='';state.inflight=null;blocked=false;persist();}return url;}
     function telemetry(event,fields){try{const t=typeof globalThis==='object'&&globalThis&&globalThis.MTDispatcherTelemetry;if(t&&typeof t.record==='function')t.record(event,fields);}catch(_){/* telemetry must never break the outbox */}}
     function storeReady(){try{const d=deps.storeReady;return typeof d==='function'?!!d():true;}catch(_){return true;}}
-    function runtimeBlocked(){try{const g=typeof globalThis==='object'&&globalThis&&globalThis.MTDispatcherRuntimeGuard;return !!(g&&typeof g.blocked==='function'&&g.blocked());}catch(_){return false;}}
+    function runtimeBlocked(){try{if(globalThis.MTBackupRestoreBlocked?.())return true;const g=typeof globalThis==='object'&&globalThis&&globalThis.MTDispatcherRuntimeGuard;return !!(g&&typeof g.blocked==='function'&&g.blocked());}catch(_){return true;}}
     function enqueue(id,action){try{
       id=String(id);state.receipts=state.receipts.filter(r=>r.id!==id);
       const settings=deps.settings();
@@ -182,9 +183,10 @@
         return;
       }
       telemetry('flush_attempt',{store_ready:true,pending:status().pending,failed:status().failed,unresolved:status().unresolved});
+      for(const o of state.operations)if(selected(o,intent)&&o.attempts>=3&&THROTTLED.test(o.error||state.lastError)&&o.next>0&&o.next<=now()){o.attempts=0;o.error='';}
       running=true;let failed=false,sent=[],g=generation;persist();
       try{
-        const url=align(),sendSecret=deps.settings().dispatcherHmacSecret,batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
+        const url=align(),sendSecret=deps.settings().dispatcherHmacSecret,batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&(!o.error||THROTTLED.test(o.error))&&o.next<=now()).slice(0,50);g=generation;
         // One send capability survives every async boundary, but is revoked by
         // OFF/config changes, superseded operations or a mixed runtime.
         const canSend=()=>durable&&permitted(intent)&&g===generation&&url===deps.settings().dispatcherReportEndpoint&&sendSecret===deps.settings().dispatcherHmacSecret&&!runtimeBlocked()&&sent.every(o=>state.operations.includes(o));
@@ -213,7 +215,7 @@
         const batchOps=sent.map(o=>({id:o.id,action:o.action,version:o.version}));
         const batchKey=JSON.stringify(batchOps.map(o=>o.id+'#'+o.action+'#'+o.version).sort());
         const reuse=!!(state.inflight&&state.inflight.action==='report_sync_all'&&JSON.stringify(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version).sort())===batchKey);
-        const rebuild=reuse?state.inflight.rebuild:intent.skipRebuild!==true&&!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&!o.error);
+        const rebuild=reuse?state.inflight.rebuild:intent.skipRebuild!==true&&!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&(!o.error||THROTTLED.test(o.error)));
         if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
         const request={action:'report_sync_all',tickets:dtos,deletes,request_id:reuse?state.inflight.request_id:deps.requestId(),rebuild};
         state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};
@@ -257,10 +259,10 @@
         // No retry of privacy/schema failures. Bounded retries for transport,
         // consent, throttling and service failures, including across reload.
         if(CONNECTION.test(state.lastError))blocked=true;
-        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
+        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError)||THROTTLED.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
         persist();
       }finally{
-        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(intent.historicalCorrection!==targetedCorrection&&durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
+        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&((o.attempts<3&&!o.error)||THROTTLED.test(o.error)));if(intent.historicalCorrection!==targetedCorrection&&durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
       }
     }
     function fullSync(){
@@ -347,7 +349,8 @@
   // JSON result feeds the existing ACK path unchanged; a network failure maps
   // to a connection-class error so the durable queue waits and retries later.
   function createDirectSend(deps){
-    return async function directSend(value,request,canSend=()=>true){
+    let evidence=null;
+    async function directSend(value,request,canSend=()=>true){
       const url=endpoint(value);
       const secret=String(deps.settings().dispatcherHmacSecret||'');
       if(secret.length<32)throw new Error('REPORT_NOT_CONFIGURED');
@@ -361,10 +364,16 @@
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),deps.postTimeoutMs||20000);
       try{
         const response=await (deps.fetch||fetch)(url,{method:'POST',mode:'cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope),signal:controller.signal});
-        return await response.json();
-      }catch(_){throw new Error('REPORT_CONNECTION_RESET');}
+        const result=await response.json();
+        evidence={url,secret,connected:response.ok!==false,verified:response.ok!==false&&result?.ok===true,reason:result?.ok===true?'':String(result?.code||'REPORT_UNVERIFIED')};
+        return result;
+      }catch(_){evidence=null;throw new Error('REPORT_CONNECTION_RESET');}
       finally{clearTimeout(timer);}
     };
+    directSend.connectionStatus=()=>evidence&&evidence.url===deps.settings().dispatcherReportEndpoint&&evidence.secret===String(deps.settings().dispatcherHmacSecret||'')
+      ?{connected:evidence.connected,verified:evidence.verified,reason:evidence.reason}
+      :{connected:false,verified:false,reason:'REPORT_NOT_VERIFIED'};
+    return directSend;
   }
   function createBridge(){
     let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
@@ -494,7 +503,7 @@
     }
     return {send,close,authorize:async value=>{await connect(value,true);await verify();},resume,onReady:fn=>{readyHandler=fn;},onLateResult:fn=>{lateHandler=fn;},diagnostics:()=>({connected:connected&&verified,peer_present:!!peer,status_ack:lastStatusAck,reason:lastReason,pending_rpc:pending.size,timed_out_rpc:timedOut.size})};
   }
-  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-170',createOutbox,createDirectSend,endpoint});
+  root.MTDispatcherReportClient=Object.freeze({runtimeRevision:'runtime-173',createOutbox,createDirectSend,endpoint});
   if(typeof document==='undefined')return;
   const bridge=createBridge(),cfg=()=>typeof settings==='object'?settings:{};
   // v91.95 transport router: a configured dispatcher HMAC secret switches the
@@ -502,6 +511,7 @@
   // secret the legacy Google bridge remains available as a rollback/debug path.
   const directMode=()=>String(cfg().dispatcherHmacSecret||'').length>=32;
   const directSend=createDirectSend({settings:cfg,now:()=>Date.now(),postTimeoutMs:20000});
+  const directConnection=()=>navigator.onLine===false?{connected:false,verified:false,reason:'OFFLINE'}:directSend.connectionStatus();
   const sendRequest=(value,request,interactive=false)=>directMode()?directSend(value,request):bridge.send(value,request,interactive);
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),authorizedDirect:directMode,
     dto:async(t,v)=>(await import('./dispatcher-report-projection.mjs')).buildDTO(t,root.MTDispatcherReportCore,v),send:(value,request,canSend)=>directMode()?directSend(value,request,canSend):bridge.send(value,request,false,canSend),requestId:()=>crypto.randomUUID(),online:()=>navigator.onLine,
@@ -537,7 +547,7 @@
       dispatcher_enabled:!!c.dispatcherReportEnabled,
       endpoint_configured:!!c.dispatcherReportEndpoint,
       transport:directMode()?'direct-hmac':'google-bridge',
-      connection:{connected:directMode()?true:!!b.connected,verified:directMode()?true:!!b.verified,reason:directMode()?'':(b.reason||'')},
+      connection:directMode()?directConnection():{connected:!!b.connected,verified:!!b.verified,reason:b.reason||''},
       queue:{pending:x.pending,failed:x.failed,unresolved:x.unresolved,last_error:x.lastError||''},
       telemetry:(root.MTDispatcherTelemetry?.dump?.()||[]).slice(-20)
     };
@@ -547,7 +557,7 @@
       try{
         const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
         try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-        payload.runtime_verified=proof.cacheName==='maister-treker-v100-runtime-170'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-170');
+        payload.runtime_verified=proof.cacheName==='maister-treker-v103-runtime-173'&&payload.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&payload.runtime.assets?.[asset]===hash)&&Object.values(payload.loaded_modules).every(revision=>revision==='runtime-173');
       }catch(e){payload.runtime_verified=false;payload.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
     }else{payload.runtime_verified=false;}
     return payload;
@@ -599,7 +609,7 @@
           try{
             const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);let proof;
             try{const response=await fetch('./runtime-proof.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error('RUNTIME_PROOF_UNAVAILABLE');proof=await response.json();}finally{clearTimeout(timer);}
-            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v100-runtime-170'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-170');
+            diagnostics.runtime_verified=proof.cacheName==='maister-treker-v103-runtime-173'&&diagnostics.runtime?.cacheName===proof.cacheName&&Object.keys(proof.assets||{}).length===8&&Object.entries(proof.assets).every(([asset,hash])=>/^[a-f0-9]{64}$/.test(hash)&&diagnostics.runtime.assets?.[asset]===hash)&&Object.values(diagnostics.loaded_modules).every(revision=>revision==='runtime-173');
           }catch(e){diagnostics.runtime_verified=false;diagnostics.runtime_proof_reason=/^[A-Z_]+$/.test(e?.message)?e.message:'RUNTIME_PROOF_UNAVAILABLE';}
         }
         try{const remote=await sendRequest(cfg().dispatcherReportEndpoint,{action:'report_status',request_id:crypto.randomUUID()});if(!remote?.ok)throw new Error(remote?.code||'REPORT_NETWORK_ERROR');diagnostics.report={written_tickets:remote.active_count,earliest_report:remote.earliest_date||'UNKNOWN',latest_report:remote.latest_date||'UNKNOWN'};}catch(e){diagnostics.connection=/^[A-Z_]+$/.test(e?.message)?e.message:'REPORT_NETWORK_ERROR';}
@@ -609,7 +619,7 @@
       if(action==='authorize'){
         // Legacy Google-bridge fallback (rollback/debug). The normal send path
         // never opens this: direct mode hides the button entirely.
-        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
+        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',...directConnection()});message('Прямий канал налаштовано; підтвердження залежить від відповіді сервера.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
         record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush({reason:'auto'});return;}
       if(action==='copyDiagnostics'){
         const payload=await collectDiagnostics(),text=JSON.stringify(payload,null,2);
@@ -647,7 +657,7 @@
     // channels (Таблиця/Смены) already have. No window, no Settings visit.
     if(directMode()){
       outbox.connectionReady();
-      record('connection_state',{code:'DIRECT_ONLINE',connected:true,verified:true});
+      record('connection_state',{code:'DIRECT_STATUS',...directConnection()});
       void outbox.flush({reason:'auto'});
       return;
     }

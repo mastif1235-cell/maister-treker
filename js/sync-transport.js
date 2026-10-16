@@ -6,6 +6,9 @@
   'use strict';
   function token(random){ return random().replace(/[^A-Za-z0-9_-]/g,'').slice(0,80); }
   async function signedEnvelope(mutation, secret, random, now){
+    if(mutation.entity==='ticket'&&typeof mutation.body?.fullDataJson==='string'&&mutation.body.fullDataJson.length>50000){
+      const error=new Error('TICKET_CELL_TOO_LARGE');error.code='INVALID_INPUT';throw error;
+    }
     const envelope = {v:contract.VERSION, method:'POST', action:mutation.action, entity:mutation.entity,
       id:String(mutation.id), ts:String(now()), nonce:token(random), requestId:mutation.requestId,
       body:JSON.stringify(mutation.body)};
@@ -41,7 +44,9 @@
           const response=await fetchTimed(fetchImpl,url,{method:'GET',mode:'cors'},options.verifyTimeoutMs||1000);
           if(!response.ok) continue;
           const data=await response.json(); const state=data && data.state;
-          if(state && Number(state.revision)>mutation.revision) return {ok:true,state};
+          // A newer state may belong to another device. Only the exact revision
+          // and fingerprint prove this write; otherwise leave it pending so a
+          // retry can recover its idempotent receipt or return a genuine STALE.
           if(state && Number(state.revision)===mutation.revision){
             if(state.fingerprint===expectedFingerprint) return {ok:true,state};
             return {ok:false,result:{status:'error',code:'CONFLICT',state}};
@@ -52,8 +57,7 @@
     }
     // Сувора читана перевірка між спробами (втрачена відповідь): підтверджує
     // лише ТОЧНО цю мутацію — той самий revision І той самий семантичний
-    // fingerprint. На відміну від verify() тут немає правила «revision >
-    // очікуваного → ok»: чужа правка з іншим revision не підтверджується і
+    // fingerprint. Як і verify(), чужа правка з іншим revision не підтверджується і
     // не відхиляється, рішення лишається звичайному POST-шляху
     // (STALE/CONFLICT/REVISION_GAP). Один GET без ретраїв — дешево для рушія,
     // який і так повторює flush.
@@ -89,7 +93,7 @@
     // Повне читання таблиці (list) важче за точковий getEntityState: на базі
     // 1000+ записів Apps Script довше читає два аркуші й серіалізує JSON, тому
     // для нього окремий, довший таймаут. Решта GET-ів лишаються на 4 с.
-    return {send,verify,verifyStrict,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:()=>get('list','system','',options.listTimeoutMs||20000)};
+    return {send,verify,verifyStrict,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:scope=>get('list','system',scope==='tickets'?'tickets':'',options.listTimeoutMs||20000)};
   }
   return {create,signedEnvelope,signedGetUrl,signedStateUrl,semanticFingerprint};
 });

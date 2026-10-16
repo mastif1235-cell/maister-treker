@@ -311,7 +311,14 @@ async function deleteTicket(id){
     showToast('Не вдалося безпечно зберегти заявку в кошику. Заявка та її фото не видалені.');
     return false;
   }
-  tickets.splice(idx,1);
+  // The array may change while the trash transaction is awaited.
+  const currentIndex=tickets.findIndex(item=>String(item.id)===String(id));
+  if(currentIndex===-1)return false;
+  if(tickets[currentIndex]!==ticket){
+    showToast('Заявку змінено під час видалення. Перевірте її та повторіть дію.');
+    return false;
+  }
+  tickets.splice(currentIndex,1);
   const localSaved=await saveTickets();
   if(!localSaved){
     // Копія вже зафіксована в кошику: не видаємо помилку локального запису

@@ -35,6 +35,7 @@ function mtClearShiftsFallback(){
 }
 
 function saveShifts(){
+  if(globalThis.MTBackupRestoreBlocked?.())return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   shiftsRevision++;
   const before=syncShiftsSnapshot; const after=JSON.parse(JSON.stringify(shifts));
@@ -58,6 +59,7 @@ function saveShifts(){
 }
 
 function saveShiftsLocalOnly(){
+  if(globalThis.MTBackupRestoreBlocked?.()&&!globalThis.MTBackupRestoreInProgress&&!globalThis.MTBackupRestoreRecovering)return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   try{
     localStorage.setItem('shifts',JSON.stringify(shifts));

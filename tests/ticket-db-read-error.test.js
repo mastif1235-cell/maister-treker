@@ -154,7 +154,8 @@ function createHarness({initialTickets='[]', databaseAvailable=true}={}){
     assert.equal(h.degraded(),false,'флаг знято після успішного повторного читання');
     assert.deepEqual(h.getPutValue().map(item=>item.id).sort(),['new-1','old-1','old-2'],'нові та старі заявки об’єднані без втрат');
     const snapshotIds=JSON.parse(JSON.stringify(h.context.syncTicketsSnapshot.map(item=>item.id).sort()));
-    assert.deepEqual(snapshotIds,['new-1','old-1','old-2'],'старі стали частиною базлайна й не підуть повторним diff-ом; новьоту там же тримає журнал');
+    assert.deepEqual(snapshotIds,['old-1','old-2'],'recovered existing records form the baseline; unjournaled new ticket must remain outside it');
+    assert.ok(h.context.hasUnjournaledTicketChanges('new-1'),'new ticket remains visibly unsent when the journal engine is unavailable');
     assert.ok(!('pendingTicketsFallback' in h.store),'аварійна копія закрита успішним записом');
   }
   // 6) Низькорівневий контракт: error після ретраю, ok зі значенням, missing без БД;

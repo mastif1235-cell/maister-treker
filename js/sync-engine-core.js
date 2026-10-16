@@ -39,7 +39,7 @@
 
     if(!current.head) current.head = next;
     else if(!current.head.attempted){
-      next.revision = current.head.revision;
+      next.revision = next.body.revision = current.head.revision;
       if(isDelete(next.action) && current.committedRevision===0 && (current.head.action==='addTicket'||current.head.action==='addShift')){
         current.head = null; current.tail = null; current.tombstone = true;
       } else {
@@ -49,7 +49,7 @@
         current.head = next;
       }
     } else {
-      next.revision = current.head.revision + 1;
+      next.revision = next.body.revision = current.head.revision + 1;
       if(current.tail && isDelete(current.tail.action)) return state;
       current.tail = next;
     }

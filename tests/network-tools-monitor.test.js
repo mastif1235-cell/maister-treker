@@ -22,6 +22,7 @@ function makeFetch(script,tracking){
       if(step&&step.hang)return await new Promise((_resolve,reject)=>{if(init&&init.signal)init.signal.addEventListener('abort',()=>reject(new Error('AbortError')));});
       if(step&&step.fail)throw new Error('network down');
       if(step&&step.ms)await new Promise(resolve=>setTimeout(resolve,step.ms)); // реальна тривалість = замір
+      if(tracking&&tracking.advance)tracking.advance(Number(step&&step.ms)||0);
       return{ok:true,status:200,arrayBuffer:async()=>new ArrayBuffer(0)};
     }finally{inFlight--;}
   };
@@ -31,11 +32,14 @@ function makeFetch(script,tracking){
 }
 
 async function runScripted(host,script,{attempts,extraOptions={},onEntries}={}){
-  const fetchFn=makeFetch(script);
+  // Inject the supported measurement clock: Windows timer scheduling is not RTT.
+  let measuredTime=0;
+  const fetchFn=makeFetch(script,{advance:ms=>{measuredTime+=ms;}});
   const controller=new AbortController();
   const entries=[];
   const done=MTPing.runMonitor(host,Object.assign({
     fetch:fetchFn,signal:controller.signal,
+    now:()=>measuredTime,
     intervalMs:1,timeoutMs:extraOptions.timeoutMs||60,
     onAttempt:entry=>{entries.push(entry);if(onEntries)onEntries(entry,controller);if(entries.length>=attempts)controller.abort();}
   },extraOptions.loop||{}));

@@ -1,8 +1,8 @@
 (function(root,factory){
-  const api=factory();
+  const api=factory(root.MTSyncEngineCore||(typeof require==='function'?require('./sync-engine-core.js'):null));
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.MTBackupSystem=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(syncCore){
   'use strict';
   const FORMAT='master-tracker-encrypted-backup';
   const VERSION=1,ITERATIONS=310000,MIN_ITERATIONS=100000,MAX_ITERATIONS=1000000;
@@ -42,7 +42,23 @@
     if(data.networkPoints!==undefined&&!validCollection(data.networkPoints))return false;
     if(data.settings!==undefined&&!isPlainObject(data.settings))return false;
     if(data.photoData!==undefined){if(!isPlainObject(data.photoData)||Object.keys(data.photoData).length>MAX_PHOTOS)return false;for(const [key,value] of Object.entries(data.photoData)){if(!String(key).startsWith('idb:')||typeof value!=='string'||!value.startsWith('data:image/')||value.length>MAX_PHOTO_CHARS)return false;}}
-    if(data.syncJournal!==undefined&&!isPlainObject(data.syncJournal))return false;
+    if(data.syncJournal!==undefined){
+      const journal=data.syncJournal;
+      if(!syncCore||!isPlainObject(journal)||!isPlainObject(journal.records))return false;
+      try{
+        syncCore.assertInvariants(journal);
+        for(const [key,r] of Object.entries(journal.records)){
+          if(!isPlainObject(r)||!['ticket','shift'].includes(r.entity)||typeof r.id!=='string'||!r.id||
+            key!==syncCore.key(r.entity,r.id)||!Number.isSafeInteger(r.committedRevision)||r.committedRevision<0)return false;
+          for(const m of [r.head,r.tail].filter(Boolean)){
+            if(!isPlainObject(m)||!isPlainObject(m.body)||m.entity!==r.entity||m.id!==r.id||
+              !Number.isSafeInteger(m.revision)||m.body.revision!==m.revision||m.body.id!==m.id||m.body.action!==m.action||
+              !['add','update','delete'].some(a=>m.action===a+(r.entity==='ticket'?'Ticket':'Shift'))||
+              typeof m.requestId!=='string'||!m.requestId)return false;
+          }
+        }
+      }catch(_journalError){return false;}
+    }
     try{if(enc.encode(JSON.stringify(data)).byteLength>MAX_PLAIN_BYTES)return false;}catch(_e){return false;}
     // Run only after the 120 MiB payload cap; that cap also bounds this depth-limited walk.
     if(hasOversizedDataUrl(data))return false;
@@ -60,6 +76,46 @@
 });
 
 if(typeof window!=='undefined'){
+  const MT_RESTORE_PENDING='mtBackupRestorePendingV1',MT_RESTORE_CHECKPOINT='backup-restore-checkpoint-v1';
+  function mtBackupRestorePending(){try{return localStorage.getItem(MT_RESTORE_PENDING)!==null;}catch(_error){return true;}}
+  globalThis.MTBackupRestoreBlocked=function(){return !!globalThis.MTBackupRestoreInProgress||mtBackupRestorePending();};
+  async function mtBackupSaveJournal(state){
+    if(!state)return;
+    if(typeof syncEngine!=='undefined'&&syncEngine&&typeof syncEngine.replaceState==='function')await syncEngine.replaceState(state);
+    else if(typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage?.save)await MTSyncJournalStorage.save(state);
+    else throw new Error('SYNC_JOURNAL_UNAVAILABLE');
+  }
+  async function mtBackupVerifyPersisted(expected){
+    if(expected.tickets&&typeof ticketsDbRead==='function'){
+      const read=await ticketsDbRead();
+      if(read.status!=='ok'||JSON.stringify(read.value)!==JSON.stringify(expected.tickets))throw new Error('RESTORE_TICKET_READBACK_FAILED');
+    }
+    if(expected.shifts&&typeof saveShiftsLocalOnly==='function'&&typeof loadShiftsWithFallback==='function'){
+      if(JSON.stringify(JSON.parse(localStorage.getItem('shifts')))!==JSON.stringify(expected.shifts))throw new Error('RESTORE_SHIFT_READBACK_FAILED');
+    }
+    if(expected.journal&&typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage?.load){
+      if(JSON.stringify(await MTSyncJournalStorage.load())!==JSON.stringify(expected.journal))throw new Error('RESTORE_JOURNAL_READBACK_FAILED');
+    }
+  }
+  globalThis.mtBackupRecoverInterrupted=async function(){
+    if(!MTBackupRestoreBlocked())return true;
+    globalThis.MTBackupRestoreRecovering=true;
+    try{
+      const saved=await backupDbGet(MT_RESTORE_CHECKPOINT);
+      if(!saved||saved.version!==1||!saved.previous)throw new Error('RESTORE_CHECKPOINT_UNAVAILABLE');
+      const previous=saved.previous;
+      if(previous.settings&&typeof securityMergeImportedSettings==='function')previous.settings=securityMergeImportedSettings(previous.settings,settings);
+      const failed=await mtBackupRollbackRestore(previous);
+      if(failed.length)throw new Error('RESTORE_RECOVERY_FAILED');
+      localStorage.removeItem(MT_RESTORE_PENDING);
+      showToast('Попереднє відновлення перервано. Заявки та журнал повернено з локального знімка.');
+      return true;
+    }catch(error){
+      globalThis.MTSafeError?.reportError?.(error,{scope:'backup-recovery'});
+      showToast('❌ Відновлення не завершено. Синхронізацію заблоковано; локальний знімок збережено.');
+      return false;
+    }finally{globalThis.MTBackupRestoreRecovering=false;}
+  };
   const MT_BACKUP_MIN_PASSWORD=8;
   function mtBackupPassword(confirmNew=false){const first=prompt(confirmNew?'🔐 Створіть пароль бекапу (мінімум 8 символів):':'🔐 Введіть пароль бекапу:');if(first===null)return null;if(first.length<MT_BACKUP_MIN_PASSWORD){showToast('Пароль бекапу — мінімум 8 символів');return null;}if(confirmNew){const second=prompt('Повторіть пароль бекапу:');if(second===null||first!==second){showToast('Паролі бекапу не збігаються');return null;}}return first;}
   const MT_BACKUP_VAULT_KEY_RECORD='__backupPasswordKeyV1';
@@ -149,6 +205,7 @@ if(typeof window!=='undefined'){
   // має лишатися частково застосована суміш старих і нових даних.
   async function mtBackupRollbackRestore(previous){
     const rollbackFailed=[];
+    if(previous.journal){try{await mtBackupSaveJournal(previous.journal);}catch(_error){rollbackFailed.push('журнал');}}
     if(previous.tickets){
       tickets=previous.tickets;syncTicketsSnapshot=previous.ticketSnapshot;
       let saved=true;
@@ -163,11 +220,12 @@ if(typeof window!=='undefined'){
     }
     if(previous.settings){
       settings=previous.settings;
-      try{if(typeof saveSettings==='function')saveSettings();}catch(_e){rollbackFailed.push('налаштування');}
+      try{if(typeof saveSettings==='function'&&saveSettings()===false)throw new Error('SETTINGS_WRITE_FAILED');}catch(_e){rollbackFailed.push('налаштування');}
     }
     if(previous.tools&&typeof toolsRestoreData==='function'){
       try{toolsRestoreData(previous.tools);}catch(_e){rollbackFailed.push('інструменти');}
     }
+    try{await mtBackupVerifyPersisted(previous);}catch(_readbackError){rollbackFailed.push('перевірка сховища');}
     return rollbackFailed;
   }
   // Пункт 18 (аудит v91.27): один backup-файл міг містити кілька записів з
@@ -195,6 +253,7 @@ if(typeof window!=='undefined'){
   }
   async function mtBackupRestore(data){
     if(!MTBackupSystem.validatePayload(data))throw new Error('BAD_PAYLOAD');
+    if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn())throw new Error('BACKUP_READ_ONLY_TAB');
     const hasTickets=Array.isArray(data.tickets),hasShifts=Array.isArray(data.shifts),hasSettings=data.settings&&typeof data.settings==='object',hasTools=Array.isArray(data.diagnostics)||Array.isArray(data.networkPoints);
     const nextTickets=hasTickets?mtBackupDedupeById(data.tickets.map((ticket,index)=>mtBackupCleanTicket(JSON.parse(JSON.stringify(ticket)),index)),()=>MTSyncEngineRuntime.uuid()):null;
     const nextShifts=hasShifts?mtBackupDedupeById(data.shifts.map(s=>({id:String(s.id||MTSyncEngineRuntime.uuid()),date:String(s.date||''),hours:Number(s.hours)||0,coworker:String(s.coworker||'Сам')})),()=>MTSyncEngineRuntime.uuid()):null;
@@ -209,28 +268,68 @@ if(typeof window!=='undefined'){
       shifts:hasShifts&&typeof shifts!=='undefined'?JSON.parse(JSON.stringify(shifts||[])):null,
       shiftSnapshot:hasShifts&&typeof syncShiftsSnapshot!=='undefined'?JSON.parse(JSON.stringify(syncShiftsSnapshot||[])):null,
       settings:hasSettings&&typeof settings!=='undefined'?JSON.parse(JSON.stringify(settings||{})):null,
-      tools:hasTools&&typeof toolsExportData==='function'?JSON.parse(JSON.stringify(toolsExportData())):null
+      tools:hasTools&&typeof toolsExportData==='function'?JSON.parse(JSON.stringify(toolsExportData())):null,
+      journal:mtBackupJournalSnapshot()
     };
-    await mtBackupWritePreRestoreSnapshot();
+    if(MTBackupRestoreBlocked())throw new Error('BACKUP_RECOVERY_REQUIRED');
+    if(hasTickets&&typeof hasUnjournaledTicketChanges==='function'&&hasUnjournaledTicketChanges())throw new Error('BACKUP_UNJOURNALED_LOCAL_CHANGES');
+    const engine=typeof syncEngine!=='undefined'?syncEngine:null;
+    const hadRetry=!!(engine&&engine.retryTimer!==null);
+    const wasInert=typeof document!=='undefined'&&document.body?document.body.inert:false;
+    globalThis.MTBackupRestoreInProgress=true;
+    if(document.body)document.body.inert=true;
     try{
+    if(!engine&&typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage?.load)previous.journal=await MTSyncJournalStorage.load();
+    if(engine){
+      if(engine.loop)throw new Error('BACKUP_SYNC_RUNNING');
+      engine.maintenance=true;engine.cancelRetryTimer?.();
+      try{await engine.write;}catch(error){engine.maintenance=false;throw error;}
+      previous.journal=mtBackupJournalSnapshot();
+      // Never replace live unsent mutations (including deletes/tails) with an older backup.
+    }
+    const affected=Object.values(previous.journal?.records||{}).some(r=>(r.head||r.tail)&&
+      (data.syncJournal||(hasTickets&&r.entity==='ticket')||(hasShifts&&r.entity==='shift')));
+    if(affected){if(engine)engine.maintenance=false;showToast('Спочатку перевірте невідправлені зміни. Бекап не застосовано; чергу збережено.');throw new Error('BACKUP_PENDING_LOCAL_CHANGES');}
+    const journalState=data.syncJournal?JSON.parse(JSON.stringify(data.syncJournal)):null;
+    for(const [key,r] of Object.entries(previous.journal?.records||{}))if(r.tombstone){
+      if(journalState)journalState.records[key]=JSON.parse(JSON.stringify(r));
+      const list=r.entity==='ticket'?nextTickets:nextShifts;
+      if(list){for(let i=list.length-1;i>=0;i--)if(String(list[i].id)===String(r.id))list.splice(i,1);}
+    }
+    let writesStarted=false;
+    try{
+      if(!await mtBackupWritePreRestoreSnapshot())throw new Error('PRE_RESTORE_SNAPSHOT_FAILED');
+      const checkpoint=JSON.parse(JSON.stringify(previous));
+      if(checkpoint.settings)checkpoint.settings=securitySanitizeSettingsForBackup(checkpoint.settings);
+      if(!await backupDbPut(MT_RESTORE_CHECKPOINT,{version:1,previous:checkpoint}))throw new Error('RESTORE_CHECKPOINT_FAILED');
+      localStorage.setItem(MT_RESTORE_PENDING,'1');
+      if(!mtBackupRestorePending())throw new Error('RESTORE_FENCE_FAILED');
+      if(document.body)document.body.inert=true;
+      writesStarted=true;
+      if(typeof photoDbGet==='function')for(const [key,value] of photoEntries){const current=await photoDbGet(key);if(current&&current!==value)throw new Error('PHOTO_RESTORE_CONFLICT');}
       if(hasTickets){for(const [key,value] of photoEntries)if(!await photoDbPut(key,value))throw new Error('PHOTO_WRITE_FAILED');tickets=nextTickets;syncTicketsSnapshot=JSON.parse(JSON.stringify(nextTickets));if(!await saveTicketsLocalOnly())throw new Error('TICKET_WRITE_FAILED');await migrateLegacyPhotosToIdb();}
       if(hasShifts){shifts=nextShifts;syncShiftsSnapshot=JSON.parse(JSON.stringify(nextShifts));if(!await saveShiftsLocalOnly())throw new Error('SHIFT_WRITE_FAILED');}
-      if(hasSettings){settings=nextSettings;saveSettings();}
+      if(hasSettings){settings=nextSettings;if(saveSettings()===false)throw new Error('SETTINGS_WRITE_FAILED');}
       if(hasTools&&typeof toolsRestoreData==='function')toolsRestoreData(nextTools);
-      if(data.syncJournal){
-        try{
-          const journalState=JSON.parse(JSON.stringify(data.syncJournal));
-          if(typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage&&typeof MTSyncJournalStorage.save==='function')await MTSyncJournalStorage.save(journalState);
-          if(typeof syncEngine!=='undefined'&&syncEngine&&typeof syncEngine.replaceState==='function')await syncEngine.replaceState(journalState);
-        }catch(_journalError){}
-      }
+      if(journalState)await mtBackupSaveJournal(journalState);
+      await mtBackupVerifyPersisted({tickets:nextTickets,shifts:nextShifts,journal:journalState});
+      localStorage.removeItem(MT_RESTORE_PENDING);
+      if(mtBackupRestorePending())throw new Error('RESTORE_FENCE_CLEAR_FAILED');
     }catch(error){
-      const rollbackFailed=await mtBackupRollbackRestore(previous);
+      const rollbackFailed=writesStarted?await mtBackupRollbackRestore(previous):[];
+      if(!rollbackFailed.length){try{localStorage.removeItem(MT_RESTORE_PENDING);}catch(_error){rollbackFailed.push('позначка відновлення');}}
       renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();
       showToast(rollbackFailed.length?'❌ Відновлення не вдалося, частину даних не вдалося повернути':'❌ Відновлення не вдалося. Локальні дані повернено');
       throw error;
     }
     renderTicketsScreen();renderShiftsScreen();renderSettingsScreen();showToast('Відновлені дані збережено локально й не відправлено в хмару');return true;
+    }finally{
+      globalThis.MTBackupRestoreInProgress=false;
+      if(engine)engine.maintenance=false;
+      if(document.body)document.body.inert=wasInert;
+      if(!MTBackupRestoreBlocked())try{await backupDbDelete(MT_RESTORE_CHECKPOINT);}catch(_cleanupError){}
+      if(hadRetry&&!MTBackupRestoreBlocked())engine.scheduleRetry?.();
+    }
   }
   async function mtBackupMigrateLegacySlots(){
     const raw=localStorage.getItem('autoBackupSlots');if(!raw||!backupDb)return;

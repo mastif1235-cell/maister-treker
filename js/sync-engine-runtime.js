@@ -12,10 +12,14 @@
     constructor(options){this.core=options.core||root.MTSyncEngineCore;this.storage=options.storage||root.MTSyncJournalStorage;this.transport=options.transport;this.payload=options.payload||entityPayload;this.state={records:{}};this.write=Promise.resolve();this.loop=null;this.online=options.online;this.onChange=options.onChange||function(){};this.retryDelays=options.retryDelays||[2000,5000,15000,30000];this.retryStep=0;this.retryTimer=null;this.retryPolicy=typeof options.retryPolicy==='function'?options.retryPolicy:null;this.concurrency=Math.max(1,Math.min(6,Number(options.concurrency)||1));this.setTimer=options.setTimeout||((fn,delay)=>root.setTimeout(fn,delay));this.clearTimer=options.clearTimeout||(id=>root.clearTimeout(id));}
     async init(){this.state=await this.storage.load();this.core.assertInvariants(this.state);if(this.online())this.flush();return this;}
     persistTransition(change){
-      this.write=this.write.catch(()=>{}).then(async()=>{const next=change(this.state);this.core.assertInvariants(next);await this.storage.save(next);this.state=next;this.onChange(this.pendingCount());return this.state;});
+      if(!this.maintenance&&root.MTBackupRestoreBlocked?.())return Promise.reject(new Error('BACKUP_RECOVERY_REQUIRED'));
+      this.write=this.write.catch(()=>{}).then(async()=>{const next=change(this.state);this.core.assertInvariants(next);await this.storage.save(next);this.state=next;
+        // A UI notification cannot turn a completed durable commit into a failed write.
+        try{this.onChange(this.pendingCount());}catch(error){try{root.MTSafeError?.reportError?.(error,{scope:'sync-notification'});}catch(_ignored){}}
+        return this.state;});
       return this.write;
     }
-    recordDiff(entity,before,after){const old=mapById(before),next=mapById(after),jobs=[];
+    recordDiff(entity,before,after){if(this.maintenance||root.MTBackupRestoreBlocked?.())return Promise.reject(new Error('BACKUP_RESTORE_BUSY'));const old=mapById(before),next=mapById(after),jobs=[];
       for(const [id,item] of next){const prior=old.get(id);if(!prior||JSON.stringify(this.payload(entity,prior))!==JSON.stringify(this.payload(entity,item))) jobs.push({entity,id,payload:this.payload(entity,item)});}
       for(const id of old.keys()) if(!next.has(id)) jobs.push({entity,id,payload:{},delete:true});
       if(!jobs.length)return this.write;
@@ -39,7 +43,7 @@
     cancelRetryTimer(){if(this.retryTimer!==null){this.clearTimer(this.retryTimer);this.retryTimer=null;}}
     resetBackoff(){this.cancelRetryTimer();this.retryStep=0;}
     scheduleRetry(){if(this.retryTimer!==null||!this.online()||!this.pendingCount())return;const pending=this.core.pending(this.state);if(this.retryPolicy&&!this.retryPolicy(pending)){this.onChange(this.pendingCount());return;}const delay=this.retryDelays[Math.min(this.retryStep,this.retryDelays.length-1)];this.retryStep=Math.min(this.retryStep+1,this.retryDelays.length-1);this.retryTimer=this.setTimer(()=>{this.retryTimer=null;this.flush();},delay);}
-flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(!this.online())return Promise.resolve(false);let failed=false;
+flush(){if(this.loop)return this.loop;this.cancelRetryTimer();if(this.maintenance||root.MTBackupRestoreBlocked?.()||!this.online())return Promise.resolve(false);let failed=false;
       const maxParallel=this.concurrency;const failedEntities=new Set();const inFlight=new Map();
       const keyOf=item=>`${item.entity}:${item.id}`;
       const settleOne=async item=>{

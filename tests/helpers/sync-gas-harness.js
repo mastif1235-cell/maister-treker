@@ -129,7 +129,7 @@ function createServer(options){
       openById(id){ if(id !== shiftsId) throw new Error('unknown workbook ' + id); return shiftWorkbook; }
     }
   });
-  vm.runInContext(read('Code.gs'), context, {filename: 'Code.gs'});
+  vm.runInContext(options.source || read('Code.gs'), context, {filename: 'Code.gs'});
 
   const requests = [];
   function call(method, url, body){

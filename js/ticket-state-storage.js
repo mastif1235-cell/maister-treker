@@ -1,6 +1,27 @@
 /* ---- Адаптер збереження масиву заявок і legacy-міграція ---- */
 const PENDING_TICKETS_FALLBACK_KEY = 'pendingTicketsFallback';
 let pendingTicketsFallbackWarningShown = false;
+const UNJOURNALED_TICKETS_KEY = 'mtUnjournaledTicketIdsV1';
+function unjournaledTicketIds(){
+  const raw=localStorage.getItem(UNJOURNALED_TICKETS_KEY);
+  const ids=raw===null?[]:JSON.parse(raw);
+  if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'))throw new Error('INVALID_UNJOURNALED_TICKETS');
+  return ids;
+}
+function hasUnjournaledTicketChanges(id){
+  try{const ids=unjournaledTicketIds();return id===undefined?ids.length>0:ids.includes(String(id));}
+  catch(_error){return true;} // Unreadable evidence must never produce a synced badge.
+}
+function updateUnjournaledTickets(before,after,failed){
+  const old=new Map(before.map(t=>[String(t.id),JSON.stringify(t)]));
+  const next=new Map(after.map(t=>[String(t.id),JSON.stringify(t)]));
+  const ids=new Set(unjournaledTicketIds());
+  new Set([...old.keys(),...next.keys()]).forEach(id=>{
+    if(old.get(id)!==next.get(id)){if(failed)ids.add(id);else ids.delete(id);}
+  });
+  if(ids.size)localStorage.setItem(UNJOURNALED_TICKETS_KEY,JSON.stringify([...ids]));
+  else localStorage.removeItem(UNJOURNALED_TICKETS_KEY);
+}
 
 function loadPendingTicketsFallback(){
   try{
@@ -98,11 +119,14 @@ function saveTickets(){
      Синхронний збій (наприклад, MTSingleWriterLock у приватному режимі) іде
      тим самим шляхом: аварійна копія + false. */
   try{
+  if(globalThis.MTBackupRestoreBlocked?.())return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   ticketsRevision++;
   const before=syncTicketsSnapshot;
   const after=JSON.parse(JSON.stringify(tickets));
-  const journalPersist=syncEngine ? syncEngine.recordDiff('ticket',before,after) : Promise.resolve();
+  let recoveryRecorded=true,journalPersist;
+  try{journalPersist=syncEngine ? syncEngine.recordDiff('ticket',before,after) : Promise.reject(new Error('SYNC_JOURNAL_UNAVAILABLE'));}
+  catch(error){journalPersist=Promise.reject(error);}
   // Журнал не записався: локальні дані все одно зберігаємо, але знімок
   // синхронізації НЕ рухаємо — інакше різниця загубилась би назавжди.
   // Семантика ідентична saveShifts(); наступний diff повторно покладе ці ж
@@ -110,16 +134,19 @@ function saveTickets(){
   // Обидва обробники в одному .then — щоб не зсувати глибину ланцюжка
   // (таймінг «журнал → потім IndexedDB» закріплено регресійним тестом).
   return journalPersist.then(()=>{
+    updateUnjournaledTickets(before,after,false);
     syncTicketsSnapshot=after;
     return ticketsStorePersistSafely();
   },error=>{
     try{ globalThis.MTSafeError?.reportError?.(error,{scope:'tickets-journal'}); }catch(_reportError){}
+    try{updateUnjournaledTickets(before,after,true);}catch(_markerError){recoveryRecorded=false;}
+    showToast('⚠️ Зміни НЕ потрапили до черги Google. Локальне збереження перевіряється окремо; відправлення не підтверджено.');
     return ticketsStorePersistSafely();
   }).then(ok=>{
-    if(!ok) return savePendingTicketsFallback();
+    if(!ok) return savePendingTicketsFallback() && recoveryRecorded;
     localStorage.removeItem(PENDING_TICKETS_FALLBACK_KEY);
     pendingTicketsFallbackWarningShown = false;
-    return true;
+    return recoveryRecorded;
   }).catch(error=>{
     // saveTickets викликають ~12 місцями як fire-and-forget. будь-який
     // неочікуваний збій (наприклад, localStorage.removeItem у приватному
@@ -137,6 +164,7 @@ function saveTickets(){
 }
 function saveTicketsLocalOnly(){
   try{
+  if(globalThis.MTBackupRestoreBlocked?.()&&!globalThis.MTBackupRestoreInProgress&&!globalThis.MTBackupRestoreRecovering)return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   const persist=ticketsStorePersistSafely();
   return persist.then(ok=>{

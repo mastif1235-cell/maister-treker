@@ -255,7 +255,7 @@ function syncValidTicket_(t) {
   if (!syncValidId_(t.id)) return false;
   if (!syncValidDate_(t.date) || !syncValidTime_(t.time)) return false;
   if (!syncBoundedString_(t.content, 50000) || !syncBoundedString_(t.backupNote, 20000)) return false;
-  if (!syncBoundedString_(t.fullDataJson, 300000)) return false;
+  if (!syncBoundedString_(t.fullDataJson, 300000) || (typeof t.fullDataJson === 'string' && syncLiteralCell_(t.fullDataJson).length > 50000)) return false;
   if (!Number.isFinite(Number(t.sum)) || Math.abs(Number(t.sum)) > 100000000) return false;
   if (t.tags !== undefined && (!Array.isArray(t.tags) || t.tags.length > 50)) return false;
   if (Array.isArray(t.tags) && t.tags.some(function(tag){ return typeof tag !== 'string' || syncUtf8Length_(tag) > 200; })) return false;
@@ -310,7 +310,7 @@ function syncExecuteGet_(action, entity, id) {
   if (action === 'getEntityState') return jsonResponse({status:'ok', state:syncReadEntityState_(syncSpreadsheetForEntity_(entity), entity, id)});
   if (action === 'checkTicketExists') return jsonResponse({status:'ok', exists:syncTicketExists_(id)});
   if (action === 'getTicketById') return jsonResponse({status:'ok', ticket:syncReadTicketById_(id)});
-  return jsonResponse(syncReadAll_());
+  return jsonResponse(syncReadAll_(id === 'tickets' ? 'tickets' : 'both'));
 }
 
 function syncTicketSpreadsheet_() {
@@ -462,8 +462,13 @@ function syncReadTicketById_(id) {
   return syncTicketFromRow_(row, ss.getSpreadsheetTimeZone());
 }
 
-function syncReadAll_() {
+function syncReadAll_(scope) {
   var ticketSs = syncTicketSpreadsheet_();
+  if(scope === 'tickets') {
+    var ticketSheet = ticketSs.getSheetByName('Заявки'), ticketRows=[];
+    if(ticketSheet && ticketSheet.getLastRow()>1)ticketRows=ticketSheet.getRange(2,1,ticketSheet.getLastRow()-1,8).getValues().filter(function(row){return row[0]||row[1];}).map(function(row){return syncTicketFromRow_(row,ticketSs.getSpreadsheetTimeZone());});
+    return {status:'ok',scope:'tickets',tickets:ticketRows,shifts:[],states:{ticket:syncReadAllEntityStates_(ticketSs,'ticket'),shift:[]}};
+  }
   var shiftSs = syncShiftSpreadsheet_();
   var ticketTz = ticketSs.getSpreadsheetTimeZone();
   var shiftTz = shiftSs.getSpreadsheetTimeZone();
@@ -656,6 +661,11 @@ function updateTicketRow(ss, t) {
   sortTicketsSheet(sheet);
 }
 
+// Leading apostrophe is Sheets' literal-text escape. Double an existing
+// apostrophe as well so the original user text is preserved on read-back.
+function syncLiteralCell_(value) {
+  return typeof value === 'string' && (/^[\s\u0000-\u001f]*[=+@-]/.test(value) || value.charAt(0) === "'") ? "'" + value : value;
+}
 function writeTicketRow(sheet, rowIndex, t) {
   var row = [
     t.id,
@@ -678,7 +688,7 @@ function writeTicketRow(sheet, rowIndex, t) {
   sheet.getRange(rowIndex, 7, 1, 1).setNumberFormat('@');
   sheet.getRange(rowIndex, 8, 1, 1).setNumberFormat('@');
 
-  range.setValues([row]);
+  range.setValues([row.map(syncLiteralCell_)]);
   sheet.getRange(rowIndex, 4, 1, 1).setWrap(true);
   sheet.autoResizeRows(rowIndex, 1);
 }
@@ -709,7 +719,7 @@ function writeAllTickets(ss, tickets) {
       tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('@');
       tempSheet.getRange(2, 5, rows.length, 1).setNumberFormat('0.##');
       tempSheet.getRange(2, 6, rows.length, 3).setNumberFormat('@');
-      tempSheet.getRange(2, 1, rows.length, 8).setValues(rows);
+      tempSheet.getRange(2, 1, rows.length, 8).setValues(rows.map(function(row){return row.map(syncLiteralCell_);}));
       tempSheet.getRange(2, 4, rows.length, 1).setWrap(true);
     }
 
@@ -842,7 +852,7 @@ function writeShiftRow(sheet, rowIndex, s) {
   sheet.getRange(rowIndex, 3, 1, 1).setNumberFormat('0.##');
   sheet.getRange(rowIndex, 4, 1, 1).setNumberFormat('@');
 
-  range.setValues([row]);
+  range.setValues([row.map(syncLiteralCell_)]);
 }
 
 function writeAllShifts(ss, shifts) {
@@ -861,7 +871,7 @@ function writeAllShifts(ss, shifts) {
       tempSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
       tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.##');
       tempSheet.getRange(2, 4, rows.length, 1).setNumberFormat('@');
-      tempSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+      tempSheet.getRange(2, 1, rows.length, 4).setValues(rows.map(function(row){return row.map(syncLiteralCell_);}));
     }
 
     swapInPlace(ss, tempSheet, SHIFT_STORAGE_SHEET);

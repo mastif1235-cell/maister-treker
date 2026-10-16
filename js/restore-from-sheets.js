@@ -43,7 +43,8 @@
     return JSON.stringify(value);
   }
 
-  function validateCloudListPayload(result){
+  function validateCloudListPayload(result,scope){
+    if(result&&result.scope==='tickets'&&scope!=='tickets')return {ok:false,code:'PARTIAL_READ',reason:'Отримано лише заявки; таблицю змін не прочитано'};
     if(!result || typeof result !== 'object' || Array.isArray(result) || hasUnsafeKeys(result)){
       return {ok:false, code:'MALFORMED', reason:'хмара повернула небезпечний або пошкоджений обʼєкт'};
     }
@@ -869,14 +870,14 @@ if(typeof window !== 'undefined'){
     showToast('Отримую дані з Google Sheets…');
     let response;
     try{
-      response = await transport.listAll();
+      response = await transport.listAll(scope);
     }catch(error){
       globalThis.MTSafeError && globalThis.MTSafeError.reportError && globalThis.MTSafeError.reportError(error, {scope:'sheets-restore-fetch'});
       showToast('Не вдалося отримати дані: мережева помилка. Локальну базу не змінено.');
       return;
     }
 
-    const validation = MTRestoreFromSheets.validateCloudListPayload(response && response.result);
+    const validation = MTRestoreFromSheets.validateCloudListPayload(response && response.result,scope);
     if(!validation.ok){
       mtRestoreCloudError(validation.code);
       return;
