@@ -1,8 +1,8 @@
 (function(root,factory){
-  const api=factory();
+  const api=factory(root.MTSyncEngineCore||(typeof require==='function'?require('./sync-engine-core.js'):null));
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.MTBackupSystem=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(syncCore){
   'use strict';
   const FORMAT='master-tracker-encrypted-backup';
   const VERSION=1,ITERATIONS=310000,MIN_ITERATIONS=100000,MAX_ITERATIONS=1000000;
@@ -42,7 +42,23 @@
     if(data.networkPoints!==undefined&&!validCollection(data.networkPoints))return false;
     if(data.settings!==undefined&&!isPlainObject(data.settings))return false;
     if(data.photoData!==undefined){if(!isPlainObject(data.photoData)||Object.keys(data.photoData).length>MAX_PHOTOS)return false;for(const [key,value] of Object.entries(data.photoData)){if(!String(key).startsWith('idb:')||typeof value!=='string'||!value.startsWith('data:image/')||value.length>MAX_PHOTO_CHARS)return false;}}
-    if(data.syncJournal!==undefined&&!isPlainObject(data.syncJournal))return false;
+    if(data.syncJournal!==undefined){
+      const journal=data.syncJournal;
+      if(!syncCore||!isPlainObject(journal)||!isPlainObject(journal.records))return false;
+      try{
+        syncCore.assertInvariants(journal);
+        for(const [key,r] of Object.entries(journal.records)){
+          if(!isPlainObject(r)||!['ticket','shift'].includes(r.entity)||typeof r.id!=='string'||!r.id||
+            key!==syncCore.key(r.entity,r.id)||!Number.isSafeInteger(r.committedRevision)||r.committedRevision<0)return false;
+          for(const m of [r.head,r.tail].filter(Boolean)){
+            if(!isPlainObject(m)||!isPlainObject(m.body)||m.entity!==r.entity||m.id!==r.id||
+              !Number.isSafeInteger(m.revision)||m.body.revision!==m.revision||m.body.id!==m.id||m.body.action!==m.action||
+              !['add','update','delete'].some(a=>m.action===a+(r.entity==='ticket'?'Ticket':'Shift'))||
+              typeof m.requestId!=='string'||!m.requestId)return false;
+          }
+        }
+      }catch(_journalError){return false;}
+    }
     try{if(enc.encode(JSON.stringify(data)).byteLength>MAX_PLAIN_BYTES)return false;}catch(_e){return false;}
     // Run only after the 120 MiB payload cap; that cap also bounds this depth-limited walk.
     if(hasOversizedDataUrl(data))return false;
@@ -218,11 +234,10 @@ if(typeof window!=='undefined'){
       if(hasSettings){settings=nextSettings;saveSettings();}
       if(hasTools&&typeof toolsRestoreData==='function')toolsRestoreData(nextTools);
       if(data.syncJournal){
-        try{
           const journalState=JSON.parse(JSON.stringify(data.syncJournal));
-          if(typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage&&typeof MTSyncJournalStorage.save==='function')await MTSyncJournalStorage.save(journalState);
           if(typeof syncEngine!=='undefined'&&syncEngine&&typeof syncEngine.replaceState==='function')await syncEngine.replaceState(journalState);
-        }catch(_journalError){}
+          else if(typeof MTSyncJournalStorage!=='undefined'&&MTSyncJournalStorage&&typeof MTSyncJournalStorage.save==='function')await MTSyncJournalStorage.save(journalState);
+          else throw new Error('SYNC_JOURNAL_UNAVAILABLE');
       }
     }catch(error){
       const rollbackFailed=await mtBackupRollbackRestore(previous);
