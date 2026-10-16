@@ -661,6 +661,11 @@ function updateTicketRow(ss, t) {
   sortTicketsSheet(sheet);
 }
 
+// Leading apostrophe is Sheets' literal-text escape. Double an existing
+// apostrophe as well so the original user text is preserved on read-back.
+function syncLiteralCell_(value) {
+  return typeof value === 'string' && (/^[\s\u0000-\u001f]*[=+@-]/.test(value) || value.charAt(0) === "'") ? "'" + value : value;
+}
 function writeTicketRow(sheet, rowIndex, t) {
   var row = [
     t.id,
@@ -683,7 +688,7 @@ function writeTicketRow(sheet, rowIndex, t) {
   sheet.getRange(rowIndex, 7, 1, 1).setNumberFormat('@');
   sheet.getRange(rowIndex, 8, 1, 1).setNumberFormat('@');
 
-  range.setValues([row]);
+  range.setValues([row.map(syncLiteralCell_)]);
   sheet.getRange(rowIndex, 4, 1, 1).setWrap(true);
   sheet.autoResizeRows(rowIndex, 1);
 }
@@ -714,7 +719,7 @@ function writeAllTickets(ss, tickets) {
       tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('@');
       tempSheet.getRange(2, 5, rows.length, 1).setNumberFormat('0.##');
       tempSheet.getRange(2, 6, rows.length, 3).setNumberFormat('@');
-      tempSheet.getRange(2, 1, rows.length, 8).setValues(rows);
+      tempSheet.getRange(2, 1, rows.length, 8).setValues(rows.map(function(row){return row.map(syncLiteralCell_);}));
       tempSheet.getRange(2, 4, rows.length, 1).setWrap(true);
     }
 
@@ -847,7 +852,7 @@ function writeShiftRow(sheet, rowIndex, s) {
   sheet.getRange(rowIndex, 3, 1, 1).setNumberFormat('0.##');
   sheet.getRange(rowIndex, 4, 1, 1).setNumberFormat('@');
 
-  range.setValues([row]);
+  range.setValues([row.map(syncLiteralCell_)]);
 }
 
 function writeAllShifts(ss, shifts) {
@@ -866,7 +871,7 @@ function writeAllShifts(ss, shifts) {
       tempSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
       tempSheet.getRange(2, 3, rows.length, 1).setNumberFormat('0.##');
       tempSheet.getRange(2, 4, rows.length, 1).setNumberFormat('@');
-      tempSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+      tempSheet.getRange(2, 1, rows.length, 4).setValues(rows.map(function(row){return row.map(syncLiteralCell_);}));
     }
 
     swapInPlace(ss, tempSheet, SHIFT_STORAGE_SHEET);
