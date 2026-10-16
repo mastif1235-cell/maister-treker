@@ -347,7 +347,8 @@
   // JSON result feeds the existing ACK path unchanged; a network failure maps
   // to a connection-class error so the durable queue waits and retries later.
   function createDirectSend(deps){
-    return async function directSend(value,request,canSend=()=>true){
+    let evidence=null;
+    async function directSend(value,request,canSend=()=>true){
       const url=endpoint(value);
       const secret=String(deps.settings().dispatcherHmacSecret||'');
       if(secret.length<32)throw new Error('REPORT_NOT_CONFIGURED');
@@ -361,10 +362,16 @@
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),deps.postTimeoutMs||20000);
       try{
         const response=await (deps.fetch||fetch)(url,{method:'POST',mode:'cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(envelope),signal:controller.signal});
-        return await response.json();
-      }catch(_){throw new Error('REPORT_CONNECTION_RESET');}
+        const result=await response.json();
+        evidence={url,secret,connected:response.ok!==false,verified:response.ok!==false&&result?.ok===true,reason:result?.ok===true?'':String(result?.code||'REPORT_UNVERIFIED')};
+        return result;
+      }catch(_){evidence=null;throw new Error('REPORT_CONNECTION_RESET');}
       finally{clearTimeout(timer);}
     };
+    directSend.connectionStatus=()=>evidence&&evidence.url===deps.settings().dispatcherReportEndpoint&&evidence.secret===String(deps.settings().dispatcherHmacSecret||'')
+      ?{connected:evidence.connected,verified:evidence.verified,reason:evidence.reason}
+      :{connected:false,verified:false,reason:'REPORT_NOT_VERIFIED'};
+    return directSend;
   }
   function createBridge(){
     let popup=null,peer=null,peerOrigin='',channel='',url='',ready=null,connected=false,verified=false,checking=null,resolveReady=null,rejectReady=null,readyTimer=null,readyHandler=null;
@@ -502,6 +509,7 @@
   // secret the legacy Google bridge remains available as a rollback/debug path.
   const directMode=()=>String(cfg().dispatcherHmacSecret||'').length>=32;
   const directSend=createDirectSend({settings:cfg,now:()=>Date.now(),postTimeoutMs:20000});
+  const directConnection=()=>navigator.onLine===false?{connected:false,verified:false,reason:'OFFLINE'}:directSend.connectionStatus();
   const sendRequest=(value,request,interactive=false)=>directMode()?directSend(value,request):bridge.send(value,request,interactive);
   const outbox=createOutbox({storage:localStorage,settings:cfg,tickets:()=>typeof tickets==='undefined'?[]:tickets,ticket:id=>typeof tickets==='undefined'?null:tickets.find(t=>String(t.id)===id),authorizedDirect:directMode,
     dto:async(t,v)=>(await import('./dispatcher-report-projection.mjs')).buildDTO(t,root.MTDispatcherReportCore,v),send:(value,request,canSend)=>directMode()?directSend(value,request,canSend):bridge.send(value,request,false,canSend),requestId:()=>crypto.randomUUID(),online:()=>navigator.onLine,
@@ -537,7 +545,7 @@
       dispatcher_enabled:!!c.dispatcherReportEnabled,
       endpoint_configured:!!c.dispatcherReportEndpoint,
       transport:directMode()?'direct-hmac':'google-bridge',
-      connection:{connected:directMode()?true:!!b.connected,verified:directMode()?true:!!b.verified,reason:directMode()?'':(b.reason||'')},
+      connection:directMode()?directConnection():{connected:!!b.connected,verified:!!b.verified,reason:b.reason||''},
       queue:{pending:x.pending,failed:x.failed,unresolved:x.unresolved,last_error:x.lastError||''},
       telemetry:(root.MTDispatcherTelemetry?.dump?.()||[]).slice(-20)
     };
@@ -609,7 +617,7 @@
       if(action==='authorize'){
         // Legacy Google-bridge fallback (rollback/debug). The normal send path
         // never opens this: direct mode hides the button entirely.
-        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',connected:true,verified:true});message('Прямий підписаний канал активний — Google-підключення не потрібне.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
+        if(directMode()){record('authorize_start',{code:'AUTHORIZE_NOT_NEEDED',...directConnection()});message('Прямий канал налаштовано; підтвердження залежить від відповіді сервера.');outbox.connectionReady();void outbox.flush({reason:'auto'});return;}
         record('authorize_start',{code:'AUTHORIZE_START',connected:false,verified:false});message('Google авторизацію виконуємо. Перевіряємо канал звіту...');await bridge.authorize(cfg().dispatcherReportEndpoint);record('connection_state',{code:'AUTHORIZED',connected:true,verified:true});message('Таблиця Д підключена');void outbox.flush({reason:'auto'});return;}
       if(action==='copyDiagnostics'){
         const payload=await collectDiagnostics(),text=JSON.stringify(payload,null,2);
@@ -647,7 +655,7 @@
     // channels (Таблиця/Смены) already have. No window, no Settings visit.
     if(directMode()){
       outbox.connectionReady();
-      record('connection_state',{code:'DIRECT_ONLINE',connected:true,verified:true});
+      record('connection_state',{code:'DIRECT_STATUS',...directConnection()});
       void outbox.flush({reason:'auto'});
       return;
     }
