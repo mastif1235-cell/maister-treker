@@ -29,7 +29,7 @@ function createContext(options){
     URL:{createObjectURL:()=>'', revokeObjectURL:()=>{}}, setTimeout:()=>1, clearTimeout:()=>{},
     document:{getElementById:()=>null, createElement:()=>({click(){}})},
     prompt:()=>null, confirm:()=>true, openConfirmModal:async()=>true, showToast:()=>{},
-    localStorage:{getItem:()=>null, setItem(){}, removeItem(){}},
+    localStorage:(()=>{const values=new Map();return {getItem:k=>values.has(k)?values.get(k):null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};})(),
     localDateKey:()=>'2026-09-12',
     backupDb:{name:'fake'},
     DAILY_BACKUP_MAX:10,
@@ -124,7 +124,8 @@ const backupPayload = {
   assert.equal(lastTicketWrite[0].content, 'поточна заявка', 'на диск повертається попередній стан заявок');
   assert.ok(failing.state.settingsWrites.length > 0, 'налаштування повертаються не лише в памʼяті');
   assert.ok(failing.state.toolsWrites.length > 0, 'інструменти повертаються не лише в памʼяті');
-  assert.equal(failing.state.entries.size, 1, 'невдале відновлення не затирає pre-restore копію');
+  assert.ok([...failing.state.entries.keys()].some(key=>String(key).startsWith('pre-restore-')), 'невдале відновлення не затирає pre-restore копію');
+  assert.ok(failing.localStorage.getItem('mtBackupRestorePendingV1'),'невдалий rollback змін лишає durable fence і recovery checkpoint');
 
   console.log('PASS backup restore keeps a pre-restore copy and rolls memory and storage back on failure');
 })().catch(error=>{console.error(error); process.exitCode = 1;});

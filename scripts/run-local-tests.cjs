@@ -9,11 +9,11 @@ if(require.main===module){
   const files=discover(fs.readdirSync(path.join(root,'tests'))).filter(n=>!pattern||pattern.test(n));
   if(args.includes('--list')){console.log(files.join('\n'));process.exit(0);}
   if(!files.length){console.error('No matching local tests');process.exit(1);}
-  let passed=0,failed=0;
+  let passed=0,failed=0;const failedFiles=[];
   for(const file of files){
     const result=spawnSync(process.execPath,[path.join(root,'tests',file)],{cwd:root,encoding:'utf8',maxBuffer:8*1024*1024});
     if(result.status===0){passed++;console.log('PASS '+file);}
-    else{failed++;console.error('FAIL '+file+'\n'+String(result.error||'')+String(result.stdout||'').slice(-4000)+String(result.stderr||'').slice(-4000));}
+    else{failed++;failedFiles.push(file);console.error('FAIL '+file+'\n'+String(result.error||'')+String(result.stdout||'').slice(-4000)+String(result.stderr||'').slice(-4000));}
   }
-  console.log(JSON.stringify({files:files.length,passed,failed}));process.exitCode=failed?1:0;
+  console.log(JSON.stringify({files:files.length,passed,failed,failedFiles}));process.exitCode=failed?1:0;
 }

@@ -11,7 +11,7 @@ const {createDevice, createServer, clone} = require('../tests/helpers/sync-gas-h
   device.engine.onChange = () => { throw new Error('synthetic notification failure after durable save'); };
   await assert.rejects(
     () => device.restoreFileBackup({tickets:[], syncJournal:{records:{}}}),
-    /synthetic notification failure/
+    /BACKUP_PENDING_LOCAL_CHANGES/
   );
   console.log(JSON.stringify({
     before_records:Object.keys(previous.records).length,

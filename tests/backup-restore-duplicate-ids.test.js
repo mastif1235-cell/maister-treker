@@ -39,6 +39,7 @@ function harness(){
     state
   };
   context.window = context;
+  require('./helpers/backup-test-storage.cjs')(context);
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'js/backup-system.js' });
   return context;

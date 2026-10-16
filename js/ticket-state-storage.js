@@ -119,6 +119,7 @@ function saveTickets(){
      Синхронний збій (наприклад, MTSingleWriterLock у приватному режимі) іде
      тим самим шляхом: аварійна копія + false. */
   try{
+  if(globalThis.MTBackupRestoreBlocked?.())return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   ticketsRevision++;
   const before=syncTicketsSnapshot;
@@ -163,6 +164,7 @@ function saveTickets(){
 }
 function saveTicketsLocalOnly(){
   try{
+  if(globalThis.MTBackupRestoreBlocked?.()&&!globalThis.MTBackupRestoreInProgress&&!globalThis.MTBackupRestoreRecovering)return Promise.resolve(false);
   if(typeof MTSingleWriterLock!=='undefined'&&!MTSingleWriterLock.warn()) return Promise.resolve(false);
   const persist=ticketsStorePersistSafely();
   return persist.then(ok=>{

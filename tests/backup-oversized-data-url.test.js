@@ -39,6 +39,7 @@ function harness(){
     renderTicketsScreen(){},renderShiftsScreen(){},renderSettingsScreen(){}
   };
   context.window=context;
+  require('./helpers/backup-test-storage.cjs')(context);
   vm.createContext(context);
   vm.runInContext(instrumented,context);
   return{context,writes,confirms:()=>confirms};

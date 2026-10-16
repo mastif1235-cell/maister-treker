@@ -21,9 +21,9 @@ const initSlice=app.slice(initStart,app.indexOf('\n}',app.indexOf('restoreDraftI
 assert.ok(initSlice.length>500,'init slice is meaningful');
 
 assert.match(initSlice,/try\{\s*\n\s*ticketsDb = await openTicketsDb\(\);\s*\n\s*\}catch\(dbOpenError\)\{[\s\S]*?ticketsDb = null;/,'IndexedDB open failure is contained');
-assert.match(initSlice,/try\{\s*\n\s*await loadTicketsFromIdb\(\);[\s\S]*?\}catch\(loadError\)\{[\s\S]*?fallbackLegacy[\s\S]*?\}/,'tickets load failure falls back to legacy copy, not a crash');
+assert.match(initSlice,/try\{\s*\n\s*(?:if\(typeof mtBackupRecoverInterrupted[^\n]*\n\s*)?await loadTicketsFromIdb\(\);[\s\S]*?\}catch\(loadError\)\{[\s\S]*?fallbackLegacy[\s\S]*?\}/,'tickets load/recovery failure falls back safely, not a crash');
 assert.match(initSlice,/try\{[\s\S]*?await new MTSyncEngineRuntime\.Engine\([\s\S]*?\}\)\.init\(\);[\s\S]*?\}catch\(engineError\)\{[\s\S]*?syncEngine = null;[\s\S]*?showToast\(/,'engine init failure degrades to syncEngine=null with an explanation');
-assert.match(initSlice,/if\(syncEngine\)\{\s*\n\s*try\{ await migrateLegacySyncState\(\); \}/,'legacy sync migration runs only with a live engine and cannot kill start');
+assert.match(initSlice,/if\(syncEngine\)\{[\s\S]*?try\{ await migrateLegacySyncState\(\); \}/,'legacy sync migration runs only with a live engine and cannot kill start');
 assert.match(initSlice,/try\{\s*\n\s*photoDb = await openPhotoDb\(\);[\s\S]*?maybeOfferExternalDailyBackup\(\);[\s\S]*?\}catch\(auxStorageError\)\{/,'photo/backup storage failures are contained too');
 assert.match(initSlice,/if\(syncEngine\) Promise\.resolve\(syncEngine\.flush\(\)\)\.catch\(\(\)=>\{\}\);/,'online listener survives a dead engine and cannot produce unhandled rejections');
 // Білий екран не можe повернутися: жодного «сирого» await після етапів, який би
@@ -68,7 +68,8 @@ const stateSource=read('js/ticket-state-storage.js');
     .then(saved=>{
       assert.equal(saved,true,'local saves work without the engine');
       assert.ok(events.includes('idb'),'written to IndexedDB as usual');
-      assert.equal((context.syncTicketsSnapshot||[]).length,1,'degraded mode still tracks baseline');
+      assert.equal((context.syncTicketsSnapshot||[]).length,0,'without a journal the baseline must not claim delivery');
+      assert.deepEqual(JSON.parse(values.get('mtUnjournaledTicketIdsV1')),['degraded-1'],'unsent marker persists despite missing engine');
       console.log('PASS init stages are isolated: no white screen without tickets DB, journal engine, or backup storage');
     })
     .catch(error=>{process.exitCode=1;console.error('DEGRADATION GUARD BROKEN:',error);});

@@ -27,6 +27,7 @@ const context={
   securityMergeImportedSettings:(_imported,current)=>current
 };
 context.window=context;
+context.mtCreatePreRestoreBackup=async()=>{await context.backupDbPut('synthetic-pre-restore',{tickets:context.tickets});return 'synthetic-pre-restore';};
 vm.createContext(context);vm.runInContext(source,context);
 const originalEncrypt=context.MTBackupSystem.encrypt.bind(context.MTBackupSystem);
 context.MTBackupSystem.encrypt=async(payload,password)=>{usedPasswords.push(password);capturedPayloads.push(JSON.parse(JSON.stringify(payload)));return originalEncrypt(payload,password);};

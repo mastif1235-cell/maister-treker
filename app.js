@@ -9,10 +9,10 @@
 // NEW: показується в Налаштуваннях — щоб одразу бачити, чи підвантажилась
 // свіжа версія після деплою, чи браузер ще показує старий кеш. Піднімати
 // разом із CACHE_NAME у sw.js при кожному суттєвому оновленні.
-const APP_VERSION = 'v92.23 · 2026-10-14';
+const APP_VERSION = 'v92.26 · 2026-10-16';
 // Runtime revision of the app shell, checked with module/SW revisions by the
 // mixed-runtime guard (js/runtime-guard.js). Bump together with sw.js CACHE_NAME.
-globalThis.MTAppRuntimeRevision = 'runtime-170';
+globalThis.MTAppRuntimeRevision = 'runtime-173';
 let settings = loadSettings();
 if(ensureCatalogTags()) saveSettings(); // NEW: додає теги для всіх матеріалів/робіт з переліку, якщо їх ще нема
 // NEW: раніше тут одразу синхронно читалось з localStorage — тепер справжні
@@ -151,6 +151,7 @@ async function migrateLegacySyncState(){
   if(hadLegacyDeletes) saveDeletedTickets();
 }
 function isEntitySynced(entity,id){
+  if(globalThis.MTBackupRestoreBlocked?.())return false;
   if(!syncEngine) return false;
   if(entity==='ticket'&&typeof hasUnjournaledTicketChanges==='function'&&hasUnjournaledTicketChanges(id))return false;
   const record=syncEngine.state.records[MTSyncEngineCore.key(entity,id)];
@@ -345,6 +346,7 @@ async function init(){
     globalThis.MTSafeError?.reportError?.(dbOpenError,{scope:'tickets-db-open',userMessage:'Локальна база заявок недоступна.'});
   }
   try{
+    if(typeof mtBackupRecoverInterrupted==='function'&&!await mtBackupRecoverInterrupted())throw new Error('BACKUP_RECOVERY_REQUIRED');
     await loadTicketsFromIdb(); // підвантажує заявки з IndexedDB (з одноразовою міграцією зі старого localStorage) — має відбутись ДО міграції фото
   }catch(loadError){
     globalThis.MTSafeError?.reportError?.(loadError,{scope:'tickets-load',userMessage:'Не вдалося прочитати локальну базу заявок.'});
@@ -371,7 +373,7 @@ async function init(){
   });
   syncEngine = await new MTSyncEngineRuntime.Engine({
     transport:syncTransport,
-    online:()=>navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
+    online:()=>!globalThis.MTBackupRestoreBlocked?.() && navigator.onLine && !!getScriptUrl() && String(settings.syncHmacSecret||'').length>=32,
     // Фікс аудиту P1 (продуктивність): незалежні зміни летять паралельно
     // (макс. 3 з'єднання), а ланцюжки правок одного запису лишаються строго
     // послідовними — серверний CAS по revision це гарантує.
