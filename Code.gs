@@ -310,7 +310,7 @@ function syncExecuteGet_(action, entity, id) {
   if (action === 'getEntityState') return jsonResponse({status:'ok', state:syncReadEntityState_(syncSpreadsheetForEntity_(entity), entity, id)});
   if (action === 'checkTicketExists') return jsonResponse({status:'ok', exists:syncTicketExists_(id)});
   if (action === 'getTicketById') return jsonResponse({status:'ok', ticket:syncReadTicketById_(id)});
-  return jsonResponse(syncReadAll_());
+  return jsonResponse(syncReadAll_(id === 'tickets' ? 'tickets' : 'both'));
 }
 
 function syncTicketSpreadsheet_() {
@@ -462,8 +462,13 @@ function syncReadTicketById_(id) {
   return syncTicketFromRow_(row, ss.getSpreadsheetTimeZone());
 }
 
-function syncReadAll_() {
+function syncReadAll_(scope) {
   var ticketSs = syncTicketSpreadsheet_();
+  if(scope === 'tickets') {
+    var ticketSheet = ticketSs.getSheetByName('Заявки'), ticketRows=[];
+    if(ticketSheet && ticketSheet.getLastRow()>1)ticketRows=ticketSheet.getRange(2,1,ticketSheet.getLastRow()-1,8).getValues().filter(function(row){return row[0]||row[1];}).map(function(row){return syncTicketFromRow_(row,ticketSs.getSpreadsheetTimeZone());});
+    return {status:'ok',scope:'tickets',tickets:ticketRows,shifts:[],states:{ticket:syncReadAllEntityStates_(ticketSs,'ticket'),shift:[]}};
+  }
   var shiftSs = syncShiftSpreadsheet_();
   var ticketTz = ticketSs.getSpreadsheetTimeZone();
   var shiftTz = shiftSs.getSpreadsheetTimeZone();

@@ -90,7 +90,7 @@
     // Повне читання таблиці (list) важче за точковий getEntityState: на базі
     // 1000+ записів Apps Script довше читає два аркуші й серіалізує JSON, тому
     // для нього окремий, довший таймаут. Решта GET-ів лишаються на 4 с.
-    return {send,verify,verifyStrict,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:()=>get('list','system','',options.listTimeoutMs||20000)};
+    return {send,verify,verifyStrict,getEntityState:(entity,id)=>get('getEntityState',entity,id),getTicket:id=>get('getTicketById','ticket',id),listAll:scope=>get('list','system',scope==='tickets'?'tickets':'',options.listTimeoutMs||20000)};
   }
   return {create,signedEnvelope,signedGetUrl,signedStateUrl,semanticFingerprint};
 });
