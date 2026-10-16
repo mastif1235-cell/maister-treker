@@ -4,6 +4,7 @@
   'use strict';
   const KEY='mtDispatcherReportOutboxV1',PERMANENT=/^(?:INVALID_|UNKNOWN_|PRIVACY_|HASH_|FORMULA_|STALE_|REPORT_SCHEMA|LEGACY_|DUPLICATE_)/;
   const CONNECTION=/^(?:GOOGLE_\w+|REPORT_CONNECTION_RESET|REPORT_NOT_CONFIGURED|INVALID_ENDPOINT)$/;
+  const THROTTLED=/^(?:BUSY|RATE_LIMITED)$/;
   function endpoint(value){let url;try{url=new URL(String(value||''));}catch(_){throw new Error('INVALID_ENDPOINT');}if(url.protocol!=='https:'||url.hostname!=='script.google.com'||url.username||url.password||url.port||!/^\/macros\/s\/[\w-]+\/exec$/.test(url.pathname)||url.search||url.hash)throw new Error('INVALID_ENDPOINT');return url.href;}
   function createOutbox(deps){
     let state={endpoint:'',operations:[],receipts:[],diagnostics:[],sync:null,lastError:'',lastSuccess:'',inflight:null},running=false,timer=null,generation=0,blocked=false,flight=null;
@@ -58,7 +59,7 @@
       completeSent(successful,response,false);
       for(const {o,item} of failed){
         if(!state.operations.includes(o))continue;
-        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=0;
+        o.attempts=Math.min(3,o.attempts+1);o.error=item.code;o.next=THROTTLED.test(item.code)?now()+[5000,30000,120000][o.attempts-1]:0;
       }
       state.lastError=failed[0]?.item.code||'';persist();
       return successful.length;
@@ -182,9 +183,10 @@
         return;
       }
       telemetry('flush_attempt',{store_ready:true,pending:status().pending,failed:status().failed,unresolved:status().unresolved});
+      for(const o of state.operations)if(selected(o,intent)&&o.attempts>=3&&THROTTLED.test(o.error||state.lastError)&&o.next>0&&o.next<=now()){o.attempts=0;o.error='';}
       running=true;let failed=false,sent=[],g=generation;persist();
       try{
-        const url=align(),sendSecret=deps.settings().dispatcherHmacSecret,batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error&&o.next<=now()).slice(0,50);g=generation;
+        const url=align(),sendSecret=deps.settings().dispatcherHmacSecret,batch=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&(!o.error||THROTTLED.test(o.error))&&o.next<=now()).slice(0,50);g=generation;
         // One send capability survives every async boundary, but is revoked by
         // OFF/config changes, superseded operations or a mixed runtime.
         const canSend=()=>durable&&permitted(intent)&&g===generation&&url===deps.settings().dispatcherReportEndpoint&&sendSecret===deps.settings().dispatcherHmacSecret&&!runtimeBlocked()&&sent.every(o=>state.operations.includes(o));
@@ -213,7 +215,7 @@
         const batchOps=sent.map(o=>({id:o.id,action:o.action,version:o.version}));
         const batchKey=JSON.stringify(batchOps.map(o=>o.id+'#'+o.action+'#'+o.version).sort());
         const reuse=!!(state.inflight&&state.inflight.action==='report_sync_all'&&JSON.stringify(state.inflight.ops.map(o=>o.id+'#'+o.action+'#'+o.version).sort())===batchKey);
-        const rebuild=reuse?state.inflight.rebuild:intent.skipRebuild!==true&&!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&!o.error);
+        const rebuild=reuse?state.inflight.rebuild:intent.skipRebuild!==true&&!state.operations.some(o=>selected(o,intent)&&!sent.includes(o)&&o.attempts<3&&(!o.error||THROTTLED.test(o.error)));
         if(state.sync){state.sync.batch_count++;state.sync.final_validation='PENDING';persist();}
         const request={action:'report_sync_all',tickets:dtos,deletes,request_id:reuse?state.inflight.request_id:deps.requestId(),rebuild};
         state.inflight={action:'report_sync_all',request_id:request.request_id,rebuild,ts:now(),ops:batchOps};
@@ -257,10 +259,10 @@
         // No retry of privacy/schema failures. Bounded retries for transport,
         // consent, throttling and service failures, including across reload.
         if(CONNECTION.test(state.lastError))blocked=true;
-        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
+        else for(const o of sent.filter(o=>state.operations.includes(o))){o.attempts=Math.min(3,o.attempts+1);if(PERMANENT.test(state.lastError)||THROTTLED.test(state.lastError))o.error=state.lastError;o.next=now()+[5000,30000,120000][o.attempts-1];}
         persist();
       }finally{
-        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&o.attempts<3&&!o.error);if(intent.historicalCorrection!==targetedCorrection&&durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
+        running=false;persist();const eligible=state.operations.filter(o=>selected(o,intent)&&((o.attempts<3&&!o.error)||THROTTLED.test(o.error)));if(intent.historicalCorrection!==targetedCorrection&&durable&&!blocked&&configured()&&eligible.length)schedule(Math.max(failed?5000:0,Math.min(...eligible.map(o=>o.next))-now()),intent);
       }
     }
     function fullSync(){
