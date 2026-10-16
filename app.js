@@ -151,7 +151,8 @@ async function migrateLegacySyncState(){
   if(hadLegacyDeletes) saveDeletedTickets();
 }
 function isEntitySynced(entity,id){
-  if(!syncEngine) return true;
+  if(!syncEngine) return false;
+  if(entity==='ticket'&&typeof hasUnjournaledTicketChanges==='function'&&hasUnjournaledTicketChanges(id))return false;
   const record=syncEngine.state.records[MTSyncEngineCore.key(entity,id)];
   return !record || (!record.head && !record.tail);
 }
@@ -393,9 +394,10 @@ async function init(){
     // локально, журнал буде відновлено наступного запуску.
     syncEngine = null;
     globalThis.MTSafeError?.reportError?.(engineError,{scope:'sync-engine-init',userMessage:'Синхронізацію тимчасово вимкнено.'});
-    showToast('⚠️ Синхронізацію тимчасово вимкнено: журнал недоступний. Застосунок працює локально — усі зміни збережено.');
+    showToast('⚠️ Журнал синхронізації недоступний. Відправлення не підтверджено; перевіряйте результат локального збереження.');
   }
   if(syncEngine){
+    if(typeof hasUnjournaledTicketChanges==='function'&&hasUnjournaledTicketChanges())showToast('⚠️ Є локальні зміни, які не потрапили до черги Google. Потрібна перевірка; вони не позначаються синхронізованими.');
     try{ await migrateLegacySyncState(); }
     catch(migrateError){ globalThis.MTSafeError?.reportError?.(migrateError,{scope:'legacy-sync-migration'}); }
   }
