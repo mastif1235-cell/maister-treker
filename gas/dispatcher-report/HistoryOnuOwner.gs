@@ -29,10 +29,34 @@ function ONUHistorySource_(){
   });
 }
 function ONUHistoryGuard_(store){
-  var monthly=MTDispatcherReportCore.render(reportOnuCorrectionEffectiveRows_(store.ss,store.rows.filter(function(r){return /^2026-(09|10)-/.test(r.work_date);}))).monthly;
+  var monthRows=store.rows.filter(function(r){return /^2026-(09|10)-/.test(r.work_date);});
+  var effective=reportOnuCorrectionEffectiveRows_(store.ss,monthRows);
+  var monthly=MTDispatcherReportCore.render(effective).monthly;
   var sep=monthly['2026-09'],oct=monthly['2026-10'];
-  if(!sep||!oct||sep.onu_connection!==20||sep.onu_repair!==8||sep.total!==46115||oct.onu_connection!==7||oct.onu_repair!==5||oct.total!==20186)throw new Error('SEPTEMBER_OCTOBER_GUARD');
-  return ONU20_hash_({sep:sep,oct:oct});
+  // September is a closed, already verified period. October is still active:
+  // new lawful tickets may arrive after the history package was prepared, so
+  // guard its confirmed floor and protected ticket decisions, not yesterday's
+  // exact aggregate. ONU20_same_() plus this fingerprint locks the full live
+  // September/October snapshot for the duration of the batch.
+  if(!sep||!oct||sep.onu_connection!==20||sep.onu_repair!==8||sep.total!==46115||
+    oct.onu_connection<7||oct.onu_repair<5||oct.total<20186)throw new Error('SEPTEMBER_OCTOBER_GUARD');
+  var protectedTargets=['9a61c8b5-f8c8-4f0a-9446-d8e7cbfadf21','f22710e7-1142-49f5-a2b1-7f4a6e54fe94',
+    'a65dd9a4-fefb-4381-be39-8b1b0ed8d793','ac5bb18a-cd71-4e9e-97d9-bdf57353d921',
+    '2edc4344-42ed-44d8-9e10-384126505bcf','8b933540-b8e2-4493-8020-75754fb5ebec'].sort();
+  var protectedValues=protectedTargets.map(function(id){
+    var row=effective.find(function(r){return String(r.ticket_id)===id;});
+    var target=REPORT_ONU_CORRECTION_TARGETS[id];
+    if(!row||!target||!/^2026-10-/.test(row.work_date)||row.work_type!==target.work_type||
+      row.work_category!==target.work_category||row.onu_used!==target.onu_used)
+      throw new Error('SEPTEMBER_OCTOBER_GUARD');
+    return {ticket_id:id,work_date:row.work_date,work_type:row.work_type,work_category:row.work_category,onu_used:row.onu_used};
+  });
+  return ONU20_hash_({sep:{connections:sep.connections,onu_connection:sep.onu_connection,onu_repair:sep.onu_repair,total:sep.total,
+      payment_cash:sep.payment_cash,payment_cashless:sep.payment_cashless},
+    oct:{connections:oct.connections,onu_connection:oct.onu_connection,onu_repair:oct.onu_repair,total:oct.total,
+      payment_cash:oct.payment_cash,payment_cashless:oct.payment_cashless},
+    octoberProtectedTickets:protectedValues,
+    monthRows:monthRows.map(function(r){return Object.keys(r).sort().map(function(k){return r[k];});})});
 }
 function ONUHistoryExisting_(store){
   var allowed=new Set(ONU_HISTORY_PLAN.entries.map(function(e){return e.ticket_id;}));
@@ -83,8 +107,15 @@ function ONUHistoryRun_(mode,event){
     if(!rolling)ONUHistorySource_();
     var previews=ONUHistoryCheck_(store,rolling);
     if(mode==='verify'){
+      var guard=ONUHistoryGuard_(store),existing=ONUHistoryExisting_(store);
+      if(state){
+        if(state.plan!==ONU20_hash_(ONU_HISTORY_PLAN))throw new Error('HISTORY_PLAN_CHANGED');
+        ONU20_same_(state.baseline,store);
+        if(state.protected!==guard||state.existing!==existing)throw new Error('PROTECTED_MONTH_OR_JOURNAL_CHANGED');
+      }
       return ONUHistoryLog_({ok:true,mode:'READ_ONLY',applied:previews.filter(function(p){return p.state==='APPLIED';}).length,
-        planned:previews.length,pending:!!(state&&(state.pending||state.dirty)),stopped:!!(state&&state.stopped),visible:ONUHistoryVisible_(store),unresolved:ONU_HISTORY_PLAN.skipped});
+        planned:previews.length,pending:!!(state&&(state.pending||state.dirty)),stopped:!!(state&&state.stopped),
+        protected_month_guard:'PASS',previous_corrections_guard:'PASS',visible:ONUHistoryVisible_(store),unresolved:ONU_HISTORY_PLAN.skipped});
     }
     if(props.getProperty('ONU20-OWNER-CONTROL-V1')||props.getProperty('ONU-SEP26-CONTROL-V1'))throw new Error('OTHER_OWNER_OPERATION_PENDING');
     if(mode==='start'&&state){if(state.phase==='DONE')return ONUHistoryLog_({ok:true,code:'ALREADY_FINISHED',visible:ONUHistoryVisible_(store)});throw new Error('USE_HISTORY_RESUME');}
