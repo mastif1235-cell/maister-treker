@@ -1,0 +1,3352 @@
+{
+  "schema": 1,
+  "period": "2026-02..2026-08",
+  "primary_only": true,
+  "entries": [
+    {
+      "ticket_id": "1785294346877",
+      "date": "2026-02-19",
+      "time": "05:59",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "e50c92473d6fa291ceb81ba6b5512258393267009c4dab6b463c26d348bbcc20",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "823a18d8a94d7ae2dadb50af52792a9f39ce1256e06e6d82a801803f9db07616"
+    },
+    {
+      "ticket_id": "1785294911720",
+      "date": "2026-02-20",
+      "time": "06:12",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "6d4eb6ed5ae8e0fcd0ddcec955d1068a5f28d8fa109b2023bef03306ab9c9966",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "823988a0b130d90fa0dddc127f11e74c3eb02c9f8f484ca89f0378eab5e47c98"
+    },
+    {
+      "ticket_id": "1774458317607",
+      "date": "2026-02-24",
+      "time": "12:20",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "fc0c1b6d26a832f07e20503a0da708437d1a803a17b85bee24791f3230cd44e4",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "40ebe82a05238f8e63577a84c2dd66c4462bb65b53e73270004e0396e5525241"
+    },
+    {
+      "ticket_id": "1774458317615",
+      "date": "2026-02-27",
+      "time": "14:55",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "a7fc48e3467b2e45a61e199ee819d11692a66edf4e3756a6d754845e4f455e15",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "2294cd920a8fcb93a513408bc069785231ebb96d90728e096031b6b677eca018"
+    },
+    {
+      "ticket_id": "1774458317620",
+      "date": "2026-03-03",
+      "time": "13:12",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "2fb605e7836dd39d3d2b45463da1a3d069972722fbb24624d32d9fcc0df04ca4",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "734dc648b11e9c216ebdaa8dc53ca11e44efde378b59da3f38592ccebfe733b7"
+    },
+    {
+      "ticket_id": "1774458317632",
+      "date": "2026-03-10",
+      "time": "12:39",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "930f080692c320964c12cdcad4c5cebf8fc854186c941048cff38fa2e552de96",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "4715c441987915079de2d0db252e2558d2d89d3ad5871c1e70d878c0bd2b5efe"
+    },
+    {
+      "ticket_id": "1774458317633",
+      "date": "2026-03-10",
+      "time": "16:04",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "4e2715b671c9f986e906d2da55028f522a26d32315f38554ea292aba7ad0b9a5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3627858700b34ca6330545c12439a6c32ef7200b9d7d8d313baee427bf23b43e"
+    },
+    {
+      "ticket_id": "1774458317640",
+      "date": "2026-03-12",
+      "time": "17:19",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "1a12a9a23b95170cfec0b1a5db6699e9341d7b32ea6d22411770972c9ecb54f6",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "19f85cd3def0f3e8e1bb16d6a29daa770362a8073393fa37eb49a0129e14d3b4"
+    },
+    {
+      "ticket_id": "1774458317641",
+      "date": "2026-03-12",
+      "time": "17:20",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "76232f4fc1c7637652c02b150f65d6a4cc6efd49b7190256e0bd3309435b8622",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "74510baf3a09f421d1564e3737e40f7b0f441e6063e268a5a365411dbb789bd2"
+    },
+    {
+      "ticket_id": "1774458317643",
+      "date": "2026-03-13",
+      "time": "17:04",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "16239b26bd8e2e1dc2146c86f511de9046cc26f735f00573f5adcc585bb905e2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "57cf244533942b47a0e24d96938f903222c941c6b1e820de80121a0660b02298"
+    },
+    {
+      "ticket_id": "1774458317654",
+      "date": "2026-03-19",
+      "time": "17:43",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "9043832cc55e310d0e0f5a19c1e7f2a224c54f23fa20479009c160e0e74bcf79",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "9faa11be7ffe566015fa66ee513a6447caac6b17c3299d68f1864700fc6c77b9"
+    },
+    {
+      "ticket_id": "1774458317656",
+      "date": "2026-03-20",
+      "time": "12:16",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "20c5a7eb6ab35a9cb22e532b0aefb6d0028c327457f801693a457c313b8a3cdf",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "9cabdb28c3030742007465d0c846c78756175f5b6e58d1f92abc09e96d5f352a"
+    },
+    {
+      "ticket_id": "1774458317658",
+      "date": "2026-03-20",
+      "time": "16:47",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "543e3d753f96cd47d4028ded7977f22756ae2fe51f762dd1fae5a823f1f083df",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "025f6ebcc24df5b5888aef76c28ada423de652a4f84595b78483bdd0eebae27e"
+    },
+    {
+      "ticket_id": "1774458317659",
+      "date": "2026-03-23",
+      "time": "15:22",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "b11f8058d3474aa3e92501f96b3bac9c85aa95fb762e8eb2c6363d7876afc8fb",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "91acb97ff75685e5f9e012a28af0455e04f556161ba6fa2b06983ea9c1396cc7"
+    },
+    {
+      "ticket_id": "1774458317660",
+      "date": "2026-03-23",
+      "time": "17:34",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "1984aa518ab85a89dcb7615d9febd188e6cfb82e02f5cb2598454d3574900e3e",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "dbeb0adc7ad2547d492dce6fae9e2ce758f18a5f604f03fb4438eb0b91a7846c"
+    },
+    {
+      "ticket_id": "1774458317662",
+      "date": "2026-03-24",
+      "time": "15:38",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "9fbb2c636bdbdd5eb25919855cebc828c10a86848c65d5e169ba970151013d78",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "bb0c19c6c9b8291f94b054f1d0bf2bafb8a0962675e562e2e3b552c9384cd3ec"
+    },
+    {
+      "ticket_id": "1774537992330",
+      "date": "2026-03-26",
+      "time": "17:13",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "a97f6078cb4211f13dd66f335893f353b60c666f1467dff8c70062b4ca5c87c4",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "faac4f50ab4ce80dccd9fbba6aba6ab219e27d779b706fb4ec75709685fe07f2"
+    },
+    {
+      "ticket_id": "1775552919257",
+      "date": "2026-04-07",
+      "time": "12:08",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "cecba7c8878e7bd0d38188c28ff2d01872bf9fb714bfaaf12bfa98500443f572",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "770399d53cd09d74fbcdc640701b957f1ce2d486b711afe1df0db33e93bcc5bc"
+    },
+    {
+      "ticket_id": "1775560931553",
+      "date": "2026-04-07",
+      "time": "14:22",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "53589848237978b6d78496dddcfaf39d410833ddddae9d2a32ee1a3f3363d74c",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "b747add0f687794a5a59b575d5731a9c271639739ef860af3b170f3d272daff5"
+    },
+    {
+      "ticket_id": "1775660192784",
+      "date": "2026-04-08",
+      "time": "17:56",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "587d5ef478d4b7ad83c7796395543d291a95ade454f82ed8032ea7ef65e1b830",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "8d3091c459d5490bfd58e7d4c93554cfed67866edf20ba5e6b30ee994a30ce05"
+    },
+    {
+      "ticket_id": "1775665115106",
+      "date": "2026-04-08",
+      "time": "19:18",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "7fbd5a060e0f829f76cde84eb17849f230c04153f1a54e186798683cca8475f5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5d4d9eaf7e2a3605df51ae6a807cd593cf0ad53a9a82892d524792a7e901daf1"
+    },
+    {
+      "ticket_id": "1775739396889",
+      "date": "2026-04-09",
+      "time": "15:56",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "4272241d3ba712b80c414a98e1d6c39329f4983fa5cff133ba9260783973f4b4",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "7901a83fba63766c74ac9be4b6f0b4087c21d5b27d506a97dcf33ef2867efac3"
+    },
+    {
+      "ticket_id": "1776088770185",
+      "date": "2026-04-13",
+      "time": "16:59",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "297b7428af44be99ad124ea52c69b11b9498e3f55d93d10c8f6a311e1aba2824",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "69061f6aacee872d7286729d31007fedf0a59bae6d2d655db1c974fe3656f7b1"
+    },
+    {
+      "ticket_id": "1776088818297",
+      "date": "2026-04-13",
+      "time": "17:00",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "424ef17a2221533c8a1b2bb68e4b068466fda5971629581411e7c7f012b0ede2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "02fd01e9b8caf055a97a23af6e595c4df3dac2868ad81bbbedd6cdaa583e664c"
+    },
+    {
+      "ticket_id": "1776177019477",
+      "date": "2026-04-14",
+      "time": "17:30",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "1b61dc717952f2e54abb76db66b2ccff032960ec391f8006b71921412bc411d5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "f38144e9d9db2c5c57ecddd49a4a641d06a6e919a7d68ae4d37b964ac004e5ce"
+    },
+    {
+      "ticket_id": "1776253258044",
+      "date": "2026-04-15",
+      "time": "14:40",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "2ef3d4e1647fc52080de1bc89ad28cc7ec72044d6ad56fa83007b8d515d09ba8",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "126bbbe0ba42b03d466e6bedd0815c60acf9fccdcc7f9fdc1b76e297135ab325"
+    },
+    {
+      "ticket_id": "1776679298123",
+      "date": "2026-04-20",
+      "time": "13:01",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "a16e5e8319ab0301cb84d9ab8d273954146203fde0a9cb9078525e157dcf555d",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "71edf86824f63d72eef2da18b790b18e35a735b1acac63e49fdf1a13a63969a4"
+    },
+    {
+      "ticket_id": "1776753673740",
+      "date": "2026-04-20",
+      "time": "09:41",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "a2078c5f1839d921df43c64efb976e326102e36994b77530211752cbc6e353d8",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "7791f4d427f6b37d2fda64ebc10e1e7ac9841e952b9f2e964ca7cdae028c3835"
+    },
+    {
+      "ticket_id": "1776872210262",
+      "date": "2026-04-21",
+      "time": "18:36",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "b2a15703b0fa2db7004f7993bae5aaf268cc26889ce9ba80183fb4ed2079e0d0",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "43c5e83e986613d0a4517b99ea1782ad50b152eced2cd65d637aa3d1f875a1b3"
+    },
+    {
+      "ticket_id": "1777038711754",
+      "date": "2026-04-24",
+      "time": "16:51",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "1856746bf88093e7d31415109677c7f1b721cd614cd19c550feeab8fb88e93b2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "7369279d67b92e0b3940c88e6aceee08334e42b7a200d51b5514b0c61395ffc9"
+    },
+    {
+      "ticket_id": "1777380335877",
+      "date": "2026-04-28",
+      "time": "15:45",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "31e74c98b86a05c50ce4768205a69f82be2ac0a7b8c8c0a8d340c96e70939527",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "199d721b360eca132cc207919098045a084a755a3faf17d75e213b49f6018399"
+    },
+    {
+      "ticket_id": "1777460161753",
+      "date": "2026-04-29",
+      "time": "13:56",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "47c14571694ea31035dd10a7123fe24cc8d461ec9a80eae0eda9267547428e54",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3f8f9e4fb0c56106bdc00554f9cab6af18ca5c3c306b9221a673338137ca2e74"
+    },
+    {
+      "ticket_id": "1777632918687",
+      "date": "2026-04-30",
+      "time": "13:55",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "d6117a45bfcf9655007861fae5d9b94e3489403dc1e6b635d7cf51097326b006",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "dbd28c5ab54ef4e99706d0b1cb512c6901cb7a8eebabc5fe1cab10e68485428d"
+    },
+    {
+      "ticket_id": "1777632829892",
+      "date": "2026-05-01",
+      "time": "13:53",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "e71c0241c489428053de653a7f16de20b125dc8ddf2b45931c2c35a9695e57bc",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "4d9b3db8999a2ec989fe65c4aaa9eb8f906bd2ba90e60a8e8b3758b9d555aad2"
+    },
+    {
+      "ticket_id": "1777898832649",
+      "date": "2026-05-04",
+      "time": "15:47",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "032ffb92a18841c3c630a58c6a5869d5271e19a794bed39904472f99ceefa58d",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "1604d770af6849b2cd768255c833565c32183f2fca69b10ada4f9b0e95008aff"
+    },
+    {
+      "ticket_id": "1777983103971",
+      "date": "2026-05-05",
+      "time": "15:11",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "34c90551447a687f43a30e0e6dd39715097df5acb09c826b2b0c0b08c4ed5bfe",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5d96bafd4d693892973b56f0161dc6a2deb3e9682e2a813e005e46283ecbec9f"
+    },
+    {
+      "ticket_id": "1778488236517",
+      "date": "2026-05-11",
+      "time": "11:30",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "797fc5973694ac94b614ca149366f18d413eb9ec6c91b1b8e7a7385f9863c58b",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "f129ae0c445aaf6e005f654e579e2a864cb01cdff35a7a3a6a0285318f91f091"
+    },
+    {
+      "ticket_id": "1778600209681",
+      "date": "2026-05-11",
+      "time": "18:36",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "00d76231dd04470231c88bdd3b7c8ef91570f43161398f4b29c593e32e794163",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "76309608c97421f6ac1b938e304c9a16a139c3c86d5a36eaf4325ffdfa53e406"
+    },
+    {
+      "ticket_id": "1778600111186",
+      "date": "2026-05-12",
+      "time": "18:35",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "26c86094cc612ec8f783ad39053f59c4c360b219a1d2f132457e10f1b4d59f0d",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "9694c845bf101a1ccdf9ef6201782969714ebaa9c5d63f01947bd3752e063b65"
+    },
+    {
+      "ticket_id": "1778766620376",
+      "date": "2026-05-14",
+      "time": "16:50",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "94e5f11d3f9a97a5f8e6138ea4df720c633e68974129900bc383660f08b3379b",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "2c1c576e0b4d4066d2e32a76db24342d0613420375b0c1d34b9bcc360885f711"
+    },
+    {
+      "ticket_id": "1778851558370",
+      "date": "2026-05-15",
+      "time": "16:25",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "5ba5a7d87fa61e3143a55a5060ec133ab7f43e0c13a31f33e81e42086e9be24a",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "28f837c9c39f9817ac75fbe0b78dfa00c268eaba42321bbd4d68ba0b41464ecf"
+    },
+    {
+      "ticket_id": "1779100653589",
+      "date": "2026-05-18",
+      "time": "13:37",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "5e8e5563b93a21c49b41ee6e3f5896966f67865440f48325b3fee12a645092b5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ac344525eb057db5c79a606a18a16bb758f32931008516b110ac0d36b4c8c436"
+    },
+    {
+      "ticket_id": "1779112750004",
+      "date": "2026-05-18",
+      "time": "16:59",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "f4a7cb900a90183962028dbd1afab65f14ebc9377882dd894e8b9d677d5f3562",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "80fc34bba4221d3fd8c7d2feb0d6d9c7c0ac76ffd241ab394cef4887adbd7e94"
+    },
+    {
+      "ticket_id": "1779191572330",
+      "date": "2026-05-19",
+      "time": "14:52",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "ca7ca845553fd8621dbdf5727f6caf10414e134ab1a2aa74ec0d91ab6eef9997",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "4cbc68aa5b6359e036be97b8466e3b947cb78894f166f0b733f8bab4ca41c043"
+    },
+    {
+      "ticket_id": "1779273861764",
+      "date": "2026-05-20",
+      "time": "13:44",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "4b7c3229e5b9005af8a4efe77dd3e1df40c555e2e68d97e1b1d964df2e7547a0",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "022b1d2de7f1f69959baea8f4fe790004cd9f7bcefe34bbd0b66765bca29af79"
+    },
+    {
+      "ticket_id": "1779286102740",
+      "date": "2026-05-20",
+      "time": "17:08",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "893e0baa466533c90df9ad3f5bb6a1c64dffdbc6c6cace5ec7489498a7b0c7b7",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "1dce05cc08252f89fb7e5e7022fb0ee52f285735b0faa8a24a3a6ef09a0d46b3"
+    },
+    {
+      "ticket_id": "1779368908387",
+      "date": "2026-05-21",
+      "time": "16:08",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "a0d5fcbf35e560fa3c6489f658a5518bc5d707bd9cbd6d74a9206a6afc55cd25",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "b1f1fba22f09473a64750e872bb8d5bf58dfb5a8b61232a1d12f1139c59314d2"
+    },
+    {
+      "ticket_id": "1779773940530",
+      "date": "2026-05-25",
+      "time": "08:39",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "c5b8999838a8b3ed83a0916ce70bc20eff664ca9e015fe3385ce0ead240bcfc8",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "d91591b8aac088d4647da020f4440c011fbe6029eb9c2522ec46095d9d2b7f3b"
+    },
+    {
+      "ticket_id": "1779795603546",
+      "date": "2026-05-26",
+      "time": "14:40",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "df989035b5ce1587ce3e8796103ad0c74f179ea775814cf57b0ac14dafa2346a",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "21bf0dbd41c4ebf203d1ed74100898db478e9a9d1ed666d3c7a25a9cf598374e"
+    },
+    {
+      "ticket_id": "1779883092117",
+      "date": "2026-05-27",
+      "time": "14:58",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "eed6572556aa0e95f391e688727d8af4fc9eeb2db82ebdc3abe316c8c5be87c6",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5b27e6349613329cdf0800ff230abd5e12f406f1a7aab501f310879b232f0782"
+    },
+    {
+      "ticket_id": "1779966515590",
+      "date": "2026-05-28",
+      "time": "14:08",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "305c0647ac70a4d340ab585ebad33b66e49dc63e15fe293694fafe82682a2ff7",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "9b4e7ed0a05acf2d5eb8e43e1cb2c38192b4147d2dee74aa059515c466977c33"
+    },
+    {
+      "ticket_id": "1779976239274",
+      "date": "2026-05-28",
+      "time": "16:50",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "2eff94c21d39f5899917c2309a691cd1492911a787e4a1e2241214403dd6fc87",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3b02933a9efe1313aa79feb29a5853f8939c44d56c26a2a08f0b291090679515"
+    },
+    {
+      "ticket_id": "1780318511088",
+      "date": "2026-06-01",
+      "time": "15:55",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "46a4a3e922fcd558f7553707cb5386a10689e7117956d783ccd083e028cc66b9",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "7d8650f67420c70e1e86b613fcf3b220dc4877bd490aa519be79d26541c04cfc"
+    },
+    {
+      "ticket_id": "1780318574679",
+      "date": "2026-06-01",
+      "time": "15:56",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "ffa626dae283db770cc83aefc28a779f29aa517de6105e8c1c0b862a02c2d594",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5d11b6aec5f146641d45e2bbeda63f9d402db96a5114c4ebe05de3aa6e4da4a0"
+    },
+    {
+      "ticket_id": "1780391835610",
+      "date": "2026-06-02",
+      "time": "12:17",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "c4c9e788882a56605e9d3f4ae3f3fc1dc5084c705147cc11ba20df289e357f7f",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "c2d91ff11add11a5bd8c1ea0eb2278e2f9cee1f01626398f556556692ef9dce5"
+    },
+    {
+      "ticket_id": "1780477743716",
+      "date": "2026-06-03",
+      "time": "12:09",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "5d97ff8b6557154f3dc771e3053d94a352c16b92f944728ac39cca3e8e461e6b",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "8e31f6f077179b1c60be9cc60595a1310730f362a7b46de3d57df5b34e3e6644"
+    },
+    {
+      "ticket_id": "1780575838562",
+      "date": "2026-06-04",
+      "time": "15:23",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "ad9b9e3cccd53446848f19931b8e0e53412e7fb788c72cd41d2490d5c8d92871",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "d710d24547cf98539370ed882d4c76be27217d56a4c96098cb03bdc29527b29c"
+    },
+    {
+      "ticket_id": "1781788829562",
+      "date": "2026-06-17",
+      "time": "16:20",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "9ee895f4dd665b236a160744bdf249ae79ec908f51d5897f80a33de8f2e6ee61",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "b1a08b9798eb6c080f25708b26b75a3a005adc663bc47e619d703bfab02606f2"
+    },
+    {
+      "ticket_id": "1781788645516",
+      "date": "2026-06-18",
+      "time": "16:17",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "6772cee3b4f6c16ae16ba8338977de1c6bd4dae4154eae51bd2f1995f5581cef",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "439ab6a15638fa78ffe976f06aa8b13bf0ebd57692e7cea0dcbf6d50f1e35780"
+    },
+    {
+      "ticket_id": "1781870979262",
+      "date": "2026-06-19",
+      "time": "15:09",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "32b8db85f8d784b57d47a63e62893d0ef145eda26773847c5633995783851b4d",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ccb40c9d944ce461b0b475342347ef221b1e2fced4ea1abebc3df58dc945df92"
+    },
+    {
+      "ticket_id": "1783937356225",
+      "date": "2026-06-24",
+      "time": "16:32",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "f9ecd11b11524a7ab7de56e322619d5f02187ce7eb9f4e3cf954280e694c153b",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3b0c810c25f3ab3492af03986a3fc36cd9d79d2f2b2c660afec6befa4b3ebfcd"
+    },
+    {
+      "ticket_id": "1783937356226",
+      "date": "2026-06-24",
+      "time": "13:30",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "124289bcd2191fb7ed57654074047a4d0240e7d129673d3dbfe4e02a4e887bf2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "b55d5ffafa6a7a74a88725d9988cc47b14223b3d2de22e57373c2fb2184a4ff3"
+    },
+    {
+      "ticket_id": "1783937356224",
+      "date": "2026-06-25",
+      "time": "12:58",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "89282abb27b17fcd14c8720fc60f823852038a4fbb31cddd3c4504e9c52747f7",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "fb3ff970b6f84c01ea1f7b06ae8c694df4ddea0d8ae61418f2fb98819a1e627a"
+    },
+    {
+      "ticket_id": "1783937356211",
+      "date": "2026-06-30",
+      "time": "17:20",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "d97dcc6528a900ba4ee74e6d6753b1593ee596120130f3c76b1f74c286847990",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "6640720eae0281e55debc50fb8511fd01ef9b36604a014acfdafdec9be598c37"
+    },
+    {
+      "ticket_id": "1783937356210",
+      "date": "2026-07-01",
+      "time": "14:27",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "cf47b49d62f2a8ed03bca88fa8ea0ad2104f4e128109d154e3ca4dc8f3aacc6f",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "246e1756d61b2ba8027bc63b47e0c169f464c49bafe2536a3ba1b8de8018db76"
+    },
+    {
+      "ticket_id": "1783937356205",
+      "date": "2026-07-03",
+      "time": "13:47",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "cc49b3f93693a6d8a372790d26a9c9cb81e42bf3117cb00c0557604c7954d0d4",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5ef0a451bda7900247b40b03c52b56f29ec1d9718a726e60cd21ed6dcb8e4531"
+    },
+    {
+      "ticket_id": "1783937356203",
+      "date": "2026-07-06",
+      "time": "16:08",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "c8e5a21db2b4c9d22b208bd7850647c3271b72fdbce2a49a85b34c168cdda8cd",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "16dc943918cfb89f52714529aff3c0ed6978914c5e5ff97f72ebe0ab3b9da5b4"
+    },
+    {
+      "ticket_id": "1783937356200",
+      "date": "2026-07-07",
+      "time": "17:34",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "9483fa3913403b2a48af57978e2d5190b874d3c3b33e5a40860c2b9905297bbf",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "dea3c37dd73aa2b6ad656b8aeb36cabe9ce44d1c8ec9be724475300986d4515e"
+    },
+    {
+      "ticket_id": "1783937356201",
+      "date": "2026-07-07",
+      "time": "13:37",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "e1b850a9b5416d409facbd01dfd9c1eb164dcd8301ff80ce3fca56f22898efed",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "0b37c082622928bb66cbe5eb44a3cf15b2894cee78bf7b5a4bfc714fb1ee16b2"
+    },
+    {
+      "ticket_id": "1783937356194",
+      "date": "2026-07-10",
+      "time": "13:09",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "117603820c56343355a7af25109d44d41e32a8bada34ecf21930933d987ebcc3",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3338c5e632b5aa9fa0b9d5c7aaa7267ee483836ce17b6da8cd6080284875fc2e"
+    },
+    {
+      "ticket_id": "1784036624384",
+      "date": "2026-07-14",
+      "time": "16:40",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "0791e507d93be171581a5485663b35ae8e434be55bbff5b4e97fb5f15ea19de7",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "f3a096598500a7a9f6348c878afe5d1de5c164dc29290f8549211213e9935b87"
+    },
+    {
+      "ticket_id": "1784193304473",
+      "date": "2026-07-16",
+      "time": "12:10",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "39b40a33d951c28e5b0485236fba7458b73b352e9f5abc03cb6cd616c880e5b7",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "334da84a5a5a3365e12964c89f41b11b01c7723b8b78e0ef708c7205f09e5494"
+    },
+    {
+      "ticket_id": "1784200416214",
+      "date": "2026-07-16",
+      "time": "14:10",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "0ef9994ce7c986f940cf19a6ee579c57ee32ea034d632380c325e956a25764ae",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "c4eeeb98b36c19c4ffa8c3239224d924fc608bc08e8802e873bb796c47a06d89"
+    },
+    {
+      "ticket_id": "1784208104906",
+      "date": "2026-07-16",
+      "time": "16:19",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "5283fd874409a4c9b0f8161713cc2b3faa15f1237bfabe5f30fdb8342fab222a",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "320180257bee6513d08700f8698ce4e9976edefcb4a7f71d5384a59da5f1beb1"
+    },
+    {
+      "ticket_id": "1784283790836",
+      "date": "2026-07-17",
+      "time": "13:16",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "0a869b24d5575328f43da42c57849fc8f6371a49d0f4b8e50d06e87f7d7a8b59",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "35decdbdeac5ed0d9e4ac498bf02b70fec55a607c1e68eaabfccc8afc0130ad0"
+    },
+    {
+      "ticket_id": "1784549600015",
+      "date": "2026-07-20",
+      "time": "15:10",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "bed5f1b70b1a58d8e48f9665fb3319067f0152d8d3bc1012d4102f7932635044",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ae5d642c33784ee176c966c4f765e732c50f30c9be16ec41b5bc0d8285798e21"
+    },
+    {
+      "ticket_id": "1784721300507",
+      "date": "2026-07-22",
+      "time": "14:52",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "03fac6158655959a1f596d95768367812ce1a6e2e97fae5bbe1f3312bca4f64e",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "6200c7d2bf3bd6fa187341512b56725adda0451b00d07055bca3a7a56f80a569"
+    },
+    {
+      "ticket_id": "1784728430751",
+      "date": "2026-07-22",
+      "time": "16:51",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "4691c8c2ab7c3cc0648f00dd5c1bea34f5014ccd4b15af9f98320512b217b09b",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "7afa88c63e261da1deeac6a00d0848baca8cf74848122356453801441f036f2a"
+    },
+    {
+      "ticket_id": "1784882212598",
+      "date": "2026-07-24",
+      "time": "11:36",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "03a4d0091e2ec764e85aa3bd3e3ba1a2d15d29be9a645938707888c454772bbb",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "283aced196d531c95b0ef79f5970fc09813c1368695762c75a3a8f6dca2f89b0"
+    },
+    {
+      "ticket_id": "1785153809300",
+      "date": "2026-07-27",
+      "time": "15:01",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "51ed87c9712d42b47f62c52ced4bdb0083833aff7f6d71c5b734d6318f7559c6",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ea5c5436b7beb9236e9e728bfd88858cde6fd17535e3e28fc43cada120e9df24"
+    },
+    {
+      "ticket_id": "1785160782219",
+      "date": "2026-07-27",
+      "time": "16:01",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "ae70fef2a961b79030ba368894843df4860e8984f9151a67cd0470f1193ab1d0",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ae2e754a9c0783ea3dd1985c2997c77a509da58b4295bb31bb0fb45e029ea076"
+    },
+    {
+      "ticket_id": "1785248318966",
+      "date": "2026-07-28",
+      "time": "13:50",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "16b1100814293fa3427885d3f1ad1769f27c14e513596dec1db24f51a109e130",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "5ad9a7d47d554d70e291e54c7b58db2ce74d1852a30e9502495f2e69e97e1531"
+    },
+    {
+      "ticket_id": "1785418519327",
+      "date": "2026-07-30",
+      "time": "16:33",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "d17fc3d4123e767a033a15d83eb42bd003c3158795ce51f7efeb5849db6bd96e",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ca2804a74d76c4c68a225cdbeb76fbcd97a7fd3d9f4b7197db71a285c16a6fcf"
+    },
+    {
+      "ticket_id": "1785512791074",
+      "date": "2026-07-31",
+      "time": "18:43",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "cc6d586790fcc8f89414213a0d3340cd494971e2fe2b81e61fcdcabedd8ac694",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "2e056fc76a70aff72b922a4dbec3476eb88aad1f5f5720383a46ba20f3a835ed"
+    },
+    {
+      "ticket_id": "1785762141901",
+      "date": "2026-08-03",
+      "time": "16:00",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "e3714789199219f068e7e7685ae3295c88b39209f159b612aa50e013838ee011",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "fab98a3e3f7550176d22615e0ae8e1ce7c4cc94a9a27bb2f4f622695109b8ab6"
+    },
+    {
+      "ticket_id": "1785846336898",
+      "date": "2026-08-04",
+      "time": "15:23",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "21c0328a8d3138f5903fbb8b1bce8d1e96309bc690c03615c4de4cc6bc246ac5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "963df67f7640f63c2ea0fbc92100295072dbda7f61f08bc36420c37237f0f2fe"
+    },
+    {
+      "ticket_id": "1785931845965",
+      "date": "2026-08-05",
+      "time": "15:07",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "1a096f090810255564ce53188b1522ee31d8f99b247593f94c4b4713b56e3b88",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "335054a6f1bde1735a76ef2e2ca9bff07a79aa72734518e207310f123a93a649"
+    },
+    {
+      "ticket_id": "1786014375660",
+      "date": "2026-08-06",
+      "time": "14:03",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "51340f8d10dadb1eedd1b0c7f18211e0f30d820bd304bc0b941a34707b5bc6b9",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "e1f025111aac1e3aa903358fbc5025d269c377da78e0aca6629655cce2011686"
+    },
+    {
+      "ticket_id": "1786532772028",
+      "date": "2026-08-12",
+      "time": "14:03",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "ae5364459969ceaf36c474a3e6164936dfcb81c28565982860d42147541feee2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "0bb9dad2ce7bb459987d7992e12173402bc2a672d0dcef157f0ee2c9e7ecf568"
+    },
+    {
+      "ticket_id": "1786612686963",
+      "date": "2026-08-13",
+      "time": "12:16",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "5c65038772f4728fd562fe55337e5712bb0afb428179e4e2e1eaa32657dfd77d",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "804583e53a4e67ba2ed664dc2f8b5d1e18d14d51d5e7d8a750a05d30844089fb"
+    },
+    {
+      "ticket_id": "1786627057574",
+      "date": "2026-08-13",
+      "time": "16:14",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "422b88169514341c21f92a1f1b672f94f08cb4e04cdc5ba05a2b4e2adfd90029",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "cf2c6ff08e9e25c2f2ba2039b280a98b73ec39940fbeed15a56940989abb29ec"
+    },
+    {
+      "ticket_id": "1786711099594",
+      "date": "2026-08-14",
+      "time": "15:33",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "7f05ff6e8784c80e7416e384c1554ccfedf009c1f9f90dff6be040e64bdfa80e",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "4840ac69978e41e072ef64f60753cf411badea11e3c2545c3c2e94bdf3fce4b6"
+    },
+    {
+      "ticket_id": "1786979244701",
+      "date": "2026-08-17",
+      "time": "18:05",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "6dbb69248c9ca07e71b52ebc47e347d8a644c0f82987dfd37b7320b73347f361",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "75afe712dfe7aeb3fce7ea927a1ce7474ab42da3c15f916601b3773f0d42ce7b"
+    },
+    {
+      "ticket_id": "1787055170202",
+      "date": "2026-08-18",
+      "time": "15:07",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "0a0315da05daf11e04643e4f3ee39bf28501669d80d9c6c5efa5385c2dfe5e30",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "3691fb440c905fed623dbdbf0bfc5b53f2b0f3811769cb2f2edc785e614577d2"
+    },
+    {
+      "ticket_id": "1787132462492",
+      "date": "2026-08-19",
+      "time": "12:32",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "b15f1c4d19459d84f37ccf7b826e5d3d379c74fb60826929d446a0fc91ed1efd",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "056ebd3c9fa66109f690336299d922c1ce8fb74e8f043e34cedcace5eaa101dc"
+    },
+    {
+      "ticket_id": "1787146582393",
+      "date": "2026-08-19",
+      "time": "16:34",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "aa71857fcb6e5efa2a8a50a2324b48b55e10788e8e40ce508a4e0758175aa5d9",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "1200f3dc701c6b78003fd98deac458402baa227e4a306669e9c120283cce773f"
+    },
+    {
+      "ticket_id": "1787237616493",
+      "date": "2026-08-20",
+      "time": "17:52",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "f70945a3e7b3cc49147e06dbc8813d5f0e9a71b7365ab88ee90b1faca7c519a2",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "a1092daefe1a4bfa76a135ee14ae62e2a8e1859d8cec0fd3b43c99ee9ee81125"
+    },
+    {
+      "ticket_id": "1787658795150",
+      "date": "2026-08-25",
+      "time": "14:50",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "b47f5bf4c67314c403ed2d532f7f9e5997316c9733ab3ed70735528313d30703",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "16a1fb525187fbfa06742c18b7116011aa54e21ed326d2df306452f854cc7a12"
+    },
+    {
+      "ticket_id": "1787670285948",
+      "date": "2026-08-25",
+      "time": "18:02",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "7bb45d678c9021afbc0abb27b650560da06aa75c324cead9b89f7510011f1ed5",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "b268149ee4a857b5f3d11489eeb64722491f0ac27c064fc1ccc737fb7f698cc5"
+    },
+    {
+      "ticket_id": "1787745536266",
+      "date": "2026-08-26",
+      "time": "14:53",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "dfb0c2fcaafb3508d6ce4c61ca9d2f773b0e15758e5831690fe60d625c5402f9",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "6d6f53aeda34b360fd07bdf996c2459e6aab35673a82e800693144a1cbda4adc"
+    },
+    {
+      "ticket_id": "1787823011288",
+      "date": "2026-08-27",
+      "time": "12:23",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "7c8d640a1efa6d331b3a01fbd1555c13f151e5e1dad7d2b170776ecfcf8ab580",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "ad947154f5699337962167d23906f8e9c2e5dae73fa2fe954db169d05cb731b9"
+    },
+    {
+      "ticket_id": "b8327685-27c7-4fb5-9c65-290e02bca93d",
+      "date": "2026-08-31",
+      "time": "13:26",
+      "reason": "approved_legacy_connection_default",
+      "source_digest": "6593e36ba0d441ca15a9b1dd28f28b1bb698ff3125afe45c99335cda88fedd8a",
+      "target": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 1
+      },
+      "before": {
+        "work_type": "Підключення",
+        "work_category": "connection",
+        "onu_used": 0
+      },
+      "evidence_digest": "2866c9376163b7dc89ffb40ec83c0de2c524f40c49ddb869e3ee7559f6ce965b"
+    }
+  ],
+  "skipped": [
+    {
+      "ticket_id": "1786990744381",
+      "date": "2026-08-17",
+      "reason": "NOT_ACTIVE_NO_RESTORE"
+    },
+    {
+      "ticket_id": "1786990035908",
+      "date": "2026-08-17",
+      "reason": "EXCLUDED"
+    },
+    {
+      "ticket_id": "1786951228806",
+      "date": "2026-08-17",
+      "reason": "EXCLUDED"
+    },
+    {
+      "ticket_id": "1785702374503",
+      "date": "2026-08-01",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1783937356198",
+      "date": "2026-07-10",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1783937356206",
+      "date": "2026-07-02",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1783937356221",
+      "date": "2026-06-25",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1783937356229",
+      "date": "2026-06-23",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1782139021388",
+      "date": "2026-06-22",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1782125708435",
+      "date": "2026-06-22",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1781880642469",
+      "date": "2026-06-19",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1781716479670",
+      "date": "2026-06-15",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1781716452178",
+      "date": "2026-06-15",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1781370027980",
+      "date": "2026-06-12",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1781007458879",
+      "date": "2026-06-09",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1780976220208",
+      "date": "2026-06-08",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1780922851831",
+      "date": "2026-06-05",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1780577759996",
+      "date": "2026-06-04",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1780498468783",
+      "date": "2026-06-03",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1780061448638",
+      "date": "2026-05-29",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779892075393",
+      "date": "2026-05-27",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779795507475",
+      "date": "2026-05-26",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779774198131",
+      "date": "2026-05-25",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1779774116596",
+      "date": "2026-05-25",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779774249422",
+      "date": "2026-05-23",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779460556673",
+      "date": "2026-05-22",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779373550584",
+      "date": "2026-05-21",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779368991602",
+      "date": "2026-05-21",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779265588493",
+      "date": "2026-05-20",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779202193077",
+      "date": "2026-05-19",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779198670142",
+      "date": "2026-05-19",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1779180387089",
+      "date": "2026-05-18",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778840261980",
+      "date": "2026-05-15",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778837660005",
+      "date": "2026-05-15",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778836817895",
+      "date": "2026-05-15",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778766674833",
+      "date": "2026-05-14",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778584349086",
+      "date": "2026-05-12",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1778163875815",
+      "date": "2026-05-07",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1777992960674",
+      "date": "2026-05-05",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1777901243170",
+      "date": "2026-05-04",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1777375798300",
+      "date": "2026-04-28",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1777300359444",
+      "date": "2026-04-27",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1777294865998",
+      "date": "2026-04-27",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776949734185",
+      "date": "2026-04-23",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776949675040",
+      "date": "2026-04-23",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776938600051",
+      "date": "2026-04-23",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776853930120",
+      "date": "2026-04-22",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1776797323194",
+      "date": "2026-04-21",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1776753785673",
+      "date": "2026-04-20",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776438212349",
+      "date": "2026-04-17",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1776356185912",
+      "date": "2026-04-16",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776349800760",
+      "date": "2026-04-16",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776349721573",
+      "date": "2026-04-16",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776095164497",
+      "date": "2026-04-13",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776687686923",
+      "date": "2026-04-13",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1776684173195",
+      "date": "2026-04-13",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775819913228",
+      "date": "2026-04-10",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775812062283",
+      "date": "2026-04-10",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775746953483",
+      "date": "2026-04-09",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775745601130",
+      "date": "2026-04-09",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775660244884",
+      "date": "2026-04-08",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1775480931283",
+      "date": "2026-04-06",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1775480134445",
+      "date": "2026-04-06",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1774628690218",
+      "date": "2026-03-27",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1774628565896",
+      "date": "2026-03-27",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774534269278",
+      "date": "2026-03-26",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317666",
+      "date": "2026-03-25",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317652",
+      "date": "2026-03-18",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317645",
+      "date": "2026-03-13",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317642",
+      "date": "2026-03-12",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317639",
+      "date": "2026-03-11",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317626",
+      "date": "2026-03-06",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1774458317625",
+      "date": "2026-03-05",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1774458317624",
+      "date": "2026-03-04",
+      "reason": "OTHER"
+    },
+    {
+      "ticket_id": "1774458317623",
+      "date": "2026-03-04",
+      "reason": "UNKNOWN_TYPE"
+    },
+    {
+      "ticket_id": "1774458317609",
+      "date": "2026-02-24",
+      "reason": "UNKNOWN_ONU_CONSUMPTION"
+    }
+  ],
+  "unchanged": [
+    {
+      "ticket_id": "eb451277-534c-43dc-9208-cc584f9a598e",
+      "date": "2026-08-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "28d577cb-bd52-4c97-8196-d67e0d39a2d6",
+      "date": "2026-08-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "4b0f227f-9c6a-417b-80d0-366b93fa9123",
+      "date": "2026-08-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1787926658040",
+      "date": "2026-08-28",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787912687255",
+      "date": "2026-08-28",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787907664947",
+      "date": "2026-08-28",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787839772742",
+      "date": "2026-08-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787755400845",
+      "date": "2026-08-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787753985132",
+      "date": "2026-08-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787737072398",
+      "date": "2026-08-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787651175164",
+      "date": "2026-08-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787649882400",
+      "date": "2026-08-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787584826196",
+      "date": "2026-08-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787567242419",
+      "date": "2026-08-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787328743055",
+      "date": "2026-08-21",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787225032793",
+      "date": "2026-08-20",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787216746188",
+      "date": "2026-08-20",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1787152452460",
+      "date": "2026-08-19",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787140033784",
+      "date": "2026-08-19",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787062711916",
+      "date": "2026-08-18",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1787049043937",
+      "date": "2026-08-18",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1787044186198",
+      "date": "2026-08-18",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786959946997",
+      "date": "2026-08-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786955790521",
+      "date": "2026-08-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786803541554",
+      "date": "2026-08-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786801462565",
+      "date": "2026-08-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786698977306",
+      "date": "2026-08-14",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786620274826",
+      "date": "2026-08-13",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786540490206",
+      "date": "2026-08-12",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786526332281",
+      "date": "2026-08-12",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786457151457",
+      "date": "2026-08-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786438115288",
+      "date": "2026-08-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786372715354",
+      "date": "2026-08-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786370445714",
+      "date": "2026-08-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1786366772051",
+      "date": "2026-08-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786361385312",
+      "date": "2026-08-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786359841518",
+      "date": "2026-08-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786108878633",
+      "date": "2026-08-07",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786104424904",
+      "date": "2026-08-07",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786090636535",
+      "date": "2026-08-07",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786023796835",
+      "date": "2026-08-06",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1786018708831",
+      "date": "2026-08-06",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785924044983",
+      "date": "2026-08-05",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785920736322",
+      "date": "2026-08-05",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1785751432076",
+      "date": "2026-08-03",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785748602912",
+      "date": "2026-08-03",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785503206603",
+      "date": "2026-07-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785496338080",
+      "date": "2026-07-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785488043904",
+      "date": "2026-07-31",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785409798655",
+      "date": "2026-07-30",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785337869712",
+      "date": "2026-07-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785336241233",
+      "date": "2026-07-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785331559187",
+      "date": "2026-07-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785314383058",
+      "date": "2026-07-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785228203157",
+      "date": "2026-07-28",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785146183504",
+      "date": "2026-07-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1785142147950",
+      "date": "2026-07-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784900050434",
+      "date": "2026-07-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1784895121480",
+      "date": "2026-07-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784806233868",
+      "date": "2026-07-23",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784711444289",
+      "date": "2026-07-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1784710228992",
+      "date": "2026-07-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784643003428",
+      "date": "2026-07-21",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784640209809",
+      "date": "2026-07-21",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784538811003",
+      "date": "2026-07-20",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1784294890347",
+      "date": "2026-07-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784127041696",
+      "date": "2026-07-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784120073377",
+      "date": "2026-07-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784113153627",
+      "date": "2026-07-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784104228082",
+      "date": "2026-07-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784178158471",
+      "date": "2026-07-15",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784048596976",
+      "date": "2026-07-14",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784031121367",
+      "date": "2026-07-14",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1784025795050",
+      "date": "2026-07-14",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783675573563",
+      "date": "2026-07-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783499909308",
+      "date": "2026-07-08",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356202",
+      "date": "2026-07-06",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783336285098",
+      "date": "2026-07-06",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356207",
+      "date": "2026-07-02",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356208",
+      "date": "2026-07-02",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356209",
+      "date": "2026-07-02",
+      "reason": "approved_customer_ownership",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356213",
+      "date": "2026-06-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356214",
+      "date": "2026-06-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1782723300157",
+      "date": "2026-06-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356216",
+      "date": "2026-06-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356217",
+      "date": "2026-06-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356220",
+      "date": "2026-06-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356222",
+      "date": "2026-06-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1783937356228",
+      "date": "2026-06-23",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1782135770715",
+      "date": "2026-06-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1782128548219",
+      "date": "2026-06-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781882915421",
+      "date": "2026-06-19",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781880526066",
+      "date": "2026-06-19",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781871158184",
+      "date": "2026-06-19",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781790925270",
+      "date": "2026-06-18",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781788780325",
+      "date": "2026-06-18",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781716587669",
+      "date": "2026-06-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781716532814",
+      "date": "2026-06-16",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781716436224",
+      "date": "2026-06-15",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781716414678",
+      "date": "2026-06-15",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781179383203",
+      "date": "2026-06-11",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781179247584",
+      "date": "2026-06-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781104713848",
+      "date": "2026-06-10",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781088809796",
+      "date": "2026-06-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1781007346592",
+      "date": "2026-06-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780922614941",
+      "date": "2026-06-08",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780976433188",
+      "date": "2026-06-08",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780498750666",
+      "date": "2026-06-03",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780479152538",
+      "date": "2026-06-03",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780498841441",
+      "date": "2026-06-02",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1780049943290",
+      "date": "2026-05-29",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1779875012501",
+      "date": "2026-05-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1779874970179",
+      "date": "2026-05-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1779774046364",
+      "date": "2026-05-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1779469363834",
+      "date": "2026-05-22",
+      "reason": "NO_PHYSICAL_DIFF",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778667601083",
+      "date": "2026-05-13",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778667517474",
+      "date": "2026-05-13",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778599976047",
+      "date": "2026-05-12",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778579833958",
+      "date": "2026-05-12",
+      "reason": "CONFIRMED_NO_ONU",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778498248512",
+      "date": "2026-05-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778491604115",
+      "date": "2026-05-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778163907065",
+      "date": "2026-05-07",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778163811083",
+      "date": "2026-05-07",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1778059754581",
+      "date": "2026-05-06",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1777903009188",
+      "date": "2026-05-04",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1777288017352",
+      "date": "2026-04-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1777287852811",
+      "date": "2026-04-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1777043044304",
+      "date": "2026-04-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1777038786488",
+      "date": "2026-04-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1776797266991",
+      "date": "2026-04-21",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1776503311178",
+      "date": "2026-04-18",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1776093623146",
+      "date": "2026-04-13",
+      "reason": "CONFIRMED_NO_ONU",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1775815433108",
+      "date": "2026-04-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1775637356507",
+      "date": "2026-04-08",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317665",
+      "date": "2026-03-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317664",
+      "date": "2026-03-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317663",
+      "date": "2026-03-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317661",
+      "date": "2026-03-23",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317657",
+      "date": "2026-03-20",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317655",
+      "date": "2026-03-19",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317653",
+      "date": "2026-03-19",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317651",
+      "date": "2026-03-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317650",
+      "date": "2026-03-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317649",
+      "date": "2026-03-17",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317648",
+      "date": "2026-03-16",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317647",
+      "date": "2026-03-16",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317646",
+      "date": "2026-03-16",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317644",
+      "date": "2026-03-13",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1774458317638",
+      "date": "2026-03-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317636",
+      "date": "2026-03-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317635",
+      "date": "2026-03-11",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317634",
+      "date": "2026-03-10",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317631",
+      "date": "2026-03-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317630",
+      "date": "2026-03-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317629",
+      "date": "2026-03-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317628",
+      "date": "2026-03-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317627",
+      "date": "2026-03-09",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1774458317622",
+      "date": "2026-03-04",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317621",
+      "date": "2026-03-03",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317618",
+      "date": "2026-03-02",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317617",
+      "date": "2026-03-02",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317616",
+      "date": "2026-02-27",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317614",
+      "date": "2026-02-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317613",
+      "date": "2026-02-26",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317611",
+      "date": "2026-02-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317610",
+      "date": "2026-02-25",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317608",
+      "date": "2026-02-24",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785306854846",
+      "date": "2026-02-23",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1774458317606",
+      "date": "2026-02-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    },
+    {
+      "ticket_id": "1774458317605",
+      "date": "2026-02-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317604",
+      "date": "2026-02-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1774458317602",
+      "date": "2026-02-22",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 0
+    },
+    {
+      "ticket_id": "1785294641730",
+      "date": "2026-02-19",
+      "reason": "CONFIRMED_REPAIR_EVIDENCE",
+      "onu": 1
+    }
+  ],
+  "provisional_csv_simulation_only": {
+    "2026-10": {
+      "connections": 7,
+      "onu_connection": 7,
+      "onu_repair": 5,
+      "total_physical_onu": 12,
+      "total": 20186,
+      "payment_cash": 16986,
+      "payment_cashless": 3200
+    },
+    "2026-09": {
+      "connections": 20,
+      "onu_connection": 20,
+      "onu_repair": 8,
+      "total_physical_onu": 28,
+      "total": 46115,
+      "payment_cash": 43055,
+      "payment_cashless": 3060
+    },
+    "2026-08": {
+      "connections": 18,
+      "onu_connection": 18,
+      "onu_repair": 11,
+      "total_physical_onu": 29,
+      "total": 52336,
+      "payment_cash": 38046,
+      "payment_cashless": 14290
+    },
+    "2026-07": {
+      "connections": 23,
+      "onu_connection": 20,
+      "onu_repair": 4,
+      "total_physical_onu": 24,
+      "total": 51606,
+      "payment_cash": 38078,
+      "payment_cashless": 13528
+    },
+    "2026-06": {
+      "connections": 25,
+      "onu_connection": 12,
+      "onu_repair": 4,
+      "total_physical_onu": 16,
+      "total": 26339,
+      "payment_cash": 23839,
+      "payment_cashless": 2500
+    },
+    "2026-05": {
+      "connections": 22,
+      "onu_connection": 19,
+      "onu_repair": 0,
+      "total_physical_onu": 19,
+      "total": 35792,
+      "payment_cash": 27788,
+      "payment_cashless": 8004
+    },
+    "2026-04": {
+      "connections": 17,
+      "onu_connection": 16,
+      "onu_repair": 1,
+      "total_physical_onu": 17,
+      "total": 37294,
+      "payment_cash": 28994,
+      "payment_cashless": 8300
+    },
+    "2026-03": {
+      "connections": 13,
+      "onu_connection": 13,
+      "onu_repair": 3,
+      "total_physical_onu": 16,
+      "total": 35773,
+      "payment_cash": 29823,
+      "payment_cashless": 5950
+    },
+    "2026-02": {
+      "connections": 4,
+      "onu_connection": 4,
+      "onu_repair": 4,
+      "total_physical_onu": 8,
+      "total": 13090,
+      "payment_cash": 10550,
+      "payment_cashless": 2540
+    }
+  },
+  "inputs": {
+    "primary_sha256": "7fe7a69444b6b7df142621d19e8d8dd621ca7470770adc0d461fbcde5d466f09",
+    "report_sha256": "2f53953baaf2ecbdeb91f9fe72dbf0790288ee6414a134c8facf3991eb2998c8"
+  }
+}
